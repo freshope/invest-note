@@ -144,18 +144,25 @@ export function HomeDashboard() {
 
   if (accounts.length === 0) {
     return (
-      <div className="px-5 pt-16 flex flex-col items-center text-center">
-        <div className="w-16 h-16 bg-[#F7F8FA] rounded-full flex items-center justify-center mb-4">
-          <span className="text-3xl">📊</span>
+      <div className="px-5 pt-6">
+        <div className="flex justify-end mb-10">
+          <button onClick={() => router.push('/settings')} className="w-8 h-8 flex items-center justify-center text-[#8B95A1]">
+            <Settings size={20} />
+          </button>
         </div>
-        <h2 className="text-lg font-bold text-[#1A1A1A] mb-2">아직 계좌가 없어요</h2>
-        <p className="text-sm text-[#8B95A1] mb-6">계좌를 추가하고 투자를 시작해 보세요</p>
-        <button
-          onClick={() => router.push('/records')}
-          className="px-6 py-3 bg-[#3366FF] text-white rounded-2xl text-sm font-semibold"
-        >
-          거래 기록 시작하기
-        </button>
+        <div className="flex flex-col items-center text-center">
+          <div className="w-16 h-16 bg-[#F7F8FA] rounded-full flex items-center justify-center mb-4">
+            <span className="text-3xl">📊</span>
+          </div>
+          <h2 className="text-lg font-bold text-[#1A1A1A] mb-2">아직 계좌가 없어요</h2>
+          <p className="text-sm text-[#8B95A1] mb-6">계좌를 추가하고 투자를 시작해 보세요</p>
+          <button
+            onClick={() => router.push('/settings')}
+            className="px-6 py-3 bg-[#3366FF] text-white rounded-2xl text-sm font-semibold"
+          >
+            계좌 추가하기
+          </button>
+        </div>
       </div>
     )
   }

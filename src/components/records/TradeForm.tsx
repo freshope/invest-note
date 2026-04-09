@@ -177,8 +177,10 @@ export function TradeForm() {
 
         {/* 수량 */}
         <div>
-          <label className="text-xs font-medium text-[#8B95A1] mb-1.5 block">수량</label>
+          <label htmlFor="trade-quantity" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">수량</label>
           <input
+            id="trade-quantity"
+            aria-label="수량"
             inputMode="numeric"
             placeholder="0"
             onChange={(e) => {
@@ -192,10 +194,12 @@ export function TradeForm() {
 
         {/* 단가 */}
         <div>
-          <label className="text-xs font-medium text-[#8B95A1] mb-1.5 block">
+          <label htmlFor="trade-price" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">
             단가 {market === 'KR' ? '(원)' : '(달러)'}
           </label>
           <input
+            id="trade-price"
+            aria-label="단가"
             inputMode="decimal"
             value={priceInput}
             placeholder="0"
@@ -211,8 +215,10 @@ export function TradeForm() {
 
         {/* 수수료 */}
         <div>
-          <label className="text-xs font-medium text-[#8B95A1] mb-1.5 block">수수료 (선택)</label>
+          <label htmlFor="trade-fee" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">수수료 (선택)</label>
           <input
+            id="trade-fee"
+            aria-label="수수료"
             inputMode="decimal"
             value={feeInput}
             placeholder="0"

@@ -138,8 +138,9 @@ export function SettingsView() {
       <BottomSheet open={showAddSheet} onClose={() => setShowAddSheet(false)} title="계좌 추가">
         <form onSubmit={handleSubmit(onAddAccount)} className="space-y-4 pb-4">
           <div>
-            <label className="text-xs font-medium text-[#8B95A1] mb-1.5 block">계좌명</label>
+            <label htmlFor="account-name" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">계좌명</label>
             <input
+              id="account-name"
               {...register('name')}
               placeholder="예: 주식 투자 계좌"
               className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] placeholder-[#8B95A1] outline-none focus:border-[#3366FF]"
@@ -148,8 +149,9 @@ export function SettingsView() {
           </div>
 
           <div>
-            <label className="text-xs font-medium text-[#8B95A1] mb-1.5 block">증권사</label>
+            <label htmlFor="account-broker" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">증권사</label>
             <select
+              id="account-broker"
               {...register('broker')}
               className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] outline-none focus:border-[#3366FF] bg-white"
             >
