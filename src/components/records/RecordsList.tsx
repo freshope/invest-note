@@ -7,27 +7,61 @@ import { formatDate, formatKRW } from '@/lib/format'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Plus, BookOpen } from 'lucide-react'
 import { clsx } from 'clsx'
-import type { Trade } from '@/types/database'
+import type { Trade, Account } from '@/types/database'
+import { useAccountFilter } from '@/hooks/useAccountFilter'
+import { AccountFilterDropdown } from '@/components/ui/AccountFilterDropdown'
+
+const PAGE_SIZE = 50
 
 export function RecordsList() {
   const router = useRouter()
   const supabase = createClient()
   const [trades, setTrades] = useState<Trade[]>([])
+  const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const { selectedAccountId, setSelectedAccountId } = useAccountFilter()
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    const { data } = await supabase
+  const loadAccounts = useCallback(async () => {
+    const { data } = await supabase.from('accounts').select('*').is('deleted_at', null).order('created_at')
+    setAccounts(data || [])
+  }, [supabase])
+
+  const loadTrades = useCallback(async (accountId: string, offset: number, append: boolean) => {
+    const query = supabase
       .from('trades')
       .select('*')
       .eq('is_cancelled', false)
       .order('traded_at', { ascending: false })
       .order('created_at', { ascending: false })
-      .limit(100)
+      .range(offset, offset + PAGE_SIZE - 1)
 
-    setTrades(data || [])
-    setLoading(false)
+    if (accountId !== 'all') {
+      query.eq('account_id', accountId)
+    }
+
+    const { data } = await query
+    const rows = data || []
+    setHasMore(rows.length === PAGE_SIZE)
+    if (append) {
+      setTrades(prev => [...prev, ...rows])
+    } else {
+      setTrades(rows)
+    }
   }, [supabase])
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    await Promise.all([loadAccounts(), loadTrades(selectedAccountId, 0, false)])
+    setLoading(false)
+  }, [loadAccounts, loadTrades, selectedAccountId])
+
+  const loadMore = useCallback(async () => {
+    setLoadingMore(true)
+    await loadTrades(selectedAccountId, trades.length, true)
+    setLoadingMore(false)
+  }, [loadTrades, selectedAccountId, trades.length])
 
   useEffect(() => { load() }, [load])
 
@@ -35,7 +69,11 @@ export function RecordsList() {
     <div className="min-h-screen bg-white">
       {/* 헤더 */}
       <div className="flex items-center justify-between px-5 pt-6 pb-4">
-        <h1 className="text-xl font-bold text-[#1A1A1A]">기록</h1>
+        <AccountFilterDropdown
+          accounts={accounts}
+          selectedAccountId={selectedAccountId}
+          onSelect={setSelectedAccountId}
+        />
         <button
           onClick={() => router.push('/records/new')}
           className="w-10 h-10 flex items-center justify-center bg-[#3366FF] text-white rounded-full"
@@ -68,18 +106,32 @@ export function RecordsList() {
               <p className="text-xs font-medium text-[#8B95A1] mb-2">{formatDate(date)}</p>
               <div className="space-y-2">
                 {items.map(trade => (
-                  <TradeItem key={trade.id} trade={trade} onTap={() => router.push(`/records/${trade.id}`)} />
+                  <TradeItem
+                    key={trade.id}
+                    trade={trade}
+                    account={accounts.find(a => a.id === trade.account_id)}
+                    onTap={() => router.push(`/records/${trade.id}`)}
+                  />
                 ))}
               </div>
             </div>
           ))}
+          {hasMore && (
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="w-full py-3 text-sm text-[#3366FF] font-medium disabled:opacity-50"
+            >
+              {loadingMore ? '불러오는 중...' : '더 보기'}
+            </button>
+          )}
         </div>
       )}
     </div>
   )
 }
 
-function TradeItem({ trade, onTap }: { trade: Trade; onTap: () => void }) {
+function TradeItem({ trade, account, onTap }: { trade: Trade; account?: Account; onTap: () => void }) {
   const isBuy = trade.trade_type === 'buy'
   return (
     <button
@@ -95,7 +147,10 @@ function TradeItem({ trade, onTap }: { trade: Trade; onTap: () => void }) {
         </div>
         <div className="text-left">
           <p className="text-sm font-semibold text-[#1A1A1A]">{trade.name || trade.ticker}</p>
-          <p className="text-xs text-[#8B95A1]">{trade.ticker} · {trade.quantity.toLocaleString()}주</p>
+          <p className="text-xs text-[#8B95A1]">
+            {trade.ticker} · {trade.quantity.toLocaleString()}주
+            {account ? ` · ${account.name}` : ''}
+          </p>
         </div>
       </div>
       <div className="text-right">

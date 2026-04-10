@@ -2,13 +2,14 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, BookOpen, PieChart } from 'lucide-react'
+import { Home, BookOpen, PieChart, Settings } from 'lucide-react'
 import { clsx } from 'clsx'
 
 const tabs = [
   { href: '/', icon: Home, label: '홈' },
   { href: '/records', icon: BookOpen, label: '기록' },
   { href: '/assets', icon: PieChart, label: '자산' },
+  { href: '/settings', icon: Settings, label: '설정' },
 ]
 
 export function BottomNav() {

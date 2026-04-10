@@ -14,6 +14,7 @@ export interface Database {
           is_active: boolean
           created_at: string
           updated_at: string
+          fee_rate: number
           deleted_at: string | null
         }
         Insert: {
@@ -22,6 +23,7 @@ export interface Database {
           name: string
           broker: string
           account_number?: string | null
+          fee_rate?: number
           is_active?: boolean
           created_at?: string
           updated_at?: string
@@ -33,6 +35,7 @@ export interface Database {
           name?: string
           broker?: string
           account_number?: string | null
+          fee_rate?: number
           is_active?: boolean
           updated_at?: string
           deleted_at?: string | null

@@ -37,6 +37,7 @@ export function TradeDetail({ tradeId }: { tradeId: string }) {
   const [cancelling, setCancelling] = useState(false)
   const [saving, setSaving] = useState(false)
 
+  const [quantityInput, setQuantityInput] = useState('')
   const [priceInput, setPriceInput] = useState('')
   const [feeInput, setFeeInput] = useState('')
   const [taxInput, setTaxInput] = useState('')
@@ -59,6 +60,7 @@ export function TradeDetail({ tradeId }: { tradeId: string }) {
 
   const openEdit = () => {
     if (!trade) return
+    setQuantityInput(formatNumberInput(trade.quantity.toString()))
     setPriceInput(formatNumberInput(trade.price.toString()))
     setFeeInput(formatNumberInput(trade.fee.toString()))
     setTaxInput(formatNumberInput((trade.tax ?? 0).toString()))
@@ -98,8 +100,16 @@ export function TradeDetail({ tradeId }: { tradeId: string }) {
   const handleCancel = async () => {
     if (!confirm('이 거래를 취소하시겠습니까? 보유 종목이 재계산됩니다.')) return
     setCancelling(true)
-    await supabase.from('trades').update({ is_cancelled: true }).eq('id', tradeId)
-    router.push('/records')
+    try {
+      const { error } = await supabase.from('trades').update({ is_cancelled: true }).eq('id', tradeId)
+      if (error) {
+        alert('거래 취소 중 오류가 발생했습니다. 다시 시도해주세요.')
+        return
+      }
+      router.push('/records')
+    } finally {
+      setCancelling(false)
+    }
   }
 
   if (loading) {
@@ -125,12 +135,12 @@ export function TradeDetail({ tradeId }: { tradeId: string }) {
     <div className="min-h-screen bg-white pb-8">
       {/* 헤더 */}
       <div className="flex items-center gap-3 px-5 pt-6 pb-4">
-        <button onClick={() => router.back()} className="w-8 h-8 flex items-center justify-center text-[#1A1A1A]">
+        <button onClick={() => router.back()} className="w-11 h-11 flex items-center justify-center text-[#1A1A1A]">
           <ArrowLeft size={22} />
         </button>
         <h1 className="text-lg font-bold text-[#1A1A1A] flex-1">거래 상세</h1>
         {!trade.is_cancelled && (
-          <button onClick={openEdit} className="w-8 h-8 flex items-center justify-center text-[#8B95A1]">
+          <button onClick={openEdit} className="w-11 h-11 flex items-center justify-center text-[#8B95A1]">
             <Pencil size={18} />
           </button>
         )}
@@ -270,17 +280,29 @@ export function TradeDetail({ tradeId }: { tradeId: string }) {
         title="거래 수정"
       >
         <form onSubmit={handleSubmit(onEditSubmit)} className="space-y-4">
+          {/* 거래일 */}
+          <div>
+            <label htmlFor="edit-date" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">거래일</label>
+            <input
+              id="edit-date"
+              type="date"
+              {...register('traded_at')}
+              className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] outline-none focus:border-[#3366FF]"
+            />
+          </div>
+
           {/* 수량 */}
           <div>
             <label htmlFor="edit-quantity" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">수량</label>
             <input
               id="edit-quantity"
               inputMode="numeric"
+              value={quantityInput}
               placeholder="0"
-              defaultValue={trade.quantity}
               onChange={(e) => {
-                const val = parseInt(e.target.value.replace(/[^0-9]/g, '')) || 0
-                setValue('quantity', val)
+                const formatted = formatNumberInput(e.target.value)
+                setQuantityInput(formatted)
+                setValue('quantity', Math.round(parseNumberInput(formatted)))
               }}
               className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] placeholder-[#8B95A1] outline-none focus:border-[#3366FF] tabular"
             />
@@ -336,17 +358,6 @@ export function TradeDetail({ tradeId }: { tradeId: string }) {
                 setValue('tax', parseNumberInput(formatted))
               }}
               className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] placeholder-[#8B95A1] outline-none focus:border-[#3366FF] tabular"
-            />
-          </div>
-
-          {/* 거래일 */}
-          <div>
-            <label htmlFor="edit-date" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">거래일</label>
-            <input
-              id="edit-date"
-              type="date"
-              {...register('traded_at')}
-              className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] outline-none focus:border-[#3366FF]"
             />
           </div>
 

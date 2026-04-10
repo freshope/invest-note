@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -12,6 +12,7 @@ import { JournalForm } from './JournalForm'
 import { ArrowLeft } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { Account, TradeInsert } from '@/types/database'
+import { DEFAULT_FEE_RATE, KR_SELL_TAX_RATE } from '@/lib/constants'
 
 const schema = z.object({
   accountId: z.string().min(1, '계좌를 선택하세요'),
@@ -28,6 +29,7 @@ const schema = z.object({
 })
 
 type FormValues = z.infer<typeof schema>
+type SearchResult = { ticker: string; name: string }
 
 export function TradeForm() {
   const router = useRouter()
@@ -36,9 +38,19 @@ export function TradeForm() {
   const [loading, setLoading] = useState(false)
   const [showJournalSheet, setShowJournalSheet] = useState(false)
   const [savedTradeId, setSavedTradeId] = useState<string | null>(null)
+  const [quantityInput, setQuantityInput] = useState('')
   const [priceInput, setPriceInput] = useState('')
   const [feeInput, setFeeInput] = useState('')
   const [taxInput, setTaxInput] = useState('')
+
+  // 종목 검색 상태
+  const [nameInput, setNameInput] = useState('')
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
+  const [searching, setSearching] = useState(false)
+  const [showDropdown, setShowDropdown] = useState(false)
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const nameInputRef = useRef<HTMLInputElement>(null)
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -53,12 +65,89 @@ export function TradeForm() {
 
   const tradeType = watch('tradeType')
   const market = watch('market')
+  const accountId = watch('accountId')
+  const quantity = watch('quantity')
+  const price = watch('price')
 
   useEffect(() => {
     supabase.from('accounts').select('*').is('deleted_at', null).order('created_at').then(({ data }) => {
       if (data) setAccounts(data)
     })
   }, [supabase])
+
+  // 검색 디바운스 타이머 정리
+  useEffect(() => {
+    return () => {
+      if (searchDebounce.current) clearTimeout(searchDebounce.current)
+    }
+  }, [])
+
+  // 수수료/세금 자동계산
+  useEffect(() => {
+    const selectedAccount = accounts.find(a => a.id === accountId)
+    if (!selectedAccount || !quantity || !price || quantity <= 0 || price <= 0) return
+
+    const totalAmount = quantity * price
+    const feeRate = selectedAccount.fee_rate ?? DEFAULT_FEE_RATE
+
+    // 수수료: 총액 × fee_rate(%)
+    const feeAmt = Math.round(totalAmount * feeRate / 100)
+    setValue('fee', feeAmt)
+    setFeeInput(feeAmt > 0 ? formatNumberInput(String(feeAmt)) : '')
+
+    // 제세금: KR 매도만 0.18%, 나머지 0
+    if (market === 'KR' && tradeType === 'sell') {
+      const taxAmt = Math.round(totalAmount * KR_SELL_TAX_RATE)
+      setValue('tax', taxAmt)
+      setTaxInput(taxAmt > 0 ? formatNumberInput(String(taxAmt)) : '')
+    } else {
+      setValue('tax', 0)
+      setTaxInput('')
+    }
+  }, [accountId, quantity, price, tradeType, market, accounts, setValue])
+
+  // 종목 검색
+  const searchStocks = useCallback(async (q: string, mkt: string) => {
+    if (q.length < 2 || mkt !== 'KR') {
+      setSearchResults([])
+      setShowDropdown(false)
+      return
+    }
+    setSearching(true)
+    try {
+      const res = await fetch(`/api/stock-search?q=${encodeURIComponent(q)}&market=${mkt}`)
+      if (res.ok) {
+        const data: SearchResult[] = await res.json()
+        setSearchResults(data)
+        setShowDropdown(data.length > 0)
+      }
+    } catch {
+      setSearchResults([])
+    } finally {
+      setSearching(false)
+    }
+  }, [])
+
+  const handleNameChange = (value: string) => {
+    setNameInput(value)
+    setValue('name', value)
+    if (searchDebounce.current) clearTimeout(searchDebounce.current)
+    if (value.length >= 2) {
+      searchDebounce.current = setTimeout(() => searchStocks(value, market), 300)
+    } else {
+      setSearchResults([])
+      setShowDropdown(false)
+    }
+  }
+
+  const selectStock = (result: SearchResult) => {
+    setNameInput(result.name)
+    setValue('name', result.name)
+    setValue('ticker', result.ticker)
+    setShowDropdown(false)
+    setSearchResults([])
+    setTimeout(() => nameInputRef.current?.focus(), 0)
+  }
 
   const onSubmit = async (values: FormValues) => {
     setLoading(true)
@@ -144,7 +233,7 @@ export function TradeForm() {
               <button
                 key={m}
                 type="button"
-                onClick={() => setValue('market', m)}
+                onClick={() => { setValue('market', m); setShowDropdown(false) }}
                 className={clsx(
                   'px-4 py-2 rounded-xl text-sm font-medium border transition-all',
                   market === m ? 'border-[#3366FF] text-[#3366FF] bg-[#F0F4FF]' : 'border-[#E5E8EB] text-[#8B95A1]'
@@ -154,6 +243,53 @@ export function TradeForm() {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* 날짜 */}
+        <div>
+          <label className="text-xs font-medium text-[#8B95A1] mb-1.5 block">거래일</label>
+          <input
+            type="date"
+            {...register('tradedAt')}
+            className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] outline-none focus:border-[#3366FF]"
+          />
+        </div>
+
+        {/* 종목명 (검색) */}
+        <div className="relative" ref={dropdownRef}>
+          <label className="text-xs font-medium text-[#8B95A1] mb-1.5 block">
+            종목명 {market === 'KR' ? '(검색)' : '(선택)'}
+          </label>
+          <input
+            ref={nameInputRef}
+            value={nameInput}
+            onChange={(e) => handleNameChange(e.target.value)}
+            onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+            placeholder={market === 'KR' ? '삼성전자 검색...' : '예: Apple'}
+            className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] placeholder-[#8B95A1] outline-none focus:border-[#3366FF]"
+          />
+          {/* 자동완성 드롭다운 */}
+          {showDropdown && (
+            <div className="absolute z-10 left-0 right-0 top-full mt-1 bg-white border border-[#E5E8EB] rounded-2xl shadow-lg overflow-hidden">
+              {searching ? (
+                <div className="px-4 py-3 text-sm text-[#8B95A1]">검색 중...</div>
+              ) : searchResults.length === 0 ? (
+                <div className="px-4 py-3 text-sm text-[#8B95A1]">검색 결과 없음</div>
+              ) : (
+                searchResults.map((r) => (
+                  <button
+                    key={r.ticker}
+                    type="button"
+                    onMouseDown={() => selectStock(r)}
+                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-[#F7F8FA] text-left transition-colors"
+                  >
+                    <span className="text-sm text-[#1A1A1A] font-medium">{r.name}</span>
+                    <span className="text-xs text-[#8B95A1] font-mono">{r.ticker}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
         </div>
 
         {/* 종목 코드 */}
@@ -169,16 +305,6 @@ export function TradeForm() {
           {errors.ticker && <p className="text-xs text-[#F04452] mt-1">{errors.ticker.message}</p>}
         </div>
 
-        {/* 종목명 (선택) */}
-        <div>
-          <label className="text-xs font-medium text-[#8B95A1] mb-1.5 block">종목명 (선택)</label>
-          <input
-            {...register('name')}
-            placeholder="삼성전자"
-            className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] placeholder-[#8B95A1] outline-none focus:border-[#3366FF]"
-          />
-        </div>
-
         {/* 수량 */}
         <div>
           <label htmlFor="trade-quantity" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">수량</label>
@@ -186,10 +312,12 @@ export function TradeForm() {
             id="trade-quantity"
             aria-label="수량"
             inputMode="numeric"
+            value={quantityInput}
             placeholder="0"
             onChange={(e) => {
-              const val = parseInt(e.target.value.replace(/[^0-9]/g, '')) || 0
-              setValue('quantity', val)
+              const formatted = formatNumberInput(e.target.value)
+              setQuantityInput(formatted)
+              setValue('quantity', Math.round(parseNumberInput(formatted)))
             }}
             className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] placeholder-[#8B95A1] outline-none focus:border-[#3366FF] tabular"
           />
@@ -219,7 +347,12 @@ export function TradeForm() {
 
         {/* 수수료 */}
         <div>
-          <label htmlFor="trade-fee" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">수수료 (선택)</label>
+          <label htmlFor="trade-fee" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">
+            수수료 (선택)
+            {accountId && accounts.find(a => a.id === accountId) && (
+              <span className="ml-1 text-[#3366FF]">· 자동계산됨</span>
+            )}
+          </label>
           <input
             id="trade-fee"
             aria-label="수수료"
@@ -237,7 +370,12 @@ export function TradeForm() {
 
         {/* 제세금 */}
         <div>
-          <label htmlFor="trade-tax" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">제세금 (선택)</label>
+          <label htmlFor="trade-tax" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">
+            제세금 (선택)
+            {market === 'KR' && tradeType === 'sell' && accountId && (
+              <span className="ml-1 text-[#3366FF]">· 자동계산됨 (0.18%)</span>
+            )}
+          </label>
           <input
             id="trade-tax"
             aria-label="제세금"
@@ -250,16 +388,6 @@ export function TradeForm() {
               setValue('tax', parseNumberInput(formatted))
             }}
             className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] placeholder-[#8B95A1] outline-none focus:border-[#3366FF] tabular"
-          />
-        </div>
-
-        {/* 날짜 */}
-        <div>
-          <label className="text-xs font-medium text-[#8B95A1] mb-1.5 block">거래일</label>
-          <input
-            type="date"
-            {...register('tradedAt')}
-            className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] outline-none focus:border-[#3366FF]"
           />
         </div>
 

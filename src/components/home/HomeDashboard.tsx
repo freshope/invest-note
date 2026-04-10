@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { formatKRW, formatPnL } from '@/lib/format'
 import { Skeleton } from '@/components/ui/Skeleton'
-import { Settings, RefreshCw, ChevronDown } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import type { Account, Holding } from '@/types/database'
 import { clsx } from 'clsx'
+import { useAccountFilter } from '@/hooks/useAccountFilter'
+import { AccountFilterDropdown } from '@/components/ui/AccountFilterDropdown'
 
 interface HoldingWithPrice extends Holding {
   currentPrice?: number
@@ -26,10 +28,9 @@ export function HomeDashboard() {
   const router = useRouter()
   const supabase = createClient()
   const [accounts, setAccounts] = useState<AccountWithHoldings[]>([])
-  const [selectedAccountId, setSelectedAccountId] = useState<string>('all')
+  const { selectedAccountId, setSelectedAccountId } = useAccountFilter()
   const [loading, setLoading] = useState(true)
   const [priceLoading, setPriceLoading] = useState(false)
-  const [showAccountPicker, setShowAccountPicker] = useState(false)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -124,9 +125,6 @@ export function HomeDashboard() {
     .sort((a, b) => ((b.currentPrice || b.avg_price) * b.quantity) - ((a.currentPrice || a.avg_price) * a.quantity))
     .slice(0, 3)
 
-  const selectedAccountName = selectedAccountId === 'all'
-    ? '전체 계좌'
-    : accounts.find(a => a.id === selectedAccountId)?.name || '전체 계좌'
 
   if (loading) {
     return (
@@ -145,11 +143,6 @@ export function HomeDashboard() {
   if (accounts.length === 0) {
     return (
       <div className="px-5 pt-6">
-        <div className="flex justify-end mb-10">
-          <button onClick={() => router.push('/settings')} className="w-8 h-8 flex items-center justify-center text-[#8B95A1]">
-            <Settings size={20} />
-          </button>
-        </div>
         <div className="flex flex-col items-center text-center">
           <div className="w-16 h-16 bg-[#F7F8FA] rounded-full flex items-center justify-center mb-4">
             <span className="text-3xl">📊</span>
@@ -171,38 +164,15 @@ export function HomeDashboard() {
     <div className="flex flex-col">
       {/* 상단 헤더 */}
       <div className="flex items-center justify-between px-5 pt-6 pb-2">
-        <button
-          onClick={() => setShowAccountPicker(!showAccountPicker)}
-          className="flex items-center gap-1 text-sm font-medium text-[#1A1A1A]"
-        >
-          {selectedAccountName}
-          <ChevronDown size={14} className={clsx('transition-transform', showAccountPicker && 'rotate-180')} />
-        </button>
+        <AccountFilterDropdown
+          accounts={accounts}
+          selectedAccountId={selectedAccountId}
+          onSelect={setSelectedAccountId}
+        />
         <div className="flex items-center gap-2">
           {priceLoading && <RefreshCw size={16} className="text-[#8B95A1] animate-spin" />}
-          <button onClick={() => router.push('/settings')} className="w-8 h-8 flex items-center justify-center text-[#8B95A1]">
-            <Settings size={20} />
-          </button>
         </div>
       </div>
-
-      {/* 계좌 선택 드롭다운 */}
-      {showAccountPicker && (
-        <div className="mx-5 mb-2 bg-white border border-[#E5E8EB] rounded-2xl shadow-lg overflow-hidden">
-          {[{ id: 'all', name: '전체 계좌' }, ...accounts.map(a => ({ id: a.id, name: a.name }))].map(item => (
-            <button
-              key={item.id}
-              onClick={() => { setSelectedAccountId(item.id); setShowAccountPicker(false) }}
-              className={clsx(
-                'w-full text-left px-4 py-3 text-sm',
-                selectedAccountId === item.id ? 'text-[#3366FF] font-semibold bg-[#F0F4FF]' : 'text-[#1A1A1A]'
-              )}
-            >
-              {item.name}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* 총 평가금액 */}
       <div className="px-5 pt-4 pb-2">
