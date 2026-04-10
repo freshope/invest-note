@@ -1,5 +1,6 @@
 import { TradeDetail } from '@/components/records/TradeDetail'
 
-export default function TradeDetailPage({ params }: { params: { id: string } }) {
-  return <TradeDetail tradeId={params.id} />
+export default async function TradeDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  return <TradeDetail tradeId={id} />
 }

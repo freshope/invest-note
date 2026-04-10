@@ -50,6 +50,7 @@ export interface Database {
           quantity: number
           price: number
           fee: number
+          tax: number
           traded_at: string
           memo: string | null
           is_cancelled: boolean
@@ -66,14 +67,24 @@ export interface Database {
           quantity: number
           price: number
           fee?: number
+          tax?: number
           traded_at: string
           memo?: string | null
           is_cancelled?: boolean
           created_at?: string
         }
         Update: {
-          is_cancelled?: boolean
+          ticker?: string
+          name?: string | null
+          market?: MarketType
+          trade_type?: TradeType
+          quantity?: number
+          price?: number
+          fee?: number
+          tax?: number
+          traded_at?: string
           memo?: string | null
+          is_cancelled?: boolean
         }
       }
       journals: {

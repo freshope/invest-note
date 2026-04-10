@@ -2,14 +2,28 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import { createClient } from '@/lib/supabase/client'
-import { formatKRW, formatDate } from '@/lib/format'
+import { formatKRW, formatDate, formatNumberInput, parseNumberInput } from '@/lib/format'
 import { BottomSheet } from '@/components/ui/BottomSheet'
 import { JournalForm } from './JournalForm'
-import { ArrowLeft, BookOpen, XCircle } from 'lucide-react'
+import { ArrowLeft, BookOpen, XCircle, Pencil } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { Trade, Journal } from '@/types/database'
 import { Skeleton } from '@/components/ui/Skeleton'
+
+const editSchema = z.object({
+  quantity: z.number().int().positive('수량은 1 이상이어야 합니다'),
+  price: z.number().positive('가격을 입력하세요'),
+  fee: z.number().min(0),
+  tax: z.number().min(0),
+  traded_at: z.string().min(1, '날짜를 입력하세요'),
+  memo: z.string().optional(),
+})
+
+type EditValues = z.infer<typeof editSchema>
 
 export function TradeDetail({ tradeId }: { tradeId: string }) {
   const router = useRouter()
@@ -19,7 +33,17 @@ export function TradeDetail({ tradeId }: { tradeId: string }) {
   const [loading, setLoading] = useState(true)
   const [showJournalSheet, setShowJournalSheet] = useState(false)
   const [showReflectionSheet, setShowReflectionSheet] = useState(false)
+  const [showEditSheet, setShowEditSheet] = useState(false)
   const [cancelling, setCancelling] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  const [priceInput, setPriceInput] = useState('')
+  const [feeInput, setFeeInput] = useState('')
+  const [taxInput, setTaxInput] = useState('')
+
+  const { register, handleSubmit, setValue, reset, formState: { errors } } = useForm<EditValues>({
+    resolver: zodResolver(editSchema),
+  })
 
   const load = useCallback(async () => {
     const [{ data: t }, { data: j }] = await Promise.all([
@@ -32,6 +56,44 @@ export function TradeDetail({ tradeId }: { tradeId: string }) {
   }, [supabase, tradeId])
 
   useEffect(() => { load() }, [load])
+
+  const openEdit = () => {
+    if (!trade) return
+    setPriceInput(formatNumberInput(trade.price.toString()))
+    setFeeInput(formatNumberInput(trade.fee.toString()))
+    setTaxInput(formatNumberInput((trade.tax ?? 0).toString()))
+    reset({
+      quantity: trade.quantity,
+      price: trade.price,
+      fee: trade.fee,
+      tax: trade.tax ?? 0,
+      traded_at: trade.traded_at,
+      memo: trade.memo ?? '',
+    })
+    setShowEditSheet(true)
+  }
+
+  const onEditSubmit = async (values: EditValues) => {
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('trades').update({
+        quantity: values.quantity,
+        price: values.price,
+        fee: values.fee,
+        tax: values.tax,
+        traded_at: values.traded_at,
+        memo: values.memo || null,
+      }).eq('id', tradeId)
+      if (error) {
+        alert('저장 중 오류가 발생했습니다. 다시 시도해주세요.')
+        return
+      }
+      setShowEditSheet(false)
+      await load()
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const handleCancel = async () => {
     if (!confirm('이 거래를 취소하시겠습니까? 보유 종목이 재계산됩니다.')) return
@@ -55,7 +117,9 @@ export function TradeDetail({ tradeId }: { tradeId: string }) {
   }
 
   const isBuy = trade.trade_type === 'buy'
-  const totalAmount = trade.price * trade.quantity
+  const tradeAmount = trade.price * trade.quantity
+  const costs = trade.fee + (trade.tax ?? 0)
+  const totalAmount = isBuy ? tradeAmount + costs : tradeAmount - costs
 
   return (
     <div className="min-h-screen bg-white pb-8">
@@ -64,7 +128,12 @@ export function TradeDetail({ tradeId }: { tradeId: string }) {
         <button onClick={() => router.back()} className="w-8 h-8 flex items-center justify-center text-[#1A1A1A]">
           <ArrowLeft size={22} />
         </button>
-        <h1 className="text-lg font-bold text-[#1A1A1A]">거래 상세</h1>
+        <h1 className="text-lg font-bold text-[#1A1A1A] flex-1">거래 상세</h1>
+        {!trade.is_cancelled && (
+          <button onClick={openEdit} className="w-8 h-8 flex items-center justify-center text-[#8B95A1]">
+            <Pencil size={18} />
+          </button>
+        )}
       </div>
 
       <div className="px-5 space-y-4">
@@ -89,6 +158,7 @@ export function TradeDetail({ tradeId }: { tradeId: string }) {
               { label: '수량', value: `${trade.quantity.toLocaleString()}주` },
               { label: '단가', value: formatKRW(trade.price) },
               { label: '수수료', value: formatKRW(trade.fee) },
+              { label: '제세금', value: formatKRW(trade.tax ?? 0) },
               { label: '총 금액', value: formatKRW(totalAmount), bold: true },
             ].map(({ label, value, bold }) => (
               <div key={label} className="flex items-center justify-between">
@@ -192,6 +262,114 @@ export function TradeDetail({ tradeId }: { tradeId: string }) {
           </button>
         )}
       </div>
+
+      {/* 거래 수정 바텀시트 */}
+      <BottomSheet
+        open={showEditSheet}
+        onClose={() => setShowEditSheet(false)}
+        title="거래 수정"
+      >
+        <form onSubmit={handleSubmit(onEditSubmit)} className="space-y-4">
+          {/* 수량 */}
+          <div>
+            <label htmlFor="edit-quantity" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">수량</label>
+            <input
+              id="edit-quantity"
+              inputMode="numeric"
+              placeholder="0"
+              defaultValue={trade.quantity}
+              onChange={(e) => {
+                const val = parseInt(e.target.value.replace(/[^0-9]/g, '')) || 0
+                setValue('quantity', val)
+              }}
+              className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] placeholder-[#8B95A1] outline-none focus:border-[#3366FF] tabular"
+            />
+            {errors.quantity && <p className="text-xs text-[#F04452] mt-1">{errors.quantity.message}</p>}
+          </div>
+
+          {/* 단가 */}
+          <div>
+            <label htmlFor="edit-price" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">단가</label>
+            <input
+              id="edit-price"
+              inputMode="decimal"
+              value={priceInput}
+              placeholder="0"
+              onChange={(e) => {
+                const formatted = formatNumberInput(e.target.value)
+                setPriceInput(formatted)
+                setValue('price', parseNumberInput(formatted))
+              }}
+              className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] placeholder-[#8B95A1] outline-none focus:border-[#3366FF] tabular"
+            />
+            {errors.price && <p className="text-xs text-[#F04452] mt-1">{errors.price.message}</p>}
+          </div>
+
+          {/* 수수료 */}
+          <div>
+            <label htmlFor="edit-fee" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">수수료</label>
+            <input
+              id="edit-fee"
+              inputMode="decimal"
+              value={feeInput}
+              placeholder="0"
+              onChange={(e) => {
+                const formatted = formatNumberInput(e.target.value)
+                setFeeInput(formatted)
+                setValue('fee', parseNumberInput(formatted))
+              }}
+              className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] placeholder-[#8B95A1] outline-none focus:border-[#3366FF] tabular"
+            />
+          </div>
+
+          {/* 제세금 */}
+          <div>
+            <label htmlFor="edit-tax" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">제세금</label>
+            <input
+              id="edit-tax"
+              inputMode="decimal"
+              value={taxInput}
+              placeholder="0"
+              onChange={(e) => {
+                const formatted = formatNumberInput(e.target.value)
+                setTaxInput(formatted)
+                setValue('tax', parseNumberInput(formatted))
+              }}
+              className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] placeholder-[#8B95A1] outline-none focus:border-[#3366FF] tabular"
+            />
+          </div>
+
+          {/* 거래일 */}
+          <div>
+            <label htmlFor="edit-date" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">거래일</label>
+            <input
+              id="edit-date"
+              type="date"
+              {...register('traded_at')}
+              className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] outline-none focus:border-[#3366FF]"
+            />
+          </div>
+
+          {/* 메모 */}
+          <div>
+            <label className="text-xs font-medium text-[#8B95A1] mb-1.5 block">메모 (선택)</label>
+            <textarea
+              {...register('memo')}
+              rows={3}
+              placeholder="간단한 메모를 남겨보세요"
+              className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] placeholder-[#8B95A1] outline-none focus:border-[#3366FF] resize-none"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={saving}
+            className="w-full py-4 bg-[#3366FF] text-white rounded-2xl text-sm font-bold disabled:opacity-50"
+          >
+            {saving ? '저장 중...' : '수정 저장'}
+          </button>
+        </form>
+      </BottomSheet>
 
       {/* 일지 작성/수정 바텀시트 */}
       <BottomSheet

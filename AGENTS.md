@@ -3,3 +3,20 @@
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
+
+# Git 규칙
+
+## Git Flow 사용
+- 브랜치 전략으로 Git Flow를 사용한다
+- 기본 브랜치: `main` (프로덕션), `develop` (개발 통합)
+
+## 브랜치 네이밍
+- 기능 추가 또는 이슈 수정: `feature/<설명>` 브랜치 사용
+  - 예: `feature/add-stock-chart`, `feature/fix-login-bug`
+- 릴리즈: `release/<버전>` 브랜치 사용
+- 긴급 수정: `hotfix/<설명>` 브랜치 사용
+
+## 작업 흐름
+1. `develop` 브랜치에서 `feature` 브랜치 생성
+2. 작업 완료 후 `develop`으로 병합
+3. 릴리즈 준비 시 `release` 브랜치 생성 후 `main`과 `develop`에 병합

@@ -22,6 +22,7 @@ const schema = z.object({
   quantity: z.number().int().positive('수량은 1 이상이어야 합니다'),
   price: z.number().positive('가격을 입력하세요'),
   fee: z.number().min(0),
+  tax: z.number().min(0),
   tradedAt: z.string().min(1, '날짜를 입력하세요'),
   memo: z.string().optional(),
 })
@@ -37,6 +38,7 @@ export function TradeForm() {
   const [savedTradeId, setSavedTradeId] = useState<string | null>(null)
   const [priceInput, setPriceInput] = useState('')
   const [feeInput, setFeeInput] = useState('')
+  const [taxInput, setTaxInput] = useState('')
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -44,6 +46,7 @@ export function TradeForm() {
       market: 'KR',
       tradeType: 'buy',
       fee: 0,
+      tax: 0,
       tradedAt: new Date().toISOString().split('T')[0],
     },
   })
@@ -72,6 +75,7 @@ export function TradeForm() {
       quantity: values.quantity,
       price: values.price,
       fee: values.fee,
+      tax: values.tax,
       traded_at: values.tradedAt,
       memo: values.memo || null,
     }
@@ -226,6 +230,24 @@ export function TradeForm() {
               const formatted = formatNumberInput(e.target.value)
               setFeeInput(formatted)
               setValue('fee', parseNumberInput(formatted))
+            }}
+            className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] placeholder-[#8B95A1] outline-none focus:border-[#3366FF] tabular"
+          />
+        </div>
+
+        {/* 제세금 */}
+        <div>
+          <label htmlFor="trade-tax" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">제세금 (선택)</label>
+          <input
+            id="trade-tax"
+            aria-label="제세금"
+            inputMode="decimal"
+            value={taxInput}
+            placeholder="0"
+            onChange={(e) => {
+              const formatted = formatNumberInput(e.target.value)
+              setTaxInput(formatted)
+              setValue('tax', parseNumberInput(formatted))
             }}
             className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] placeholder-[#8B95A1] outline-none focus:border-[#3366FF] tabular"
           />
