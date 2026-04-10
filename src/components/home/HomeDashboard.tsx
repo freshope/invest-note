@@ -111,6 +111,13 @@ export function HomeDashboard() {
 
   useEffect(() => { loadData() }, [loadData])
 
+  // Reset stale filter if stored account was deleted
+  useEffect(() => {
+    if (accounts.length > 0 && selectedAccountId !== 'all' && !accounts.find(a => a.id === selectedAccountId)) {
+      setSelectedAccountId('all')
+    }
+  }, [accounts, selectedAccountId, setSelectedAccountId])
+
   // 선택 계좌 필터
   const filteredAccounts = selectedAccountId === 'all' ? accounts : accounts.filter(a => a.id === selectedAccountId)
   const totalValue = filteredAccounts.reduce((sum, a) => sum + a.totalValue, 0)

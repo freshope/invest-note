@@ -5,8 +5,10 @@ import { createClient } from '@/lib/supabase/client'
 import { formatKRW, formatPnL } from '@/lib/format'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { clsx } from 'clsx'
-import { ChevronDown, RefreshCw } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import type { Account, Holding } from '@/types/database'
+import { useAccountFilter } from '@/hooks/useAccountFilter'
+import { AccountFilterDropdown } from '@/components/ui/AccountFilterDropdown'
 
 interface HoldingWithPrice extends Holding {
   currentPrice?: number
@@ -25,10 +27,9 @@ interface AccountWithHoldings extends Account {
 export function AssetsView() {
   const supabase = createClient()
   const [accounts, setAccounts] = useState<AccountWithHoldings[]>([])
-  const [selectedAccountId, setSelectedAccountId] = useState<string>('all')
+  const { selectedAccountId, setSelectedAccountId } = useAccountFilter()
   const [loading, setLoading] = useState(true)
   const [priceLoading, setPriceLoading] = useState(false)
-  const [showPicker, setShowPicker] = useState(false)
   const [viewMode, setViewMode] = useState<'list' | 'weight'>('list')
 
   const load = useCallback(async () => {
@@ -97,6 +98,13 @@ export function AssetsView() {
 
   useEffect(() => { load() }, [load])
 
+  // Reset stale filter if stored account was deleted
+  useEffect(() => {
+    if (accounts.length > 0 && selectedAccountId !== 'all' && !accounts.find(a => a.id === selectedAccountId)) {
+      setSelectedAccountId('all')
+    }
+  }, [accounts, selectedAccountId, setSelectedAccountId])
+
   const filteredAccounts = selectedAccountId === 'all' ? accounts : accounts.filter(a => a.id === selectedAccountId)
   const allHoldings = filteredAccounts.flatMap(a => a.holdings)
   const totalValue = filteredAccounts.reduce((s, a) => s + a.totalValue, 0)
@@ -104,8 +112,6 @@ export function AssetsView() {
   const totalPnL = totalValue - totalCost
   const totalPnLPct = totalCost > 0 ? (totalPnL / totalCost) * 100 : 0
   const { amount: pnlAmt, percent: pnlPct, colorClass } = formatPnL(totalPnL, totalPnLPct)
-
-  const selectedName = selectedAccountId === 'all' ? '전체 계좌' : (accounts.find(a => a.id === selectedAccountId)?.name || '전체 계좌')
 
   if (loading) {
     return (
@@ -118,16 +124,14 @@ export function AssetsView() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white pb-24">
       {/* 헤더 */}
       <div className="flex items-center justify-between px-5 pt-6 pb-2">
-        <button
-          onClick={() => setShowPicker(!showPicker)}
-          className="flex items-center gap-1 text-sm font-medium text-[#1A1A1A]"
-        >
-          {selectedName}
-          <ChevronDown size={14} className={clsx('transition-transform', showPicker && 'rotate-180')} />
-        </button>
+        <AccountFilterDropdown
+          accounts={accounts}
+          selectedAccountId={selectedAccountId}
+          onSelect={setSelectedAccountId}
+        />
         <div className="flex items-center gap-2">
           {priceLoading && <RefreshCw size={16} className="text-[#8B95A1] animate-spin" />}
           <button onClick={load} className="w-8 h-8 flex items-center justify-center text-[#8B95A1]">
@@ -135,24 +139,6 @@ export function AssetsView() {
           </button>
         </div>
       </div>
-
-      {/* 계좌 선택 드롭다운 */}
-      {showPicker && (
-        <div className="mx-5 mb-2 bg-white border border-[#E5E8EB] rounded-2xl shadow-lg overflow-hidden">
-          {[{ id: 'all', name: '전체 계좌' }, ...accounts.map(a => ({ id: a.id, name: a.name }))].map(item => (
-            <button
-              key={item.id}
-              onClick={() => { setSelectedAccountId(item.id); setShowPicker(false) }}
-              className={clsx(
-                'w-full text-left px-4 py-3 text-sm',
-                selectedAccountId === item.id ? 'text-[#3366FF] font-semibold bg-[#F0F4FF]' : 'text-[#1A1A1A]'
-              )}
-            >
-              {item.name}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* 총 자산 요약 */}
       <div className="px-5 pt-2 pb-4">

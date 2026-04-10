@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate, formatKRW } from '@/lib/format'
@@ -22,6 +22,7 @@ export function RecordsList() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const { selectedAccountId, setSelectedAccountId } = useAccountFilter()
+  const requestId = useRef(0)
 
   const loadAccounts = useCallback(async () => {
     const { data } = await supabase.from('accounts').select('*').is('deleted_at', null).order('created_at')
@@ -29,6 +30,7 @@ export function RecordsList() {
   }, [supabase])
 
   const loadTrades = useCallback(async (accountId: string, offset: number, append: boolean) => {
+    const id = ++requestId.current
     const query = supabase
       .from('trades')
       .select('*')
@@ -42,6 +44,7 @@ export function RecordsList() {
     }
 
     const { data } = await query
+    if (id !== requestId.current) return  // discard stale response from previous filter
     const rows = data || []
     setHasMore(rows.length === PAGE_SIZE)
     if (append) {
@@ -64,6 +67,13 @@ export function RecordsList() {
   }, [loadTrades, selectedAccountId, trades.length])
 
   useEffect(() => { load() }, [load])
+
+  // Reset stale filter if stored account was deleted
+  useEffect(() => {
+    if (accounts.length > 0 && selectedAccountId !== 'all' && !accounts.find(a => a.id === selectedAccountId)) {
+      setSelectedAccountId('all')
+    }
+  }, [accounts, selectedAccountId, setSelectedAccountId])
 
   return (
     <div className="min-h-screen bg-white">

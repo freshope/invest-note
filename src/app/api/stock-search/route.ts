@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
       if (!res.ok) return NextResponse.json([])
       const data = await res.json()
       // 네이버 응답: { items: [{code, name, typeCode, ...}, ...], query: "..." }
-      const items: { code: string; name: string }[] = data.items || []
+      const items: { code: string; name: string }[] = Array.isArray(data.items) ? data.items : []
       const results = items.slice(0, 8).map(({ code, name }) => ({ ticker: code, name }))
       return NextResponse.json(results)
     } catch {

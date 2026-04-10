@@ -170,7 +170,8 @@ export function SettingsView() {
 
   const deleteAccount = async (id: string) => {
     if (!confirm('계좌를 삭제하시겠습니까?\n계좌의 거래 내역은 보존됩니다.')) return
-    await supabase.from('accounts').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    const { error } = await supabase.from('accounts').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    if (error) { alert('계좌 삭제 중 오류가 발생했습니다. 다시 시도해주세요.'); return }
     load()
   }
 
@@ -279,7 +280,7 @@ export function SettingsView() {
       </BottomSheet>
 
       {/* 계좌 편집 바텀시트 */}
-      <BottomSheet open={showEditSheet} onClose={() => { setShowEditSheet(false); setEditingAccount(null) }} title="계좌 편집">
+      <BottomSheet open={showEditSheet} onClose={() => { setShowEditSheet(false); setEditingAccount(null); setEditBroker('') }} title="계좌 편집">
         <form onSubmit={editForm.handleSubmit(onEditAccount)} className="space-y-4 pb-4">
           <AccountFormFields
             form={editForm}

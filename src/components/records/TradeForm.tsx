@@ -49,7 +49,6 @@ export function TradeForm() {
   const [searching, setSearching] = useState(false)
   const [showDropdown, setShowDropdown] = useState(false)
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const dropdownRef = useRef<HTMLDivElement>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormValues>({
@@ -95,7 +94,7 @@ export function TradeForm() {
     setValue('fee', feeAmt)
     setFeeInput(feeAmt > 0 ? formatNumberInput(String(feeAmt)) : '')
 
-    // 제세금: KR 매도만 0.18%, 나머지 0
+    // 제세금: KR 매도만 적용
     if (market === 'KR' && tradeType === 'sell') {
       const taxAmt = Math.round(totalAmount * KR_SELL_TAX_RATE)
       setValue('tax', taxAmt)
@@ -154,30 +153,33 @@ export function TradeForm() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
 
-    const trade: TradeInsert = {
-      user_id: user.id,
-      account_id: values.accountId,
-      ticker: values.ticker,
-      name: values.name || null,
-      market: values.market,
-      trade_type: values.tradeType,
-      quantity: values.quantity,
-      price: values.price,
-      fee: values.fee,
-      tax: values.tax,
-      traded_at: values.tradedAt,
-      memo: values.memo || null,
-    }
+    try {
+      const trade: TradeInsert = {
+        user_id: user.id,
+        account_id: values.accountId,
+        ticker: values.ticker,
+        name: values.name || null,
+        market: values.market,
+        trade_type: values.tradeType,
+        quantity: values.quantity,
+        price: values.price,
+        fee: values.fee,
+        tax: values.tax,
+        traded_at: values.tradedAt,
+        memo: values.memo || null,
+      }
 
-    const { data, error } = await supabase.from('trades').insert(trade).select().single()
+      const { data, error } = await supabase.from('trades').insert(trade).select().single()
 
-    if (!error && data && values.tradeType === 'buy') {
-      setSavedTradeId(data.id)
-      setShowJournalSheet(true)
-    } else if (!error) {
-      router.push('/records')
+      if (!error && data && values.tradeType === 'buy') {
+        setSavedTradeId(data.id)
+        setShowJournalSheet(true)
+      } else if (!error) {
+        router.push('/records')
+      }
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   return (
@@ -256,7 +258,7 @@ export function TradeForm() {
         </div>
 
         {/* 종목명 (검색) */}
-        <div className="relative" ref={dropdownRef}>
+        <div className="relative">
           <label className="text-xs font-medium text-[#8B95A1] mb-1.5 block">
             종목명 {market === 'KR' ? '(검색)' : '(선택)'}
           </label>
@@ -373,7 +375,7 @@ export function TradeForm() {
           <label htmlFor="trade-tax" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">
             제세금 (선택)
             {market === 'KR' && tradeType === 'sell' && accountId && (
-              <span className="ml-1 text-[#3366FF]">· 자동계산됨 (0.18%)</span>
+              <span className="ml-1 text-[#3366FF]">· 자동계산됨 ({KR_SELL_TAX_RATE * 100}%)</span>
             )}
           </label>
           <input
