@@ -192,7 +192,7 @@ export function TradeForm() {
         <h1 className="text-lg font-bold text-[#1A1A1A]">거래 기록</h1>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="px-5 space-y-4 pb-8">
+      <form onSubmit={handleSubmit(onSubmit)} className="px-5 space-y-4 pb-28">
         {/* 매수/매도 토글 */}
         <div className="flex bg-[#F7F8FA] rounded-2xl p-1">
           {(['buy', 'sell'] as const).map((type) => (
@@ -272,7 +272,7 @@ export function TradeForm() {
           />
           {/* 자동완성 드롭다운 */}
           {showDropdown && (
-            <div className="absolute z-10 left-0 right-0 top-full mt-1 bg-white border border-[#E5E8EB] rounded-2xl shadow-lg overflow-hidden">
+            <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-[#E5E8EB] rounded-2xl shadow-lg overflow-hidden">
               {searching ? (
                 <div className="px-4 py-3 text-sm text-[#8B95A1]">검색 중...</div>
               ) : searchResults.length === 0 ? (
