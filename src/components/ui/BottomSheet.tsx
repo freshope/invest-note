@@ -8,9 +8,10 @@ interface BottomSheetProps {
   onClose: () => void
   title?: string
   children: React.ReactNode
+  footer?: React.ReactNode
 }
 
-export function BottomSheet({ open, onClose, title, children }: BottomSheetProps) {
+export function BottomSheet({ open, onClose, title, children, footer }: BottomSheetProps) {
   // 열릴 때 스크롤 잠금
   useEffect(() => {
     if (open) {
@@ -49,6 +50,13 @@ export function BottomSheet({ open, onClose, title, children }: BottomSheetProps
         <div className="flex-1 overflow-y-auto px-5 py-2">
           {children}
         </div>
+
+        {/* 푸터 (스크롤 영역 밖 고정) */}
+        {footer && (
+          <div className="px-5 pb-2 pt-2 border-t border-[#F0F0F0]">
+            {footer}
+          </div>
+        )}
       </div>
     </>
   )

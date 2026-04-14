@@ -281,8 +281,18 @@ export function TradeDetail({ tradeId }: { tradeId: string }) {
         open={showEditSheet}
         onClose={() => setShowEditSheet(false)}
         title="거래 수정"
+        footer={
+          <button
+            form="edit-trade-form"
+            type="submit"
+            disabled={saving}
+            className="w-full py-4 bg-[#3366FF] text-white rounded-2xl text-sm font-bold disabled:opacity-50"
+          >
+            {saving ? '저장 중...' : '수정 저장'}
+          </button>
+        }
       >
-        <form onSubmit={handleSubmit(onEditSubmit)} className="space-y-4">
+        <form id="edit-trade-form" onSubmit={handleSubmit(onEditSubmit)} className="space-y-4 pb-2">
           {/* 거래일 */}
           <div>
             <label htmlFor="edit-date" className="text-xs font-medium text-[#8B95A1] mb-1.5 block">거래일</label>
@@ -374,14 +384,6 @@ export function TradeDetail({ tradeId }: { tradeId: string }) {
               className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] placeholder-[#8B95A1] outline-none focus:border-[#3366FF] resize-none"
             />
           </div>
-
-          <button
-            type="submit"
-            disabled={saving}
-            className="w-full py-4 bg-[#3366FF] text-white rounded-2xl text-sm font-bold disabled:opacity-50"
-          >
-            {saving ? '저장 중...' : '수정 저장'}
-          </button>
         </form>
       </BottomSheet>
 

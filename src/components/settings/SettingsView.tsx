@@ -271,38 +271,52 @@ export function SettingsView() {
       </div>
 
       {/* 계좌 추가 바텀시트 */}
-      <BottomSheet open={showAddSheet} onClose={() => { setShowAddSheet(false); addForm.reset({ feeRate: DEFAULT_FEE_RATE }); setSelectedBroker('') }} title="계좌 추가">
-        <form onSubmit={addForm.handleSubmit(onAddAccount)} className="space-y-4 pb-4">
-          <AccountFormFields
-            form={addForm}
-            brokerValue={selectedBroker}
-            onBrokerChange={(v) => { setSelectedBroker(v); addForm.setValue('broker', v) }}
-          />
+      <BottomSheet
+        open={showAddSheet}
+        onClose={() => { setShowAddSheet(false); addForm.reset({ feeRate: DEFAULT_FEE_RATE }); setSelectedBroker('') }}
+        title="계좌 추가"
+        footer={
           <button
+            form="add-account-form"
             type="submit"
             disabled={saving}
             className="w-full py-4 bg-[#3366FF] text-white rounded-2xl text-sm font-bold disabled:opacity-50"
           >
             {saving ? '저장 중...' : '계좌 추가'}
           </button>
+        }
+      >
+        <form id="add-account-form" onSubmit={addForm.handleSubmit(onAddAccount)} className="space-y-4 pb-2">
+          <AccountFormFields
+            form={addForm}
+            brokerValue={selectedBroker}
+            onBrokerChange={(v) => { setSelectedBroker(v); addForm.setValue('broker', v) }}
+          />
         </form>
       </BottomSheet>
 
       {/* 계좌 편집 바텀시트 */}
-      <BottomSheet open={showEditSheet} onClose={() => { setShowEditSheet(false); setEditingAccount(null); setEditBroker('') }} title="계좌 편집">
-        <form onSubmit={editForm.handleSubmit(onEditAccount)} className="space-y-4 pb-4">
-          <AccountFormFields
-            form={editForm}
-            brokerValue={editBroker}
-            onBrokerChange={(v) => { setEditBroker(v); editForm.setValue('broker', v) }}
-          />
+      <BottomSheet
+        open={showEditSheet}
+        onClose={() => { setShowEditSheet(false); setEditingAccount(null); setEditBroker('') }}
+        title="계좌 편집"
+        footer={
           <button
+            form="edit-account-form"
             type="submit"
             disabled={saving}
             className="w-full py-4 bg-[#3366FF] text-white rounded-2xl text-sm font-bold disabled:opacity-50"
           >
             {saving ? '저장 중...' : '저장'}
           </button>
+        }
+      >
+        <form id="edit-account-form" onSubmit={editForm.handleSubmit(onEditAccount)} className="space-y-4 pb-2">
+          <AccountFormFields
+            form={editForm}
+            brokerValue={editBroker}
+            onBrokerChange={(v) => { setEditBroker(v); editForm.setValue('broker', v) }}
+          />
         </form>
       </BottomSheet>
     </div>
