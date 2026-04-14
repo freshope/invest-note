@@ -1,6 +1,7 @@
 # 투자노트 — TODOS (Deferred Scope)
 
 ## v2
+- [ ] 예수금 자동 조회 — KIS API (한국투자증권 Open API OAuth)로 예수금 자동 연동. 현재는 수동 입력 지원 (MVP), v2에서 자동화 예정.
 - [ ] KIS API 자동 연동 (한국투자증권 Open API OAuth)
 - [ ] CSV 임포트 (키움, 삼성, NH — EUC-KR, BrokerParser 인터페이스)
 - [ ] 세금 계산 지원 (국내 주식 양도소득세)

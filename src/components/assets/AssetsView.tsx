@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { formatKRW, formatPnL } from '@/lib/format'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -25,6 +26,7 @@ interface AccountWithHoldings extends Account {
 }
 
 export function AssetsView() {
+  const router = useRouter()
   const supabase = createClient()
   const [accounts, setAccounts] = useState<AccountWithHoldings[]>([])
   const { selectedAccountId, setSelectedAccountId } = useAccountFilter()
@@ -49,7 +51,7 @@ export function AssetsView() {
         pnlPercent: 0,
       }))
       const totalCost = holdings.reduce((s, h) => s + h.avg_price * h.quantity, 0)
-      return { ...acc, holdings, totalValue: totalCost, totalCost }
+      return { ...acc, holdings, totalValue: totalCost + (acc.cash_balance ?? 0), totalCost }
     })
 
     setAccounts(accs)
@@ -86,8 +88,8 @@ export function AssetsView() {
               pnlPercent: costValue > 0 ? ((currentValue - costValue) / costValue) * 100 : 0,
             }
           })
-          const totalValue = holdings.reduce((s, h) => s + h.currentValue, 0)
-          return { ...acc, holdings, totalValue }
+          const stocksValue = holdings.reduce((s, h) => s + h.currentValue, 0)
+          return { ...acc, holdings, totalValue: stocksValue + (acc.cash_balance ?? 0) }
         }))
       } catch (e) {
         console.error('현재가 조회 실패:', e)
@@ -107,9 +109,10 @@ export function AssetsView() {
 
   const filteredAccounts = selectedAccountId === 'all' ? accounts : accounts.filter(a => a.id === selectedAccountId)
   const allHoldings = filteredAccounts.flatMap(a => a.holdings)
+  const totalCashBalance = filteredAccounts.reduce((s, a) => s + (a.cash_balance ?? 0), 0)
   const totalValue = filteredAccounts.reduce((s, a) => s + a.totalValue, 0)
   const totalCost = filteredAccounts.reduce((s, a) => s + a.totalCost, 0)
-  const totalPnL = totalValue - totalCost
+  const totalPnL = totalValue - totalCost - totalCashBalance
   const totalPnLPct = totalCost > 0 ? (totalPnL / totalCost) * 100 : 0
   const { amount: pnlAmt, percent: pnlPct, colorClass } = formatPnL(totalPnL, totalPnLPct)
 
@@ -142,7 +145,7 @@ export function AssetsView() {
 
       {/* 총 자산 요약 */}
       <div className="px-5 pt-2 pb-4">
-        <p className="text-xs text-[#8B95A1] mb-1">총 평가금액</p>
+        <p className="text-xs text-[#8B95A1] mb-1">{totalCashBalance > 0 ? '총 자산' : '총 평가금액'}</p>
         <p className="text-3xl font-bold text-[#1A1A1A] tabular">{formatKRW(totalValue)}</p>
         <div className="flex items-center gap-2 mt-1">
           <span className={clsx('text-sm font-semibold tabular', colorClass)}>
@@ -152,6 +155,13 @@ export function AssetsView() {
         <div className="flex items-center justify-between mt-1">
           <span className="text-xs text-[#8B95A1]">매입금액 {formatKRW(totalCost)}</span>
         </div>
+        {totalCashBalance > 0 && (
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className="text-xs text-[#8B95A1]">예수금 {formatKRW(totalCashBalance)}</span>
+            <span className="text-xs text-[#8B95A1]">·</span>
+            <span className="text-xs text-[#8B95A1]">직접 입력</span>
+          </div>
+        )}
       </div>
 
       {/* 보기 모드 토글 */}
@@ -175,15 +185,15 @@ export function AssetsView() {
           <p className="text-sm text-[#8B95A1]">보유 종목이 없습니다.<br/>거래를 기록하면 자동으로 반영됩니다.</p>
         </div>
       ) : viewMode === 'list' ? (
-        <HoldingsList holdings={allHoldings} totalValue={totalValue} />
+        <HoldingsList holdings={allHoldings} totalValue={totalValue} onTap={(h) => router.push(`/stocks/${h.market}/${h.ticker}`)} />
       ) : (
-        <WeightView holdings={allHoldings} totalValue={totalValue} />
+        <WeightView holdings={allHoldings} totalValue={totalValue} onTap={(h) => router.push(`/stocks/${h.market}/${h.ticker}`)} />
       )}
     </div>
   )
 }
 
-function HoldingsList({ holdings, totalValue }: { holdings: HoldingWithPrice[]; totalValue: number }) {
+function HoldingsList({ holdings, totalValue, onTap }: { holdings: HoldingWithPrice[]; totalValue: number; onTap: (h: HoldingWithPrice) => void }) {
   const sorted = [...holdings].sort((a, b) => b.currentValue - a.currentValue)
 
   return (
@@ -194,7 +204,7 @@ function HoldingsList({ holdings, totalValue }: { holdings: HoldingWithPrice[]; 
         const sign = h.pnlAmount >= 0 ? '+' : ''
 
         return (
-          <div key={`${h.account_id}-${h.ticker}`} className="py-3 px-4 bg-[#F7F8FA] rounded-2xl">
+          <button key={`${h.account_id}-${h.ticker}`} onClick={() => onTap(h)} className="w-full text-left py-3 px-4 bg-[#F7F8FA] rounded-2xl">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-full bg-[#F0F4FF] flex items-center justify-center">
@@ -231,14 +241,14 @@ function HoldingsList({ holdings, totalValue }: { holdings: HoldingWithPrice[]; 
                 </span>
               )}
             </div>
-          </div>
+          </button>
         )
       })}
     </div>
   )
 }
 
-function WeightView({ holdings, totalValue }: { holdings: HoldingWithPrice[]; totalValue: number }) {
+function WeightView({ holdings, totalValue, onTap }: { holdings: HoldingWithPrice[]; totalValue: number; onTap: (h: HoldingWithPrice) => void }) {
   const sorted = [...holdings].sort((a, b) => b.currentValue - a.currentValue)
   const COLORS = ['#3366FF', '#F04452', '#1B6AC9', '#FF8C00', '#9B59B6', '#27AE60', '#E74C3C', '#3498DB']
 
@@ -262,7 +272,7 @@ function WeightView({ holdings, totalValue }: { holdings: HoldingWithPrice[]; to
         {sorted.map((h, i) => {
           const weight = totalValue > 0 ? (h.currentValue / totalValue) * 100 : 0
           return (
-            <div key={`${h.account_id}-${h.ticker}`} className="flex items-center justify-between py-2.5 border-b border-[#F0F0F0] last:border-0">
+            <button key={`${h.account_id}-${h.ticker}`} onClick={() => onTap(h)} className="w-full flex items-center justify-between py-2.5 border-b border-[#F0F0F0] last:border-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
                 <div>
@@ -274,7 +284,7 @@ function WeightView({ holdings, totalValue }: { holdings: HoldingWithPrice[]; to
                 <p className="text-sm font-bold text-[#1A1A1A] tabular">{weight.toFixed(1)}%</p>
                 <p className="text-xs text-[#8B95A1] tabular">{formatKRW(h.currentValue)}</p>
               </div>
-            </div>
+            </button>
           )
         })}
       </div>

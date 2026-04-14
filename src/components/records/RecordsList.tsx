@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate, formatKRW } from '@/lib/format'
@@ -75,6 +75,8 @@ export function RecordsList() {
     }
   }, [accounts, selectedAccountId, setSelectedAccountId])
 
+  const accountMap = useMemo(() => new Map(accounts.map(a => [a.id, a])), [accounts])
+
   return (
     <div className="min-h-screen bg-white">
       {/* 헤더 */}
@@ -119,8 +121,8 @@ export function RecordsList() {
                   <TradeItem
                     key={trade.id}
                     trade={trade}
-                    account={accounts.find(a => a.id === trade.account_id)}
-                    onTap={() => router.push(`/records/${trade.id}`)}
+                    account={accountMap.get(trade.account_id)}
+                    onTap={() => router.push(`/stocks/${trade.market}/${trade.ticker}`)}
                   />
                 ))}
               </div>

@@ -16,6 +16,8 @@ export interface Database {
           updated_at: string
           fee_rate: number
           deleted_at: string | null
+          cash_balance: number
+          cash_balance_updated_at: string | null
         }
         Insert: {
           id?: string
@@ -28,6 +30,8 @@ export interface Database {
           created_at?: string
           updated_at?: string
           deleted_at?: string | null
+          cash_balance?: number
+          cash_balance_updated_at?: string | null
         }
         Update: {
           id?: string
@@ -39,6 +43,8 @@ export interface Database {
           is_active?: boolean
           updated_at?: string
           deleted_at?: string | null
+          cash_balance?: number
+          cash_balance_updated_at?: string | null
         }
       }
       trades: {

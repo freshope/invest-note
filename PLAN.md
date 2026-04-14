@@ -1,6 +1,6 @@
 # 투자노트 (Invest Note) — 제품 계획
 
-<!-- /autoplan restore point: /Users/jwlee/.gstack/projects/invest-note/develop-autoplan-restore-20260409-143731.md -->
+<!-- /autoplan restore point: /Users/jwlee/.gstack/projects/invest-note/develop-autoplan-restore-20260414-092109.md -->
 
 ## 제품 개요
 
@@ -247,14 +247,66 @@ YAHOO_FINANCE_FALLBACK=true
 | 15 | CEO | 더블 제출 방지 (debounce + disable) | Mechanical | P1 | 완성도 | — |
 | 16 | CEO | 계좌 삭제 soft delete | Mechanical | P5 | 데이터 보전 | CASCADE |
 | 17 | CEO | 주가 Batch 조회 | Mechanical | P5 | N+1 방지 | 개별 조회 |
+| 38 | CEO | 예수금 수동 입력 (User direction) | User direction | P1+P5 | 총 자산 정확성 위해 수동 → v2 자동화 | total override |
+| 39 | Design | cash_balance_updated_at staleness 표시 | Mechanical | P5 | 실시간 잔고 오인 방지 (Codex 지적) | 미표시 |
+| 40 | Design | 예수금 0일 때 행 숨김 | Mechanical | P5 | ₩0 행 표시는 혼란 — 미입력 상태와 구별 불가 | 항상 표시 |
+| 41 | Eng | cash_balance NUMERIC(15,2) DEFAULT 0 + CHECK ≥0 | Mechanical | P1 | DB 레벨 음수 방지, 기존 계좌 NULL 방지 | nullable |
+| 42 | Eng | cash_balance_updated_at TIMESTAMPTZ nullable | Mechanical | P5 | NULL = 미입력 (staleness 판단) | 별도 flag |
+
+---
+
+## Feature: 예수금(Cash Balance) 수동 입력 — 2026-04-14
+
+### 배경
+자동화(v2 KIS API) 전까지 계좌의 정확한 총 자산을 표시하기 위해 예수금을 수동 입력.
+
+### 현재 문제
+- `AssetsView:50` — `currentValue: h.avg_price * h.quantity` → 주식 평가만, 현금 미포함
+- `accounts` 테이블에 `cash_balance` 없음
+- 총 자산 = 주식 평가금액만 (예수금 제외 = 부정확)
+
+### Dream State
+```
+CURRENT:   총 평가금액 = 주식 평가만 (불완전)
+THIS PLAN: 총 자산     = 주식 평가 + 예수금 (수동) (완전)
+v2:        총 자산     = 주식 평가 + 예수금 (KIS API 자동)
+```
+
+### 구현 범위
+| 파일 | 변경 내용 |
+|---|---|
+| `supabase/migrations/007_add_cash_balance_to_accounts.sql` | `cash_balance NUMERIC(15,2) DEFAULT 0 CHECK ≥0` + `cash_balance_updated_at TIMESTAMPTZ` |
+| `src/types/database.ts` | Account Row/Insert/Update에 두 필드 추가 |
+| `src/components/settings/SettingsView.tsx` | 계좌 편집 폼에 예수금 입력 필드 추가 |
+| `src/components/home/HomeDashboard.tsx` | `totalValue = stocks + cash_balance` |
+| `src/components/assets/AssetsView.tsx` | totalValue 계산 수정 + 예수금 행 표시 |
+
+### 디자인 결정
+- **예수금 입력 위치**: Settings > 계좌 편집 폼 (수수료율 아래)
+- **레이블**: "예수금 (직접 입력)" — 실시간 잔고가 아님을 명시
+- **표시**: cash_balance > 0일 때만 예수금 행 표시 (0이면 숨김)
+- **총액 레이블**: "총 자산" (예수금 있는 경우), "총 평가금액" (없는 경우)
+- **staleness**: `cash_balance_updated_at` 기록, 표시 시 "N일 전 입력" 힌트
+
+### Codex 리뷰 핵심 지적
+1. **수동 스냅샷 레이블 필수** — 실시간 잔고로 오인 방지
+2. **staleness tracking** — `cash_balance_updated_at` 추적 필수
+3. **DB drift 주의** — fee_rate처럼 별도 마이그레이션 파일로 관리
+
+### NOT in Scope (v2)
+- KIS API 자동 동기화
+- 예수금 변경 이력 (ledger)
+- 입출금 거래 기록
+
+---
 
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | `/gstack-autoplan` | 전략 & 범위 | 1 | issues_open (2 User Challenges) | JTBD 혼재, 수동 리텐션 |
-| Design Review | `/gstack-autoplan` | UI/UX 갭 | 1 | clean | 색상/계층/상태 모두 반영 |
-| Eng Review | `/gstack-autoplan` | 아키텍처 & 테스트 | 1 | clean | Critical 3건 해결 |
-| DX Review | `/gstack-autoplan` | 개발자 경험 | 1 | issues_open | TTHW 9분 목표 |
+| CEO Review | `/gstack-autoplan` | 전략 & 범위 | 2 | clean | 예수금 기능 범위 승인, TODOS 갱신 필요 |
+| Design Review | `/gstack-autoplan` | UI/UX 갭 | 2 | clean | staleness 표시, 0일때 숨김, 레이블 명시 |
+| Eng Review | `/gstack-autoplan` | 아키텍처 & 테스트 | 2 | clean | migration 패턴 일관성, 타입 수동 업데이트 |
+| DX Review | n/a | 비해당 | 0 | skipped | 개발자 facing API 없음 |
 
-**VERDICT:** APPROVED — 37개 결정, 4개 페이즈 완료. 사용자 결정: CSV 임포트 v2, 수동 입력 U선.
+**VERDICT:** APPROVED — 예수금 수동 입력 기능. 파일 5개 + 마이그레이션 1개. v2 KIS API 업그레이드 경로 확보.

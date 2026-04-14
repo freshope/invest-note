@@ -52,11 +52,12 @@ export function HomeDashboard() {
 
     const accountsWithHoldings: AccountWithHoldings[] = (accountData as Account[]).map(acc => {
       const holdings = (holdingData || []).filter(h => h.account_id === acc.id)
+      const stocksValue = holdings.reduce((sum, h) => sum + h.avg_price * h.quantity, 0)
       return {
         ...acc,
         holdings,
-        totalValue: holdings.reduce((sum, h) => sum + h.avg_price * h.quantity, 0),
-        totalCost: holdings.reduce((sum, h) => sum + h.avg_price * h.quantity, 0),
+        totalValue: stocksValue + (acc.cash_balance ?? 0),
+        totalCost: stocksValue,
       }
     })
 
@@ -100,7 +101,7 @@ export function HomeDashboard() {
           totalValue: acc.holdings.reduce((sum, h) => {
             const p = prices[h.ticker]
             return sum + (p ? p.price * h.quantity : h.avg_price * h.quantity)
-          }, 0),
+          }, 0) + (acc.cash_balance ?? 0),
         })))
       } catch (e) {
         console.error('현재가 조회 실패:', e)
@@ -122,7 +123,9 @@ export function HomeDashboard() {
   const filteredAccounts = selectedAccountId === 'all' ? accounts : accounts.filter(a => a.id === selectedAccountId)
   const totalValue = filteredAccounts.reduce((sum, a) => sum + a.totalValue, 0)
   const totalCost = filteredAccounts.reduce((sum, a) => sum + a.totalCost, 0)
-  const totalPnL = totalValue - totalCost
+  const totalCashBalance = filteredAccounts.reduce((sum, a) => sum + (a.cash_balance ?? 0), 0)
+  // 예수금은 수익이 아니므로 PnL 계산에서 제외 (AssetsView와 동일 공식)
+  const totalPnL = totalValue - totalCost - totalCashBalance
   const totalPnLPercent = totalCost > 0 ? (totalPnL / totalCost) * 100 : 0
   const { amount: pnlAmount, percent: pnlPercent, colorClass } = formatPnL(totalPnL, totalPnLPercent)
 
@@ -195,14 +198,17 @@ export function HomeDashboard() {
         <p className="text-xs font-medium text-[#8B95A1] mb-2">계좌</p>
         <div className="space-y-2">
           {filteredAccounts.map(acc => {
-            const accPnL = acc.totalValue - acc.totalCost
+            const accPnL = acc.totalValue - acc.totalCost - (acc.cash_balance ?? 0)
             const accPnLPercent = acc.totalCost > 0 ? (accPnL / acc.totalCost) * 100 : 0
             const { amount, percent, colorClass: c } = formatPnL(accPnL, accPnLPercent)
             return (
               <div key={acc.id} className="flex items-center justify-between py-3 px-4 bg-[#F7F8FA] rounded-2xl">
                 <div>
                   <p className="text-sm font-semibold text-[#1A1A1A]">{acc.name}</p>
-                  <p className="text-xs text-[#8B95A1]">{acc.broker}</p>
+                  <p className="text-xs text-[#8B95A1]">
+                    {acc.broker}
+                    {acc.cash_balance > 0 && <span> · 예수금 포함</span>}
+                  </p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-bold text-[#1A1A1A] tabular">{formatKRW(acc.totalValue)}</p>
@@ -227,7 +233,7 @@ export function HomeDashboard() {
               const { colorClass: c } = formatPnL(pnl, pnlPct)
               const sign = pnl >= 0 ? '+' : '-'
               return (
-                <div key={`${h.account_id}-${h.ticker}`} className="flex items-center justify-between py-2.5 border-b border-[#F0F0F0] last:border-0">
+                <button key={`${h.account_id}-${h.ticker}`} onClick={() => router.push(`/stocks/${h.market}/${h.ticker}`)} className="w-full flex items-center justify-between py-2.5 border-b border-[#F0F0F0] last:border-0">
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-full bg-[#F0F4FF] flex items-center justify-center">
                       <span className="text-xs font-bold text-[#3366FF]">{h.ticker.slice(0, 2)}</span>
@@ -243,7 +249,7 @@ export function HomeDashboard() {
                       {sign}{formatKRW(Math.abs(pnl))} ({sign}{Math.abs(pnlPct).toFixed(2)}%)
                     </p>
                   </div>
-                </div>
+                </button>
               )
             })}
           </div>

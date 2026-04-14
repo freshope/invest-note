@@ -97,16 +97,21 @@ export function TradeDetail({ tradeId }: { tradeId: string }) {
     }
   }
 
-  const handleCancel = async () => {
-    if (!confirm('이 거래를 취소하시겠습니까? 보유 종목이 재계산됩니다.')) return
+  const handleDelete = async () => {
+    if (!confirm('이 거래를 삭제하시겠습니까?\n연결된 일지도 함께 삭제됩니다.')) return
     setCancelling(true)
     try {
-      const { error } = await supabase.from('trades').update({ is_cancelled: true }).eq('id', tradeId)
+      // 연결 일지 먼저 삭제 (trade_id FK는 ON DELETE SET NULL이므로 명시적으로 제거)
+      if (journal) {
+        await supabase.from('journals').delete().eq('id', journal.id)
+      }
+      const { error } = await supabase.from('trades').delete().eq('id', tradeId)
       if (error) {
-        alert('거래 취소 중 오류가 발생했습니다. 다시 시도해주세요.')
+        alert('거래 삭제 중 오류가 발생했습니다. 다시 시도해주세요.')
         return
       }
-      router.push('/records')
+      if (trade) router.replace(`/stocks/${trade.market}/${trade.ticker}`)
+      else router.back()
     } finally {
       setCancelling(false)
     }
@@ -260,17 +265,15 @@ export function TradeDetail({ tradeId }: { tradeId: string }) {
           </button>
         )}
 
-        {/* 거래 취소 */}
-        {!trade.is_cancelled && (
-          <button
-            onClick={handleCancel}
-            disabled={cancelling}
-            className="w-full flex items-center justify-center gap-2 py-3.5 border border-[#F04452]/30 text-[#F04452] rounded-2xl text-sm font-medium disabled:opacity-50"
-          >
-            <XCircle size={16} />
-            거래 취소 처리
-          </button>
-        )}
+        {/* 거래 삭제 */}
+        <button
+          onClick={handleDelete}
+          disabled={cancelling}
+          className="w-full flex items-center justify-center gap-2 py-3.5 border border-[#F04452]/30 text-[#F04452] rounded-2xl text-sm font-medium disabled:opacity-50"
+        >
+          <XCircle size={16} />
+          거래 삭제
+        </button>
       </div>
 
       {/* 거래 수정 바텀시트 */}

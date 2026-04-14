@@ -26,7 +26,13 @@ export async function GET(request: NextRequest) {
       const data = await res.json()
       // 네이버 응답: { items: [{code, name, typeCode, ...}, ...], query: "..." }
       const items: { code: string; name: string }[] = Array.isArray(data.items) ? data.items : []
-      const results = items.slice(0, 8).map(({ code, name }) => ({ ticker: code, name }))
+      // 종목코드 whitelist: 한국 6자리 숫자 또는 알파벳+숫자 조합만 허용
+      // Naver 응답의 code가 URL path로 사용되므로 path traversal 방지
+      const KR_TICKER_RE = /^[A-Z0-9]{4,9}$/i
+      const results = items
+        .filter(({ code, name }) => typeof code === 'string' && typeof name === 'string' && KR_TICKER_RE.test(code))
+        .slice(0, 8)
+        .map(({ code, name }) => ({ ticker: code, name: name.slice(0, 50) }))
       return NextResponse.json(results)
     } catch {
       return NextResponse.json([])

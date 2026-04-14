@@ -17,6 +17,7 @@ const accountSchema = z.object({
   broker: z.string().min(1, '증권사를 선택하세요'),
   accountNumber: z.string().optional(),
   feeRate: z.number().min(0).max(9.9999),
+  cashBalance: z.number().min(0, '예수금은 0 이상이어야 합니다'),
 })
 
 type AccountForm = z.infer<typeof accountSchema>
@@ -95,7 +96,7 @@ export function SettingsView() {
 
   const addForm = useForm<AccountForm>({
     resolver: zodResolver(accountSchema),
-    defaultValues: { feeRate: DEFAULT_FEE_RATE },
+    defaultValues: { feeRate: DEFAULT_FEE_RATE, cashBalance: 0 },
   })
 
   const editForm = useForm<AccountForm>({
@@ -114,12 +115,15 @@ export function SettingsView() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setSaving(false); return }
 
+    const cashBalance = values.cashBalance ?? 0
     const account: AccountInsert = {
       user_id: user.id,
       name: values.name,
       broker: values.broker,
       account_number: values.accountNumber || null,
       fee_rate: values.feeRate,
+      cash_balance: cashBalance,
+      cash_balance_updated_at: cashBalance > 0 ? new Date().toISOString() : null,
     }
 
     const { error } = await supabase.from('accounts').insert(account)
@@ -128,7 +132,7 @@ export function SettingsView() {
       setSaving(false)
       return
     }
-    addForm.reset({ feeRate: DEFAULT_FEE_RATE })
+    addForm.reset({ feeRate: DEFAULT_FEE_RATE, cashBalance: 0 })
     setSelectedBroker('')
     setShowAddSheet(false)
     setSaving(false)
@@ -138,12 +142,16 @@ export function SettingsView() {
   const onEditAccount = async (values: AccountForm) => {
     if (!editingAccount) return
     setSaving(true)
+    const now = new Date().toISOString()
     const { error } = await supabase.from('accounts').update({
       name: values.name,
       broker: values.broker,
       account_number: values.accountNumber || null,
       fee_rate: values.feeRate,
-      updated_at: new Date().toISOString(),
+      cash_balance: values.cashBalance ?? 0,
+      // 예수금이 실제로 변경된 경우에만 타임스탬프 갱신 (staleness 정확도 유지)
+      cash_balance_updated_at: (values.cashBalance ?? 0) !== (editingAccount.cash_balance ?? 0) ? now : editingAccount.cash_balance_updated_at,
+      updated_at: now,
     }).eq('id', editingAccount.id)
     if (error) {
       alert('계좌 수정 중 오류가 발생했습니다. 다시 시도해주세요.')
@@ -164,6 +172,7 @@ export function SettingsView() {
       broker: acc.broker,
       accountNumber: acc.account_number || '',
       feeRate: acc.fee_rate ?? DEFAULT_FEE_RATE,
+      cashBalance: acc.cash_balance ?? 0,
     })
     setShowEditSheet(true)
   }
@@ -348,6 +357,18 @@ function AccountFormFields({
         />
         <p className="text-xs text-[#8B95A1] mt-1">예: 0.015 (키움증권 기본값)</p>
         {errors.feeRate && <p className="text-xs text-[#F04452] mt-1">{errors.feeRate.message}</p>}
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-[#8B95A1] mb-1.5 block">예수금 (직접 입력)</label>
+        <input
+          inputMode="decimal"
+          {...register('cashBalance', { valueAsNumber: true })}
+          placeholder="0"
+          className="w-full px-4 py-3.5 border border-[#E5E8EB] rounded-2xl text-sm text-[#1A1A1A] placeholder-[#8B95A1] outline-none focus:border-[#3366FF]"
+        />
+        <p className="text-xs text-[#8B95A1] mt-1">증권사 앱에서 확인한 예수금 (미입력 시 0)</p>
+        {errors.cashBalance && <p className="text-xs text-[#F04452] mt-1">{errors.cashBalance.message}</p>}
       </div>
     </>
   )
