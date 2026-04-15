@@ -1,2 +1,0 @@
-ALTER TABLE accounts ADD COLUMN IF NOT EXISTS fee_rate DECIMAL(5,4) NOT NULL DEFAULT 0.0150;
-COMMENT ON COLUMN accounts.fee_rate IS '거래 수수료율 (%). 예: 0.0150 = 0.015%';

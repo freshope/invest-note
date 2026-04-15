@@ -4,6 +4,12 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# shadcn/ui 규칙
+
+- 설치한 shadcn 컴포넌트를 직접 사용하지 않는다.
+- 설치된 컴포넌트와 동일한 이름의 래퍼를 `src/components/base/` 에 만들고 항상 해당 래퍼를 사용한다.
+- 컴포넌트 업데이트 시 래퍼를 수정하여 반영한다.
+
 # Git 규칙
 
 ## Git Flow 사용
