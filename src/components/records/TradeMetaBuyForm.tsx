@@ -116,11 +116,11 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
 
         {/* 매매 이유 */}
         <div className="space-y-1.5">
-          <Label htmlFor="buy_reason">매매 이유 <span className="text-[12px] font-normal text-muted-foreground">(선택)</span></Label>
+          <Label htmlFor="buy_reason">매수 근거 <span className="text-[12px] font-normal text-muted-foreground">(선택)</span></Label>
           <Textarea
             id="buy_reason"
             name="buy_reason"
-            placeholder="매수 이유를 간단히 적어주세요"
+            placeholder="매수한 근거를 간단히 적어주세요"
             rows={3}
           />
         </div>

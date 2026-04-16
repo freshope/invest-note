@@ -38,7 +38,7 @@ export interface Trade {
   total_amount: number; // generated column
   traded_at: string;
 
-  // 매매 이유
+  // 근거
   strategy_type: StrategyType | null;
   reasoning_tags: ReasoningTag[];
   buy_reason: string | null;
@@ -47,7 +47,7 @@ export interface Trade {
   // 감정
   emotion: EmotionType | null;
 
-  // 복기
+  // 회고
   result: TradeResult | null;
   reflection_note: string | null;
   improvement_note: string | null;
