@@ -210,6 +210,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
           <Label>종목명 <span className="text-destructive">*</span></Label>
           <input type="hidden" name="asset_name" value={assetName} />
           <input type="hidden" name="ticker_symbol" value={tickerSymbol} />
+          <input type="hidden" name="country_code" value={stockMarket === "KR" ? "KR" : stockMarket === "US" ? "US" : "OTHER"} />
           <StockSearchInput
             value={assetName}
             onChange={(v) => {

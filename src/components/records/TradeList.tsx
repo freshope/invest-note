@@ -1,48 +1,30 @@
 "use client";
 
-import { useState } from "react";
-import { Button } from "@/components/base/Button";
+import { useState, useCallback } from "react";
 import { TradeCard } from "./TradeCard";
 import { TradeFormPanel } from "./TradeFormPanel";
+import { TradeDetailPanel } from "./TradeDetailPanel";
 import { CsvUploadButton } from "./CsvUploadButton";
-import type { Trade, Account } from "@/types/database";
+import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
+import type { Account } from "@/types/database";
 import { PlusIcon } from "lucide-react";
-import { format } from "date-fns";
-import { ko } from "date-fns/locale";
-
-type TradeWithAccount = Trade & { account?: Pick<Account, "name" | "broker"> };
 
 interface TradeListProps {
   trades: TradeWithAccount[];
   accounts: Account[];
 }
 
-// UTC 타임스탬프를 KST(UTC+9) 기준 Date로 변환
-function toKST(utcDate: Date): Date {
-  return new Date(utcDate.getTime() + 9 * 60 * 60 * 1000);
-}
-
-// 날짜별 그룹핑 — KST 기준 날짜 키 사용
-function groupByDate(trades: TradeWithAccount[]): [string, TradeWithAccount[]][] {
-  const map = new Map<string, TradeWithAccount[]>();
-  for (const trade of trades) {
-    const key = format(toKST(new Date(trade.traded_at)), "yyyy-MM-dd");
-    if (!map.has(key)) map.set(key, []);
-    map.get(key)!.push(trade);
-  }
-  return Array.from(map.entries());
-}
-
-function formatDateLabel(dateStr: string): string {
-  // dateStr은 "yyyy-MM-dd" 형식의 KST 날짜 키
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const date = new Date(y, m - 1, d); // 로컬 날짜 생성 (타임존 영향 없음)
-  return format(date, "yyyy년 M월 d일 (EEE)", { locale: ko });
-}
 
 export function TradeList({ trades, accounts }: TradeListProps) {
   const [formOpen, setFormOpen] = useState(false);
+  const [selectedTrade, setSelectedTrade] = useState<TradeWithAccount | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
   const grouped = groupByDate(trades);
+
+  const handleDetailClose = useCallback((open: boolean) => {
+    setDetailOpen(open);
+    if (!open) setSelectedTrade(null);
+  }, []);
 
   return (
     <>
@@ -70,7 +52,14 @@ export function TradeList({ trades, accounts }: TradeListProps) {
                 </p>
                 <div className="space-y-2">
                   {dayTrades.map((trade) => (
-                    <TradeCard key={trade.id} trade={trade} />
+                    <TradeCard
+                      key={trade.id}
+                      trade={trade}
+                      onPress={() => {
+                        setSelectedTrade(trade);
+                        setDetailOpen(true);
+                      }}
+                    />
                   ))}
                 </div>
               </div>
@@ -95,6 +84,17 @@ export function TradeList({ trades, accounts }: TradeListProps) {
           open={formOpen}
           onOpenChange={setFormOpen}
           accounts={accounts}
+        />
+      )}
+
+      {/* 거래 상세 패널 */}
+      {detailOpen && selectedTrade && (
+        <TradeDetailPanel
+          open={detailOpen}
+          onOpenChange={handleDetailClose}
+          trade={selectedTrade}
+          accounts={accounts}
+          allTrades={trades}
         />
       )}
     </>

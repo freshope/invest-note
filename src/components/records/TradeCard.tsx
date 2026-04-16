@@ -8,6 +8,7 @@ import { ko } from "date-fns/locale";
 
 interface TradeCardProps {
   trade: Trade & { account?: Pick<Account, "name" | "broker"> };
+  onPress?: () => void;
 }
 
 const STRATEGY_LABELS: Record<string, string> = {
@@ -31,7 +32,7 @@ const RESULT_LABELS: Record<string, string> = {
   BREAKEVEN: "본전",
 };
 
-export function TradeCard({ trade }: TradeCardProps) {
+export function TradeCard({ trade, onPress }: TradeCardProps) {
   const router = useRouter();
   const isBuy = trade.trade_type === "BUY";
 
@@ -44,7 +45,7 @@ export function TradeCard({ trade }: TradeCardProps) {
   return (
     <button
       type="button"
-      onClick={() => router.push(`/stocks/${encodeURIComponent(trade.asset_name)}`)}
+      onClick={() => onPress ? onPress() : router.push(`/records/${trade.id}`)}
       className="w-full text-left rounded-2xl bg-muted/60 overflow-hidden active:scale-[0.99] transition-transform"
     >
       <div className="flex">

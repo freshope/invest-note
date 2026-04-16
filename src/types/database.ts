@@ -55,6 +55,9 @@ export interface Trade {
   // 손익
   profit_loss: number | null;
 
+  // 국가 코드 (KR / US / OTHER)
+  country_code: string;
+
   // 수수료 / 제세금
   commission: number;
   tax: number;
