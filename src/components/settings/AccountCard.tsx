@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/base/Button";
-import { AccountFormDrawer } from "./AccountFormDrawer";
+import { AccountFormPanel } from "./AccountFormPanel";
 import { DeleteAccountDialog } from "./DeleteAccountDialog";
 import type { Account } from "@/types/database";
 
@@ -70,11 +70,13 @@ export function AccountCard({ account, tradeCount }: AccountCardProps) {
         )}
       </div>
 
-      <AccountFormDrawer
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        account={account}
-      />
+      {editOpen && (
+        <AccountFormPanel
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          account={account}
+        />
+      )}
 
       {deleteOpen && (
         <DeleteAccountDialog

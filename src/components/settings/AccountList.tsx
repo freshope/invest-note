@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/base/Button";
 import { AccountCard } from "./AccountCard";
-import { AccountFormDrawer } from "./AccountFormDrawer";
+import { AccountFormPanel } from "./AccountFormPanel";
 import type { Account } from "@/types/database";
 
 interface AccountListProps {
@@ -25,7 +25,6 @@ export function AccountList({ accounts, tradeCounts }: AccountListProps) {
             </p>
             <Button
               variant="default"
-              size="sm"
               onClick={() => setAddOpen(true)}
               className="mt-2 px-5"
             >
@@ -52,7 +51,9 @@ export function AccountList({ accounts, tradeCounts }: AccountListProps) {
         )}
       </div>
 
-      <AccountFormDrawer open={addOpen} onOpenChange={setAddOpen} />
+      {addOpen && (
+        <AccountFormPanel open={addOpen} onOpenChange={setAddOpen} />
+      )}
     </>
   );
 }

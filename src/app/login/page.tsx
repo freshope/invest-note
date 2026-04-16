@@ -97,8 +97,9 @@ export default function LoginPage() {
 
           <Button
             type="submit"
+            size="xl"
             disabled={isPending}
-            className="w-full h-12 bg-primary text-primary-foreground hover:bg-primary/90 mt-2"
+            className="w-full mt-2"
           >
             {isPending ? "처리 중..." : isLogin ? "로그인" : "회원가입"}
           </Button>
