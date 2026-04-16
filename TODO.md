@@ -31,10 +31,10 @@
 - [x] 각 탭 빈 페이지 생성
 
 ## Step 5: 계좌 관리
-- [ ] 설정 페이지 (`src/app/(app)/settings/page.tsx`)
-- [ ] 계좌 CRUD (추가/수정/삭제)
-- [ ] 예수금 수동 입력 필드 (`cash_balance`)
-- [ ] 증권사 선택
+- [x] 설정 페이지 (`src/app/(app)/settings/page.tsx`)
+- [x] 계좌 CRUD (추가/수정/삭제)
+- [x] 예수금 수동 입력 필드 (`cash_balance`)
+- [x] 증권사 선택
 
 ## Step 6: 거래 기록 입력 폼
 - [ ] 거래 입력 페이지 (`src/app/(app)/records/new/page.tsx`)
