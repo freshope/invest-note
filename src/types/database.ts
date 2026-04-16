@@ -30,6 +30,7 @@ export interface Trade {
 
   // 거래 기본 정보
   asset_name: string;
+  ticker_symbol: string | null;
   market_type: MarketType;
   trade_type: TradeType;
   price: number;
@@ -53,6 +54,10 @@ export interface Trade {
 
   // 손익
   profit_loss: number | null;
+
+  // 수수료 / 제세금
+  commission: number;
+  tax: number;
 
   created_at: string;
   updated_at: string;
