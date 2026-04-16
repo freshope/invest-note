@@ -5,30 +5,30 @@
 ---
 
 ## Step 1: 프로젝트 기초 세팅
-- [ ] Supabase 패키지 설치 (`@supabase/supabase-js`, `@supabase/ssr`)
-- [ ] Pretendard 폰트 적용
-- [ ] 글로벌 CSS — 색상 변수 정의 (상승 `#F04452`, 하락 `#1B6AC9`, 브랜드 `#3366FF`)
-- [ ] `.env.local.example` 작성
-- [ ] Supabase 클라이언트 유틸 (`src/lib/supabase/client.ts`, `server.ts`)
-- [ ] 모바일 우선 뷰포트 메타 설정
+- [x] Supabase 패키지 설치 (`@supabase/supabase-js`, `@supabase/ssr`)
+- [x] Pretendard 폰트 적용
+- [x] 글로벌 CSS — 색상 변수 정의 (상승 `#F04452`, 하락 `#1B6AC9`, 브랜드 `#3366FF`)
+- [x] `.env.local.example` 작성
+- [x] Supabase 클라이언트 유틸 (`src/lib/supabase/client.ts`, `server.ts`)
+- [x] 모바일 우선 뷰포트 메타 설정
 
 ## Step 2: DB 스키마 & 타입 정의
-- [ ] Supabase migration: `accounts` 테이블
-- [ ] Supabase migration: `trades` 테이블 (전략/감정/복기 포함)
-- [ ] enum 타입 정의 (marketType, tradeType, strategyType, reasoningTag, emotion, result)
-- [ ] RLS 정책 설정
-- [ ] TypeScript 타입 정의 (`src/types/database.ts`)
+- [x] Supabase migration: `accounts` 테이블
+- [x] Supabase migration: `trades` 테이블 (전략/감정/복기 포함)
+- [x] enum 타입 정의 (marketType, tradeType, strategyType, reasoningTag, emotion, result)
+- [x] RLS 정책 설정
+- [x] TypeScript 타입 정의 (`src/types/database.ts`)
 
 ## Step 3: 인증
-- [ ] 로그인/회원가입 페이지 (`src/app/login/page.tsx`)
-- [ ] Supabase Auth 미들웨어 (세션 관리)
-- [ ] 인증 상태 체크 & 리다이렉트
-- [ ] 로그아웃 기능
+- [x] 로그인/회원가입 페이지 (`src/app/login/page.tsx`)
+- [x] Supabase Auth 미들웨어 (세션 관리)
+- [x] 인증 상태 체크 & 리다이렉트
+- [x] 로그아웃 기능
 
 ## Step 4: 레이아웃 & 네비게이션
-- [ ] 모바일 바텀 탭 네비게이션 (홈 / 기록 / 자산)
-- [ ] 앱 레이아웃 (`src/app/(app)/layout.tsx`) — 인증 보호
-- [ ] 각 탭 빈 페이지 생성
+- [x] 모바일 바텀 탭 네비게이션 (홈 / 기록 / 분석 / 설정)
+- [x] 앱 레이아웃 (`src/app/(app)/layout.tsx`) — 인증 보호
+- [x] 각 탭 빈 페이지 생성
 
 ## Step 5: 계좌 관리
 - [ ] 설정 페이지 (`src/app/(app)/settings/page.tsx`)
