@@ -7,7 +7,7 @@ export default function AppLayout({
 }) {
   return (
     <>
-      <main className="flex-1 pb-20">{children}</main>
+      <main className="flex-1 pb-24">{children}</main>
       <BottomNav />
     </>
   );
