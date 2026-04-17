@@ -1,41 +1,24 @@
-import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import { serverFetch } from "@/lib/api-server/server-fetch";
 import { AccountList } from "@/components/settings/AccountList";
 import { UserInfoSection } from "@/components/settings/UserInfoSection";
+import type { Account } from "@/types/database";
+import { createClient } from "@/lib/supabase/server";
+
+type AccountWithCount = Account & { trade_count: number };
 
 export default async function SettingsPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-
   if (!user) redirect("/login");
 
-  const { data: accounts } = await supabase
-    .from("accounts")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: true });
+  const res = await serverFetch("/api/accounts");
+  const accounts: AccountWithCount[] = res.ok ? await res.json() : [];
 
-  // 계좌별 거래 수 조회 (삭제 가능 여부 판단)
   const tradeCounts: Record<string, number> = {};
-  if (accounts && accounts.length > 0) {
-    const { data: counts } = await supabase
-      .from("trades")
-      .select("account_id")
-      .eq("user_id", user.id)
-      .in("account_id", accounts.map((a) => a.id));
-
-    if (counts) {
-      for (const trade of counts) {
-        tradeCounts[trade.account_id] = (tradeCounts[trade.account_id] ?? 0) + 1;
-      }
-    }
+  for (const a of accounts) {
+    tradeCounts[a.id] = a.trade_count;
   }
-
-  // cash_balance: Supabase numeric → number 변환
-  const normalizedAccounts = (accounts ?? []).map((a) => ({
-    ...a,
-    cash_balance: Number(a.cash_balance),
-  }));
 
   return (
     <div className="px-5 py-8 space-y-10">
@@ -43,7 +26,7 @@ export default async function SettingsPage() {
 
       <section className="space-y-3">
         <h2 className="text-[13px] font-semibold text-muted-foreground px-1">계좌 관리</h2>
-        <AccountList accounts={normalizedAccounts} tradeCounts={tradeCounts} />
+        <AccountList accounts={accounts} tradeCounts={tradeCounts} />
       </section>
 
       <section className="space-y-3">

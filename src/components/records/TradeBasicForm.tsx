@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useState, useCallback } from "react";
-import { useFormStatus } from "react-dom";
+import { useState, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/Button";
 import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
@@ -15,7 +15,7 @@ import {
 } from "@/components/base/Select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/base/Popover";
 import { Calendar } from "@/components/base/Calendar";
-import { createTrade, type TradeActionState } from "@/app/(app)/records/actions";
+import { tradesApi } from "@/lib/api-client";
 import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
 import { cn } from "@/lib/utils";
 import type { Account, TradeType } from "@/types/database";
@@ -28,10 +28,8 @@ interface TradeBasicFormProps {
   onTradeCreated: (tradeId: string, tradeType: TradeType) => void;
 }
 
-// 가격/수량: 소수점 허용 (crypto, 소수 단위 주식 대응)
 function formatNumber(raw: string): string {
   const cleaned = raw.replace(/[^0-9.]/g, "");
-  // 소수점 중복 방지
   const parts = cleaned.split(".");
   const integer = parts[0] || "";
   const decimal = parts.length > 1 ? "." + parts[1] : "";
@@ -44,91 +42,114 @@ function parseRaw(formatted: string): string {
   return formatted.replace(/,/g, "");
 }
 
-// 수수료 자동계산: 총액 × 0.015%
 function calcCommission(total: number): number {
   return Math.round(total * 0.00015);
 }
 
-// 제세금 자동계산 (매도): 총액 × 0.18%
 function calcTax(total: number): number {
   return Math.round(total * 0.0018);
 }
 
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" size="xl" disabled={pending} className="w-full">
-      {pending ? "저장 중..." : "다음"}
-    </Button>
-  );
-}
-
 export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps) {
-  const [state, formAction] = useActionState<TradeActionState, FormData>(createTrade, undefined);
+  const router = useRouter();
+  const accountSelectRef = useRef<string>("");
 
   const [tradeType, setTradeType] = useState<TradeType>("BUY");
   const [date, setDate] = useState<Date>(new Date());
   const [calOpen, setCalOpen] = useState(false);
+  const [accountId, setAccountId] = useState<string>("");
 
   const [assetName, setAssetName] = useState("");
   const [tickerSymbol, setTickerSymbol] = useState("");
   const [stockMarket, setStockMarket] = useState<"KR" | "US" | "OTHER" | "">("");
-  const [stockExchange, setStockExchange] = useState("");
 
   const [priceDisplay, setPriceDisplay] = useState("");
   const [quantityDisplay, setQuantityDisplay] = useState("");
   const [commDisplay, setCommDisplay] = useState("");
   const [taxDisplay, setTaxDisplay] = useState("");
 
-  // 총액 자동계산
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
   const price = Number(parseRaw(priceDisplay)) || 0;
   const quantity = Number(parseRaw(quantityDisplay)) || 0;
   const total = price * quantity;
   const totalDisplay = total > 0 ? total.toLocaleString("ko-KR") : "-";
 
-  // 수수료/제세금 재계산
   const recalcFees = useCallback((p: number, q: number, type: TradeType) => {
     const t = p * q;
     if (t > 0) {
       setCommDisplay(calcCommission(t).toLocaleString("ko-KR"));
-      if (type === "SELL") {
-        setTaxDisplay(calcTax(t).toLocaleString("ko-KR"));
-      } else {
-        setTaxDisplay("0");
-      }
+      setTaxDisplay(type === "SELL" ? calcTax(t).toLocaleString("ko-KR") : "0");
     } else {
       setCommDisplay("");
       setTaxDisplay("");
     }
   }, []);
 
-  useEffect(() => {
-    recalcFees(price, quantity, tradeType);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [price, quantity, tradeType]);
+  function handlePriceChange(v: string) {
+    const formatted = formatNumber(v);
+    setPriceDisplay(formatted);
+    recalcFees(Number(parseRaw(formatted)) || 0, quantity, tradeType);
+  }
 
-  useEffect(() => {
-    if (state && "success" in state && state.success) {
-      onTradeCreated(state.tradeId, state.tradeType);
+  function handleQuantityChange(v: string) {
+    const formatted = formatNumber(v);
+    setQuantityDisplay(formatted);
+    recalcFees(price, Number(parseRaw(formatted)) || 0, tradeType);
+  }
+
+  function handleTradeTypeChange(type: TradeType) {
+    setTradeType(type);
+    recalcFees(price, quantity, type);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    if (!accountId) { setError("계좌를 선택해주세요."); return; }
+    if (!assetName) { setError("종목명을 입력해주세요."); return; }
+
+    const priceVal = Number(parseRaw(priceDisplay));
+    const quantityVal = Number(parseRaw(quantityDisplay));
+    if (!priceVal || priceVal <= 0) { setError("올바른 가격을 입력해주세요."); return; }
+    if (!quantityVal || quantityVal <= 0) { setError("올바른 수량을 입력해주세요."); return; }
+
+    setPending(true);
+    try {
+      const result = await tradesApi.create({
+        trade_type: tradeType,
+        market_type: "STOCK",
+        account_id: accountId,
+        asset_name: assetName,
+        ticker_symbol: tickerSymbol || null,
+        country_code: stockMarket === "KR" ? "KR" : stockMarket === "US" ? "US" : "OTHER",
+        price: priceVal,
+        quantity: quantityVal,
+        commission: Number(parseRaw(commDisplay)) || 0,
+        tax: Number(parseRaw(taxDisplay)) || 0,
+        traded_at: format(date, "yyyy-MM-dd'T'HH:mm"),
+      });
+      router.refresh();
+      onTradeCreated(result.id, result.trade_type);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "오류가 발생했습니다.");
+    } finally {
+      setPending(false);
     }
-  }, [state, onTradeCreated]);
-
-  const tradedAtValue = format(date, "yyyy-MM-dd'T'HH:mm");
+  }
 
   return (
-    <form action={formAction} className="flex flex-col min-h-full">
+    <form onSubmit={handleSubmit} className="flex flex-col min-h-full">
       <div className="flex-1 px-5 pt-2 pb-4 space-y-5">
         {/* 매수/매도 토글 */}
         <div className="space-y-1.5">
-          <input type="hidden" name="trade_type" value={tradeType} />
-          <ToggleGroup
-            spacing={2}
-            className="gap-2"
-          >
+          <ToggleGroup spacing={2} className="gap-2">
             <ToggleGroupItem
               value="BUY"
               pressed={tradeType === "BUY"}
-              onPressedChange={(pressed) => { if (pressed) setTradeType("BUY"); }}
+              onPressedChange={(pressed) => { if (pressed) handleTradeTypeChange("BUY"); }}
               className={cn(
                 "h-12 text-[16px] font-bold",
                 tradeType === "BUY"
@@ -141,7 +162,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
             <ToggleGroupItem
               value="SELL"
               pressed={tradeType === "SELL"}
-              onPressedChange={(pressed) => { if (pressed) setTradeType("SELL"); }}
+              onPressedChange={(pressed) => { if (pressed) handleTradeTypeChange("SELL"); }}
               className={cn(
                 "h-12 text-[16px] font-bold",
                 tradeType === "SELL"
@@ -157,11 +178,8 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         {/* 날짜 선택 */}
         <div className="space-y-1.5">
           <Label>날짜 <span className="text-destructive">*</span></Label>
-          <input type="hidden" name="traded_at" value={tradedAtValue} />
           <Popover open={calOpen} onOpenChange={setCalOpen}>
-            <PopoverTrigger
-              className="flex h-12 w-full items-center justify-between rounded-xl bg-muted px-4 text-[15px] text-foreground"
-            >
+            <PopoverTrigger className="flex h-12 w-full items-center justify-between rounded-xl bg-muted px-4 text-[15px] text-foreground">
               <span>{format(date, "yyyy년 M월 d일 (EEE)", { locale: ko })}</span>
               <CalendarIcon className="h-4 w-4 text-muted-foreground" />
             </PopoverTrigger>
@@ -169,12 +187,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
               <Calendar
                 mode="single"
                 selected={date}
-                onSelect={(d) => {
-                  if (d) {
-                    setDate(d);
-                    setCalOpen(false);
-                  }
-                }}
+                onSelect={(d) => { if (d) { setDate(d); setCalOpen(false); } }}
                 initialFocus
               />
             </PopoverContent>
@@ -185,12 +198,8 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         <div className="space-y-1.5">
           <Label>계좌 <span className="text-destructive">*</span></Label>
           <Select
-            name="account_id"
-            required
-            items={accounts.map((acc) => ({
-              value: acc.id,
-              label: `${acc.name}${acc.broker ? ` · ${acc.broker}` : ""}`,
-            }))}
+            value={accountId}
+            onValueChange={(v) => { setAccountId(v as string); accountSelectRef.current = v as string; }}
           >
             <SelectTrigger>
               <SelectValue placeholder="계좌를 선택하세요" />
@@ -208,29 +217,21 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         {/* 종목명 */}
         <div className="space-y-1.5">
           <Label>종목명 <span className="text-destructive">*</span></Label>
-          <input type="hidden" name="asset_name" value={assetName} />
-          <input type="hidden" name="ticker_symbol" value={tickerSymbol} />
-          <input type="hidden" name="country_code" value={stockMarket === "KR" ? "KR" : stockMarket === "US" ? "US" : "OTHER"} />
           <StockSearchInput
             value={assetName}
             onChange={(v) => {
               setAssetName(v);
-              if (!v) {
-                setTickerSymbol("");
-                setStockMarket("");
-                setStockExchange("");
-              }
+              if (!v) { setTickerSymbol(""); setStockMarket(""); }
             }}
             onSelect={(stock: SelectedStock) => {
               setAssetName(stock.name);
               setTickerSymbol(stock.code);
               setStockMarket(stock.market);
-              setStockExchange(stock.exchange);
             }}
           />
         </div>
 
-        {/* 종목코드 + 마켓 (자동 입력) */}
+        {/* 종목코드 */}
         <div className="space-y-1.5">
           <Label>종목코드</Label>
           <div className="flex h-12 items-center gap-2 rounded-xl bg-muted/50 px-4 text-[15px] text-foreground">
@@ -238,19 +239,10 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
               <>
                 <span className="font-mono font-medium">{tickerSymbol}</span>
                 {stockMarket === "KR" && (
-                  <span className="rounded-md bg-blue-100 px-1.5 py-0.5 text-[11px] font-bold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-                    국내 · {stockExchange}
-                  </span>
+                  <span className="rounded-md bg-blue-100 px-1.5 py-0.5 text-[11px] font-bold text-blue-700">국내</span>
                 )}
                 {stockMarket === "US" && (
-                  <span className="rounded-md bg-orange-100 px-1.5 py-0.5 text-[11px] font-bold text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
-                    해외 · {stockExchange}
-                  </span>
-                )}
-                {stockMarket === "OTHER" && (
-                  <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[11px] font-bold text-gray-600 dark:bg-gray-800 dark:text-gray-400">
-                    {stockExchange}
-                  </span>
+                  <span className="rounded-md bg-orange-100 px-1.5 py-0.5 text-[11px] font-bold text-orange-700">해외</span>
                 )}
               </>
             ) : (
@@ -262,32 +254,30 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         {/* 가격 */}
         <div className="space-y-1.5">
           <Label htmlFor="price">가격 (원) <span className="text-destructive">*</span></Label>
-          <input type="hidden" name="price" value={parseRaw(priceDisplay)} />
           <Input
             id="price"
             type="text"
             inputMode="numeric"
             placeholder="0"
             value={priceDisplay}
-            onChange={(e) => setPriceDisplay(formatNumber(e.target.value))}
+            onChange={(e) => handlePriceChange(e.target.value)}
           />
         </div>
 
         {/* 수량 */}
         <div className="space-y-1.5">
           <Label htmlFor="quantity">수량 <span className="text-destructive">*</span></Label>
-          <input type="hidden" name="quantity" value={parseRaw(quantityDisplay)} />
           <Input
             id="quantity"
             type="text"
             inputMode="decimal"
             placeholder="0"
             value={quantityDisplay}
-            onChange={(e) => setQuantityDisplay(formatNumber(e.target.value))}
+            onChange={(e) => handleQuantityChange(e.target.value)}
           />
         </div>
 
-        {/* 총액 (자동계산) */}
+        {/* 총액 */}
         <div className="space-y-1.5">
           <Label>총액 (자동계산)</Label>
           <div className="flex h-12 items-center rounded-xl bg-muted/50 px-4 text-[15px] font-semibold text-foreground">
@@ -298,7 +288,6 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         {/* 수수료 */}
         <div className="space-y-1.5">
           <Label htmlFor="commission">수수료 (원)</Label>
-          <input type="hidden" name="commission" value={parseRaw(commDisplay) || "0"} />
           <Input
             id="commission"
             type="text"
@@ -309,11 +298,10 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
           />
         </div>
 
-        {/* 제세금 (매도시만 표시) */}
+        {/* 제세금 (매도시만) */}
         {tradeType === "SELL" && (
           <div className="space-y-1.5">
             <Label htmlFor="tax">제세금 (원)</Label>
-            <input type="hidden" name="tax" value={parseRaw(taxDisplay) || "0"} />
             <Input
               id="tax"
               type="text"
@@ -324,23 +312,17 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
             />
           </div>
         )}
-        {tradeType === "BUY" && (
-          <input type="hidden" name="tax" value="0" />
-        )}
 
-        <input type="hidden" name="market_type" value="STOCK" />
-
-        {state && "error" in state && (
-          <p className="text-sm text-destructive">{state.error}</p>
-        )}
+        {error && <p className="text-sm text-destructive">{error}</p>}
       </div>
 
-      {/* 하단 고정 제출 버튼 */}
       <div
         className="sticky bottom-0 bg-background px-5 pt-3 pb-4"
         style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
       >
-        <SubmitButton />
+        <Button type="submit" size="xl" disabled={pending} className="w-full">
+          {pending ? "저장 중..." : "다음"}
+        </Button>
       </div>
     </form>
   );

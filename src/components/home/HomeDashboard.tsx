@@ -50,13 +50,15 @@ export function HomeDashboard() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
-    setError(false);
     fetch("/api/portfolio/summary")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((d: SummaryData) => setData(d))
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
+      .then((d: SummaryData) => { if (!cancelled) { setData(d); setError(false); } })
+      .catch(() => { if (!cancelled) setError(true); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [refreshKey]);
 
   // 거래 수정/삭제 후 다른 컴포넌트(StockDetailPanel 등)에서 발생시키는 이벤트 수신
