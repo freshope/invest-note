@@ -38,6 +38,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 - docs/roadmap.md: 전체 방향
 - docs/backlog.md: 다음 작업 후보
+- docs/decisions.md: 기술 결정 로그 — 설계 선택의 이유와 트레이드오프 기록
 - docs/spec-current.md: 현재 구현할 작업
 - docs/spec-history/: 완료된 spec 보관 (YYYY-MM-DD-기능명.md)
 
