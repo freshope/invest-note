@@ -73,6 +73,7 @@ export function StockDetailPanel({
     if (!open) {
       setSelectedTrade(null);
       router.refresh();
+      window.dispatchEvent(new CustomEvent("portfolio:refresh"));
     }
   }, [router]);
 
