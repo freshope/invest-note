@@ -1,6 +1,13 @@
 import type { Trade } from "@/types/database";
 
-// 각 SELL trade.id → 실현손익 (profit_loss 직접 입력값 우선, 없으면 WAC 기반 fallback)
+// profit_loss 입력값 우선, 없으면 WAC 기반 fallback: (매도가 − 평균단가) × 수량 − 수수료 − 세금
+export function sellPnL(trade: Trade, avgCost: number): number {
+  return trade.profit_loss != null
+    ? Number(trade.profit_loss)
+    : trade.price * trade.quantity - avgCost * trade.quantity - trade.commission - trade.tax;
+}
+
+// 각 SELL trade.id → 실현손익
 export function computeRealizedPnL(trades: Trade[]): Map<string, number> {
   const result = new Map<string, number>();
 
@@ -20,12 +27,7 @@ export function computeRealizedPnL(trades: Trade[]): Map<string, number> {
       pos.runningCost += trade.price * trade.quantity + trade.commission;
     } else {
       const avgCost = pos.runningQty > 0 ? pos.runningCost / pos.runningQty : 0;
-      const pnl =
-        trade.profit_loss != null
-          ? Number(trade.profit_loss)
-          : trade.price * trade.quantity - avgCost * trade.quantity - trade.commission - trade.tax;
-
-      result.set(trade.id, pnl);
+      result.set(trade.id, sellPnL(trade, avgCost));
 
       pos.runningCost = Math.max(0, pos.runningCost - avgCost * trade.quantity);
       pos.runningQty = Math.max(0, pos.runningQty - trade.quantity);

@@ -2,11 +2,6 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function updateSession(request: NextRequest) {
-  // API 라우트는 자체 auth 검사(requireUser)를 수행하므로 미들웨어 리다이렉트 제외
-  if (request.nextUrl.pathname.startsWith("/api/")) {
-    return NextResponse.next({ request });
-  }
-
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -34,6 +29,11 @@ export async function updateSession(request: NextRequest) {
     data: { user },
     error: getUserError,
   } = await supabase.auth.getUser();
+
+  // API 라우트는 자체 auth 검사(requireUser)를 수행 — 세션 쿠키만 갱신 후 리다이렉트 없이 반환
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    return supabaseResponse;
+  }
 
   // Supabase 장애 시 보호된 페이지 경로만 차단
   if (getUserError) {

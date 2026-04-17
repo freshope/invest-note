@@ -61,8 +61,14 @@ export function AnalysisDashboard() {
         fetch(`/api/analysis/behavior?period=${p}`, { signal }),
         fetch(`/api/analysis/suggestions?period=${p}`, { signal }),
       ]);
-      if (!summaryRes.ok || !behaviorRes.ok || !suggestionsRes.ok) throw new Error();
-      const [s, b, sg] = await Promise.all([summaryRes.json(), behaviorRes.json(), suggestionsRes.json()]);
+
+      if (!summaryRes.ok) throw new Error("summary");
+
+      const [s, b, sg] = await Promise.all([
+        summaryRes.json(),
+        behaviorRes.ok ? behaviorRes.json() : Promise.resolve(null),
+        suggestionsRes.ok ? suggestionsRes.json() : Promise.resolve(null),
+      ]);
       setSummary(s);
       setBehavior(b);
       setSuggestionsData(sg);

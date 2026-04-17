@@ -1,7 +1,6 @@
 import { toKST } from "@/lib/trade-utils";
-import { computeRealizedPnL } from "@/lib/analysis/realized-pnl";
+import { computeRealizedPnL, sellPnL } from "@/lib/analysis/realized-pnl";
 import type { Trade, Account } from "@/types/database";
-import type { TradeWithAccount } from "@/lib/trade-utils";
 
 export type QuoteMap = Record<string, { price: number; currency: string; asOf: string } | null>;
 
@@ -13,7 +12,7 @@ export interface Position {
   holdingQuantity: number;      // sum(buy.qty) - sum(sell.qty)
   avgBuyPrice: number;          // WAC: sum(buy.price*qty) / sum(buy.qty)
   costBasis: number;            // avgBuyPrice * holdingQuantity
-  realizedPnL: number;          // sum(sell.profit_loss ?? 0)
+  realizedPnL: number;          // 매도 실현손익 합계 (profit_loss 입력값 우선, 없으면 WAC fallback)
   currentPrice: number | null;
   evaluation: number | null;    // currentPrice * holdingQuantity
   unrealizedPnL: number | null; // evaluation - costBasis
@@ -41,7 +40,7 @@ export interface DashboardTotals {
   missingQuoteTickers: string[];
 }
 
-export function buildPositions(trades: TradeWithAccount[]): Position[] {
+export function buildPositions(trades: Trade[]): Position[] {
   const map = new Map<string, {
     ticker: string;
     country: string;
@@ -86,15 +85,15 @@ export function buildPositions(trades: TradeWithAccount[]): Position[] {
 
     if (trade.trade_type === "BUY") {
       pos.runningQty += trade.quantity;
-      pos.runningCost += trade.price * trade.quantity + (trade.commission ?? 0);
+      pos.runningCost += trade.price * trade.quantity + trade.commission;
       const reason = trade.buy_reason?.trim();
       if (reason) { pos.lastNoteType = "근거"; pos.lastNote = reason; }
     } else {
       // 매도 시 보유 원가를 평균단가 비례로 차감 (running WAC)
       const avgCost = pos.runningQty > 0 ? pos.runningCost / pos.runningQty : 0;
-      pos.runningCost -= avgCost * trade.quantity;
-      pos.runningQty -= trade.quantity;
-      pos.realizedPnL += Number(trade.profit_loss ?? 0);
+      pos.realizedPnL += sellPnL(trade, avgCost);
+      pos.runningCost = Math.max(0, pos.runningCost - avgCost * trade.quantity);
+      pos.runningQty = Math.max(0, pos.runningQty - trade.quantity);
       const note = trade.reflection_note?.trim() || trade.sell_reason?.trim();
       if (note) { pos.lastNoteType = "회고"; pos.lastNote = note; }
     }
@@ -146,10 +145,10 @@ export function mergeQuotes(positions: Position[], quotes: QuoteMap): Position[]
 
 export function buildAccountSnapshots(
   accounts: Account[],
-  trades: TradeWithAccount[],
+  trades: Trade[],
   quotes: QuoteMap,
 ): AccountSnapshot[] {
-  const byAccount = new Map<string, TradeWithAccount[]>();
+  const byAccount = new Map<string, Trade[]>();
   for (const t of trades) {
     const list = byAccount.get(t.account_id);
     if (list) list.push(t);

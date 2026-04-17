@@ -9,7 +9,6 @@ import { computeHoldingDays } from "@/lib/analysis/holding-period";
 import { buildPositions, mergeQuotes } from "@/lib/portfolio";
 import { fetchQuotesByKeys } from "@/lib/quotes";
 import type { Trade } from "@/types/database";
-import type { TradeWithAccount } from "@/lib/trade-utils";
 
 const HOLDING_BUCKETS: { label: string; maxDays: number }[] = [
   { label: "1일 이내", maxDays: 1 },
@@ -57,7 +56,7 @@ export async function GET(req: NextRequest) {
 
     // 분산 계산: 현재 보유 포지션 기반 (전체 trades 사용 — 기간 필터 전)
     // 시세 취득 실패 시 costBasis로 fallback
-    const positions0 = buildPositions(allTrades as TradeWithAccount[]);
+    const positions0 = buildPositions(allTrades);
     let positions = positions0;
     try {
       const quotes = await fetchQuotesByKeys(positions0.map((p) => p.key));
