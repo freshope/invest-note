@@ -2,6 +2,11 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function updateSession(request: NextRequest) {
+  // API 라우트는 자체 auth 검사(requireUser)를 수행하므로 미들웨어 리다이렉트 제외
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    return NextResponse.next({ request });
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -30,7 +35,7 @@ export async function updateSession(request: NextRequest) {
     error: getUserError,
   } = await supabase.auth.getUser();
 
-  // Supabase 장애 시 보호된 경로만 차단, 나머지는 통과
+  // Supabase 장애 시 보호된 페이지 경로만 차단
   if (getUserError) {
     const { pathname } = request.nextUrl;
     if (pathname !== "/login" && !pathname.startsWith("/auth/")) {
@@ -45,8 +50,7 @@ export async function updateSession(request: NextRequest) {
 
   // 인증 필요 경로에 비로그인 접근 시 로그인 페이지로 리다이렉트
   // /auth/ 경로는 제외 (이메일 인증 콜백 등)
-  // /api/ 경로는 제외 — 로그인 전 호출되는 auth API가 HTML을 받으면 안 됨
-  if (!user && pathname !== "/login" && !pathname.startsWith("/auth/") && !pathname.startsWith("/api/")) {
+  if (!user && pathname !== "/login" && !pathname.startsWith("/auth/")) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
