@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/Button";
 import { Input } from "@/components/base/Input";
@@ -52,7 +52,6 @@ function calcTax(total: number): number {
 
 export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps) {
   const router = useRouter();
-  const accountSelectRef = useRef<string>("");
 
   const [tradeType, setTradeType] = useState<TradeType>("BUY");
   const [date, setDate] = useState<Date>(new Date());
@@ -199,7 +198,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
           <Label>계좌 <span className="text-destructive">*</span></Label>
           <Select
             value={accountId}
-            onValueChange={(v) => { setAccountId(v as string); accountSelectRef.current = v as string; }}
+            onValueChange={(v) => setAccountId(v as string)}
           >
             <SelectTrigger>
               <SelectValue placeholder="계좌를 선택하세요" />

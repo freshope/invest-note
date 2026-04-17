@@ -16,8 +16,8 @@ export async function serverFetch(path: string, init?: RequestInit): Promise<Res
     ...init,
     headers: {
       "Content-Type": "application/json",
-      cookie: cookieStore.toString(),
       ...(init?.headers ?? {}),
+      cookie: cookieStore.toString(),
     },
     cache: "no-store",
   });

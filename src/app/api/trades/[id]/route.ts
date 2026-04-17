@@ -1,45 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-server/auth";
 import { jsonError, HttpError } from "@/lib/api-server/errors";
-import type {
-  Trade,
-  TradeType,
-  MarketType,
-  StrategyType,
-  ReasoningTag,
-  EmotionType,
-  TradeResult,
-} from "@/types/database";
-
-const VALID_TRADE_TYPES: TradeType[] = ["BUY", "SELL"];
-const VALID_MARKET_TYPES: MarketType[] = ["STOCK", "CRYPTO", "ETC"];
-const VALID_COUNTRY_CODES = ["KR", "US", "OTHER"] as const;
-type CountryCode = (typeof VALID_COUNTRY_CODES)[number];
-const VALID_STRATEGIES: StrategyType[] = ["SCALPING", "SWING", "LONG_TERM", "UNKNOWN"];
-const VALID_EMOTIONS: EmotionType[] = ["CONFIDENT", "ANXIOUS", "FOMO", "IMPULSIVE", "CALM"];
-const VALID_REASONING_TAGS: ReasoningTag[] = ["TECHNICAL", "FUNDAMENTAL", "NEWS", "FEELING"];
-const VALID_RESULTS: TradeResult[] = ["SUCCESS", "FAIL", "BREAKEVEN"];
-
-function parsePositiveNumber(raw: unknown): number | null {
-  if (raw == null || raw === "") return null;
-  const num = Number(String(raw).replace(/,/g, ""));
-  if (isNaN(num) || num <= 0) return null;
-  return num;
-}
-
-function parseNonNegativeNumber(raw: unknown): number | null {
-  if (raw == null || raw === "") return 0;
-  const num = Number(String(raw).replace(/,/g, ""));
-  if (isNaN(num) || num < 0) return null;
-  return num;
-}
-
-function parseNumber(raw: unknown): number | null {
-  if (raw == null || raw === "") return null;
-  const num = Number(String(raw).replace(/,/g, ""));
-  if (isNaN(num)) return null;
-  return num;
-}
+import {
+  VALID_TRADE_TYPES,
+  VALID_MARKET_TYPES,
+  VALID_COUNTRY_CODES,
+  type CountryCode,
+  VALID_STRATEGIES,
+  VALID_EMOTIONS,
+  VALID_REASONING_TAGS,
+  VALID_RESULTS,
+  parsePositiveNumber,
+  parseNonNegativeNumber,
+  parseNumber,
+  parseTradedAt,
+} from "@/lib/api-server/validators";
+import type { Trade, TradeType, MarketType, ReasoningTag } from "@/types/database";
 
 export async function GET(
   _req: NextRequest,
@@ -126,7 +102,7 @@ export async function PATCH(
     }
     if (body.traded_at !== undefined) {
       if (!body.traded_at) return jsonError("날짜를 선택해주세요.", 400);
-      patch.traded_at = new Date(body.traded_at).toISOString();
+      patch.traded_at = parseTradedAt(body.traded_at);
     }
     if (body.price !== undefined) {
       const price = parsePositiveNumber(body.price);

@@ -1,27 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-server/auth";
 import { jsonError, HttpError } from "@/lib/api-server/errors";
+import {
+  VALID_TRADE_TYPES,
+  VALID_MARKET_TYPES,
+  VALID_COUNTRY_CODES,
+  type CountryCode,
+  parsePositiveNumber,
+  parseNonNegativeNumber,
+  parseTradedAt,
+} from "@/lib/api-server/validators";
 import type { Trade, TradeType, MarketType } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
-
-const VALID_TRADE_TYPES: TradeType[] = ["BUY", "SELL"];
-const VALID_MARKET_TYPES: MarketType[] = ["STOCK", "CRYPTO", "ETC"];
-const VALID_COUNTRY_CODES = ["KR", "US", "OTHER"] as const;
-type CountryCode = (typeof VALID_COUNTRY_CODES)[number];
-
-function parsePositiveNumber(raw: unknown): number | null {
-  if (raw == null || raw === "") return null;
-  const num = Number(String(raw).replace(/,/g, ""));
-  if (isNaN(num) || num <= 0) return null;
-  return num;
-}
-
-function parseNonNegativeNumber(raw: unknown): number | null {
-  if (raw == null || raw === "") return 0;
-  const num = Number(String(raw).replace(/,/g, ""));
-  if (isNaN(num) || num < 0) return null;
-  return num;
-}
 
 export async function GET(req: NextRequest) {
   try {
@@ -134,7 +124,7 @@ export async function POST(req: NextRequest) {
         quantity,
         commission,
         tax,
-        traded_at: new Date(tradedAt).toISOString(),
+        traded_at: parseTradedAt(tradedAt),
       })
       .select("id, trade_type")
       .single();

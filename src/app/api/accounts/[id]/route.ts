@@ -1,17 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-server/auth";
 import { jsonError, HttpError } from "@/lib/api-server/errors";
-
-const MAX_NAME_LENGTH = 50;
-const MAX_BROKER_LENGTH = 50;
-const MAX_CASH_BALANCE = 9999999999999999.99;
-
-function parseCashBalance(raw: unknown): number | null {
-  if (raw == null || raw === "") return 0;
-  const num = Number(String(raw).replace(/,/g, ""));
-  if (isNaN(num) || num < 0 || num > MAX_CASH_BALANCE) return null;
-  return num;
-}
+import { MAX_NAME_LENGTH, MAX_BROKER_LENGTH, parseCashBalance } from "@/lib/api-server/validators";
 
 export async function PATCH(
   req: NextRequest,
