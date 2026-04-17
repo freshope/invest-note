@@ -45,7 +45,8 @@ export async function updateSession(request: NextRequest) {
 
   // 인증 필요 경로에 비로그인 접근 시 로그인 페이지로 리다이렉트
   // /auth/ 경로는 제외 (이메일 인증 콜백 등)
-  if (!user && pathname !== "/login" && !pathname.startsWith("/auth/")) {
+  // /api/ 경로는 제외 — 로그인 전 호출되는 auth API가 HTML을 받으면 안 됨
+  if (!user && pathname !== "/login" && !pathname.startsWith("/auth/") && !pathname.startsWith("/api/")) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

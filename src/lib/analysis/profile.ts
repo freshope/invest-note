@@ -29,7 +29,11 @@ export function computeProfile(
   const buys = trades.filter((t) => t.trade_type === "BUY");
 
   // --- 거래 템포 ---
-  const allDays = Array.from(holdingDaysMap.values());
+  // holdingDaysMap은 allTrades 기준이므로, 기간 내 SELL만 필터링
+  const sellIds = new Set(sells.map((t) => t.id));
+  const allDays = Array.from(holdingDaysMap.entries())
+    .filter(([id]) => sellIds.has(id))
+    .map(([, days]) => days);
   const avgDays = allDays.length > 0 ? allDays.reduce((a, b) => a + b, 0) / allDays.length : 0;
   // 0일 → 0점, 60일 이상 → 100점. SCALPING 비율로 10점 추가 하향.
   const scalping = sells.filter((t) => t.strategy_type === "SCALPING").length;
