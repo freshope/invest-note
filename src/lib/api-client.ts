@@ -18,6 +18,11 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json" },
     ...init,
   });
+  // 204 No Content는 본문 없음 — json() 호출 시 파싱 오류 발생
+  if (res.status === 204) {
+    if (!res.ok) throw new Error(`API 오류 (${res.status})`);
+    return undefined as T;
+  }
   const data = await res.json();
   if (!res.ok) {
     throw new Error((data as { error?: string }).error ?? `API 오류 (${res.status})`);

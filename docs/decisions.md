@@ -58,4 +58,21 @@
 
 - **결정:** 홈 / 기록 / 분석 / 설정 4개 탭 (초기 계획의 "자산" 탭 대신 "분석" 탭)
 - **이유:** 매매 패턴 분석이 핵심 목표 중 하나. 자산 현황은 홈으로 커버 가능
-- **현재 상태:** 분석 탭(`/analysis`)은 스켈레톤 상태 — MVP 마지막 구현 대상
+- **현재 상태:** 분석 탭(`/analysis`) Phase A+B+C 구현 완료 (2026-04-17)
+
+---
+
+## 2026-04-17 | 분석 탭 WAC: 순수 가격 기준 (수수료 제외)
+
+- **결정:** `portfolio.ts`와 `realized-pnl.ts` 모두 BUY commission을 WAC에서 제외 — 순수 매수가 기준 평균단가 사용
+- **이유:** 포트폴리오 화면의 `avgBuyPrice` 표시와 분석 탭의 실현손익 계산 기준을 통일. 수수료는 매도 시점에 별도 차감(`- commission - tax`)으로 처리됨
+- **트레이드오프:** BUY 수수료가 큰 계좌(예: 대형 거래)에서는 실현손익이 실제보다 약간 과대계상될 수 있음
+- **향후:** 수수료 현황을 별도 패널로 노출하는 방안 backlog에 추가
+
+---
+
+## 2026-04-17 | 분석 탭: 감정/전략 룰 resultCount 가드
+
+- **결정:** `losing_strategy`, `emotion_fomo_low_winrate` 룰 모두 `resultCount >= 3` 가드 적용
+- **이유:** `result` 미입력 거래만 있을 경우 `winRate=0`이 되어 규칙이 오발동하는 false positive 방지
+- **적용 범위:** `EmotionStats`에 `resultCount` 필드 추가, `StrategyStats`의 기존 `resultCount`와 동일한 패턴

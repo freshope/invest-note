@@ -32,7 +32,13 @@ export async function GET() {
     const accounts: Account[] = (accountsRaw ?? []) as Account[];
 
     const positions0 = buildPositions(trades);
-    const quotes = await fetchQuotesByKeys(positions0.map((p) => p.key));
+    // 시세 API 실패 시 costBasis 기준으로 포트폴리오 표시 (홈 화면 전체를 500으로 만들지 않음)
+    let quotes = {};
+    try {
+      quotes = await fetchQuotesByKeys(positions0.map((p) => p.key));
+    } catch {
+      // 시세 취득 실패 — evaluation/unrealizedPnL은 null로 표시됨
+    }
     const positions = mergeQuotes(positions0, quotes);
     const snapshots = buildAccountSnapshots(accounts, trades, quotes);
     const totals = buildTotals(positions, accounts, trades);

@@ -1,18 +1,38 @@
 import { redirect } from "next/navigation";
-import { serverFetch } from "@/lib/api-server/server-fetch";
-import { TradeList } from "@/components/records/TradeList";
-import type { Account } from "@/types/database";
-import type { TradeWithAccount } from "@/lib/trade-utils";
 import { createClient } from "@/lib/supabase/server";
+import { TradeList } from "@/components/records/TradeList";
+import type { Account, Trade } from "@/types/database";
+import type { TradeWithAccount } from "@/lib/trade-utils";
 
 export default async function RecordsPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const res = await serverFetch("/api/trades");
-  const { trades, accounts }: { trades: TradeWithAccount[]; accounts: Account[] } =
-    res.ok ? await res.json() : { trades: [], accounts: [] };
+  const [{ data: tradesRaw }, { data: accountsRaw }] = await Promise.all([
+    supabase
+      .from("trades")
+      .select("*, accounts(name, broker)")
+      .eq("user_id", user.id)
+      .order("traded_at", { ascending: false }),
+    supabase
+      .from("accounts")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: true }),
+  ]);
+
+  const trades: TradeWithAccount[] = (tradesRaw ?? []).map((t) => {
+    const { accounts: acc, ...trade } = t as Trade & {
+      accounts: { name: string; broker: string | null } | null;
+    };
+    return { ...trade, account: acc ?? undefined };
+  });
+
+  const accounts: Account[] = (accountsRaw ?? []).map((a) => ({
+    ...a,
+    cash_balance: Number(a.cash_balance),
+  }));
 
   return <TradeList trades={trades} accounts={accounts} />;
 }

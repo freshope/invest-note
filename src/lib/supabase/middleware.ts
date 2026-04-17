@@ -30,7 +30,12 @@ export async function updateSession(request: NextRequest) {
     error: getUserError,
   } = await supabase.auth.getUser();
 
-  // Supabase 장애 시 보호된 경로만 차단, 나머지는 통과
+  // API 라우트는 자체 auth 검사(requireUser)를 수행 — 세션 쿠키만 갱신 후 리다이렉트 없이 반환
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    return supabaseResponse;
+  }
+
+  // Supabase 장애 시 보호된 페이지 경로만 차단
   if (getUserError) {
     const { pathname } = request.nextUrl;
     if (pathname !== "/login" && !pathname.startsWith("/auth/")) {

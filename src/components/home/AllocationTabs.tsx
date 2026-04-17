@@ -40,7 +40,7 @@ function AllocationDonut({ data, total, label }: AllocationDonutProps) {
   return (
     <div className="space-y-4">
       <div className="relative h-44">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height={176}>
           <PieChart>
             <Pie
               data={data}
