@@ -1,6 +1,7 @@
 "use client";
 
 import type { ConcentrationData } from "@/lib/analysis/concentration";
+import { HHI_HIGH, HHI_MID } from "@/lib/analysis/concentration";
 
 const COUNTRY_LABELS: Record<string, string> = {
   KR: "국내",
@@ -41,11 +42,11 @@ export function DiversificationPanel({ concentration }: DiversificationPanelProp
   const hhiPct = Math.round(hhi * 100);
 
   const hhiLabel =
-    hhi > 0.5 ? "집중" : hhi > 0.25 ? "보통" : "분산";
+    hhi > HHI_HIGH ? "집중" : hhi > HHI_MID ? "보통" : "분산";
   const hhiColor =
-    hhi > 0.5
+    hhi > HHI_HIGH
       ? "text-[var(--fall)]"
-      : hhi > 0.25
+      : hhi > HHI_MID
         ? "text-amber-500"
         : "text-[var(--rise)]";
 

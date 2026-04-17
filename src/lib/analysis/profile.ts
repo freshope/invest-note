@@ -13,6 +13,7 @@ export interface ProfileInputRates {
   emotion: number;       // 전체 거래 중 emotion 입력 비율
   reasoningTag: number;  // BUY 중 태그 입력 비율
   result: number;        // SELL 중 result 입력 비율
+  reflection: number;    // SELL 중 reflection_note 작성 비율
 }
 
 function clamp(v: number): number {
@@ -42,7 +43,8 @@ export function computeProfile(
   const tempo = clamp(tempoBase - scalpingRatio * 10);
 
   // --- 분산도 (현재 포트폴리오 기준 HHI 주입) ---
-  const diversification = clamp((1 - hhi) * 100);
+  // 보유 종목 없음(hhi=0)과 완전분산(hhi→0)을 구분 — 거래 이력 없으면 50점(중립)
+  const diversification = sells.length === 0 && buys.length === 0 ? 50 : clamp((1 - hhi) * 100);
 
   // --- 감정 안정성 ---
   const emotionTagged = trades.filter((t) => t.emotion != null);
@@ -65,18 +67,18 @@ export function computeProfile(
   const reviewHabit = sells.length > 0 ? clamp((withReflection / sells.length) * 100) : 0;
 
   // --- 입력률 ---
-  const buysWithNoTagCount = buys.filter((t) => t.reasoning_tags.length === 0).length;
   // allDays는 이미 기간 내 SELL로 필터링됐으므로 allDays.length = 보유일 계산 가능한 SELL 수
   const sellsWithHoldingData = allDays.length;
   const inputRates: ProfileInputRates = {
     holdingDays: sells.length > 0 ? (sellsWithHoldingData / sells.length) * 100 : 0,
     emotion: trades.length > 0 ? (emotionTagged.length / trades.length) * 100 : 0,
     reasoningTag:
-      buys.length > 0 ? ((buys.length - buysWithNoTagCount) / buys.length) * 100 : 0,
+      buys.length > 0 ? ((buys.length - buysWithNoTag) / buys.length) * 100 : 0,
     result:
       sells.length > 0
         ? (sells.filter((t) => t.result != null).length / sells.length) * 100
         : 0,
+    reflection: sells.length > 0 ? (withReflection / sells.length) * 100 : 0,
   };
 
   return {

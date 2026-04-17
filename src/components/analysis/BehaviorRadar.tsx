@@ -57,14 +57,13 @@ export function BehaviorRadar({ profile, inputRates }: BehaviorRadarProps) {
     diversification: 100,
     emotionStability: inputRates.emotion,
     reasoningQuality: inputRates.reasoningTag,
-    reviewHabit: inputRates.result,
+    reviewHabit: inputRates.reflection,
   };
 
   return (
     <div className="space-y-4">
-      <div className="h-52">
-        <ResponsiveContainer width="100%" height="100%">
-          <RadarChart data={data} margin={{ top: 8, right: 24, bottom: 8, left: 24 }}>
+      <ResponsiveContainer width="100%" height={208}>
+        <RadarChart data={data} margin={{ top: 8, right: 24, bottom: 8, left: 24 }}>
             <PolarGrid gridType="polygon" stroke="var(--border)" />
             <PolarAngleAxis
               dataKey="subject"
@@ -78,8 +77,7 @@ export function BehaviorRadar({ profile, inputRates }: BehaviorRadarProps) {
               strokeWidth={2}
             />
           </RadarChart>
-        </ResponsiveContainer>
-      </div>
+      </ResponsiveContainer>
 
       <div className="grid grid-cols-5 gap-1">
         {DIMENSIONS.map((d) => (
