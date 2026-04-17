@@ -17,7 +17,7 @@ export function computeRealizedPnL(trades: Trade[]): Map<string, number> {
 
     if (trade.trade_type === "BUY") {
       pos.runningQty += trade.quantity;
-      pos.runningCost += trade.price * trade.quantity;
+      pos.runningCost += trade.price * trade.quantity + trade.commission;
     } else {
       const avgCost = pos.runningQty > 0 ? pos.runningCost / pos.runningQty : 0;
       const pnl =

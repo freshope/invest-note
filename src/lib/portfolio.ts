@@ -1,4 +1,5 @@
 import { toKST } from "@/lib/trade-utils";
+import { computeRealizedPnL } from "@/lib/analysis/realized-pnl";
 import type { Trade, Account } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
 
@@ -190,42 +191,6 @@ export function buildAccountSnapshots(
   });
 }
 
-// profit_loss가 null인 매도 거래를 WAC fallback으로 계산한 손익 맵을 반환
-function computeFallbackPnL(trades: Trade[]): Map<string, number> {
-  const result = new Map<string, number>();
-  const costMap = new Map<string, { qty: number; cost: number }>();
-
-  const sorted = [...trades].sort(
-    (a, b) => new Date(a.traded_at).getTime() - new Date(b.traded_at).getTime(),
-  );
-
-  for (const trade of sorted) {
-    const ticker = trade.ticker_symbol ?? trade.asset_name;
-    const key = `${ticker}:${trade.country_code ?? "KR"}`;
-    if (!costMap.has(key)) costMap.set(key, { qty: 0, cost: 0 });
-    const pos = costMap.get(key)!;
-
-    if (trade.trade_type === "BUY") {
-      pos.qty += trade.quantity;
-      pos.cost += trade.price * trade.quantity + (trade.commission ?? 0);
-    } else {
-      if (trade.profit_loss != null) {
-        result.set(trade.id, Number(trade.profit_loss));
-      } else {
-        const avgCost = pos.qty > 0 ? pos.cost / pos.qty : 0;
-        const pnl = trade.price * trade.quantity - avgCost * Math.min(trade.quantity, pos.qty)
-          - (trade.commission ?? 0) - (trade.tax ?? 0);
-        result.set(trade.id, pnl);
-      }
-      const avgCost = pos.qty > 0 ? pos.cost / pos.qty : 0;
-      pos.cost = Math.max(0, pos.cost - avgCost * trade.quantity);
-      pos.qty = Math.max(0, pos.qty - trade.quantity);
-    }
-  }
-
-  return result;
-}
-
 export function buildTotals(
   positions: Position[],
   accounts: Account[],
@@ -239,7 +204,7 @@ export function buildTotals(
   const thisYear = now.getFullYear();
   const thisMonth = now.getMonth();
 
-  const pnlMap = computeFallbackPnL(trades);
+  const pnlMap = computeRealizedPnL(trades);
 
   let totalRealizedPnL = 0;
   let monthRealizedPnL = 0;

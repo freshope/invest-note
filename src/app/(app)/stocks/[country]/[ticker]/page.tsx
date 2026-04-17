@@ -13,6 +13,9 @@ export default async function StockDetailPage({ params }: StockDetailPageProps) 
   const tickerUpper = ticker.toUpperCase();
   const countryUpper = country.toUpperCase();
 
+  // 허용 문자 외 입력은 즉시 404 — Supabase .or() 인젝션 방지
+  if (!/^[A-Za-z0-9.\-_가-힣]{1,30}$/.test(tickerUpper)) notFound();
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");

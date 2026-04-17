@@ -66,8 +66,10 @@ export function computeProfile(
 
   // --- 입력률 ---
   const buysWithNoTagCount = buys.filter((t) => t.reasoning_tags.length === 0).length;
+  // allDays는 이미 기간 내 SELL로 필터링됐으므로 allDays.length = 보유일 계산 가능한 SELL 수
+  const sellsWithHoldingData = allDays.length;
   const inputRates: ProfileInputRates = {
-    holdingDays: sells.length > 0 ? (allDays.length / sells.length) * 100 : 0,
+    holdingDays: sells.length > 0 ? (sellsWithHoldingData / sells.length) * 100 : 0,
     emotion: trades.length > 0 ? (emotionTagged.length / trades.length) * 100 : 0,
     reasoningTag:
       buys.length > 0 ? ((buys.length - buysWithNoTagCount) / buys.length) * 100 : 0,
