@@ -199,6 +199,10 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
           <Select
             value={accountId}
             onValueChange={(v) => setAccountId(v as string)}
+            items={accounts.map((acc) => ({
+              value: acc.id,
+              label: `${acc.name}${acc.broker ? ` · ${acc.broker}` : ""}`,
+            }))}
           >
             <SelectTrigger>
               <SelectValue placeholder="계좌를 선택하세요" />
