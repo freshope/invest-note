@@ -1,9 +1,8 @@
 import { redirect } from "next/navigation";
-import { serverFetch } from "@/lib/api-server/server-fetch";
+import { createClient } from "@/lib/supabase/server";
 import { AccountList } from "@/components/settings/AccountList";
 import { UserInfoSection } from "@/components/settings/UserInfoSection";
 import type { Account } from "@/types/database";
-import { createClient } from "@/lib/supabase/server";
 
 type AccountWithCount = Account & { trade_count: number };
 
@@ -12,13 +11,28 @@ export default async function SettingsPage() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const res = await serverFetch("/api/accounts");
-  const accounts: AccountWithCount[] = res.ok ? await res.json() : [];
+  const [{ data: accountsRaw }, { data: tradeCounts }] = await Promise.all([
+    supabase
+      .from("accounts")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("trades")
+      .select("account_id")
+      .eq("user_id", user.id),
+  ]);
 
-  const tradeCounts: Record<string, number> = {};
-  for (const a of accounts) {
-    tradeCounts[a.id] = a.trade_count;
+  const countMap: Record<string, number> = {};
+  for (const t of tradeCounts ?? []) {
+    countMap[t.account_id] = (countMap[t.account_id] ?? 0) + 1;
   }
+
+  const accounts: AccountWithCount[] = (accountsRaw ?? []).map((a) => ({
+    ...a,
+    cash_balance: Number(a.cash_balance),
+    trade_count: countMap[a.id] ?? 0,
+  }));
 
   return (
     <div className="px-5 py-8 space-y-10">
@@ -26,7 +40,7 @@ export default async function SettingsPage() {
 
       <section className="space-y-3">
         <h2 className="text-[13px] font-semibold text-muted-foreground px-1">계좌 관리</h2>
-        <AccountList accounts={accounts} tradeCounts={tradeCounts} />
+        <AccountList accounts={accounts} tradeCounts={countMap} />
       </section>
 
       <section className="space-y-3">
