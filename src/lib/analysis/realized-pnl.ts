@@ -27,7 +27,7 @@ export function computeRealizedPnL(trades: Trade[]): Map<string, number> {
 
       result.set(trade.id, pnl);
 
-      pos.runningCost -= avgCost * trade.quantity;
+      pos.runningCost = Math.max(0, pos.runningCost - avgCost * trade.quantity);
       pos.runningQty = Math.max(0, pos.runningQty - trade.quantity);
     }
   }

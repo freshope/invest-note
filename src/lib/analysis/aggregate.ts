@@ -1,6 +1,4 @@
 import type { Trade, ReasoningTag } from "@/types/database";
-import { computeRealizedPnL } from "./realized-pnl";
-import { computeHoldingDays } from "./holding-period";
 
 export interface StrategyStats {
   type: string;
@@ -12,7 +10,8 @@ export interface StrategyStats {
 
 export interface EmotionStats {
   type: string;
-  count: number;
+  count: number;      // BUY + SELL 전체 빈도 (감정 노출 빈도)
+  sellCount: number;  // SELL만 (winRate 분모 — 실제 결과 판단 기준)
   winRate: number;
   avgPnL: number;
 }
@@ -38,10 +37,13 @@ export interface AnalysisSummary {
   resultInputRate: number;
 }
 
-export function computeSummary(trades: Trade[]): AnalysisSummary {
-  const pnlMap = computeRealizedPnL(trades);
-  const holdingDaysMap = computeHoldingDays(trades);
-
+// pnlMap: computeRealizedPnL(allTrades) 결과 — 기간 전체 trades 기반으로 WAC 계산해야 정확함
+// holdingDaysMap: computeHoldingDays(trades) 결과 — 기간 필터 trades 기반
+export function computeSummary(
+  trades: Trade[],
+  pnlMap: Map<string, number>,
+  holdingDaysMap: Map<string, number>,
+): AnalysisSummary {
   const sells = trades.filter((t) => t.trade_type === "SELL");
   const buys = trades.filter((t) => t.trade_type === "BUY");
 
@@ -70,21 +72,31 @@ export function computeSummary(trades: Trade[]): AnalysisSummary {
     .map(([type, s]) => ({
       type,
       count: s.pnls.length,
-      winRate: s.results.length > 0 ? (s.results.filter((r) => r === "SUCCESS").length / s.results.length) * 100 : 0,
+      winRate:
+        s.results.length > 0
+          ? (s.results.filter((r) => r === "SUCCESS").length / s.results.length) * 100
+          : 0,
       avgPnL: s.pnls.length > 0 ? s.pnls.reduce((a, b) => a + b, 0) / s.pnls.length : 0,
-      avgHoldingDays: s.days.length > 0 ? s.days.reduce((a, b) => a + b, 0) / s.days.length : 0,
+      avgHoldingDays:
+        s.days.length > 0 ? s.days.reduce((a, b) => a + b, 0) / s.days.length : 0,
     }))
     .sort((a, b) => b.count - a.count);
 
   // --- byEmotion ---
-  // count는 전체 거래(BUY+SELL) 기준, winRate/avgPnL은 SELL 기준
-  const emotionMap = new Map<string, { totalCount: number; pnls: number[]; results: string[] }>();
+  // count: BUY+SELL 전체 감정 노출 빈도
+  // sellCount: SELL만 (winRate/avgPnL 분모)
+  const emotionMap = new Map<
+    string,
+    { totalCount: number; sellCount: number; pnls: number[]; results: string[] }
+  >();
   for (const t of trades) {
     if (!t.emotion) continue;
-    if (!emotionMap.has(t.emotion)) emotionMap.set(t.emotion, { totalCount: 0, pnls: [], results: [] });
+    if (!emotionMap.has(t.emotion))
+      emotionMap.set(t.emotion, { totalCount: 0, sellCount: 0, pnls: [], results: [] });
     const e = emotionMap.get(t.emotion)!;
     e.totalCount++;
     if (t.trade_type === "SELL") {
+      e.sellCount++;
       e.pnls.push(pnlMap.get(t.id) ?? 0);
       if (t.result) e.results.push(t.result);
     }
@@ -94,13 +106,16 @@ export function computeSummary(trades: Trade[]): AnalysisSummary {
     .map(([type, e]) => ({
       type,
       count: e.totalCount,
-      winRate: e.results.length > 0 ? (e.results.filter((r) => r === "SUCCESS").length / e.results.length) * 100 : 0,
+      sellCount: e.sellCount,
+      winRate:
+        e.results.length > 0
+          ? (e.results.filter((r) => r === "SUCCESS").length / e.results.length) * 100
+          : 0,
       avgPnL: e.pnls.length > 0 ? e.pnls.reduce((a, b) => a + b, 0) / e.pnls.length : 0,
     }))
     .sort((a, b) => b.count - a.count);
 
   // --- byTag ---
-  // 각 SELL의 태그는 "해당 종목 직전 BUY"의 reasoning_tags로 귀속
   const buysByKey = new Map<string, Trade[]>();
   for (const t of [...buys].sort(
     (a, b) => new Date(a.traded_at).getTime() - new Date(b.traded_at).getTime(),
@@ -131,18 +146,32 @@ export function computeSummary(trades: Trade[]): AnalysisSummary {
     .map(([tag, tm]) => ({
       tag,
       count: tm.pnls.length,
-      winRate: tm.results.length > 0 ? (tm.results.filter((r) => r === "SUCCESS").length / tm.results.length) * 100 : 0,
+      winRate:
+        tm.results.length > 0
+          ? (tm.results.filter((r) => r === "SUCCESS").length / tm.results.length) * 100
+          : 0,
       avgPnL: tm.pnls.length > 0 ? tm.pnls.reduce((a, b) => a + b, 0) / tm.pnls.length : 0,
     }))
     .sort((a, b) => b.count - a.count);
 
   // --- 메타 지표 ---
-  const missingTagRate = buys.length > 0 ? (buys.filter((t) => t.reasoning_tags.length === 0).length / buys.length) * 100 : 0;
-  const feelingRate = buys.length > 0 ? (buys.filter((t) => t.reasoning_tags.includes("FEELING")).length / buys.length) * 100 : 0;
-  const reflectionRate = sells.length > 0
-    ? (sells.filter((t) => t.reflection_note != null && t.reflection_note.trim() !== "").length / sells.length) * 100
-    : 0;
-  const resultInputRate = sells.length > 0 ? (sellsWithResult.length / sells.length) * 100 : 0;
+  const missingTagRate =
+    buys.length > 0
+      ? (buys.filter((t) => t.reasoning_tags.length === 0).length / buys.length) * 100
+      : 0;
+  const feelingRate =
+    buys.length > 0
+      ? (buys.filter((t) => t.reasoning_tags.includes("FEELING")).length / buys.length) * 100
+      : 0;
+  const reflectionRate =
+    sells.length > 0
+      ? (sells.filter((t) => t.reflection_note != null && t.reflection_note.trim() !== "")
+          .length /
+          sells.length) *
+        100
+      : 0;
+  const resultInputRate =
+    sells.length > 0 ? (sellsWithResult.length / sells.length) * 100 : 0;
 
   return {
     totalTrades,

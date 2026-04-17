@@ -13,18 +13,19 @@ export async function GET(req: NextRequest) {
     const { supabase, user } = await requireUser();
     const period = parsePeriod(req.nextUrl.searchParams.get("period"));
 
-    const { data: tradesRaw } = await supabase
+    const { data: tradesRaw, error: dbError } = await supabase
       .from("trades")
       .select("*")
       .eq("user_id", user.id)
       .order("traded_at", { ascending: true });
 
+    if (dbError) throw new HttpError(dbError.message, 500);
     const allTrades = (tradesRaw ?? []) as Trade[];
     const trades = filterByPeriod(allTrades, period);
 
-    // WAC 계산은 전체 trades 기준 (기간 이전 매수 포함)
+    // WAC/FIFO 모두 전체 trades 기준 (기간 이전 매수 포함해야 정확)
     const pnlMap = computeRealizedPnL(allTrades);
-    const holdingDaysMap = computeHoldingDays(trades);
+    const holdingDaysMap = computeHoldingDays(allTrades);
     const summary = computeSummary(trades, pnlMap, holdingDaysMap);
 
     return NextResponse.json({ period, ...summary });

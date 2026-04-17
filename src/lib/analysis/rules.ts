@@ -20,24 +20,24 @@ interface RuleInput {
 type RuleFn = (input: RuleInput) => Suggestion | null;
 
 const rules: RuleFn[] = [
-  // FOMO 승률 낮음
+  // FOMO 승률 낮음 — sellCount 기준으로 판단 (실제 매도 결과가 있는 건수)
   ({ summary }) => {
     const fomo = summary.byEmotion.find((e) => e.type === "FOMO");
-    if (!fomo || fomo.count < 5 || fomo.winRate >= 40) return null;
+    if (!fomo || fomo.sellCount < 5 || fomo.winRate >= 40) return null;
     return {
       id: "emotion_fomo_low_winrate",
       severity: "warn",
       title: "FOMO 상태에서의 매매 승률이 낮아요",
-      body: `FOMO 상태로 진입한 ${fomo.count}건의 승률이 ${Math.round(fomo.winRate)}%입니다. 해당 감정에서는 관망을 권장합니다.`,
+      body: `FOMO 상태로 진입한 거래의 승률이 ${Math.round(fomo.winRate)}%입니다. 해당 감정에서는 관망을 권장합니다.`,
       metric: { label: "FOMO 승률", value: `${Math.round(fomo.winRate)}%` },
       linkSection: "emotion",
     };
   },
 
-  // 평온할 때 성과 우수
+  // 평온할 때 성과 우수 — sellCount 기준
   ({ summary }) => {
     const calm = summary.byEmotion.find((e) => e.type === "CALM");
-    if (!calm || calm.count < 5 || calm.winRate < 60) return null;
+    if (!calm || calm.sellCount < 5 || calm.winRate < 60) return null;
     return {
       id: "emotion_calm_high_winrate",
       severity: "info",
@@ -88,7 +88,7 @@ const rules: RuleFn[] = [
     };
   },
 
-  // 전략 태그 불일치 (SCALPING인데 실제 보유기간 길수도 있는 경우)
+  // 전략-보유기간 불일치 (SCALPING인데 실제 보유기간 길수도 있는 경우)
   ({ summary }) => {
     const scalping = summary.byStrategy.find((s) => s.type === "SCALPING");
     if (!scalping || scalping.count < 3 || scalping.avgHoldingDays <= 7) return null;

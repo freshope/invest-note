@@ -1,9 +1,8 @@
 import type { Trade } from "@/types/database";
-import { computeHoldingDays } from "./holding-period";
 
 export interface BehaviorProfile {
   tempo: number;             // 0(스캘퍼) ~ 100(장기)
-  diversification: number;   // 0(집중형) ~ 100(분산형)
+  diversification: number;   // 0(집중형) ~ 100(분산형) — 현재 보유 포트폴리오 기준
   emotionStability: number;  // 0(충동형) ~ 100(차분형)
   reasoningQuality: number;  // 0(감각형) ~ 100(분석형)
   reviewHabit: number;       // 0(무복기) ~ 100(복기형)
@@ -20,15 +19,16 @@ function clamp(v: number): number {
   return Math.min(100, Math.max(0, v));
 }
 
+// holdingDaysMap: computeHoldingDays(trades) 결과 — 호출부에서 주입해 중복 계산 방지
 export function computeProfile(
   trades: Trade[],
   hhi: number,
+  holdingDaysMap: Map<string, number>,
 ): { profile: BehaviorProfile; inputRates: ProfileInputRates } {
   const sells = trades.filter((t) => t.trade_type === "SELL");
   const buys = trades.filter((t) => t.trade_type === "BUY");
 
   // --- 거래 템포 ---
-  const holdingDaysMap = computeHoldingDays(trades);
   const allDays = Array.from(holdingDaysMap.values());
   const avgDays = allDays.length > 0 ? allDays.reduce((a, b) => a + b, 0) / allDays.length : 0;
   // 0일 → 0점, 60일 이상 → 100점. SCALPING 비율로 10점 추가 하향.
@@ -37,7 +37,7 @@ export function computeProfile(
   const tempoBase = clamp((avgDays / 60) * 100);
   const tempo = clamp(tempoBase - scalpingRatio * 10);
 
-  // --- 분산도 ---
+  // --- 분산도 (현재 포트폴리오 기준 HHI 주입) ---
   const diversification = clamp((1 - hhi) * 100);
 
   // --- 감정 안정성 ---
@@ -52,7 +52,6 @@ export function computeProfile(
   const buysWithFeeling = buys.filter((t) => t.reasoning_tags.includes("FEELING")).length;
   const buysWithNoTag = buys.filter((t) => t.reasoning_tags.length === 0).length;
   const poorRatio = buys.length > 0 ? (buysWithFeeling + buysWithNoTag) / buys.length : 0;
-  // 중복 방지: FEELING + 0개가 같은 거래일 수도 있어서 min(1)
   const reasoningQuality = clamp((1 - Math.min(1, poorRatio)) * 100);
 
   // --- 복기 습관 ---
@@ -62,10 +61,12 @@ export function computeProfile(
   const reviewHabit = sells.length > 0 ? clamp((withReflection / sells.length) * 100) : 0;
 
   // --- 입력률 ---
+  const buysWithNoTagCount = buys.filter((t) => t.reasoning_tags.length === 0).length;
   const inputRates: ProfileInputRates = {
     holdingDays: sells.length > 0 ? (allDays.length / sells.length) * 100 : 0,
     emotion: trades.length > 0 ? (emotionTagged.length / trades.length) * 100 : 0,
-    reasoningTag: buys.length > 0 ? ((buys.length - buysWithNoTag) / buys.length) * 100 : 0,
+    reasoningTag:
+      buys.length > 0 ? ((buys.length - buysWithNoTagCount) / buys.length) * 100 : 0,
     result:
       sells.length > 0
         ? (sells.filter((t) => t.result != null).length / sells.length) * 100

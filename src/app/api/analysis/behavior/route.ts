@@ -45,27 +45,38 @@ export async function GET(req: NextRequest) {
     const { supabase, user } = await requireUser();
     const period = parsePeriod(req.nextUrl.searchParams.get("period"));
 
-    const { data: tradesRaw } = await supabase
+    const { data: tradesRaw, error: dbError } = await supabase
       .from("trades")
       .select("*")
       .eq("user_id", user.id)
       .order("traded_at", { ascending: true });
 
+    if (dbError) throw new HttpError(dbError.message, 500);
     const allTrades = (tradesRaw ?? []) as Trade[];
     const trades = filterByPeriod(allTrades, period);
 
     // 분산 계산: 현재 보유 포지션 기반 (전체 trades 사용 — 기간 필터 전)
+    // 시세 취득 실패 시 costBasis로 fallback
     const positions0 = buildPositions(allTrades as TradeWithAccount[]);
-    const quotes = await fetchQuotesByKeys(positions0.map((p) => p.key));
-    const positions = mergeQuotes(positions0, quotes);
+    let positions = positions0;
+    try {
+      const quotes = await fetchQuotesByKeys(positions0.map((p) => p.key));
+      positions = mergeQuotes(positions0, quotes);
+    } catch {
+      // 시세 API 실패 — costBasis 기준으로 집중도 계산
+    }
 
     const concentration = computeConcentration(positions, allTrades);
 
-    // 보유기간 분포 (기간 필터 내 SELL 기준) — profile에도 주입
-    const holdingDaysMap = computeHoldingDays(trades);
-    const { profile, inputRates } = computeProfile(trades, concentration.hhi, holdingDaysMap);
+    // FIFO 정확도를 위해 allTrades 기준으로 보유일 계산 (기간 이전 매수 포함)
+    const allHoldingDaysMap = computeHoldingDays(allTrades);
+    const { profile, inputRates } = computeProfile(trades, concentration.hhi, allHoldingDaysMap);
+
+    // 히스토그램은 기간 필터 내 SELL만 카운트
+    const periodSellIds = new Set(trades.filter((t) => t.trade_type === "SELL").map((t) => t.id));
     const holdingDist = new Map<string, number>();
-    for (const days of holdingDaysMap.values()) {
+    for (const [id, days] of allHoldingDaysMap) {
+      if (!periodSellIds.has(id)) continue;
       const b = holdingBucket(days);
       holdingDist.set(b, (holdingDist.get(b) ?? 0) + 1);
     }

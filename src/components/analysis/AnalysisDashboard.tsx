@@ -52,29 +52,35 @@ export function AnalysisDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async (p: Period) => {
+  const fetchData = useCallback(async (p: Period, signal: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
       const [summaryRes, behaviorRes, suggestionsRes] = await Promise.all([
-        fetch(`/api/analysis/summary?period=${p}`),
-        fetch(`/api/analysis/behavior?period=${p}`),
-        fetch(`/api/analysis/suggestions?period=${p}`),
+        fetch(`/api/analysis/summary?period=${p}`, { signal }),
+        fetch(`/api/analysis/behavior?period=${p}`, { signal }),
+        fetch(`/api/analysis/suggestions?period=${p}`, { signal }),
       ]);
       if (!summaryRes.ok || !behaviorRes.ok || !suggestionsRes.ok) throw new Error();
       const [s, b, sg] = await Promise.all([summaryRes.json(), behaviorRes.json(), suggestionsRes.json()]);
       setSummary(s);
       setBehavior(b);
       setSuggestionsData(sg);
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setError("분석 데이터를 불러오는 중 오류가 발생했습니다");
+      setSummary(null);
+      setBehavior(null);
+      setSuggestionsData(null);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchData(period);
+    const controller = new AbortController();
+    fetchData(period, controller.signal);
+    return () => controller.abort();
   }, [period, fetchData]);
 
   const isEmpty = summary && summary.totalTrades === 0;
