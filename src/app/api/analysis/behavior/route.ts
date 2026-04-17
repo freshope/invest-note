@@ -60,10 +60,10 @@ export async function GET(req: NextRequest) {
     const positions = mergeQuotes(positions0, quotes);
 
     const concentration = computeConcentration(positions, allTrades);
-    const { profile, inputRates } = computeProfile(trades, concentration.hhi);
 
-    // 보유기간 분포 (기간 필터 내 SELL 기준)
+    // 보유기간 분포 (기간 필터 내 SELL 기준) — profile에도 주입
     const holdingDaysMap = computeHoldingDays(trades);
+    const { profile, inputRates } = computeProfile(trades, concentration.hhi, holdingDaysMap);
     const holdingDist = new Map<string, number>();
     for (const days of holdingDaysMap.values()) {
       const b = holdingBucket(days);

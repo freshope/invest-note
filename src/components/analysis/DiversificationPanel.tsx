@@ -56,7 +56,7 @@ export function DiversificationPanel({ concentration }: DiversificationPanelProp
         <div>
           <p className="text-[12px] text-muted-foreground">집중도 지수 (HHI)</p>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            0에 가까울수록 분산, 1에 가까울수록 집중
+            현재 보유 종목 기준 · 0에 가까울수록 분산
           </p>
         </div>
         <div className="text-right">

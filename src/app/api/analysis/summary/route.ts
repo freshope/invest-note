@@ -4,6 +4,8 @@ import { requireUser } from "@/lib/api-server/auth";
 import { HttpError } from "@/lib/api-server/errors";
 import { parsePeriod, filterByPeriod } from "@/lib/analysis/period";
 import { computeSummary } from "@/lib/analysis/aggregate";
+import { computeRealizedPnL } from "@/lib/analysis/realized-pnl";
+import { computeHoldingDays } from "@/lib/analysis/holding-period";
 import type { Trade } from "@/types/database";
 
 export async function GET(req: NextRequest) {
@@ -20,7 +22,10 @@ export async function GET(req: NextRequest) {
     const allTrades = (tradesRaw ?? []) as Trade[];
     const trades = filterByPeriod(allTrades, period);
 
-    const summary = computeSummary(trades);
+    // WAC 계산은 전체 trades 기준 (기간 이전 매수 포함)
+    const pnlMap = computeRealizedPnL(allTrades);
+    const holdingDaysMap = computeHoldingDays(trades);
+    const summary = computeSummary(trades, pnlMap, holdingDaysMap);
 
     return NextResponse.json({ period, ...summary });
   } catch (e) {

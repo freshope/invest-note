@@ -4,10 +4,11 @@ import { requireUser } from "@/lib/api-server/auth";
 import { HttpError } from "@/lib/api-server/errors";
 import { parsePeriod, filterByPeriod } from "@/lib/analysis/period";
 import { computeSummary } from "@/lib/analysis/aggregate";
+import { computeRealizedPnL } from "@/lib/analysis/realized-pnl";
+import { computeHoldingDays } from "@/lib/analysis/holding-period";
 import { computeConcentration } from "@/lib/analysis/concentration";
 import { computeProfile } from "@/lib/analysis/profile";
-import { buildPositions, mergeQuotes } from "@/lib/portfolio";
-import { fetchQuotesByKeys } from "@/lib/quotes";
+import { buildPositions } from "@/lib/portfolio";
 import { evaluateRules } from "@/lib/analysis/rules";
 import type { Trade } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
@@ -26,13 +27,15 @@ export async function GET(req: NextRequest) {
     const allTrades = (tradesRaw ?? []) as Trade[];
     const trades = filterByPeriod(allTrades, period);
 
-    const positions0 = buildPositions(allTrades as TradeWithAccount[]);
-    const quotes = await fetchQuotesByKeys(positions0.map((p) => p.key));
-    const positions = mergeQuotes(positions0, quotes);
-
-    const summary = computeSummary(trades);
+    // 외부 시세 호출 없이 costBasis 기준으로 집중도 계산
+    const positions = buildPositions(allTrades as TradeWithAccount[]);
     const concentration = computeConcentration(positions, allTrades);
-    const { profile } = computeProfile(trades, concentration.hhi);
+
+    // WAC는 전체 trades 기준, 보유기간은 기간 필터 기준
+    const pnlMap = computeRealizedPnL(allTrades);
+    const holdingDaysMap = computeHoldingDays(trades);
+    const summary = computeSummary(trades, pnlMap, holdingDaysMap);
+    const { profile } = computeProfile(trades, concentration.hhi, holdingDaysMap);
 
     const suggestions = evaluateRules({ summary, profile, concentration });
 
