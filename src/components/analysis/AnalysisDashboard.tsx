@@ -11,11 +11,13 @@ import { BehaviorRadar } from "./BehaviorRadar";
 import { DiversificationPanel } from "./DiversificationPanel";
 import { ReviewQualityPanel } from "./ReviewQualityPanel";
 import { DrilldownHistograms } from "./DrilldownHistograms";
+import { SuggestionList } from "./SuggestionList";
 import { AnalysisEmptyState } from "./AnalysisEmptyState";
 import type { Period } from "@/lib/analysis/period";
 import type { AnalysisSummary } from "@/lib/analysis/aggregate";
 import type { BehaviorProfile, ProfileInputRates } from "@/lib/analysis/profile";
 import type { ConcentrationData } from "@/lib/analysis/concentration";
+import type { Suggestion } from "@/lib/analysis/rules";
 
 interface BehaviorData {
   profile: BehaviorProfile;
@@ -23,6 +25,10 @@ interface BehaviorData {
   holdingPeriodDist: { bucket: string; count: number }[];
   positionSizeDist: { bucket: string; count: number }[];
   concentration: ConcentrationData;
+}
+
+interface SuggestionsData {
+  suggestions: Suggestion[];
 }
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
@@ -42,6 +48,7 @@ export function AnalysisDashboard() {
   const [period, setPeriod] = useState<Period>("3m");
   const [summary, setSummary] = useState<AnalysisSummary | null>(null);
   const [behavior, setBehavior] = useState<BehaviorData | null>(null);
+  const [suggestionsData, setSuggestionsData] = useState<SuggestionsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,14 +56,16 @@ export function AnalysisDashboard() {
     setLoading(true);
     setError(null);
     try {
-      const [summaryRes, behaviorRes] = await Promise.all([
+      const [summaryRes, behaviorRes, suggestionsRes] = await Promise.all([
         fetch(`/api/analysis/summary?period=${p}`),
         fetch(`/api/analysis/behavior?period=${p}`),
+        fetch(`/api/analysis/suggestions?period=${p}`),
       ]);
-      if (!summaryRes.ok || !behaviorRes.ok) throw new Error();
-      const [s, b] = await Promise.all([summaryRes.json(), behaviorRes.json()]);
+      if (!summaryRes.ok || !behaviorRes.ok || !suggestionsRes.ok) throw new Error();
+      const [s, b, sg] = await Promise.all([summaryRes.json(), behaviorRes.json(), suggestionsRes.json()]);
       setSummary(s);
       setBehavior(b);
+      setSuggestionsData(sg);
     } catch {
       setError("분석 데이터를 불러오는 중 오류가 발생했습니다");
     } finally {
@@ -101,10 +110,17 @@ export function AnalysisDashboard() {
           {/* 섹션 1: 핵심 성과 */}
           <SummaryCards summary={summary} />
 
-          {/* 섹션 2: 오늘의 인사이트 (seed) */}
+          {/* 섹션 2: 오늘의 인사이트 — 룰 기반 상위 3개 */}
           {(() => {
-            const insights = seedInsights(summary);
-            return insights.length > 0 ? <InsightHighlights insights={insights} /> : null;
+            const suggestions = suggestionsData?.suggestions ?? [];
+            const top3 = suggestions.slice(0, 3).map((s) => ({
+              id: s.id,
+              severity: s.severity,
+              title: s.title,
+              body: s.body,
+            }));
+            const fallback = top3.length === 0 ? seedInsights(summary) : top3;
+            return fallback.length > 0 ? <InsightHighlights insights={fallback} /> : null;
           })()}
 
           {/* 섹션 3: 투자 성향 프로필 */}
@@ -166,6 +182,13 @@ export function AnalysisDashboard() {
                 />
               </SectionCard>
             )}
+
+          {/* 섹션 9: 방향성 제안 */}
+          {suggestionsData && (
+            <SectionCard title="투자 방향성 제안">
+              <SuggestionList suggestions={suggestionsData.suggestions} />
+            </SectionCard>
+          )}
 
           {summary.sellTrades === 0 && (
             <AnalysisEmptyState hasTrades={summary.totalTrades > 0} hasSells={false} />
