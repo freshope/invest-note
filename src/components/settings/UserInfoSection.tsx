@@ -1,28 +1,28 @@
 "use client";
 
-import { useFormStatus } from "react-dom";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/Button";
-import { signOut } from "@/app/(app)/settings/actions";
-
-function LogoutButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button
-      type="submit"
-      variant="ghost"
-      className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive h-12 text-[15px]"
-      disabled={pending}
-    >
-      {pending ? "로그아웃 중..." : "로그아웃"}
-    </Button>
-  );
-}
+import { authApi } from "@/lib/api-client";
 
 interface UserInfoSectionProps {
   email: string;
 }
 
 export function UserInfoSection({ email }: UserInfoSectionProps) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+
+  async function handleSignOut() {
+    setPending(true);
+    try {
+      await authApi.signOut();
+      router.push("/login");
+    } catch {
+      setPending(false);
+    }
+  }
+
   return (
     <div className="space-y-3">
       <div className="rounded-2xl bg-muted/60 p-5 space-y-1">
@@ -31,9 +31,15 @@ export function UserInfoSection({ email }: UserInfoSectionProps) {
       </div>
 
       <div className="rounded-2xl bg-muted/60 overflow-hidden">
-        <form action={signOut}>
-          <LogoutButton />
-        </form>
+        <Button
+          type="button"
+          variant="ghost"
+          className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive h-12 text-[15px]"
+          disabled={pending}
+          onClick={handleSignOut}
+        >
+          {pending ? "로그아웃 중..." : "로그아웃"}
+        </Button>
       </div>
     </div>
   );

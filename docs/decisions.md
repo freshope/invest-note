@@ -37,6 +37,23 @@
 
 ---
 
+## 2026-04-17 | 데이터 접근 레이어: API Route 단일화
+
+- **결정:** 모든 DB 접근을 `src/app/api/**/route.ts`로 통일. Server Actions 완전 제거, Server Component도 `serverFetch()` 헬퍼로 내부 API 경유
+- **이유:** 추후 API를 독립 백엔드 서버로 분리할 계획 — 분리 시점에 `API_BASE_URL` 환경변수만 교체하면 핸들러 본체를 그대로 이식 가능
+- **트레이드오프:** Server Actions 대비 네트워크 홉 1회 추가 (SSR → 내부 API). 성능 차이는 미미하나 분리 유연성이 더 중요
+- **공용 헬퍼:** `requireUser()`, `serverFetch()`, `api-client.ts` 래퍼로 보일러플레이트 최소화
+
+---
+
+## 2026-04-17 | API 서버 유틸: 공용 validators.ts 추출
+
+- **결정:** Route Handler들이 공유하는 파싱/검증 함수를 `src/lib/api-server/validators.ts`로 통합
+- **이유:** `parsePositiveNumber`, `parseCashBalance`, `VALID_TRADE_TYPES` 등이 accounts/trades 4개 파일에 중복 정의되어 있었음 — 한 곳에서 수정하면 전체 반영
+- **포함 항목:** account 상수(MAX_NAME_LENGTH 등), trade enum 배열(VALID_STRATEGIES 등), 숫자 파서, `parseTradedAt`(KST +09:00 보정 포함)
+
+---
+
 ## 2026-04-17 | 탭 구조: 분석 탭 포함
 
 - **결정:** 홈 / 기록 / 분석 / 설정 4개 탭 (초기 계획의 "자산" 탭 대신 "분석" 탭)

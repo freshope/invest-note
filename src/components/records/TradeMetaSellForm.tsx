@@ -1,12 +1,12 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
-import { useFormStatus } from "react-dom";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/Button";
 import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
 import { Textarea } from "@/components/base/Textarea";
-import { updateTradeMetadata, type MetaActionState } from "@/app/(app)/records/actions";
+import { tradesApi } from "@/lib/api-client";
 import type { TradeResult } from "@/types/database";
 import { STRATEGIES, EMOTIONS } from "./constants";
 
@@ -30,40 +30,45 @@ function formatNumber(raw: string): string {
   return (isNeg ? "-" : "") + Number(digits).toLocaleString("ko-KR");
 }
 
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" size="xl" disabled={pending} className="w-full">
-      {pending ? "저장 중..." : "저장"}
-    </Button>
-  );
-}
-
 export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
-  const [state, formAction] = useActionState<MetaActionState, FormData>(updateTradeMetadata, undefined);
-
+  const router = useRouter();
   const [result, setResult] = useState<TradeResult | "">("");
   const [strategy, setStrategy] = useState<string>("");
   const [emotion, setEmotion] = useState<string>("");
   const [profitLossDisplay, setProfitLossDisplay] = useState("");
+  const [sellReason, setSellReason] = useState("");
+  const [reflectionNote, setReflectionNote] = useState("");
+  const [improvementNote, setImprovementNote] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
 
-  useEffect(() => {
-    if (state && "success" in state && state.success) {
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setPending(true);
+    try {
+      const profitLossRaw = profitLossDisplay.replace(/,/g, "");
+      await tradesApi.update(tradeId, {
+        result: result || null,
+        strategy_type: (strategy || null) as import("@/types/database").StrategyType | null,
+        emotion: (emotion || null) as import("@/types/database").EmotionType | null,
+        profit_loss: profitLossRaw ? Number(profitLossRaw) : null,
+        sell_reason: sellReason.trim() || null,
+        reflection_note: reflectionNote.trim() || null,
+        improvement_note: improvementNote.trim() || null,
+      });
+      router.refresh();
       onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "오류가 발생했습니다.");
+    } finally {
+      setPending(false);
     }
-  }, [state, onDone]);
-
-  const profitLossRaw = profitLossDisplay.replace(/,/g, "");
+  }
 
   return (
-    <form action={formAction} className="flex flex-col min-h-full">
+    <form onSubmit={handleSubmit} className="flex flex-col min-h-full">
       <div className="flex-1 px-5 pt-2 pb-4 space-y-6">
-        <input type="hidden" name="id" value={tradeId} />
-        <input type="hidden" name="result" value={result} />
-        <input type="hidden" name="strategy_type" value={strategy} />
-        <input type="hidden" name="emotion" value={emotion} />
-        <input type="hidden" name="profit_loss" value={profitLossRaw} />
-
         {/* 거래 결과 */}
         <div className="space-y-2">
           <Label>거래 결과</Label>
@@ -103,7 +108,8 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
           <Label htmlFor="sell_reason">매도 이유</Label>
           <Textarea
             id="sell_reason"
-            name="sell_reason"
+            value={sellReason}
+            onChange={(e) => setSellReason(e.target.value)}
             placeholder="왜 매도했나요?"
             rows={2}
           />
@@ -114,7 +120,8 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
           <Label htmlFor="reflection_note">잘한 점 / 배운 점</Label>
           <Textarea
             id="reflection_note"
-            name="reflection_note"
+            value={reflectionNote}
+            onChange={(e) => setReflectionNote(e.target.value)}
             placeholder="이번 거래에서 잘한 점이나 배운 것을 기록해보세요"
             rows={3}
           />
@@ -125,7 +132,8 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
           <Label htmlFor="improvement_note">개선할 점 / 다음에는</Label>
           <Textarea
             id="improvement_note"
-            name="improvement_note"
+            value={improvementNote}
+            onChange={(e) => setImprovementNote(e.target.value)}
             placeholder="다음 거래에서 개선하고 싶은 점을 적어주세요"
             rows={3}
           />
@@ -173,12 +181,9 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
           </div>
         </div>
 
-        {state && "error" in state && (
-          <p className="text-sm text-destructive">{state.error}</p>
-        )}
+        {error && <p className="text-sm text-destructive">{error}</p>}
       </div>
 
-      {/* 하단 버튼 */}
       <div
         className="sticky bottom-0 bg-background px-5 pt-3 pb-4 flex gap-3"
         style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
@@ -186,9 +191,9 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
         <Button type="button" variant="outline" size="xl" className="flex-1" onClick={onDone}>
           건너뛰기
         </Button>
-        <div className="flex-1">
-          <SubmitButton />
-        </div>
+        <Button type="submit" size="xl" disabled={pending} className="flex-1">
+          {pending ? "저장 중..." : "저장"}
+        </Button>
       </div>
     </form>
   );

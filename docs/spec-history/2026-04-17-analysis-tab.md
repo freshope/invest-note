@@ -34,31 +34,9 @@
 
 ---
 
-## API 엔드포인트
-
-분석 집계 쿼리는 `/api/analysis/summary` 신규 Route에 모은다.
-
-```
-GET /api/analysis/summary
-→ {
-    totalTrades: number,
-    sellTrades: number,
-    winRate: number,           // 0~100
-    totalProfitLoss: number,
-    byStrategy: { type: string; count: number; winRate: number }[],
-    byEmotion: { type: string; count: number; winRate: number }[],
-    byTag: { tag: string; count: number; winRate: number }[],
-  }
-```
-
----
-
 ## 완료 기준
 
 - [ ] `/analysis` 페이지에 기본 통계 카드 표시 (총 거래, 매도, 승률, 총 손익)
 - [ ] 전략별 승률 표시
 - [ ] 감정별 승률 표시
-- [ ] 태그별 승률 표시
 - [ ] 빈 상태 UI (거래 데이터 없을 때)
-- [ ] `/api/analysis/summary` Route 구현
-- [ ] `pnpm typecheck`, `pnpm lint` 통과

@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useState, useCallback } from "react";
-import { useFormStatus } from "react-dom";
+import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import {
   FullScreenPanel,
   FullScreenPanelContent,
@@ -21,7 +21,7 @@ import {
 } from "@/components/base/Select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/base/Popover";
 import { Calendar } from "@/components/base/Calendar";
-import { updateTrade, type UpdateTradeActionState } from "@/app/(app)/records/actions";
+import { tradesApi } from "@/lib/api-client";
 import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
 import { STRATEGIES, EMOTIONS, REASONING_TAGS } from "./constants";
 import { cn } from "@/lib/utils";
@@ -50,8 +50,7 @@ function formatNumber(raw: string): string {
   const integer = parts[0] || "";
   const decimal = parts.length > 1 ? "." + parts[1] : "";
   if (!integer && !decimal) return "";
-  const formatted = integer ? Number(integer).toLocaleString("ko-KR") : "";
-  return formatted + decimal;
+  return (integer ? Number(integer).toLocaleString("ko-KR") : "") + decimal;
 }
 
 function formatPnL(raw: string): string {
@@ -67,21 +66,13 @@ function parseRaw(formatted: string): string {
   return formatted.replace(/,/g, "");
 }
 
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" size="xl" disabled={pending} className="w-full">
-      {pending ? "저장 중..." : "저장"}
-    </Button>
-  );
-}
-
 export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }: TradeEditPanelProps) {
-  const [state, formAction] = useActionState<UpdateTradeActionState, FormData>(updateTrade, undefined);
+  const router = useRouter();
 
   const [tradeType] = useState<TradeType>(trade.trade_type);
   const [date, setDate] = useState<Date>(new Date(trade.traded_at));
   const [calOpen, setCalOpen] = useState(false);
+  const [accountId, setAccountId] = useState(trade.account_id);
 
   const [assetName, setAssetName] = useState(trade.asset_name);
   const [tickerSymbol, setTickerSymbol] = useState(trade.ticker_symbol ?? "");
@@ -101,7 +92,13 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
   const [tags, setTags] = useState<ReasoningTag[]>(trade.reasoning_tags ?? []);
   const [result, setResult] = useState<TradeResult | "">(trade.result ?? "");
 
-  const tradedAtValue = format(date, "yyyy-MM-dd'T'HH:mm");
+  const [buyReason, setBuyReason] = useState(trade.buy_reason ?? "");
+  const [sellReason, setSellReason] = useState(trade.sell_reason ?? "");
+  const [reflectionNote, setReflectionNote] = useState(trade.reflection_note ?? "");
+  const [improvementNote, setImprovementNote] = useState(trade.improvement_note ?? "");
+
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
 
   function toggleTag(tag: ReasoningTag) {
     setTags((prev) =>
@@ -109,16 +106,44 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
     );
   }
 
-  const handleClose = useCallback(() => {
-    onOpenChange(false);
-  }, [onOpenChange]);
+  const handleClose = useCallback(() => onOpenChange(false), [onOpenChange]);
 
-  useEffect(() => {
-    if (state && "success" in state && state.success) {
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setPending(true);
+    try {
+      await tradesApi.update(trade.id, {
+        trade_type: tradeType,
+        market_type: trade.market_type,
+        account_id: accountId,
+        asset_name: assetName,
+        ticker_symbol: tickerSymbol || null,
+        country_code: countryCode,
+        traded_at: format(date, "yyyy-MM-dd'T'HH:mm"),
+        price: Number(parseRaw(priceDisplay)),
+        quantity: Number(parseRaw(quantityDisplay)),
+        commission: Number(parseRaw(commDisplay)) || 0,
+        tax: Number(parseRaw(taxDisplay)) || 0,
+        strategy_type: (strategy || null) as import("@/types/database").StrategyType | null,
+        emotion: (emotion || null) as import("@/types/database").EmotionType | null,
+        reasoning_tags: tags,
+        result: (result || null) as TradeResult | null,
+        profit_loss: profitLossDisplay ? Number(parseRaw(profitLossDisplay)) : null,
+        buy_reason: buyReason.trim() || null,
+        sell_reason: sellReason.trim() || null,
+        reflection_note: reflectionNote.trim() || null,
+        improvement_note: improvementNote.trim() || null,
+      });
+      router.refresh();
       handleClose();
       onSaved?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "저장할 수 없습니다.");
+    } finally {
+      setPending(false);
     }
-  }, [state, handleClose, onSaved]);
+  }
 
   const isSell = tradeType === "SELL";
 
@@ -127,25 +152,8 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
       <FullScreenPanelContent open={open}>
         <FullScreenPanelHeader title="거래 수정" />
         <FullScreenPanelBody>
-          <form action={formAction} className="flex flex-col min-h-full">
+          <form onSubmit={handleSubmit} className="flex flex-col min-h-full">
             <div className="flex-1 px-5 pt-2 pb-4 space-y-5">
-              <input type="hidden" name="id" value={trade.id} />
-              <input type="hidden" name="trade_type" value={tradeType} />
-              <input type="hidden" name="market_type" value={trade.market_type} />
-              <input type="hidden" name="traded_at" value={tradedAtValue} />
-              <input type="hidden" name="asset_name" value={assetName} />
-              <input type="hidden" name="ticker_symbol" value={tickerSymbol} />
-              <input type="hidden" name="country_code" value={countryCode} />
-              <input type="hidden" name="price" value={parseRaw(priceDisplay)} />
-              <input type="hidden" name="quantity" value={parseRaw(quantityDisplay)} />
-              <input type="hidden" name="commission" value={parseRaw(commDisplay) || "0"} />
-              <input type="hidden" name="tax" value={parseRaw(taxDisplay) || "0"} />
-              <input type="hidden" name="strategy_type" value={strategy} />
-              <input type="hidden" name="emotion" value={emotion} />
-              <input type="hidden" name="reasoning_tags" value={tags.join(",")} />
-              <input type="hidden" name="result" value={result} />
-              <input type="hidden" name="profit_loss" value={parseRaw(profitLossDisplay)} />
-
               {/* 거래 유형 표시 (수정 불가) */}
               <div className="space-y-1.5">
                 <Label>거래 유형</Label>
@@ -189,9 +197,8 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
               <div className="space-y-1.5">
                 <Label>계좌 <span className="text-destructive">*</span></Label>
                 <Select
-                  name="account_id"
-                  required
-                  defaultValue={trade.account_id}
+                  value={accountId}
+                  onValueChange={(v) => setAccountId(v as string)}
                   items={accounts.map((acc) => ({
                     value: acc.id,
                     label: `${acc.name}${acc.broker ? ` · ${acc.broker}` : ""}`,
@@ -217,10 +224,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                   value={assetName}
                   onChange={(v) => {
                     setAssetName(v);
-                    if (!v) {
-                      setTickerSymbol("");
-                      setCountryCode("KR");
-                    }
+                    if (!v) { setTickerSymbol(""); setCountryCode("KR"); }
                   }}
                   onSelect={(stock: SelectedStock) => {
                     setAssetName(stock.name);
@@ -388,13 +392,12 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                 {/* 매수 근거 */}
                 {!isSell && (
                   <div className="space-y-1.5 mb-5">
-                    <Label htmlFor="edit_buy_reason">매수 근거</Label>
+                    <Label>매수 근거</Label>
                     <Textarea
-                      id="edit_buy_reason"
-                      name="buy_reason"
+                      value={buyReason}
+                      onChange={(e) => setBuyReason(e.target.value)}
                       placeholder="매수한 근거를 간단히 적어주세요"
                       rows={3}
-                      defaultValue={trade.buy_reason ?? ""}
                     />
                   </div>
                 )}
@@ -402,13 +405,12 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                 {/* 매도 이유 */}
                 {isSell && (
                   <div className="space-y-1.5 mb-5">
-                    <Label htmlFor="edit_sell_reason">매도 이유</Label>
+                    <Label>매도 이유</Label>
                     <Textarea
-                      id="edit_sell_reason"
-                      name="sell_reason"
+                      value={sellReason}
+                      onChange={(e) => setSellReason(e.target.value)}
                       placeholder="왜 매도했나요?"
                       rows={2}
-                      defaultValue={trade.sell_reason ?? ""}
                     />
                   </div>
                 )}
@@ -416,13 +418,12 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                 {/* 잘한 점 (매도) */}
                 {isSell && (
                   <div className="space-y-1.5 mb-5">
-                    <Label htmlFor="edit_reflection_note">잘한 점 / 배운 점</Label>
+                    <Label>잘한 점 / 배운 점</Label>
                     <Textarea
-                      id="edit_reflection_note"
-                      name="reflection_note"
+                      value={reflectionNote}
+                      onChange={(e) => setReflectionNote(e.target.value)}
                       placeholder="이번 거래에서 잘한 점이나 배운 것을 기록해보세요"
                       rows={3}
-                      defaultValue={trade.reflection_note ?? ""}
                     />
                   </div>
                 )}
@@ -430,28 +431,27 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                 {/* 개선할 점 (매도) */}
                 {isSell && (
                   <div className="space-y-1.5 mb-5">
-                    <Label htmlFor="edit_improvement_note">개선할 점 / 다음에는</Label>
+                    <Label>개선할 점 / 다음에는</Label>
                     <Textarea
-                      id="edit_improvement_note"
-                      name="improvement_note"
+                      value={improvementNote}
+                      onChange={(e) => setImprovementNote(e.target.value)}
                       placeholder="다음 거래에서 개선하고 싶은 점을 적어주세요"
                       rows={3}
-                      defaultValue={trade.improvement_note ?? ""}
                     />
                   </div>
                 )}
               </div>
 
-              {state && "error" in state && (
-                <p className="text-sm text-destructive">{state.error}</p>
-              )}
+              {error && <p className="text-sm text-destructive">{error}</p>}
             </div>
 
             <div
               className="sticky bottom-0 bg-background px-5 pt-3 pb-4"
               style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
             >
-              <SubmitButton />
+              <Button type="submit" size="xl" disabled={pending} className="w-full">
+                {pending ? "저장 중..." : "저장"}
+              </Button>
             </div>
           </form>
         </FullScreenPanelBody>

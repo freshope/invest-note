@@ -1,6 +1,7 @@
 "use client";
 
-import { useTransition, useState } from "react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/Button";
 import {
   Dialog,
@@ -10,7 +11,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/base/Dialog";
-import { deleteTrade } from "@/app/(app)/records/actions";
+import { tradesApi } from "@/lib/api-client";
 
 interface DeleteTradeDialogProps {
   open: boolean;
@@ -27,20 +28,23 @@ export function DeleteTradeDialog({
   assetName,
   onDeleted,
 }: DeleteTradeDialogProps) {
-  const [isPending, startTransition] = useTransition();
+  const router = useRouter();
+  const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState("");
 
-  function handleDelete() {
+  async function handleDelete() {
     setError("");
-    startTransition(async () => {
-      const result = await deleteTrade(tradeId);
-      if (result.error) {
-        setError(result.error);
-      } else {
-        onOpenChange(false);
-        onDeleted?.();
-      }
-    });
+    setIsPending(true);
+    try {
+      await tradesApi.delete(tradeId);
+      onOpenChange(false);
+      onDeleted?.();
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "삭제할 수 없습니다.");
+    } finally {
+      setIsPending(false);
+    }
   }
 
   return (

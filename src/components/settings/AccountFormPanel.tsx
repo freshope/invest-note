@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
-import { useFormStatus } from "react-dom";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/Button";
 import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
@@ -11,7 +11,7 @@ import {
   FullScreenPanelHeader,
   FullScreenPanelBody,
 } from "@/components/common/full-screen-panel";
-import { createAccount, updateAccount } from "@/app/(app)/settings/actions";
+import { accountsApi } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { Account } from "@/types/database";
 
@@ -35,15 +35,6 @@ interface AccountFormPanelProps {
   account?: Account;
 }
 
-function SubmitButton({ label }: { label: string }) {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" size="xl" disabled={pending} className="w-full">
-      {pending ? "저장 중..." : label}
-    </Button>
-  );
-}
-
 function formatNumber(value: number | string): string {
   const num = typeof value === "string" ? value.replace(/[^0-9]/g, "") : String(value);
   if (!num) return "";
@@ -56,32 +47,56 @@ export function AccountFormPanel({
   account,
 }: AccountFormPanelProps) {
   const isEdit = !!account;
-  const action = isEdit ? updateAccount : createAccount;
-
-  const [state, formAction] = useActionState(action, undefined);
+  const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const [selectedBroker, setSelectedBroker] = useState<string>(account?.broker ?? "");
   const [cashDisplay, setCashDisplay] = useState<string>(
     account?.cash_balance ? formatNumber(Number(account.cash_balance)) : ""
   );
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
 
   useEffect(() => {
     setSelectedBroker(account?.broker ?? "");
     setCashDisplay(account?.cash_balance ? formatNumber(Number(account.cash_balance)) : "");
+    setError(null);
   }, [account]);
-
-  useEffect(() => {
-    if (state?.success) {
-      onOpenChange(false);
-      formRef.current?.reset();
-      setSelectedBroker("");
-      setCashDisplay("");
-    }
-  }, [state, onOpenChange]);
 
   function handleCashChange(e: React.ChangeEvent<HTMLInputElement>) {
     const digits = e.target.value.replace(/[^0-9]/g, "");
     setCashDisplay(digits ? Number(digits).toLocaleString("ko-KR") : "");
+  }
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setPending(true);
+
+    const form = e.currentTarget;
+    const name = (form.elements.namedItem("name") as HTMLInputElement).value.trim();
+    const cash = cashDisplay.replace(/,/g, "");
+
+    try {
+      const input = {
+        name,
+        broker: selectedBroker || null,
+        cash_balance: cash ? Number(cash) : 0,
+      };
+      if (isEdit) {
+        await accountsApi.update(account!.id, input);
+      } else {
+        await accountsApi.create(input);
+      }
+      onOpenChange(false);
+      formRef.current?.reset();
+      setSelectedBroker("");
+      setCashDisplay("");
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "오류가 발생했습니다.");
+    } finally {
+      setPending(false);
+    }
   }
 
   return (
@@ -90,12 +105,8 @@ export function AccountFormPanel({
         <FullScreenPanelHeader title={isEdit ? "계좌 수정" : "계좌 추가"} />
 
         <FullScreenPanelBody>
-          <form ref={formRef} action={formAction} className="flex flex-col min-h-full">
+          <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col min-h-full">
             <div className="flex-1 px-5 pt-2 pb-4 space-y-5">
-              {isEdit && (
-                <input type="hidden" name="id" value={account.id} />
-              )}
-
               <div className="space-y-1.5">
                 <Label htmlFor="name">
                   계좌명 <span className="text-destructive">*</span>
@@ -112,7 +123,6 @@ export function AccountFormPanel({
 
               <div className="space-y-1.5">
                 <Label>증권사</Label>
-                <input type="hidden" name="broker" value={selectedBroker} />
                 <div className="grid grid-cols-3 gap-2">
                   {BROKERS.map((broker) => {
                     const isSelected = selectedBroker === broker.name;
@@ -145,16 +155,10 @@ export function AccountFormPanel({
                     );
                   })}
                 </div>
-
               </div>
 
               <div className="space-y-1.5">
                 <Label htmlFor="cash_balance">예수금 (원)</Label>
-                <input
-                  type="hidden"
-                  name="cash_balance"
-                  value={cashDisplay.replace(/,/g, "")}
-                />
                 <Input
                   id="cash_balance"
                   type="text"
@@ -165,17 +169,18 @@ export function AccountFormPanel({
                 />
               </div>
 
-              {state?.error && (
-                <p className="text-sm text-destructive">{state.error}</p>
+              {error && (
+                <p className="text-sm text-destructive">{error}</p>
               )}
             </div>
 
-            {/* 하단 고정 제출 버튼 */}
             <div
               className="sticky bottom-0 bg-background px-5 pt-3 pb-4"
               style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
             >
-              <SubmitButton label={isEdit ? "수정하기" : "추가하기"} />
+              <Button type="submit" size="xl" disabled={pending} className="w-full">
+                {pending ? "저장 중..." : isEdit ? "수정하기" : "추가하기"}
+              </Button>
             </div>
           </form>
         </FullScreenPanelBody>

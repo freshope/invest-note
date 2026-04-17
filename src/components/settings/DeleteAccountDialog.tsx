@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
-import { useFormStatus } from "react-dom";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/Button";
 import {
   Dialog,
@@ -11,7 +11,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/base/Dialog";
-import { deleteAccount } from "@/app/(app)/settings/actions";
+import { accountsApi } from "@/lib/api-client";
 
 interface DeleteAccountDialogProps {
   open: boolean;
@@ -20,22 +20,29 @@ interface DeleteAccountDialogProps {
   accountName: string;
 }
 
-function DeleteButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" variant="destructive" disabled={pending}>
-      {pending ? "삭제 중..." : "삭제"}
-    </Button>
-  );
-}
-
 export function DeleteAccountDialog({
   open,
   onOpenChange,
   accountId,
   accountName,
 }: DeleteAccountDialogProps) {
-  const [state, formAction] = useActionState(deleteAccount, undefined);
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  async function handleDelete() {
+    setError(null);
+    setPending(true);
+    try {
+      await accountsApi.delete(accountId);
+      onOpenChange(false);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "삭제할 수 없습니다.");
+    } finally {
+      setPending(false);
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -49,8 +56,8 @@ export function DeleteAccountDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {state?.error && (
-          <p className="text-sm text-destructive">{state.error}</p>
+        {error && (
+          <p className="text-sm text-destructive">{error}</p>
         )}
 
         <DialogFooter>
@@ -58,13 +65,18 @@ export function DeleteAccountDialog({
             type="button"
             variant="outline"
             onClick={() => onOpenChange(false)}
+            disabled={pending}
           >
             취소
           </Button>
-          <form action={formAction}>
-            <input type="hidden" name="id" value={accountId} />
-            <DeleteButton />
-          </form>
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={handleDelete}
+            disabled={pending}
+          >
+            {pending ? "삭제 중..." : "삭제"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

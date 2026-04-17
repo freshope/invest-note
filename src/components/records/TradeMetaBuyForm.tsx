@@ -1,12 +1,11 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
-import { useFormStatus } from "react-dom";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/Button";
 import { Label } from "@/components/base/Label";
 import { Textarea } from "@/components/base/Textarea";
-import { ToggleGroup, ToggleGroupItem } from "@/components/base/ToggleGroup";
-import { updateTradeMetadata, type MetaActionState } from "@/app/(app)/records/actions";
+import { tradesApi } from "@/lib/api-client";
 import type { StrategyType, EmotionType, ReasoningTag } from "@/types/database";
 import { STRATEGIES, EMOTIONS, REASONING_TAGS } from "./constants";
 
@@ -15,27 +14,14 @@ interface TradeMetaBuyFormProps {
   onDone: () => void;
 }
 
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" size="xl" disabled={pending} className="w-full">
-      {pending ? "저장 중..." : "저장"}
-    </Button>
-  );
-}
-
 export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
-  const [state, formAction] = useActionState<MetaActionState, FormData>(updateTradeMetadata, undefined);
-
+  const router = useRouter();
   const [strategy, setStrategy] = useState<StrategyType | "">("");
   const [emotion, setEmotion] = useState<EmotionType | "">("");
   const [tags, setTags] = useState<ReasoningTag[]>([]);
-
-  useEffect(() => {
-    if (state && "success" in state && state.success) {
-      onDone();
-    }
-  }, [state, onDone]);
+  const [buyReason, setBuyReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
 
   function toggleTag(tag: ReasoningTag) {
     setTags((prev) =>
@@ -43,14 +29,29 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
     );
   }
 
-  return (
-    <form action={formAction} className="flex flex-col min-h-full">
-      <div className="flex-1 px-5 pt-2 pb-4 space-y-6">
-        <input type="hidden" name="id" value={tradeId} />
-        <input type="hidden" name="strategy_type" value={strategy} />
-        <input type="hidden" name="emotion" value={emotion} />
-        <input type="hidden" name="reasoning_tags" value={tags.join(",")} />
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setPending(true);
+    try {
+      await tradesApi.update(tradeId, {
+        strategy_type: strategy || null,
+        emotion: emotion || null,
+        reasoning_tags: tags,
+        buy_reason: buyReason.trim() || null,
+      });
+      router.refresh();
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "오류가 발생했습니다.");
+    } finally {
+      setPending(false);
+    }
+  }
 
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col min-h-full">
+      <div className="flex-1 px-5 pt-2 pb-4 space-y-6">
         {/* 전략 */}
         <div className="space-y-2">
           <Label>전략</Label>
@@ -119,18 +120,16 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
           <Label htmlFor="buy_reason">매수 근거 <span className="text-[12px] font-normal text-muted-foreground">(선택)</span></Label>
           <Textarea
             id="buy_reason"
-            name="buy_reason"
+            value={buyReason}
+            onChange={(e) => setBuyReason(e.target.value)}
             placeholder="매수한 근거를 간단히 적어주세요"
             rows={3}
           />
         </div>
 
-        {state && "error" in state && (
-          <p className="text-sm text-destructive">{state.error}</p>
-        )}
+        {error && <p className="text-sm text-destructive">{error}</p>}
       </div>
 
-      {/* 하단 버튼 */}
       <div
         className="sticky bottom-0 bg-background px-5 pt-3 pb-4 flex gap-3"
         style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
@@ -138,9 +137,9 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
         <Button type="button" variant="outline" size="xl" className="flex-1" onClick={onDone}>
           건너뛰기
         </Button>
-        <div className="flex-1">
-          <SubmitButton />
-        </div>
+        <Button type="submit" size="xl" disabled={pending} className="flex-1">
+          {pending ? "저장 중..." : "저장"}
+        </Button>
       </div>
     </form>
   );

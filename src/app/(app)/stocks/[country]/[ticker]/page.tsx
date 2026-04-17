@@ -1,8 +1,9 @@
 import { notFound, redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { serverFetch } from "@/lib/api-server/server-fetch";
 import { StockDetail } from "@/components/stocks/StockDetail";
-import type { Trade, Account } from "@/types/database";
+import type { Account } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
+import { createClient } from "@/lib/supabase/server";
 
 interface StockDetailPageProps {
   params: Promise<{ country: string; ticker: string }>;
@@ -12,32 +13,19 @@ export default async function StockDetailPage({ params }: StockDetailPageProps) 
   const { country, ticker } = await params;
 
   const supabase = await createClient();
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
 
-  if (authError || !user) {
-    redirect("/login");
-  }
+  const res = await serverFetch(
+    `/api/trades?ticker=${encodeURIComponent(ticker.toUpperCase())}&country=${encodeURIComponent(country.toUpperCase())}`
+  );
+  if (!res.ok) notFound();
 
-  const { data: tradesRaw } = await supabase
-    .from("trades")
-    .select("*, accounts(name, broker)")
-    .eq("user_id", user.id)
-    .eq("country_code", country.toUpperCase())
-    .eq("ticker_symbol", ticker.toUpperCase())
-    .order("traded_at", { ascending: false });
+  const { trades }: { trades: TradeWithAccount[]; accounts: Account[] } = await res.json();
 
-  if (!tradesRaw || tradesRaw.length === 0) {
-    notFound();
-  }
-
-  const trades: TradeWithAccount[] = tradesRaw.map((t) => {
-    const { accounts: acc, ...trade } = t as Trade & { accounts: { name: string; broker: string | null } | null };
-    return { ...trade, account: acc ?? undefined };
-  });
+  if (!trades || trades.length === 0) notFound();
 
   const assetName = trades[0].asset_name;
-
-  // 성과 계산
   const sellTrades = trades.filter((t) => t.trade_type === "SELL");
   const winCount = sellTrades.filter((t) => t.result === "SUCCESS").length;
   const totalProfitLoss = sellTrades.reduce((sum, t) => sum + (t.profit_loss ? Number(t.profit_loss) : 0), 0);
