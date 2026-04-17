@@ -1,6 +1,7 @@
 import type { AnalysisSummary } from "./aggregate";
 import type { BehaviorProfile } from "./profile";
 import type { ConcentrationData } from "./concentration";
+import { HHI_HIGH, TOP1_WEIGHT_HIGH } from "./concentration";
 
 export interface Suggestion {
   id: string;
@@ -11,10 +12,10 @@ export interface Suggestion {
   linkSection?: "strategy" | "emotion" | "tag" | "concentration" | "review";
 }
 
-interface RuleInput {
+export interface RuleInput {
   summary: AnalysisSummary;
-  profile: BehaviorProfile;
-  concentration: ConcentrationData;
+  profile?: BehaviorProfile;
+  concentration?: ConcentrationData;
 }
 
 type RuleFn = (input: RuleInput) => Suggestion | null;
@@ -23,7 +24,7 @@ const rules: RuleFn[] = [
   // FOMO 승률 낮음 — sellCount 기준으로 판단 (실제 매도 결과가 있는 건수)
   ({ summary }) => {
     const fomo = summary.byEmotion.find((e) => e.type === "FOMO");
-    if (!fomo || fomo.sellCount < 5 || fomo.winRate >= 40) return null;
+    if (!fomo || fomo.sellCount < 5 || fomo.resultCount < 3 || fomo.winRate >= 40) return null;
     return {
       id: "emotion_fomo_low_winrate",
       severity: "warn",
@@ -48,10 +49,11 @@ const rules: RuleFn[] = [
     };
   },
 
-  // 집중도 과다
+  // 집중도 과다 — concentration 없으면 건너뜀
   ({ concentration }) => {
+    if (!concentration) return null;
     const top1Weight = concentration.top3[0]?.weight ?? 0;
-    if (concentration.hhi <= 0.5 && top1Weight <= 0.4) return null;
+    if (concentration.hhi <= HHI_HIGH && top1Weight <= TOP1_WEIGHT_HIGH) return null;
     return {
       id: "concentration_high",
       severity: "warn",
@@ -102,9 +104,9 @@ const rules: RuleFn[] = [
     };
   },
 
-  // 특정 전략 승률 낮음
+  // 특정 전략 승률 낮음 — resultCount 부족 시 오발동 방지
   ({ summary }) => {
-    const worst = summary.byStrategy.find((s) => s.count >= 5 && s.winRate < 30);
+    const worst = summary.byStrategy.find((s) => s.count >= 5 && s.resultCount >= 3 && s.winRate < 30);
     if (!worst) return null;
     const labels: Record<string, string> = {
       SCALPING: "스캘핑",
@@ -132,6 +134,32 @@ const rules: RuleFn[] = [
       body: `매수 거래 중 ${Math.round(summary.missingTagRate)}%에 근거 태그가 없습니다. 매수 시 최소 1개 태그 입력을 권장합니다.`,
       metric: { label: "태그 누락률", value: `${Math.round(summary.missingTagRate)}%` },
       linkSection: "tag",
+    };
+  },
+
+  // 거래 결과 입력 부족 (승률 신뢰도 낮음)
+  ({ summary }) => {
+    if (summary.resultInputRate >= 50 || summary.sellTrades < 3) return null;
+    return {
+      id: "result_missing",
+      severity: "info",
+      title: "거래 결과 입력이 부족해요",
+      body: `매도 거래 중 ${Math.round(100 - summary.resultInputRate)}%에 결과(성공/실패)가 미입력되어 승률 분석 정확도가 낮습니다.`,
+      metric: { label: "미입력률", value: `${Math.round(100 - summary.resultInputRate)}%` },
+      linkSection: "strategy",
+    };
+  },
+
+  // 승률 우수 — 현재 패턴 유지 권장
+  ({ summary }) => {
+    if (summary.winRate < 65 || summary.sellTrades < 5 || summary.resultInputRate < 50) return null;
+    return {
+      id: "high_winrate",
+      severity: "info",
+      title: "좋은 승률을 유지하고 있어요",
+      body: `현재 승률 ${Math.round(summary.winRate)}%로 좋은 성과를 내고 있습니다. 지금의 매매 패턴을 유지해보세요.`,
+      metric: { label: "승률", value: `${Math.round(summary.winRate)}%` },
+      linkSection: "strategy",
     };
   },
 ];

@@ -11,7 +11,6 @@ import { computeProfile } from "@/lib/analysis/profile";
 import { buildPositions } from "@/lib/portfolio";
 import { evaluateRules } from "@/lib/analysis/rules";
 import type { Trade } from "@/types/database";
-import type { TradeWithAccount } from "@/lib/trade-utils";
 
 export async function GET(req: NextRequest) {
   try {
@@ -24,18 +23,18 @@ export async function GET(req: NextRequest) {
       .eq("user_id", user.id)
       .order("traded_at", { ascending: true });
 
-    if (dbError) throw new HttpError(dbError.message, 500);
+    if (dbError) throw new HttpError("거래 데이터를 불러올 수 없습니다.", 500);
     const allTrades = (tradesRaw ?? []) as Trade[];
     const trades = filterByPeriod(allTrades, period);
 
     // 외부 시세 호출 없이 costBasis 기준으로 집중도 계산
-    const positions = buildPositions(allTrades as TradeWithAccount[]);
+    const positions = buildPositions(allTrades);
     const concentration = computeConcentration(positions, allTrades);
 
     // WAC/FIFO 모두 전체 trades 기준 (기간 이전 매수 포함해야 정확)
     const pnlMap = computeRealizedPnL(allTrades);
     const holdingDaysMap = computeHoldingDays(allTrades);
-    const summary = computeSummary(trades, pnlMap, holdingDaysMap);
+    const summary = computeSummary(trades, pnlMap, holdingDaysMap, allTrades);
     const { profile } = computeProfile(trades, concentration.hhi, holdingDaysMap);
 
     const suggestions = evaluateRules({ summary, profile, concentration });
@@ -43,6 +42,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ period, suggestions });
   } catch (e) {
     if (e instanceof HttpError) return e.toResponse();
+    console.error("[analysis/suggestions]", e);
     return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
   }
 }

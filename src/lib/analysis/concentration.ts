@@ -1,6 +1,10 @@
 import type { Trade } from "@/types/database";
 import type { Position } from "@/lib/portfolio";
 
+export const HHI_HIGH = 0.5;          // 집중 — 경고 수준
+export const HHI_MID = 0.25;          // 보통
+export const TOP1_WEIGHT_HIGH = 0.4;  // 단일 종목 비중 경고 임계치
+
 export interface ConcentrationData {
   hhi: number;
   top3: { asset: string; weight: number }[];
@@ -46,13 +50,11 @@ export function computeConcentration(positions: Position[], trades: Trade[]): Co
 
   // byMarket: trades에서 종목별 market_type 추출 (가장 최근 BUY 기준)
   const marketByKey = new Map<string, string>();
-  for (const t of [...trades].sort(
-    (a, b) => new Date(a.traded_at).getTime() - new Date(b.traded_at).getTime(),
-  )) {
-    if (t.trade_type === "BUY") {
-      const key = `${t.ticker_symbol ?? t.asset_name}:${t.country_code}`;
-      marketByKey.set(key, t.market_type);
-    }
+  for (const t of trades
+    .filter((t) => t.trade_type === "BUY")
+    .sort((a, b) => new Date(a.traded_at).getTime() - new Date(b.traded_at).getTime())) {
+    const key = `${t.ticker_symbol ?? t.asset_name}:${t.country_code ?? "KR"}`;
+    marketByKey.set(key, t.market_type);
   }
 
   const marketMap = new Map<string, number>();

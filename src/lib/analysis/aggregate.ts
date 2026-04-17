@@ -1,8 +1,10 @@
 import type { Trade, ReasoningTag } from "@/types/database";
+import type { Period } from "./period";
 
 export interface StrategyStats {
   type: string;
   count: number;
+  resultCount: number;  // result 입력된 SELL 수 — winRate 신뢰도 판단용
   winRate: number;
   avgPnL: number;
   avgHoldingDays: number;
@@ -10,8 +12,9 @@ export interface StrategyStats {
 
 export interface EmotionStats {
   type: string;
-  count: number;      // BUY + SELL 전체 빈도 (감정 노출 빈도)
-  sellCount: number;  // SELL만 (winRate 분모 — 실제 결과 판단 기준)
+  count: number;        // BUY + SELL 전체 빈도 (감정 노출 빈도)
+  sellCount: number;    // SELL만 (winRate 분모 — 실제 결과 판단 기준)
+  resultCount: number;  // result 입력된 SELL 수 — winRate 신뢰도 판단용
   winRate: number;
   avgPnL: number;
 }
@@ -24,6 +27,7 @@ export interface TagStats {
 }
 
 export interface AnalysisSummary {
+  period?: Period;
   totalTrades: number;
   sellTrades: number;
   winRate: number;
@@ -37,12 +41,13 @@ export interface AnalysisSummary {
   resultInputRate: number;
 }
 
-// pnlMap: computeRealizedPnL(allTrades) 결과 — 기간 전체 trades 기반으로 WAC 계산해야 정확함
-// holdingDaysMap: computeHoldingDays(trades) 결과 — 기간 필터 trades 기반
+// pnlMap, holdingDaysMap: allTrades 기준으로 WAC/FIFO 정확도 보장
+// allTrades: byTag 태그 귀속 시 기간 이전 BUY 포함을 위해 필요 (없으면 trades 내 BUY만 사용)
 export function computeSummary(
   trades: Trade[],
   pnlMap: Map<string, number>,
   holdingDaysMap: Map<string, number>,
+  allTrades?: Trade[],
 ): AnalysisSummary {
   const sells = trades.filter((t) => t.trade_type === "SELL");
   const buys = trades.filter((t) => t.trade_type === "BUY");
@@ -72,6 +77,7 @@ export function computeSummary(
     .map(([type, s]) => ({
       type,
       count: s.pnls.length,
+      resultCount: s.results.length,
       winRate:
         s.results.length > 0
           ? (s.results.filter((r) => r === "SUCCESS").length / s.results.length) * 100
@@ -107,6 +113,7 @@ export function computeSummary(
       type,
       count: e.totalCount,
       sellCount: e.sellCount,
+      resultCount: e.results.length,
       winRate:
         e.results.length > 0
           ? (e.results.filter((r) => r === "SUCCESS").length / e.results.length) * 100
@@ -116,18 +123,20 @@ export function computeSummary(
     .sort((a, b) => b.count - a.count);
 
   // --- byTag ---
+  // 기간 이전 BUY 태그도 포함해야 정확 — allTrades 제공 시 전체 BUY 사용
+  const allBuys = allTrades ? allTrades.filter((t) => t.trade_type === "BUY") : buys;
   const buysByKey = new Map<string, Trade[]>();
-  for (const t of [...buys].sort(
+  for (const t of [...allBuys].sort(
     (a, b) => new Date(a.traded_at).getTime() - new Date(b.traded_at).getTime(),
   )) {
-    const key = `${t.ticker_symbol ?? t.asset_name}:${t.country_code}`;
+    const key = `${t.ticker_symbol ?? t.asset_name}:${t.country_code ?? "KR"}`;
     if (!buysByKey.has(key)) buysByKey.set(key, []);
     buysByKey.get(key)!.push(t);
   }
 
   const tagMap = new Map<string, { pnls: number[]; results: string[] }>();
   for (const sell of sells) {
-    const key = `${sell.ticker_symbol ?? sell.asset_name}:${sell.country_code}`;
+    const key = `${sell.ticker_symbol ?? sell.asset_name}:${sell.country_code ?? "KR"}`;
     const buysForKey = buysByKey.get(key) ?? [];
     const sellTime = new Date(sell.traded_at).getTime();
     const prevBuys = buysForKey.filter((b) => new Date(b.traded_at).getTime() <= sellTime);

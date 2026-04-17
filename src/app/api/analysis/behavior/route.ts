@@ -24,7 +24,7 @@ function holdingBucket(days: number): string {
   for (const b of HOLDING_BUCKETS) {
     if (days <= b.maxDays) return b.label;
   }
-  return "1년 이상";
+  return HOLDING_BUCKETS[HOLDING_BUCKETS.length - 1].label;
 }
 
 function sizeBucket(amount: number): string {
@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
       .eq("user_id", user.id)
       .order("traded_at", { ascending: true });
 
-    if (dbError) throw new HttpError(dbError.message, 500);
+    if (dbError) throw new HttpError("거래 데이터를 불러올 수 없습니다.", 500);
     const allTrades = (tradesRaw ?? []) as Trade[];
     const trades = filterByPeriod(allTrades, period);
 
@@ -105,6 +105,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (e) {
     if (e instanceof HttpError) return e.toResponse();
+    console.error("[analysis/behavior]", e);
     return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
   }
 }

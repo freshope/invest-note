@@ -85,14 +85,15 @@ export function buildPositions(trades: Trade[]): Position[] {
 
     if (trade.trade_type === "BUY") {
       pos.runningQty += trade.quantity;
-      pos.runningCost += trade.price * trade.quantity + trade.commission;
+      pos.runningCost += trade.price * trade.quantity;
       const reason = trade.buy_reason?.trim();
       if (reason) { pos.lastNoteType = "근거"; pos.lastNote = reason; }
     } else {
       // 매도 시 보유 원가를 평균단가 비례로 차감 (running WAC)
       const avgCost = pos.runningQty > 0 ? pos.runningCost / pos.runningQty : 0;
-      pos.realizedPnL += sellPnL(trade, avgCost);
-      pos.runningCost = Math.max(0, pos.runningCost - avgCost * trade.quantity);
+      const matchedQty = Math.min(trade.quantity, pos.runningQty);
+      pos.realizedPnL += sellPnL(trade, avgCost, matchedQty);
+      pos.runningCost = Math.max(0, pos.runningCost - avgCost * matchedQty);
       pos.runningQty = Math.max(0, pos.runningQty - trade.quantity);
       const note = trade.reflection_note?.trim() || trade.sell_reason?.trim();
       if (note) { pos.lastNoteType = "회고"; pos.lastNote = note; }

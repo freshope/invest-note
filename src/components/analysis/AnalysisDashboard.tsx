@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { PeriodFilterTabs } from "./PeriodFilterTabs";
 import { SummaryCards } from "./SummaryCards";
-import { InsightHighlights, seedInsights } from "./InsightHighlights";
+import { InsightHighlights } from "./InsightHighlights";
 import { EmotionBreakdown } from "./EmotionBreakdown";
 import { StrategyBreakdown } from "./StrategyBreakdown";
 import { ReasoningBreakdown } from "./ReasoningBreakdown";
@@ -18,8 +18,10 @@ import type { AnalysisSummary } from "@/lib/analysis/aggregate";
 import type { BehaviorProfile, ProfileInputRates } from "@/lib/analysis/profile";
 import type { ConcentrationData } from "@/lib/analysis/concentration";
 import type { Suggestion } from "@/lib/analysis/rules";
+import { evaluateRules } from "@/lib/analysis/rules";
 
 interface BehaviorData {
+  period?: Period;
   profile: BehaviorProfile;
   inputRates: ProfileInputRates;
   holdingPeriodDist: { bucket: string; count: number }[];
@@ -28,6 +30,7 @@ interface BehaviorData {
 }
 
 interface SuggestionsData {
+  period?: Period;
   suggestions: Suggestion[];
 }
 
@@ -62,6 +65,7 @@ export function AnalysisDashboard() {
         fetch(`/api/analysis/suggestions?period=${p}`, { signal }),
       ]);
 
+      if (signal.aborted) return;
       if (!summaryRes.ok) throw new Error("summary");
 
       const [s, b, sg] = await Promise.all([
@@ -79,7 +83,7 @@ export function AnalysisDashboard() {
       setBehavior(null);
       setSuggestionsData(null);
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }, []);
 
@@ -90,6 +94,7 @@ export function AnalysisDashboard() {
   }, [period, fetchData]);
 
   const isEmpty = summary && summary.totalTrades === 0;
+  const isEmptyPeriod = !!isEmpty && period !== "all";
 
   return (
     <div className="px-5 pt-5 pb-24 space-y-4">
@@ -116,23 +121,19 @@ export function AnalysisDashboard() {
           <SkeletonCard />
         </>
       ) : isEmpty ? (
-        <AnalysisEmptyState hasTrades={false} />
+        <AnalysisEmptyState hasTrades={isEmptyPeriod} hasSells={isEmptyPeriod} />
       ) : summary ? (
         <>
           {/* 섹션 1: 핵심 성과 */}
           <SummaryCards summary={summary} />
 
-          {/* 섹션 2: 오늘의 인사이트 — 룰 기반 상위 3개 */}
+          {/* 섹션 2: 오늘의 인사이트 — 룰 기반 상위 3개, suggestions 미로드 시 summary 전용 룰로 fallback */}
           {(() => {
             const suggestions = suggestionsData?.suggestions ?? [];
-            const top3 = suggestions.slice(0, 3).map((s) => ({
-              id: s.id,
-              severity: s.severity,
-              title: s.title,
-              body: s.body,
-            }));
-            const fallback = top3.length === 0 ? seedInsights(summary) : top3;
-            return fallback.length > 0 ? <InsightHighlights insights={fallback} /> : null;
+            const top3 = suggestions.length > 0
+              ? suggestions.slice(0, 3)
+              : evaluateRules({ summary }).slice(0, 3);
+            return top3.length > 0 ? <InsightHighlights insights={top3} /> : null;
           })()}
 
           {/* 섹션 3: 투자 성향 프로필 */}
@@ -184,7 +185,7 @@ export function AnalysisDashboard() {
             </SectionCard>
           )}
 
-          {/* 섹션 10: 드릴다운 히스토그램 */}
+          {/* 섹션 9: 드릴다운 히스토그램 */}
           {behavior &&
             (behavior.holdingPeriodDist.length > 0 || behavior.positionSizeDist.length > 0) && (
               <SectionCard title="거래 패턴 상세">
@@ -195,7 +196,7 @@ export function AnalysisDashboard() {
               </SectionCard>
             )}
 
-          {/* 섹션 9: 방향성 제안 */}
+          {/* 섹션 10: 방향성 제안 */}
           {suggestionsData && (
             <SectionCard title="투자 방향성 제안">
               <SuggestionList suggestions={suggestionsData.suggestions} />
@@ -203,7 +204,7 @@ export function AnalysisDashboard() {
           )}
 
           {summary.sellTrades === 0 && (
-            <AnalysisEmptyState hasTrades={summary.totalTrades > 0} hasSells={false} />
+            <AnalysisEmptyState hasTrades={summary.totalTrades > 0} hasSells={summary.sellTrades > 0} />
           )}
         </>
       ) : null}

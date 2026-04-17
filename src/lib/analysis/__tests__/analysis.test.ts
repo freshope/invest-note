@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { computeRealizedPnL } from "../realized-pnl";
+import { computeRealizedPnL, sellPnL } from "../realized-pnl";
 import { computeHoldingDays } from "../holding-period";
 import { computeConcentration } from "../concentration";
 import { computeSummary } from "../aggregate";
 import { evaluateRules } from "../rules";
+import { parsePeriod, filterByPeriod } from "../period";
+import { computeProfile } from "../profile";
 import type { Trade } from "@/types/database";
 import type { Position } from "@/lib/portfolio";
 
@@ -140,8 +142,6 @@ describe("computeHoldingDays", () => {
 // ── computeConcentration ──────────────────────────────────
 
 describe("computeConcentration", () => {
-  const makeTrades = (): Trade[] => [];
-
   it("보유 종목 없으면 hhi=0, top3=[]", () => {
     const result = computeConcentration([], []);
     expect(result.hhi).toBe(0);
@@ -176,6 +176,156 @@ describe("computeConcentration", () => {
   });
 });
 
+// ── computeHoldingDays — FIFO multi-sell ─────────────────
+
+describe("computeHoldingDays — FIFO 연속 매도", () => {
+  it("분할 매도: 각 매도가 FIFO 순서로 정확한 보유일 계산", () => {
+    // b1(5주, 1/1) → b2(5주, 1/11) → s1(5주, 1/21) → s2(5주, 1/21)
+    // s1: b1 5주 소비 → (21-1)=20일
+    // s2: b2 5주 소비 → (21-11)=10일
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY",  quantity: 5, traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "b2", trade_type: "BUY",  quantity: 5, traded_at: "2024-01-11T09:00:00+09:00" }),
+      makeTrade({ id: "s1", trade_type: "SELL", quantity: 5, traded_at: "2024-01-21T09:00:00+09:00" }),
+      makeTrade({ id: "s2", trade_type: "SELL", quantity: 5, traded_at: "2024-01-21T09:00:00+09:00" }),
+    ];
+    const map = computeHoldingDays(trades);
+    expect(map.get("s1")).toBe(20); // b1 lot 소비
+    expect(map.get("s2")).toBe(10); // b2 lot 소비
+  });
+
+  it("매도 수량이 첫 lot을 가로질러 두 lot 소비", () => {
+    // b1(3주, 1/1) → b2(7주, 1/11) → s1(10주, 1/21)
+    // s1: b1 3주(20일) + b2 7주(10일) → 가중평균 = (3*20 + 7*10)/10 = (60+70)/10 = 13일
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY",  quantity: 3, traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "b2", trade_type: "BUY",  quantity: 7, traded_at: "2024-01-11T09:00:00+09:00" }),
+      makeTrade({ id: "s1", trade_type: "SELL", quantity: 10, traded_at: "2024-01-21T09:00:00+09:00" }),
+    ];
+    const map = computeHoldingDays(trades);
+    expect(map.get("s1")).toBe(13);
+  });
+
+  it("큐 소진 후 추가 매수 → 재적립 후 매도", () => {
+    // b1(5주) → s1(5주) → b2(5주) → s2(5주)
+    // s1은 b1만 소비, s2는 b2만 소비
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY",  quantity: 5, traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "s1", trade_type: "SELL", quantity: 5, traded_at: "2024-01-11T09:00:00+09:00" }),
+      makeTrade({ id: "b2", trade_type: "BUY",  quantity: 5, traded_at: "2024-02-01T09:00:00+09:00" }),
+      makeTrade({ id: "s2", trade_type: "SELL", quantity: 5, traded_at: "2024-02-11T09:00:00+09:00" }),
+    ];
+    const map = computeHoldingDays(trades);
+    expect(map.get("s1")).toBe(10);
+    expect(map.get("s2")).toBe(10);
+  });
+});
+
+// ── computeSummary ────────────────────────────────────────
+
+describe("computeSummary", () => {
+  const emptyMaps = {
+    pnlMap: new Map<string, number>(),
+    holdingDaysMap: new Map<string, number>(),
+  };
+
+  it("거래 없으면 모두 0 반환", () => {
+    const s = computeSummary([], emptyMaps.pnlMap, emptyMaps.holdingDaysMap);
+    expect(s.totalTrades).toBe(0);
+    expect(s.winRate).toBe(0);
+    expect(s.totalProfitLoss).toBe(0);
+  });
+
+  it("result 입력된 SELL만 winRate 분모 산입", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY" }),
+      makeTrade({ id: "s1", trade_type: "SELL", result: "SUCCESS", traded_at: "2024-02-01T09:00:00+09:00" }),
+      makeTrade({ id: "s2", trade_type: "SELL", result: "FAIL",    traded_at: "2024-02-02T09:00:00+09:00" }),
+      makeTrade({ id: "s3", trade_type: "SELL", result: null,      traded_at: "2024-02-03T09:00:00+09:00" }), // 제외
+    ];
+    const s = computeSummary(trades, emptyMaps.pnlMap, emptyMaps.holdingDaysMap);
+    expect(s.winRate).toBeCloseTo(50); // 2건 중 1 SUCCESS
+    expect(s.resultInputRate).toBeCloseTo(66.67, 1); // 3건 중 2건 입력
+  });
+
+  it("totalProfitLoss는 pnlMap 합산", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY" }),
+      makeTrade({ id: "s1", trade_type: "SELL", traded_at: "2024-02-01T09:00:00+09:00" }),
+      makeTrade({ id: "s2", trade_type: "SELL", traded_at: "2024-02-02T09:00:00+09:00" }),
+    ];
+    const pnlMap = new Map([["s1", 30000], ["s2", -10000]]);
+    const s = computeSummary(trades, pnlMap, emptyMaps.holdingDaysMap);
+    expect(s.totalProfitLoss).toBe(20000);
+  });
+
+  it("byEmotion: count=BUY+SELL 합계, winRate=SELL 기준", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY",  emotion: "CALM" }),
+      makeTrade({ id: "s1", trade_type: "SELL", emotion: "CALM", result: "SUCCESS", traded_at: "2024-02-01T09:00:00+09:00" }),
+      makeTrade({ id: "s2", trade_type: "SELL", emotion: "CALM", result: "FAIL",    traded_at: "2024-02-02T09:00:00+09:00" }),
+    ];
+    const s = computeSummary(trades, emptyMaps.pnlMap, emptyMaps.holdingDaysMap);
+    const calm = s.byEmotion.find((e) => e.type === "CALM");
+    expect(calm?.count).toBe(3);        // BUY 1 + SELL 2
+    expect(calm?.sellCount).toBe(2);    // SELL만
+    expect(calm?.resultCount).toBe(2);  // result 입력된 SELL
+    expect(calm?.winRate).toBeCloseTo(50);
+  });
+
+  it("byTag: 기간 이전 BUY 태그도 allTrades로 귀속", () => {
+    // b1 은 "기간 이전" — allTrades에만 포함
+    const allBuy = makeTrade({ id: "b1", trade_type: "BUY", reasoning_tags: ["TECHNICAL"], traded_at: "2023-06-01T09:00:00+09:00" });
+    const sell   = makeTrade({ id: "s1", trade_type: "SELL", result: "SUCCESS", traded_at: "2024-01-10T09:00:00+09:00" });
+    // period-filtered trades: SELL만 있음 (b1 이전 기간)
+    const periodTrades = [sell];
+    const allTrades = [allBuy, sell];
+    const pnlMap = new Map([["s1", 10000]]);
+    const s = computeSummary(periodTrades, pnlMap, emptyMaps.holdingDaysMap, allTrades);
+    const techTag = s.byTag.find((t) => t.tag === "TECHNICAL");
+    expect(techTag).toBeDefined();
+    expect(techTag?.winRate).toBe(100);
+  });
+
+  it("byTag: allTrades 없으면 기간 내 BUY만 참조 (기존 동작)", () => {
+    const sell = makeTrade({ id: "s1", trade_type: "SELL", result: "SUCCESS", traded_at: "2024-01-10T09:00:00+09:00" });
+    // 기간 내 BUY 없음 → 태그 귀속 불가
+    const s = computeSummary([sell], emptyMaps.pnlMap, emptyMaps.holdingDaysMap);
+    expect(s.byTag).toHaveLength(0);
+  });
+
+  it("missingTagRate: 태그 없는 BUY 비율", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY", reasoning_tags: [] }),
+      makeTrade({ id: "b2", trade_type: "BUY", reasoning_tags: [] }),
+      makeTrade({ id: "b3", trade_type: "BUY", reasoning_tags: ["TECHNICAL"] }),
+    ];
+    const s = computeSummary(trades, emptyMaps.pnlMap, emptyMaps.holdingDaysMap);
+    expect(s.missingTagRate).toBeCloseTo(66.67, 1);
+  });
+
+  it("feelingRate: FEELING 포함 BUY 비율", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY", reasoning_tags: ["FEELING"] }),
+      makeTrade({ id: "b2", trade_type: "BUY", reasoning_tags: ["FEELING", "TECHNICAL"] }),
+      makeTrade({ id: "b3", trade_type: "BUY", reasoning_tags: ["TECHNICAL"] }),
+      makeTrade({ id: "b4", trade_type: "BUY", reasoning_tags: [] }),
+    ];
+    const s = computeSummary(trades, emptyMaps.pnlMap, emptyMaps.holdingDaysMap);
+    expect(s.feelingRate).toBeCloseTo(50); // 4건 중 2건
+  });
+
+  it("reflectionRate: reflection_note 작성 비율", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "s1", trade_type: "SELL", reflection_note: "좋은 타이밍", traded_at: "2024-02-01T09:00:00+09:00" }),
+      makeTrade({ id: "s2", trade_type: "SELL", reflection_note: null,          traded_at: "2024-02-02T09:00:00+09:00" }),
+      makeTrade({ id: "s3", trade_type: "SELL", reflection_note: "  ",          traded_at: "2024-02-03T09:00:00+09:00" }), // 공백만 → 미작성
+    ];
+    const s = computeSummary(trades, emptyMaps.pnlMap, emptyMaps.holdingDaysMap);
+    expect(s.reflectionRate).toBeCloseTo(33.33, 1);
+  });
+});
+
 // ── evaluateRules ──────────────────────────────────────────
 
 describe("evaluateRules", () => {
@@ -206,7 +356,7 @@ describe("evaluateRules", () => {
 
   it("FOMO 승률 낮으면 emotion_fomo_low_winrate 발동", () => {
     const summary = makeSummary({
-      byEmotion: [{ type: "FOMO", count: 8, sellCount: 6, winRate: 30, avgPnL: -5000 }],
+      byEmotion: [{ type: "FOMO", count: 8, sellCount: 6, resultCount: 5, winRate: 30, avgPnL: -5000 }],
     });
     const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
     expect(result.some((r) => r.id === "emotion_fomo_low_winrate")).toBe(true);
@@ -214,7 +364,15 @@ describe("evaluateRules", () => {
 
   it("FOMO sellCount < 5이면 발동 안 함 (경계값)", () => {
     const summary = makeSummary({
-      byEmotion: [{ type: "FOMO", count: 10, sellCount: 4, winRate: 20, avgPnL: -5000 }],
+      byEmotion: [{ type: "FOMO", count: 10, sellCount: 4, resultCount: 4, winRate: 20, avgPnL: -5000 }],
+    });
+    const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
+    expect(result.some((r) => r.id === "emotion_fomo_low_winrate")).toBe(false);
+  });
+
+  it("FOMO resultCount < 3이면 발동 안 함 — 결과 미입력 방어", () => {
+    const summary = makeSummary({
+      byEmotion: [{ type: "FOMO", count: 8, sellCount: 6, resultCount: 2, winRate: 0, avgPnL: -5000 }],
     });
     const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
     expect(result.some((r) => r.id === "emotion_fomo_low_winrate")).toBe(false);
@@ -232,9 +390,9 @@ describe("evaluateRules", () => {
     expect(result.some((r) => r.id === "concentration_high")).toBe(false);
   });
 
-  it("losing_strategy 승률 < 30%, count >= 5 발동", () => {
+  it("losing_strategy 승률 < 30%, count >= 5, resultCount >= 3 발동", () => {
     const summary = makeSummary({
-      byStrategy: [{ type: "SWING", count: 6, winRate: 20, avgPnL: -3000, avgHoldingDays: 14 }],
+      byStrategy: [{ type: "SWING", count: 6, resultCount: 5, winRate: 20, avgPnL: -3000, avgHoldingDays: 14 }],
     });
     const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
     const rule = result.find((r) => r.id === "losing_strategy");
@@ -242,9 +400,85 @@ describe("evaluateRules", () => {
     expect(rule?.severity).toBe("critical");
   });
 
+  it("losing_strategy: resultCount < 3 이면 발동 안 함 — 결과 미입력 방어", () => {
+    const summary = makeSummary({
+      byStrategy: [{ type: "SWING", count: 6, resultCount: 2, winRate: 0, avgPnL: -3000, avgHoldingDays: 14 }],
+    });
+    const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
+    expect(result.some((r) => r.id === "losing_strategy")).toBe(false);
+  });
+
+  it("emotion_calm_high_winrate: CALM sellCount >= 5 && winRate >= 60 발동", () => {
+    const summary = makeSummary({
+      byEmotion: [{ type: "CALM", count: 7, sellCount: 5, resultCount: 5, winRate: 70, avgPnL: 8000 }],
+    });
+    const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
+    expect(result.some((r) => r.id === "emotion_calm_high_winrate")).toBe(true);
+  });
+
+  it("emotion_calm_high_winrate: sellCount < 5이면 발동 안 함", () => {
+    const summary = makeSummary({
+      byEmotion: [{ type: "CALM", count: 4, sellCount: 4, resultCount: 4, winRate: 80, avgPnL: 8000 }],
+    });
+    const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
+    expect(result.some((r) => r.id === "emotion_calm_high_winrate")).toBe(false);
+  });
+
+  it("no_reflection: reflectionRate < 30 && sellTrades >= 3 발동", () => {
+    const summary = makeSummary({ reflectionRate: 20, sellTrades: 5 });
+    const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
+    expect(result.some((r) => r.id === "no_reflection")).toBe(true);
+  });
+
+  it("no_reflection: sellTrades < 3이면 발동 안 함 (경계값)", () => {
+    const summary = makeSummary({ reflectionRate: 0, sellTrades: 2 });
+    const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
+    expect(result.some((r) => r.id === "no_reflection")).toBe(false);
+  });
+
+  it("feeling_heavy: feelingRate >= 40 && totalTrades >= 5 발동", () => {
+    const summary = makeSummary({ feelingRate: 50, totalTrades: 10 });
+    const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
+    expect(result.some((r) => r.id === "feeling_heavy")).toBe(true);
+  });
+
+  it("feeling_heavy: totalTrades < 5이면 발동 안 함", () => {
+    const summary = makeSummary({ feelingRate: 60, totalTrades: 4 });
+    const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
+    expect(result.some((r) => r.id === "feeling_heavy")).toBe(false);
+  });
+
+  it("tag_missing_rate_high: missingTagRate >= 30 && totalTrades >= 5 발동", () => {
+    const summary = makeSummary({ missingTagRate: 40, totalTrades: 8 });
+    const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
+    expect(result.some((r) => r.id === "tag_missing_rate_high")).toBe(true);
+  });
+
+  it("tag_missing_rate_high: missingTagRate < 30이면 발동 안 함 (경계값)", () => {
+    const summary = makeSummary({ missingTagRate: 29, totalTrades: 10 });
+    const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
+    expect(result.some((r) => r.id === "tag_missing_rate_high")).toBe(false);
+  });
+
+  it("holding_mismatch: SCALPING count >= 3 && avgHoldingDays > 7 발동", () => {
+    const summary = makeSummary({
+      byStrategy: [{ type: "SCALPING", count: 4, resultCount: 3, winRate: 50, avgPnL: 0, avgHoldingDays: 14 }],
+    });
+    const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
+    expect(result.some((r) => r.id === "holding_mismatch")).toBe(true);
+  });
+
+  it("holding_mismatch: avgHoldingDays <= 7이면 발동 안 함 (경계값)", () => {
+    const summary = makeSummary({
+      byStrategy: [{ type: "SCALPING", count: 5, resultCount: 4, winRate: 50, avgPnL: 0, avgHoldingDays: 7 }],
+    });
+    const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
+    expect(result.some((r) => r.id === "holding_mismatch")).toBe(false);
+  });
+
   it("결과는 critical → warn → info 순으로 정렬", () => {
     const summary = makeSummary({
-      byStrategy: [{ type: "SWING", count: 6, winRate: 20, avgPnL: -3000, avgHoldingDays: 14 }],
+      byStrategy: [{ type: "SWING", count: 6, resultCount: 5, winRate: 20, avgPnL: -3000, avgHoldingDays: 14 }],
       feelingRate: 50,
       totalTrades: 10,
     });
@@ -254,5 +488,174 @@ describe("evaluateRules", () => {
     for (let i = 1; i < severities.length; i++) {
       expect(order[severities[i]]).toBeGreaterThanOrEqual(order[severities[i - 1]]);
     }
+  });
+
+  it("result_missing: resultInputRate < 50 && sellTrades >= 3 발동", () => {
+    const summary = makeSummary({ resultInputRate: 30, sellTrades: 5 });
+    const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
+    expect(result.some((r) => r.id === "result_missing")).toBe(true);
+  });
+
+  it("result_missing: sellTrades < 3 이면 발동 안 함", () => {
+    const summary = makeSummary({ resultInputRate: 0, sellTrades: 2 });
+    const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
+    expect(result.some((r) => r.id === "result_missing")).toBe(false);
+  });
+
+  it("high_winrate: winRate >= 65 && sellTrades >= 5 && resultInputRate >= 50 발동", () => {
+    const summary = makeSummary({ winRate: 70, sellTrades: 6, resultInputRate: 80 });
+    const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
+    expect(result.some((r) => r.id === "high_winrate")).toBe(true);
+  });
+
+  it("high_winrate: concentration 없이도 발동 (summary-only 룰)", () => {
+    const summary = makeSummary({ winRate: 70, sellTrades: 6, resultInputRate: 80 });
+    const result = evaluateRules({ summary });
+    expect(result.some((r) => r.id === "high_winrate")).toBe(true);
+  });
+
+  it("concentration_high: concentration 없으면 발동 안 함", () => {
+    const result = evaluateRules({ summary: makeSummary() });
+    expect(result.some((r) => r.id === "concentration_high")).toBe(false);
+  });
+});
+
+// ── parsePeriod ────────────────────────────────────────────────
+
+describe("parsePeriod", () => {
+  it("유효한 period 값은 그대로 반환", () => {
+    expect(parsePeriod("1m")).toBe("1m");
+    expect(parsePeriod("3m")).toBe("3m");
+    expect(parsePeriod("6m")).toBe("6m");
+    expect(parsePeriod("ytd")).toBe("ytd");
+    expect(parsePeriod("all")).toBe("all");
+  });
+
+  it("잘못된 값은 all로 fallback", () => {
+    expect(parsePeriod("invalid")).toBe("all");
+    expect(parsePeriod(null)).toBe("all");
+    expect(parsePeriod("")).toBe("all");
+  });
+});
+
+// ── filterByPeriod ─────────────────────────────────────────────
+
+describe("filterByPeriod", () => {
+  function makeTradeLite(id: string, traded_at: string): Trade {
+    return makeTrade({ id, trade_type: "BUY", traded_at });
+  }
+
+  it("all: 모든 거래 반환", () => {
+    const trades = [
+      makeTradeLite("t1", "2020-01-01T09:00:00+09:00"),
+      makeTradeLite("t2", "2024-06-01T09:00:00+09:00"),
+    ];
+    const result = filterByPeriod(trades, "all");
+    expect(result).toHaveLength(2);
+  });
+
+  it("3m: 3개월 이전 거래 제외", () => {
+    const now = new Date();
+    const recentDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // 30일 전
+    const oldDate = new Date(now.getTime() - 200 * 24 * 60 * 60 * 1000);  // 200일 전
+    const recentIso = recentDate.toISOString().replace("Z", "+09:00");
+    const oldIso = oldDate.toISOString().replace("Z", "+09:00");
+
+    const trades = [
+      makeTradeLite("recent", recentIso),
+      makeTradeLite("old", oldIso),
+    ];
+    const result = filterByPeriod(trades, "3m");
+    expect(result.map((t) => t.id)).toContain("recent");
+    expect(result.map((t) => t.id)).not.toContain("old");
+  });
+
+  it("ytd: 올해 1월 1일 이전 거래 제외", () => {
+    const year = new Date().getFullYear();
+    const thisYear = `${year}-01-15T09:00:00+09:00`;  // 올해 1월 15일 (과거)
+    const lastYear = `${year - 1}-12-31T09:00:00+09:00`;
+
+    const trades = [
+      makeTradeLite("this", thisYear),
+      makeTradeLite("last", lastYear),
+    ];
+    const result = filterByPeriod(trades, "ytd");
+    expect(result.map((t) => t.id)).toContain("this");
+    expect(result.map((t) => t.id)).not.toContain("last");
+  });
+});
+
+// ── sellPnL ────────────────────────────────────────────────────
+
+describe("sellPnL", () => {
+  it("profit_loss 직접 입력값이 있으면 그대로 반환", () => {
+    const sell = makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 10, profit_loss: 50000 });
+    expect(sellPnL(sell, 70000)).toBe(50000);
+  });
+
+  it("fallback: price * qty - avgCost * qty - commission - tax", () => {
+    const sell = makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 10, commission: 500, tax: 200 });
+    // 80000*10 - 70000*10 - 500 - 200 = 800000 - 700000 - 700 = 99300
+    expect(sellPnL(sell, 70000)).toBe(99300);
+  });
+
+  it("costQty 지정 시 비용 측에만 적용 (oversell 보호)", () => {
+    const sell = makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 15, commission: 0, tax: 0 });
+    // costQty=10 → 80000*15 - 70000*10 = 1200000 - 700000 = 500000
+    expect(sellPnL(sell, 70000, 10)).toBe(500000);
+  });
+});
+
+// ── computeProfile ────────────────────────────────────────────
+
+describe("computeProfile", () => {
+  it("거래 없으면 diversification=50(중립)", () => {
+    const { profile } = computeProfile([], 0, new Map());
+    expect(profile.diversification).toBe(50);
+  });
+
+  it("FOMO 거래만 있으면 emotionStability 낮음", () => {
+    const trades = [
+      makeTrade({ id: "b1", trade_type: "BUY", emotion: "FOMO" }),
+      makeTrade({ id: "b2", trade_type: "BUY", emotion: "FOMO" }),
+    ];
+    const { profile } = computeProfile(trades, 0, new Map());
+    expect(profile.emotionStability).toBe(0);
+  });
+
+  it("CALM 거래만 있으면 emotionStability 높음", () => {
+    const trades = [
+      makeTrade({ id: "b1", trade_type: "BUY", emotion: "CALM" }),
+      makeTrade({ id: "b2", trade_type: "BUY", emotion: "CALM" }),
+    ];
+    const { profile } = computeProfile(trades, 0, new Map());
+    expect(profile.emotionStability).toBe(100);
+  });
+
+  it("모든 BUY에 FEELING 태그 → reasoningQuality 낮음", () => {
+    const trades = [
+      makeTrade({ id: "b1", trade_type: "BUY", reasoning_tags: ["FEELING" as any] }),
+    ];
+    const { profile } = computeProfile(trades, 0, new Map());
+    expect(profile.reasoningQuality).toBe(0);
+  });
+
+  it("SELL에 reflection_note 있으면 reviewHabit 100", () => {
+    const trades = [
+      makeTrade({ id: "b1", trade_type: "BUY" }),
+      makeTrade({ id: "s1", trade_type: "SELL", reflection_note: "잘했다" }),
+    ];
+    const { profile } = computeProfile(trades, 0, new Map());
+    expect(profile.reviewHabit).toBe(100);
+  });
+
+  it("hhi 기반 diversification 계산", () => {
+    const trades = [
+      makeTrade({ id: "b1", trade_type: "BUY" }),
+      makeTrade({ id: "s1", trade_type: "SELL" }),
+    ];
+    const { profile } = computeProfile(trades, 0.5, new Map());
+    // (1 - 0.5) * 100 = 50
+    expect(profile.diversification).toBe(50);
   });
 });

@@ -45,7 +45,7 @@ export function StrategyBreakdown({ data }: StrategyBreakdownProps) {
               )}
             </span>
           </div>
-          <WinRateBar rate={item.winRate} hasData={item.count > 0} />
+          <WinRateBar rate={item.winRate} hasData={item.resultCount > 0} />
         </div>
       ))}
     </div>

@@ -19,18 +19,19 @@ export async function GET(req: NextRequest) {
       .eq("user_id", user.id)
       .order("traded_at", { ascending: true });
 
-    if (dbError) throw new HttpError(dbError.message, 500);
+    if (dbError) throw new HttpError("거래 데이터를 불러올 수 없습니다.", 500);
     const allTrades = (tradesRaw ?? []) as Trade[];
     const trades = filterByPeriod(allTrades, period);
 
     // WAC/FIFO 모두 전체 trades 기준 (기간 이전 매수 포함해야 정확)
     const pnlMap = computeRealizedPnL(allTrades);
     const holdingDaysMap = computeHoldingDays(allTrades);
-    const summary = computeSummary(trades, pnlMap, holdingDaysMap);
+    const summary = computeSummary(trades, pnlMap, holdingDaysMap, allTrades);
 
     return NextResponse.json({ period, ...summary });
   } catch (e) {
     if (e instanceof HttpError) return e.toResponse();
+    console.error("[analysis/summary]", e);
     return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
   }
 }
