@@ -34,7 +34,7 @@ export function HoldingsList({ positions }: HoldingsListProps) {
     setSelected(pos);
     try {
       const res = await fetch(
-        `/api/portfolio/stock-trades?ticker=${encodeURIComponent(pos.ticker)}&country=${encodeURIComponent(pos.country)}`,
+        `/api/trades?ticker=${encodeURIComponent(pos.ticker)}&country=${encodeURIComponent(pos.country)}`,
       );
       if (res.ok) {
         const { trades, accounts: accs } = await res.json();
