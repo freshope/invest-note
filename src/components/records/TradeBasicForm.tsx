@@ -287,12 +287,13 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
 
         {/* 가격 */}
         <div className="space-y-1.5">
-          <Label>가격 (원) <span className="text-destructive">*</span></Label>
+          <Label htmlFor="price">가격 (원) <span className="text-destructive">*</span></Label>
           <Controller
             control={control}
             name="price"
             render={({ field }) => (
               <Input
+                id="price"
                 type="text"
                 inputMode="numeric"
                 placeholder="0"
@@ -305,12 +306,13 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
 
         {/* 수량 */}
         <div className="space-y-1.5">
-          <Label>수량 <span className="text-destructive">*</span></Label>
+          <Label htmlFor="quantity">수량 <span className="text-destructive">*</span></Label>
           <Controller
             control={control}
             name="quantity"
             render={({ field }) => (
               <Input
+                id="quantity"
                 type="text"
                 inputMode="decimal"
                 placeholder="0"
@@ -331,12 +333,13 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
 
         {/* 수수료 */}
         <div className="space-y-1.5">
-          <Label>수수료 (원)</Label>
+          <Label htmlFor="commission">수수료 (원)</Label>
           <Controller
             control={control}
             name="commission"
             render={({ field }) => (
               <Input
+                id="commission"
                 type="text"
                 inputMode="numeric"
                 placeholder="0"
@@ -350,12 +353,13 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         {/* 제세금 (매도) */}
         {tradeType === "SELL" && (
           <div className="space-y-1.5">
-            <Label>제세금 (원)</Label>
+            <Label htmlFor="tax">제세금 (원)</Label>
             <Controller
               control={control}
               name="tax"
               render={({ field }) => (
                 <Input
+                  id="tax"
                   type="text"
                   inputMode="numeric"
                   placeholder="0"

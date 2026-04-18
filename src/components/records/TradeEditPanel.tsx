@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -159,6 +159,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
   }, [trade, reset]);
 
   const [tags, result] = [watch("reasoning_tags"), watch("result")];
+  const [calOpen, setCalOpen] = useState(false);
 
   function toggleTag(tag: ReasoningTag) {
     const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
@@ -226,7 +227,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                   control={control}
                   name="traded_at"
                   render={({ field }) => (
-                    <Popover>
+                    <Popover open={calOpen} onOpenChange={setCalOpen}>
                       <PopoverTrigger className="flex h-12 w-full items-center justify-between rounded-xl bg-muted px-4 text-[15px] text-foreground">
                         <span>{format(field.value, "yyyy년 M월 d일 (EEE)", { locale: ko })}</span>
                         <CalendarIcon className="h-4 w-4 text-muted-foreground" />
@@ -240,6 +241,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                               const updated = new Date(d);
                               updated.setHours(field.value.getHours(), field.value.getMinutes());
                               field.onChange(updated);
+                              setCalOpen(false);
                             }
                           }}
                           initialFocus

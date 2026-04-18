@@ -52,13 +52,17 @@ export function StockSearchInput({ onSelect, value, onChange }: StockSearchInput
   });
 
   useEffect(() => {
+    if (!value.trim()) {
+      setOpen(false);
+      return;
+    }
     if (suggestions.length > 0) {
       setOpen(true);
       setActiveIndex(-1);
     } else {
       setOpen(false);
     }
-  }, [suggestions]);
+  }, [suggestions, value]);
 
   const handleSelect = useCallback((stock: StockResult) => {
     onChange(stock.name);

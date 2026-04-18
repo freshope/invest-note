@@ -110,7 +110,7 @@ const cashBalanceField = z
 
 export const AccountCreateSchema = z.object({
   name: z.string().trim().min(1).max(MAX_NAME_LENGTH),
-  broker: z.string().trim().max(MAX_BROKER_LENGTH).nullable(),
+  broker: z.string().trim().max(MAX_BROKER_LENGTH).nullable().transform((v) => v || null),
   cash_balance: cashBalanceField,
 });
 
@@ -119,7 +119,7 @@ export type AccountCreate = z.infer<typeof AccountCreateSchema>;
 export const AccountUpdateSchema = z
   .object({
     name: z.string().trim().min(1).max(MAX_NAME_LENGTH),
-    broker: z.string().trim().max(MAX_BROKER_LENGTH).nullable(),
+    broker: z.string().trim().max(MAX_BROKER_LENGTH).nullable().transform((v) => v || null),
     cash_balance: cashBalanceField,
   })
   .partial();
