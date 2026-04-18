@@ -8,6 +8,7 @@ import { CsvUploadButton } from "./CsvUploadButton";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import type { Account } from "@/types/database";
 import { PlusIcon } from "lucide-react";
+import { PageHeader } from "@/components/layout/PageHeader";
 
 interface TradeListProps {
   trades: TradeWithAccount[];
@@ -28,11 +29,7 @@ export function TradeList({ trades, accounts }: TradeListProps) {
 
   return (
     <>
-      {/* 헤더 */}
-      <div className="sticky top-0 z-10 bg-background px-5 pt-6 pb-3 flex items-center justify-between">
-        <h1 className="text-[20px] font-bold text-foreground">기록</h1>
-        <CsvUploadButton />
-      </div>
+      <PageHeader title="기록" actions={<CsvUploadButton />} />
 
       {/* 목록 */}
       <div className="px-5 pb-6">
