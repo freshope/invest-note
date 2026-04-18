@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import {
   FullScreenPanel,
   FullScreenPanelContent,
@@ -32,6 +33,7 @@ export function TradeDetailPanel({
   allTrades,
 }: TradeDetailPanelProps) {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [stockOpen, setStockOpen] = useState(false);
 
   const handleClose = useCallback(() => onOpenChange(false), [onOpenChange]);
@@ -39,12 +41,14 @@ export function TradeDetailPanel({
   const handleDeleted = useCallback(() => {
     onOpenChange(false);
     queryClient.invalidateQueries({ queryKey: ["portfolio"] });
-  }, [onOpenChange, queryClient]);
+    router.refresh(); // Server Component 거래 목록 갱신
+  }, [onOpenChange, queryClient, router]);
 
   const handleSaved = useCallback(() => {
     onOpenChange(false);
     queryClient.invalidateQueries({ queryKey: ["portfolio"] });
-  }, [onOpenChange, queryClient]);
+    router.refresh(); // Server Component 거래 목록 갱신
+  }, [onOpenChange, queryClient, router]);
 
   const handleStockPress = trade.ticker_symbol
     ? () => setStockOpen(true)

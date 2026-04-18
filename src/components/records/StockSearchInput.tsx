@@ -34,7 +34,9 @@ const MARKET_BADGE: Record<string, { label: string; className: string }> = {
 
 async function fetchStocks(query: string): Promise<StockResult[]> {
   const res = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`);
-  if (!res.ok) return [];
+  // 오류를 throw해야 TanStack Query가 error 상태로 전환 + retry 처리
+  // return []는 빈 결과가 staleTime 동안 캐시되어 서버 오류를 숨김
+  if (!res.ok) throw new Error(`stock search failed: ${res.status}`);
   return res.json();
 }
 

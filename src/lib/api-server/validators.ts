@@ -21,15 +21,8 @@ export const VALID_RESULTS: TradeResult[] = ["SUCCESS", "FAIL", "BREAKEVEN"];
 // Primitive helpers
 // ============================================================
 
-// "yyyy-MM-dd'T'HH:mm" KST → UTC ISO 문자열
-// zod v4에서 transform 내 throw는 safeParse에서 잡히지 않으므로 ctx.addIssue 패턴 사용
-export function parseTradedAt(raw: string): string {
-  const d = new Date(`${raw}+09:00`);
-  if (isNaN(d.getTime())) throw new Error("traded_at: 올바른 날짜/시간 형식이 아닙니다");
-  return d.toISOString();
-}
-
 // zod transform 전용: safeParse-safe 버전
+// (주의: transform 내 throw는 zod v4에서 safeParse가 잡지 못하므로 ctx.addIssue 패턴 사용)
 const tradedAtTransform = z
   .string()
   .min(1, "날짜를 선택해주세요.")
@@ -71,7 +64,9 @@ export const TradeUpdateSchema = z
     account_id: z.string().trim().min(1),
     asset_name: z.string().trim().min(1).max(100),
     ticker_symbol: z.string().trim().nullable().transform((v) => v || null),
-    country_code: z.enum(["KR", "US", "OTHER"]).default("KR"),
+    // PATCH 스키마: .default() 사용 금지 — zod v4에서 .partial() + .default() 조합 시
+    // 필드가 absent해도 default 값이 materialized되어 patch에 포함됨 → 기존 값 덮어쓰기 버그
+    country_code: z.enum(["KR", "US", "OTHER"]),
     traded_at: tradedAtTransform,
     price: commaPositive,
     quantity: commaPositive,

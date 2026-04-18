@@ -5,6 +5,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/Button";
 import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
@@ -68,6 +69,7 @@ interface TradeBasicFormProps {
 
 export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps) {
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   const {
     control,
@@ -132,6 +134,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         traded_at: format(values.traded_at, "yyyy-MM-dd'T'HH:mm"),
       });
       await queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+      router.refresh(); // Server Component 거래 목록 갱신
       onTradeCreated(result.id, result.trade_type);
     } catch (err) {
       setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });

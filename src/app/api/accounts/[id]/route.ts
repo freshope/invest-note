@@ -16,6 +16,8 @@ export async function PATCH(
       return jsonError(parsed.error.issues[0]?.message ?? "올바르지 않은 입력입니다.", 400);
     }
 
+    if (Object.keys(parsed.data).length === 0) return new NextResponse(null, { status: 204 });
+
     const { data, error } = await supabase
       .from("accounts")
       .update(parsed.data)

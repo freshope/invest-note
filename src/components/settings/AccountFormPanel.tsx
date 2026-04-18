@@ -5,6 +5,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/Button";
 import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
@@ -49,6 +50,7 @@ interface AccountFormPanelProps {
 export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPanelProps) {
   const isEdit = !!account;
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   const {
     register,
@@ -92,6 +94,7 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
         await accountsApi.create(input);
       }
       await queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+      router.refresh(); // Server Component 계좌 목록 갱신
       onOpenChange(false);
       reset({ name: "", broker: null, cash_display: "" });
     } catch (err) {
