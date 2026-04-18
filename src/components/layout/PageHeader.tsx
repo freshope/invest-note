@@ -1,13 +1,21 @@
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 
-interface PageHeaderProps {
-  title?: ReactNode;
-  actions?: ReactNode;
-  children?: ReactNode;
-  sticky?: boolean;
-  className?: string;
-}
+type PageHeaderProps =
+  | {
+      children: ReactNode;
+      title?: never;
+      actions?: never;
+      sticky?: boolean;
+      className?: string;
+    }
+  | {
+      children?: never;
+      title?: ReactNode;
+      actions?: ReactNode;
+      sticky?: boolean;
+      className?: string;
+    };
 
 export function PageHeader({
   title,

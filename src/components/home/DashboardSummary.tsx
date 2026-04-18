@@ -21,11 +21,11 @@ function PnLText({ value, className }: { value: number; className?: string }) {
   );
 }
 
-interface Props {
+interface DashboardProps {
   totals: DashboardTotals;
 }
 
-export function DashboardTitle({ totals }: Props) {
+export function DashboardTitle({ totals }: DashboardProps) {
   const { totalAssets, totalEvaluation, totalCash } = totals;
   return (
     <div>
@@ -41,7 +41,7 @@ export function DashboardTitle({ totals }: Props) {
   );
 }
 
-export function DashboardBody({ totals }: Props) {
+export function DashboardBody({ totals }: DashboardProps) {
   const {
     totalUnrealizedPnL,
     totalRealizedPnL,

@@ -15,7 +15,6 @@ interface TradeListProps {
   accounts: Account[];
 }
 
-
 export function TradeList({ trades, accounts }: TradeListProps) {
   const [formOpen, setFormOpen] = useState(false);
   const [selectedTrade, setSelectedTrade] = useState<TradeWithAccount | null>(null);
