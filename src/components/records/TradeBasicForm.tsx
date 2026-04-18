@@ -142,6 +142,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
   return (
     <form onSubmit={handleSubmit} className="flex flex-col min-h-full">
       <div className="flex-1 px-5 pt-2 pb-4 space-y-5">
+        {error && <p className="text-sm text-destructive">{error}</p>}
         {/* 매수/매도 토글 */}
         <div className="space-y-1.5">
           <ToggleGroup spacing={2} className="gap-2">
@@ -316,7 +317,6 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
           </div>
         )}
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
       </div>
 
       <div
