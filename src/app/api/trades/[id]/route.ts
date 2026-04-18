@@ -15,7 +15,7 @@ import {
   parseNumber,
   parseTradedAt,
 } from "@/lib/api-server/validators";
-import type { Trade, TradeType, MarketType, ReasoningTag } from "@/types/database";
+import type { Trade, ReasoningTag } from "@/types/database";
 
 export async function GET(
   _req: NextRequest,

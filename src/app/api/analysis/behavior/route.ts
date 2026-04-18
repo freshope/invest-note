@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { requireUser } from "@/lib/api-server/auth";
 import { HttpError } from "@/lib/api-server/errors";
-import { parsePeriod, filterByPeriod } from "@/lib/analysis/period";
+import { fetchUserTradesWithPeriod } from "@/lib/api-server/analysis-context";
 import { computeConcentration } from "@/lib/analysis/concentration";
 import { computeProfile } from "@/lib/analysis/profile";
 import { computeHoldingDays } from "@/lib/analysis/holding-period";
 import { buildPositions, mergeQuotes } from "@/lib/portfolio";
 import { fetchQuotesByKeys } from "@/lib/quotes";
-import type { Trade } from "@/types/database";
 
 const HOLDING_BUCKETS: { label: string; maxDays: number }[] = [
   { label: "1일 이내", maxDays: 1 },
@@ -41,18 +39,7 @@ const HOLDING_ORDER = HOLDING_BUCKETS.map((b) => b.label);
 
 export async function GET(req: NextRequest) {
   try {
-    const { supabase, user } = await requireUser();
-    const period = parsePeriod(req.nextUrl.searchParams.get("period"));
-
-    const { data: tradesRaw, error: dbError } = await supabase
-      .from("trades")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("traded_at", { ascending: true });
-
-    if (dbError) throw new HttpError("거래 데이터를 불러올 수 없습니다.", 500);
-    const allTrades = (tradesRaw ?? []) as Trade[];
-    const trades = filterByPeriod(allTrades, period);
+    const { allTrades, trades, period } = await fetchUserTradesWithPeriod(req);
 
     // 분산 계산: 현재 보유 포지션 기반 (전체 trades 사용 — 기간 필터 전)
     // 시세 취득 실패 시 costBasis로 fallback

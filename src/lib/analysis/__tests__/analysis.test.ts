@@ -86,13 +86,14 @@ describe("computeRealizedPnL", () => {
     expect(pnl).not.toBeNaN();
   });
 
-  it("매수 없이 매도 시 avgCost=0으로 처리", () => {
+  it("매수 없이 매도 시 matchedQty=0이므로 pnl=0", () => {
     const trades: Trade[] = [
       makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 5, profit_loss: null }),
     ];
     const map = computeRealizedPnL(trades);
-    // avgCost = 0/0 = 0 → pnl = 80000*5 - 0 - 0 - 0
-    expect(map.get("s1")).toBe(400000);
+    // runningQty=0 → matchedQty=min(5,0)=0 → pnl = 80000*0 - 0*0 - 0 - 0 = 0
+    // oversell 없이는 매칭된 수량만 실현손익으로 계산
+    expect(map.get("s1")).toBe(0);
   });
 });
 
@@ -599,10 +600,10 @@ describe("sellPnL", () => {
     expect(sellPnL(sell, 70000)).toBe(99300);
   });
 
-  it("costQty 지정 시 비용 측에만 적용 (oversell 보호)", () => {
+  it("costQty 지정 시 수익/비용 모두 costQty 기준으로 계산 (oversell 시 phantom profit 방지)", () => {
     const sell = makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 15, commission: 0, tax: 0 });
-    // costQty=10 → 80000*15 - 70000*10 = 1200000 - 700000 = 500000
-    expect(sellPnL(sell, 70000, 10)).toBe(500000);
+    // costQty=10 → 80000*10 - 70000*10 = 800000 - 700000 = 100000 (보유 수량 기준 실현손익)
+    expect(sellPnL(sell, 70000, 10)).toBe(100000);
   });
 });
 
@@ -634,7 +635,7 @@ describe("computeProfile", () => {
 
   it("모든 BUY에 FEELING 태그 → reasoningQuality 낮음", () => {
     const trades = [
-      makeTrade({ id: "b1", trade_type: "BUY", reasoning_tags: ["FEELING" as any] }),
+      makeTrade({ id: "b1", trade_type: "BUY", reasoning_tags: ["FEELING"] }),
     ];
     const { profile } = computeProfile(trades, 0, new Map());
     expect(profile.reasoningQuality).toBe(0);

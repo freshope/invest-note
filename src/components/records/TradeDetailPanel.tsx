@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   FullScreenPanel,
   FullScreenPanelContent,
-} from "@/components/common/full-screen-panel";
+} from "@/components/base/FullScreenPanel";
 import { TradeDetail } from "./TradeDetail";
 import type { Account } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";

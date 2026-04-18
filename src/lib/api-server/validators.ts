@@ -6,7 +6,7 @@ import type { TradeType, MarketType, StrategyType, EmotionType, ReasoningTag, Tr
 
 export const MAX_NAME_LENGTH = 50;
 export const MAX_BROKER_LENGTH = 50;
-export const MAX_CASH_BALANCE = 9999999999999999.99;
+const MAX_CASH_BALANCE = 9999999999999999.99;
 
 export function parseCashBalance(raw: unknown): number | null {
   if (raw == null || raw === "") return 0;

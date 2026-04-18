@@ -10,7 +10,7 @@ export async function GET() {
   try {
     const { supabase, user } = await requireUser();
 
-    const [{ data: tradesRaw }, { data: accountsRaw }] = await Promise.all([
+    const [{ data: tradesRaw, error: e1 }, { data: accountsRaw, error: e2 }] = await Promise.all([
       supabase
         .from("trades")
         .select("*, accounts(name, broker)")
@@ -22,6 +22,7 @@ export async function GET() {
         .eq("user_id", user.id)
         .order("created_at", { ascending: true }),
     ]);
+    if (e1 || e2) throw new HttpError("데이터를 불러올 수 없습니다.", 500);
 
     const trades: TradeWithAccount[] = (tradesRaw ?? []).map((t) => {
       const { accounts: acc, ...trade } = t as Trade & {

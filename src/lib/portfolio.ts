@@ -41,15 +41,17 @@ export interface DashboardTotals {
 }
 
 export function buildPositions(trades: Trade[]): Position[] {
-  const map = new Map<string, {
+  // 계좌별 lot 추적 — 키: ticker:country:accountId
+  // 다른 계좌의 매도가 A 계좌 매수에 매칭되는 오염 방지
+  const lotMap = new Map<string, {
     ticker: string;
     country: string;
     assetName: string;
-    runningQty: number;   // 현재 보유 수량 (매수 - 매도 누적)
-    runningCost: number;  // 현재 보유분의 취득 원가 합계 (부분 매도 시 비례 차감)
+    accountId: string;
+    runningQty: number;
+    runningCost: number;
     realizedPnL: number;
     lastTradedAt: string;
-    accountIds: Set<string>;
     lastNoteType: "근거" | "회고" | null;
     lastNote: string | null;
   }>();
@@ -62,52 +64,87 @@ export function buildPositions(trades: Trade[]): Position[] {
   for (const trade of sorted) {
     const ticker = trade.ticker_symbol ?? trade.asset_name;
     const country = trade.country_code ?? "KR";
-    const key = `${ticker}:${country}`;
+    const lotKey = `${ticker}:${country}:${trade.account_id}`;
 
-    if (!map.has(key)) {
-      map.set(key, {
+    if (!lotMap.has(lotKey)) {
+      lotMap.set(lotKey, {
         ticker,
         country,
         assetName: trade.asset_name,
+        accountId: trade.account_id,
         runningQty: 0,
         runningCost: 0,
         realizedPnL: 0,
         lastTradedAt: trade.traded_at,
-        accountIds: new Set(),
         lastNoteType: null,
         lastNote: null,
       });
     }
 
-    const pos = map.get(key)!;
-    pos.lastTradedAt = trade.traded_at;
-    pos.accountIds.add(trade.account_id);
+    const lot = lotMap.get(lotKey)!;
+    lot.lastTradedAt = trade.traded_at;
 
     if (trade.trade_type === "BUY") {
-      pos.runningQty += trade.quantity;
-      pos.runningCost += trade.price * trade.quantity;
+      lot.runningQty += trade.quantity;
+      lot.runningCost += trade.price * trade.quantity;
       const reason = trade.buy_reason?.trim();
-      if (reason) { pos.lastNoteType = "근거"; pos.lastNote = reason; }
+      if (reason) { lot.lastNoteType = "근거"; lot.lastNote = reason; }
     } else {
-      // 매도 시 보유 원가를 평균단가 비례로 차감 (running WAC)
-      const avgCost = pos.runningQty > 0 ? pos.runningCost / pos.runningQty : 0;
-      const matchedQty = Math.min(trade.quantity, pos.runningQty);
-      pos.realizedPnL += sellPnL(trade, avgCost, matchedQty);
-      pos.runningCost = Math.max(0, pos.runningCost - avgCost * matchedQty);
-      pos.runningQty = Math.max(0, pos.runningQty - trade.quantity);
+      const avgCost = lot.runningQty > 0 ? lot.runningCost / lot.runningQty : 0;
+      const matchedQty = Math.min(trade.quantity, lot.runningQty);
+      lot.realizedPnL += sellPnL(trade, avgCost, matchedQty);
+      lot.runningCost = Math.max(0, lot.runningCost - avgCost * matchedQty);
+      lot.runningQty = Math.max(0, lot.runningQty - trade.quantity);
       const note = trade.reflection_note?.trim() || trade.sell_reason?.trim();
-      if (note) { pos.lastNoteType = "회고"; pos.lastNote = note; }
+      if (note) { lot.lastNoteType = "회고"; lot.lastNote = note; }
     }
+  }
+
+  // 계좌별 lot → 종목별(ticker:country) 집계 포지션
+  const posMap = new Map<string, {
+    ticker: string;
+    country: string;
+    assetName: string;
+    runningQty: number;
+    runningCost: number;
+    realizedPnL: number;
+    lastTradedAt: string;
+    accountIds: Set<string>;
+    lastNoteType: "근거" | "회고" | null;
+    lastNote: string | null;
+  }>();
+
+  for (const lot of lotMap.values()) {
+    if (lot.runningQty <= 0) continue;
+    const displayKey = `${lot.ticker}:${lot.country}`;
+    if (!posMap.has(displayKey)) {
+      posMap.set(displayKey, {
+        ticker: lot.ticker,
+        country: lot.country,
+        assetName: lot.assetName,
+        runningQty: 0,
+        runningCost: 0,
+        realizedPnL: 0,
+        lastTradedAt: lot.lastTradedAt,
+        accountIds: new Set(),
+        lastNoteType: null,
+        lastNote: null,
+      });
+    }
+    const pos = posMap.get(displayKey)!;
+    pos.runningQty += lot.runningQty;
+    pos.runningCost += lot.runningCost;
+    pos.realizedPnL += lot.realizedPnL;
+    if (lot.lastTradedAt > pos.lastTradedAt) pos.lastTradedAt = lot.lastTradedAt;
+    pos.accountIds.add(lot.accountId);
+    if (lot.lastNoteType) { pos.lastNoteType = lot.lastNoteType; pos.lastNote = lot.lastNote; }
   }
 
   const positions: Position[] = [];
 
-  for (const [key, pos] of map.entries()) {
+  for (const [key, pos] of posMap.entries()) {
     const holdingQuantity = pos.runningQty;
-    if (holdingQuantity <= 0) continue; // 전량 매도된 종목 제외
-
     const avgBuyPrice = holdingQuantity > 0 ? pos.runningCost / holdingQuantity : 0;
-    const costBasis = pos.runningCost;
     positions.push({
       key,
       ticker: pos.ticker,
@@ -115,7 +152,7 @@ export function buildPositions(trades: Trade[]): Position[] {
       assetName: pos.assetName,
       holdingQuantity,
       avgBuyPrice,
-      costBasis,
+      costBasis: pos.runningCost,
       realizedPnL: pos.realizedPnL,
       currentPrice: null,
       evaluation: null,

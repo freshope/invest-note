@@ -1,9 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { requireUser } from "@/lib/api-server/auth";
 import { fetchKRPrice, fetchUSPrices } from "@/lib/quotes";
 
 export type { QuoteResult } from "@/lib/quotes";
 
 export async function GET(request: NextRequest) {
+  try { await requireUser(); } catch { return NextResponse.json({}, { status: 401 }); }
+
   const raw = request.nextUrl.searchParams.get("symbols");
   if (!raw) return NextResponse.json({});
 

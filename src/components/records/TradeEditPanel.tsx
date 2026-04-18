@@ -7,7 +7,7 @@ import {
   FullScreenPanelContent,
   FullScreenPanelHeader,
   FullScreenPanelBody,
-} from "@/components/common/full-screen-panel";
+} from "@/components/base/FullScreenPanel";
 import { Button } from "@/components/base/Button";
 import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";

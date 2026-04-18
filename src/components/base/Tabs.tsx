@@ -6,7 +6,6 @@ import {
   TabsContent as UITabsContent,
   tabsListVariants,
 } from "@/components/ui/tabs";
-import type { VariantProps } from "class-variance-authority";
 import type { Tabs as TabsPrimitive } from "@base-ui/react/tabs";
 
 function Tabs({ className, ...props }: TabsPrimitive.Root.Props) {

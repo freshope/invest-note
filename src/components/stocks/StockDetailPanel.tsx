@@ -2,10 +2,11 @@
 
 import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { computeRealizedPnL } from "@/lib/analysis/realized-pnl";
 import {
   FullScreenPanel,
   FullScreenPanelContent,
-} from "@/components/common/full-screen-panel";
+} from "@/components/base/FullScreenPanel";
 import { StockDetail } from "./StockDetail";
 import type { Account } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
@@ -43,16 +44,18 @@ export function StockDetailPanel({
 
   const filteredTrades = useMemo(
     () => allTrades.filter(
-      (t) => t.ticker_symbol === ticker && (t.country_code ?? "KR") === country
+      (t) => (t.ticker_symbol ?? t.asset_name) === ticker && (t.country_code ?? "KR") === country
     ),
     [allTrades, ticker, country]
   );
+
+  const pnlMap = useMemo(() => computeRealizedPnL(allTrades), [allTrades]);
 
   const stats = useMemo(() => {
     const sellTrades = filteredTrades.filter((t) => t.trade_type === "SELL");
     const winCount = sellTrades.filter((t) => t.result === "SUCCESS").length;
     const totalProfitLoss = sellTrades.reduce(
-      (sum, t) => sum + (t.profit_loss ? Number(t.profit_loss) : 0),
+      (sum, t) => sum + (pnlMap.get(t.id) ?? 0),
       0
     );
     return {
@@ -61,7 +64,7 @@ export function StockDetailPanel({
       winCount,
       totalProfitLoss,
     };
-  }, [filteredTrades]);
+  }, [filteredTrades, pnlMap]);
 
   const handleTradePress = useCallback((trade: TradeWithAccount) => {
     setSelectedTrade(trade);

@@ -1,20 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
 import { DashboardTitle, DashboardBody } from "./DashboardSummary";
 import { AllocationTabs } from "./AllocationTabs";
 import { HoldingsList } from "./HoldingsList";
 import { EmptyState } from "./EmptyState";
 import { PageHeader } from "@/components/layout/PageHeader";
-import type { DashboardTotals, Position, AccountSnapshot } from "@/lib/portfolio";
-
-interface SummaryData {
-  totals: DashboardTotals;
-  positions: Position[];
-  snapshots: AccountSnapshot[];
-  hasAccounts: boolean;
-  hasTrades: boolean;
-}
+import { usePortfolioSummary } from "@/hooks/usePortfolioSummary";
 
 function Skeleton() {
   return (
@@ -45,32 +36,7 @@ function Skeleton() {
 }
 
 export function HomeDashboard() {
-  const [data, setData] = useState<SummaryData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
-
-  const refetch = useCallback(() => {
-    setRefreshKey((k) => k + 1);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true);
-    fetch("/api/portfolio/summary")
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((d: SummaryData) => { if (!cancelled) { setData(d); setError(false); } })
-      .catch(() => { if (!cancelled) setError(true); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [refreshKey]);
-
-  // 거래 수정/삭제 후 다른 컴포넌트(StockDetailPanel 등)에서 발생시키는 이벤트 수신
-  useEffect(() => {
-    window.addEventListener("portfolio:refresh", refetch);
-    return () => window.removeEventListener("portfolio:refresh", refetch);
-  }, [refetch]);
+  const { data, loading, error, refetch } = usePortfolioSummary();
 
   if (loading) return <Skeleton />;
 

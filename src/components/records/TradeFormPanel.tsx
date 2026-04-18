@@ -6,7 +6,7 @@ import {
   FullScreenPanelContent,
   FullScreenPanelHeader,
   FullScreenPanelBody,
-} from "@/components/common/full-screen-panel";
+} from "@/components/base/FullScreenPanel";
 import { TradeBasicForm } from "./TradeBasicForm";
 import { TradeMetaBuyForm } from "./TradeMetaBuyForm";
 import { TradeMetaSellForm } from "./TradeMetaSellForm";

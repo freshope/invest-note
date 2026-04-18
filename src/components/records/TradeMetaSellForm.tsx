@@ -7,8 +7,8 @@ import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
 import { Textarea } from "@/components/base/Textarea";
 import { tradesApi } from "@/lib/api-client";
-import type { TradeResult } from "@/types/database";
-import { STRATEGIES, EMOTIONS } from "./constants";
+import type { StrategyType, EmotionType, TradeResult } from "@/types/database";
+import { StrategyEmotionFields } from "./StrategyEmotionFields";
 
 interface TradeMetaSellFormProps {
   tradeId: string;
@@ -33,8 +33,8 @@ function formatNumber(raw: string): string {
 export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
   const router = useRouter();
   const [result, setResult] = useState<TradeResult | "">("");
-  const [strategy, setStrategy] = useState<string>("");
-  const [emotion, setEmotion] = useState<string>("");
+  const [strategy, setStrategy] = useState<StrategyType | "">("");
+  const [emotion, setEmotion] = useState<EmotionType | "">("");
   const [profitLossDisplay, setProfitLossDisplay] = useState("");
   const [sellReason, setSellReason] = useState("");
   const [reflectionNote, setReflectionNote] = useState("");
@@ -50,8 +50,8 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
       const profitLossRaw = profitLossDisplay.replace(/,/g, "");
       await tradesApi.update(tradeId, {
         result: result || null,
-        strategy_type: (strategy || null) as import("@/types/database").StrategyType | null,
-        emotion: (emotion || null) as import("@/types/database").EmotionType | null,
+        strategy_type: strategy || null,
+        emotion: emotion || null,
         profit_loss: profitLossRaw ? Number(profitLossRaw) : null,
         sell_reason: sellReason.trim() || null,
         reflection_note: reflectionNote.trim() || null,
@@ -139,47 +139,12 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
           />
         </div>
 
-        {/* 전략 */}
-        <div className="space-y-2">
-          <Label>전략</Label>
-          <div className="grid grid-cols-4 gap-2">
-            {STRATEGIES.map((s) => (
-              <button
-                key={s.value}
-                type="button"
-                onClick={() => setStrategy(strategy === s.value ? "" : s.value)}
-                className={`rounded-xl border py-2.5 text-[13px] font-semibold transition-colors ${
-                  strategy === s.value
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "border-border bg-muted/50 text-muted-foreground"
-                }`}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 감정 */}
-        <div className="space-y-2">
-          <Label>감정</Label>
-          <div className="grid grid-cols-3 gap-2">
-            {EMOTIONS.map((e) => (
-              <button
-                key={e.value}
-                type="button"
-                onClick={() => setEmotion(emotion === e.value ? "" : e.value)}
-                className={`rounded-xl border py-2.5 text-[13px] font-semibold transition-colors ${
-                  emotion === e.value
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "border-border bg-muted/50 text-muted-foreground"
-                }`}
-              >
-                {e.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <StrategyEmotionFields
+          strategy={strategy}
+          emotion={emotion}
+          onStrategyChange={setStrategy}
+          onEmotionChange={setEmotion}
+        />
 
         {error && <p className="text-sm text-destructive">{error}</p>}
       </div>

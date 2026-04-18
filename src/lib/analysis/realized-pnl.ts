@@ -1,11 +1,12 @@
 import type { Trade } from "@/types/database";
 
-// profit_loss 입력값 우선, 없으면 WAC 기반 fallback: (매도가 × 매도수량) − (평균단가 × 매칭수량) − 수수료 − 세금
+// profit_loss 입력값 우선, 없으면 WAC 기반 fallback: (매도가 × 매칭수량) − (평균단가 × 매칭수량) − 수수료 − 세금
 // costQty: 실제 보유 수량 기준 매칭 수량 — 미지정시 trade.quantity 사용 (oversell 방지용)
+// 매도 수익도 matchedQty 기준으로 계산 — oversell 시 보유 수량을 초과하는 부분은 수익/손실에 포함 안 함
 export function sellPnL(trade: Trade, avgCost: number, costQty?: number): number {
   if (trade.profit_loss != null) return Number(trade.profit_loss);
   const qty = costQty ?? trade.quantity;
-  return trade.price * trade.quantity - avgCost * qty - trade.commission - trade.tax;
+  return trade.price * qty - avgCost * qty - trade.commission - trade.tax;
 }
 
 // 각 SELL trade.id → 실현손익
@@ -19,7 +20,7 @@ export function computeRealizedPnL(trades: Trade[]): Map<string, number> {
   const posMap = new Map<string, { runningQty: number; runningCost: number }>();
 
   for (const trade of sorted) {
-    const key = `${trade.ticker_symbol ?? trade.asset_name}:${trade.country_code ?? "KR"}`;
+    const key = `${trade.ticker_symbol ?? trade.asset_name}:${trade.country_code ?? "KR"}:${trade.account_id}`;
     if (!posMap.has(key)) posMap.set(key, { runningQty: 0, runningCost: 0 });
     const pos = posMap.get(key)!;
 

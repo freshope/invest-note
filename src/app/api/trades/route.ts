@@ -32,8 +32,9 @@ export async function GET(req: NextRequest) {
         return jsonError("invalid ticker", 400);
       }
       // ticker_symbol 일치 또는 (ticker_symbol 없고 asset_name 일치)
+      const t = encodeURIComponent(ticker);
       query = query.or(
-        `ticker_symbol.eq.${ticker},and(ticker_symbol.is.null,asset_name.eq.${ticker})`
+        `ticker_symbol.eq.${t},and(ticker_symbol.is.null,asset_name.eq.${t})`
       );
     }
 

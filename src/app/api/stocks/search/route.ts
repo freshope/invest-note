@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { requireUser } from "@/lib/api-server/auth";
 
 interface StockResult {
   code: string;
@@ -91,6 +92,8 @@ async function searchUS(q: string): Promise<StockResult[]> {
 }
 
 export async function GET(request: NextRequest) {
+  try { await requireUser(); } catch { return NextResponse.json([], { status: 401 }); }
+
   const q = request.nextUrl.searchParams.get("q")?.trim();
   if (!q || q.length < 1) return NextResponse.json([]);
   if (q.length > 100) return NextResponse.json([]);

@@ -10,7 +10,7 @@ import {
   FullScreenPanelContent,
   FullScreenPanelHeader,
   FullScreenPanelBody,
-} from "@/components/common/full-screen-panel";
+} from "@/components/base/FullScreenPanel";
 import { accountsApi } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { Account } from "@/types/database";

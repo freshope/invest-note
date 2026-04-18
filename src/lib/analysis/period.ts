@@ -9,7 +9,7 @@ export function parsePeriod(param: string | null): Period {
   return "all";
 }
 
-export function periodToRange(period: Period): { from: Date | null; to: Date } {
+function periodToRange(period: Period): { from: Date | null; to: Date } {
   const now = toKST(new Date());
 
   if (period === "all") return { from: null, to: now };

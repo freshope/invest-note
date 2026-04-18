@@ -10,10 +10,12 @@ export function toKST(utcDate: Date): Date {
 }
 
 // 날짜별 그룹핑 — KST 기준 날짜 키 사용
+// toKST는 UTC ms에 +9h를 더한 Date를 반환하므로, 브라우저 로컬 타임존과 무관하게
+// ISO 문자열의 날짜 부분(UTC+9 기준)을 직접 사용해야 이중 오프셋을 방지한다.
 export function groupByDate(trades: TradeWithAccount[]): [string, TradeWithAccount[]][] {
   const map = new Map<string, TradeWithAccount[]>();
   for (const trade of trades) {
-    const key = format(toKST(new Date(trade.traded_at)), "yyyy-MM-dd");
+    const key = toKST(new Date(trade.traded_at)).toISOString().slice(0, 10);
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(trade);
   }
