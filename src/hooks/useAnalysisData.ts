@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useQueries } from "@tanstack/react-query";
 import type { Period } from "@/lib/analysis/period";
 import type { AnalysisSummary } from "@/lib/analysis/aggregate";
 import type { BehaviorProfile, ProfileInputRates } from "@/lib/analysis/profile";
@@ -21,50 +21,40 @@ export interface SuggestionsData {
   suggestions: Suggestion[];
 }
 
+async function fetchJson<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`fetch failed: ${url}`);
+  return res.json();
+}
+
 export function useAnalysisData(period: Period) {
-  const [summary, setSummary] = useState<AnalysisSummary | null>(null);
-  const [behavior, setBehavior] = useState<BehaviorData | null>(null);
-  const [suggestionsData, setSuggestionsData] = useState<SuggestionsData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [summaryQ, behaviorQ, suggestionsQ] = useQueries({
+    queries: [
+      {
+        queryKey: ["analysis", "summary", period],
+        queryFn: () => fetchJson<AnalysisSummary>(`/api/analysis/summary?period=${period}`),
+      },
+      {
+        queryKey: ["analysis", "behavior", period],
+        queryFn: () => fetchJson<BehaviorData>(`/api/analysis/behavior?period=${period}`),
+      },
+      {
+        queryKey: ["analysis", "suggestions", period],
+        queryFn: () => fetchJson<SuggestionsData>(`/api/analysis/suggestions?period=${period}`),
+      },
+    ],
+  });
 
-  const fetchData = useCallback(async (p: Period, signal: AbortSignal) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [summaryRes, behaviorRes, suggestionsRes] = await Promise.all([
-        fetch(`/api/analysis/summary?period=${p}`, { signal }),
-        fetch(`/api/analysis/behavior?period=${p}`, { signal }),
-        fetch(`/api/analysis/suggestions?period=${p}`, { signal }),
-      ]);
+  const loading = summaryQ.isPending || behaviorQ.isPending || suggestionsQ.isPending;
+  const error = summaryQ.isError || behaviorQ.isError || suggestionsQ.isError
+    ? "분석 데이터를 불러오는 중 오류가 발생했습니다"
+    : null;
 
-      if (signal.aborted) return;
-      if (!summaryRes.ok) throw new Error("summary");
-
-      const [s, b, sg] = await Promise.all([
-        summaryRes.json(),
-        behaviorRes.ok ? behaviorRes.json() : Promise.resolve(null),
-        suggestionsRes.ok ? suggestionsRes.json() : Promise.resolve(null),
-      ]);
-      setSummary(s);
-      setBehavior(b);
-      setSuggestionsData(sg);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      setError("분석 데이터를 불러오는 중 오류가 발생했습니다");
-      setSummary(null);
-      setBehavior(null);
-      setSuggestionsData(null);
-    } finally {
-      if (!signal.aborted) setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchData(period, controller.signal);
-    return () => controller.abort();
-  }, [period, fetchData]);
-
-  return { summary, behavior, suggestionsData, loading, error };
+  return {
+    summary: summaryQ.data ?? null,
+    behavior: behaviorQ.data ?? null,
+    suggestionsData: suggestionsQ.data ?? null,
+    loading,
+    error,
+  };
 }

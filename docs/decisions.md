@@ -71,6 +71,15 @@
 
 ---
 
+## 2026-04-18 | mutation 후 router.refresh() + invalidateQueries 병용
+
+**맥락:** TanStack Query 도입 후 `router.refresh()` 없이 `invalidateQueries`만 사용했더니 Server Component로 렌더링된 거래/계좌 목록이 mutation 후 갱신되지 않는 regression 발생
+**결정:** mutation(거래 생성/수정/삭제, 계좌 추가/수정/삭제) 후 `queryClient.invalidateQueries()` + `router.refresh()` 를 함께 호출
+**이유:** `invalidateQueries`는 TanStack Query 캐시만 무효화 — Server Component(RSC)는 별도로 `router.refresh()`가 있어야 재렌더됨
+**트레이드오프:** `router.refresh()`가 전체 페이지 Server Component를 재페치하므로 느릴 수 있음. 향후 Server Component를 Client Component로 전환하거나 캐시 태그 revalidation으로 교체 가능
+
+---
+
 ## 2026-04-17 | 분석 탭: 감정/전략 룰 resultCount 가드
 
 - **결정:** `losing_strategy`, `emotion_fomo_low_winrate` 룰 모두 `resultCount >= 3` 가드 적용

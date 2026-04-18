@@ -1,19 +1,28 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/base/Button";
 import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
 import { Textarea } from "@/components/base/Textarea";
 import { tradesApi } from "@/lib/api-client";
-import type { StrategyType, EmotionType, TradeResult } from "@/types/database";
+import type { TradeResult } from "@/types/database";
 import { StrategyEmotionFields } from "./StrategyEmotionFields";
 
-interface TradeMetaSellFormProps {
-  tradeId: string;
-  onDone: () => void;
-}
+const schema = z.object({
+  result: z.enum(["SUCCESS", "FAIL", "BREAKEVEN"]).nullable(),
+  strategy_type: z.enum(["SCALPING", "SWING", "LONG_TERM", "UNKNOWN"]).nullable(),
+  emotion: z.enum(["CONFIDENT", "ANXIOUS", "FOMO", "IMPULSIVE", "CALM"]).nullable(),
+  profit_loss_display: z.string(),
+  sell_reason: z.string(),
+  reflection_note: z.string(),
+  improvement_note: z.string(),
+});
+
+type FormValues = z.infer<typeof schema>;
 
 const RESULTS: { value: TradeResult; label: string; color: string }[] = [
   { value: "SUCCESS", label: "수익 ✅", color: "bg-[var(--rise)] text-white border-[var(--rise)]" },
@@ -30,46 +39,60 @@ function formatNumber(raw: string): string {
   return (isNeg ? "-" : "") + Number(digits).toLocaleString("ko-KR");
 }
 
-export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
-  const router = useRouter();
-  const [result, setResult] = useState<TradeResult | "">("");
-  const [strategy, setStrategy] = useState<StrategyType | "">("");
-  const [emotion, setEmotion] = useState<EmotionType | "">("");
-  const [profitLossDisplay, setProfitLossDisplay] = useState("");
-  const [sellReason, setSellReason] = useState("");
-  const [reflectionNote, setReflectionNote] = useState("");
-  const [improvementNote, setImprovementNote] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+interface TradeMetaSellFormProps {
+  tradeId: string;
+  onDone: () => void;
+}
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setPending(true);
+export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
+  const queryClient = useQueryClient();
+  const {
+    control,
+    register,
+    handleSubmit,
+    watch,
+    setValue,
+    setError,
+    formState: { isSubmitting, errors },
+  } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      result: null,
+      strategy_type: null,
+      emotion: null,
+      profit_loss_display: "",
+      sell_reason: "",
+      reflection_note: "",
+      improvement_note: "",
+    },
+  });
+
+  const result = watch("result");
+
+  async function onSubmit(values: FormValues) {
     try {
-      const profitLossRaw = profitLossDisplay.replace(/,/g, "");
+      const raw = values.profit_loss_display.replace(/,/g, "");
       await tradesApi.update(tradeId, {
-        result: result || null,
-        strategy_type: strategy || null,
-        emotion: emotion || null,
-        profit_loss: profitLossRaw ? Number(profitLossRaw) : null,
-        sell_reason: sellReason.trim() || null,
-        reflection_note: reflectionNote.trim() || null,
-        improvement_note: improvementNote.trim() || null,
+        result: values.result,
+        strategy_type: values.strategy_type,
+        emotion: values.emotion,
+        profit_loss: raw ? Number(raw) : null,
+        sell_reason: values.sell_reason.trim() || null,
+        reflection_note: values.reflection_note.trim() || null,
+        improvement_note: values.improvement_note.trim() || null,
       });
-      router.refresh();
+      await queryClient.invalidateQueries({ queryKey: ["trade", tradeId] });
       onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "오류가 발생했습니다.");
-    } finally {
-      setPending(false);
+      setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
     }
   }
 
+  const errorMessage = errors.root?.message ?? Object.values(errors)[0]?.message;
+
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col min-h-full">
+    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">
       <div className="flex-1 px-5 pt-2 pb-4 space-y-6">
-        {/* 거래 결과 */}
         <div className="space-y-2">
           <Label>거래 결과</Label>
           <div className="grid grid-cols-3 gap-2">
@@ -77,11 +100,9 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
               <button
                 key={r.value}
                 type="button"
-                onClick={() => setResult(result === r.value ? "" : r.value)}
+                onClick={() => setValue("result", result === r.value ? null : r.value)}
                 className={`rounded-xl border py-3 text-[13px] font-bold transition-colors ${
-                  result === r.value
-                    ? r.color
-                    : "border-border bg-muted/50 text-muted-foreground"
+                  result === r.value ? r.color : "border-border bg-muted/50 text-muted-foreground"
                 }`}
               >
                 {r.label}
@@ -90,63 +111,77 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
           </div>
         </div>
 
-        {/* 손익 금액 */}
         <div className="space-y-1.5">
-          <Label htmlFor="profit_loss_input">손익 금액 (원) <span className="text-[12px] font-normal text-muted-foreground">음수=손실</span></Label>
-          <Input
-            id="profit_loss_input"
-            type="text"
-            inputMode="numeric"
-            placeholder="예: 150,000 또는 -50,000"
-            value={profitLossDisplay}
-            onChange={(e) => setProfitLossDisplay(formatNumber(e.target.value))}
+          <Label htmlFor="profit_loss_input">
+            손익 금액 (원){" "}
+            <span className="text-[12px] font-normal text-muted-foreground">음수=손실</span>
+          </Label>
+          <Controller
+            control={control}
+            name="profit_loss_display"
+            render={({ field }) => (
+              <Input
+                id="profit_loss_input"
+                type="text"
+                inputMode="numeric"
+                placeholder="예: 150,000 또는 -50,000"
+                value={field.value}
+                onChange={(e) => field.onChange(formatNumber(e.target.value))}
+              />
+            )}
           />
         </div>
 
-        {/* 매도 이유 */}
         <div className="space-y-1.5">
           <Label htmlFor="sell_reason">매도 이유</Label>
           <Textarea
             id="sell_reason"
-            value={sellReason}
-            onChange={(e) => setSellReason(e.target.value)}
+            {...register("sell_reason")}
             placeholder="왜 매도했나요?"
             rows={2}
           />
         </div>
 
-        {/* 잘한 점 */}
         <div className="space-y-1.5">
           <Label htmlFor="reflection_note">잘한 점 / 배운 점</Label>
           <Textarea
             id="reflection_note"
-            value={reflectionNote}
-            onChange={(e) => setReflectionNote(e.target.value)}
+            {...register("reflection_note")}
             placeholder="이번 거래에서 잘한 점이나 배운 것을 기록해보세요"
             rows={3}
           />
         </div>
 
-        {/* 개선할 점 */}
         <div className="space-y-1.5">
           <Label htmlFor="improvement_note">개선할 점 / 다음에는</Label>
           <Textarea
             id="improvement_note"
-            value={improvementNote}
-            onChange={(e) => setImprovementNote(e.target.value)}
+            {...register("improvement_note")}
             placeholder="다음 거래에서 개선하고 싶은 점을 적어주세요"
             rows={3}
           />
         </div>
 
-        <StrategyEmotionFields
-          strategy={strategy}
-          emotion={emotion}
-          onStrategyChange={setStrategy}
-          onEmotionChange={setEmotion}
+        <Controller
+          control={control}
+          name="strategy_type"
+          render={({ field: stratField }) => (
+            <Controller
+              control={control}
+              name="emotion"
+              render={({ field: emoField }) => (
+                <StrategyEmotionFields
+                  strategy={stratField.value ?? ""}
+                  emotion={emoField.value ?? ""}
+                  onStrategyChange={(v) => stratField.onChange(v || null)}
+                  onEmotionChange={(v) => emoField.onChange(v || null)}
+                />
+              )}
+            />
+          )}
         />
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
       </div>
 
       <div
@@ -156,8 +191,8 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
         <Button type="button" variant="outline" size="xl" className="flex-1" onClick={onDone}>
           건너뛰기
         </Button>
-        <Button type="submit" size="xl" disabled={pending} className="flex-1">
-          {pending ? "저장 중..." : "저장"}
+        <Button type="submit" size="xl" disabled={isSubmitting} className="flex-1">
+          {isSubmitting ? "저장 중..." : "저장"}
         </Button>
       </div>
     </form>

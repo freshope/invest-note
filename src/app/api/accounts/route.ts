@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-server/auth";
 import { jsonError, HttpError } from "@/lib/api-server/errors";
-import { MAX_NAME_LENGTH, MAX_BROKER_LENGTH, parseCashBalance } from "@/lib/api-server/validators";
+import { AccountCreateSchema } from "@/lib/api-server/validators";
 
 export async function GET() {
   try {
@@ -41,23 +41,16 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const { supabase, user } = await requireUser();
-    const body = await req.json();
 
-    const name = String(body.name ?? "").trim();
-    const broker = body.broker ? String(body.broker).trim() : null;
-    const cashBalance = parseCashBalance(body.cash_balance);
+    const parsed = AccountCreateSchema.safeParse(await req.json());
+    if (!parsed.success) {
+      return jsonError(parsed.error.issues[0]?.message ?? "올바르지 않은 입력입니다.", 400);
+    }
 
-    if (!name) return jsonError("계좌명을 입력해주세요.", 400);
-    if (name.length > MAX_NAME_LENGTH)
-      return jsonError(`계좌명은 ${MAX_NAME_LENGTH}자 이하로 입력해주세요.`, 400);
-    if (broker && broker.length > MAX_BROKER_LENGTH)
-      return jsonError(`증권사명은 ${MAX_BROKER_LENGTH}자 이하로 입력해주세요.`, 400);
-    if (cashBalance === null)
-      return jsonError("올바른 예수금 금액을 입력해주세요.", 400);
-
+    const { name, broker, cash_balance } = parsed.data;
     const { data, error } = await supabase
       .from("accounts")
-      .insert({ user_id: user.id, name, broker, cash_balance: cashBalance })
+      .insert({ user_id: user.id, name, broker, cash_balance })
       .select("*")
       .single();
 

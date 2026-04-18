@@ -16,6 +16,15 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 수수료 현황 별도 패널 노출 — BUY commission 합계, 세금 합계, 순실현손익 vs 총비용 비교 (WAC 순수가격 결정의 후속 작업)
 - [ ] 테스트 보강: `period.ts` 직접 테스트 (1m/6m 구간, 월말 overflow), `computeRealizedPnL` 멀티 종목 시나리오, `byTag` FIFO 귀속 케이스
 
+## 코드 품질 — 라이브러리 도입 후속
+
+- [ ] TradeEditPanel 스키마 일관성 — `price_display: z.string()` 방식을 `TradeBasicForm`처럼 `z.number().positive()` 기반으로 통일 (출처: /custom:review)
+- [ ] zod enum 중복 추출 — `strategy_type`, `emotion` enum이 TradeMetaBuyForm, TradeMetaSellForm, TradeEditPanel, validators.ts에 4중 복사. validators.ts에서 export 후 import 통일 (출처: /custom:review)
+- [ ] 테스트 커버리지 추가 — validators.ts zod 스키마 (parseTradedAt, commaPositive 경계값), API 라우트 400/404 케이스, groupByDate KST 날짜 경계 (출처: /custom:review)
+- [ ] StockSearchInput open 조건 — value 대신 debouncedValue 기준으로 드롭다운 열고 닫기 (캐시 반환 시 잠깐 열리는 경합 제거) (출처: /custom:review)
+- [ ] StrategyEmotionFields Controller 중첩 개선 — strategy/emotion 각각을 별도 Controller로 감싸고 StrategyEmotionFields에 props 전달하는 이중 중첩 구조를 sibling Controller 배치로 교체 (출처: /custom:review)
+- [ ] parseTradedAt zod transform throw 방식 검토 — transform 내 `throw new Error()`가 zod v4에서 `.issues`가 아닌 unhandled exception으로 전파될 수 있음. `ctx.addIssue()` 패턴으로 교체 검토 (출처: /custom:review)
+
 ## 보안
 
 - [x] `/api/stocks/quote` + `/api/stocks/search` 인증 추가 완료 — requireUser() 적용 (2026-04-18)

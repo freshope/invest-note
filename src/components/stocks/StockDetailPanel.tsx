@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { computeRealizedPnL } from "@/lib/analysis/realized-pnl";
 import {
   FullScreenPanel,
@@ -36,7 +36,7 @@ export function StockDetailPanel({
   allTrades,
   accounts,
 }: StockDetailPanelProps) {
-  const router = useRouter();
+  const queryClient = useQueryClient();
   const [selectedTrade, setSelectedTrade] = useState<TradeWithAccount | null>(null);
   const [tradeDetailOpen, setTradeDetailOpen] = useState(false);
 
@@ -75,10 +75,9 @@ export function StockDetailPanel({
     setTradeDetailOpen(open);
     if (!open) {
       setSelectedTrade(null);
-      router.refresh();
-      window.dispatchEvent(new CustomEvent("portfolio:refresh"));
+      queryClient.invalidateQueries({ queryKey: ["portfolio"] });
     }
-  }, [router]);
+  }, [queryClient]);
 
   return (
     <>
