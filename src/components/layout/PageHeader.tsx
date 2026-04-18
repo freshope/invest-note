@@ -19,8 +19,8 @@ export function PageHeader({
   return (
     <header
       className={cn(
-        sticky && "sticky top-0 z-10 bg-background",
-        "px-5 pb-3",
+        sticky && "sticky top-0 z-10",
+        "bg-background px-5 pb-3",
         className,
       )}
       style={{ paddingTop: "calc(1.5rem + env(safe-area-inset-top))" }}

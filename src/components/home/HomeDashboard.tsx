@@ -66,6 +66,7 @@ export function HomeDashboard() {
     return () => { cancelled = true; };
   }, [refreshKey]);
 
+  // 거래 수정/삭제 후 다른 컴포넌트(StockDetailPanel 등)에서 발생시키는 이벤트 수신
   useEffect(() => {
     window.addEventListener("portfolio:refresh", refetch);
     return () => window.removeEventListener("portfolio:refresh", refetch);
@@ -111,6 +112,7 @@ export function HomeDashboard() {
       <>
         <PageHeader><DashboardTitle totals={totals} /></PageHeader>
         <div className="pt-2 space-y-5">
+          <DashboardBody totals={totals} />
           <EmptyState variant="no-trades" />
         </div>
       </>
