@@ -33,6 +33,7 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [ ] 다크 모드
 - [ ] 홈 위젯 커스터마이징
+- [ ] 종목/거래 상세 패널 스택 어색함 해소 — `StockDetailPanel`과 `TradeDetailPanel`이 서로를 dynamic import로 호출하며 React 트리에 중첩 마운트되어 같은 종목/거래가 반복 누적될 수 있음 (예: A종목 → A의 거래 → 거래의 A종목 링크 → 또 A종목...). 헤더 뒤로가기는 자기 패널만 닫으므로 깊어진 만큼 N번 눌러야 원래 자리로 복귀. 1순위: 새로 열려는 대상이 부모 스택에 이미 있으면 새로 푸시하지 않고 그 단계까지 pop. 2순위: 헤더에 깊이 인디케이터 + "모두 닫기" 액션. 3순위: URL/history 연동(시스템 뒤로가기·새로고침 복원·딥링크). 관련 파일: `src/components/stocks/StockDetailPanel.tsx`, `src/components/records/TradeDetailPanel.tsx`, `src/components/common/full-screen-panel.tsx`.
 
 ## v3 — AI 분석
 
