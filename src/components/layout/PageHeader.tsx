@@ -1,8 +1,15 @@
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 
+/**
+ * 두 가지 모드로 사용합니다.
+ * - title/actions 모드: 텍스트 제목과 우측 액션 영역을 표준 레이아웃으로 렌더링
+ * - children 모드: 홈 탭처럼 헤더 내부를 완전히 커스텀해야 할 때 사용.
+ *   children이 있으면 title/actions는 무시됩니다 (두 모드는 배타적).
+ */
 type PageHeaderProps =
   | {
+      /** 헤더 내부를 완전히 커스텀할 때 사용. title/actions와 함께 쓸 수 없습니다. */
       children: ReactNode;
       title?: never;
       actions?: never;
@@ -11,7 +18,9 @@ type PageHeaderProps =
     }
   | {
       children?: never;
-      title?: ReactNode;
+      /** 페이지 제목 텍스트 */
+      title?: string;
+      /** 헤더 오른쪽 액션 영역 (버튼, 토글 등) */
       actions?: ReactNode;
       sticky?: boolean;
       className?: string;

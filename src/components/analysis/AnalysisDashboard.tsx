@@ -48,6 +48,20 @@ function SkeletonCard({ h = "h-28" }: { h?: string }) {
   return <div className={`rounded-2xl bg-muted/60 ${h} animate-pulse`} />;
 }
 
+function InsightSection({
+  summary,
+  suggestionsData,
+}: {
+  summary: AnalysisSummary;
+  suggestionsData: SuggestionsData | null;
+}) {
+  const suggestions = suggestionsData?.suggestions ?? [];
+  const top3 = suggestions.length > 0
+    ? suggestions.slice(0, 3)
+    : evaluateRules({ summary }).slice(0, 3);
+  return top3.length > 0 ? <InsightHighlights insights={top3} /> : null;
+}
+
 export function AnalysisDashboard() {
   const [period, setPeriod] = useState<Period>("3m");
   const [summary, setSummary] = useState<AnalysisSummary | null>(null);
@@ -132,13 +146,7 @@ export function AnalysisDashboard() {
             <SummaryCards summary={summary} />
 
             {/* 섹션 2: 오늘의 인사이트 — 룰 기반 상위 3개, suggestions 미로드 시 summary 전용 룰로 fallback */}
-            {(() => {
-              const suggestions = suggestionsData?.suggestions ?? [];
-              const top3 = suggestions.length > 0
-                ? suggestions.slice(0, 3)
-                : evaluateRules({ summary }).slice(0, 3);
-              return top3.length > 0 ? <InsightHighlights insights={top3} /> : null;
-            })()}
+            <InsightSection summary={summary} suggestionsData={suggestionsData} />
 
             {/* 섹션 3: 투자 성향 프로필 */}
             {behavior && (
