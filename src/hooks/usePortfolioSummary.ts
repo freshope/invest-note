@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import type { DashboardTotals, Position, AccountSnapshot } from "@/lib/portfolio";
 
 interface SummaryData {
@@ -11,32 +12,27 @@ interface SummaryData {
   hasTrades: boolean;
 }
 
+async function fetchPortfolioSummary(): Promise<SummaryData> {
+  const res = await fetch("/api/portfolio/summary");
+  if (!res.ok) throw new Error("portfolio fetch failed");
+  return res.json();
+}
+
 export function usePortfolioSummary() {
-  const [data, setData] = useState<SummaryData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const queryClient = useQueryClient();
 
-  const refetch = useCallback(() => {
-    setRefreshKey((k) => k + 1);
-  }, []);
+  const { data, isPending, isError } = useQuery({
+    queryKey: ["portfolio", "summary"],
+    queryFn: fetchPortfolioSummary,
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true);
-    fetch("/api/portfolio/summary")
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((d: SummaryData) => { if (!cancelled) { setData(d); setError(false); } })
-      .catch(() => { if (!cancelled) setError(true); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [refreshKey]);
+  const refetch = () => queryClient.invalidateQueries({ queryKey: ["portfolio"] });
 
+  // 기존 이벤트 기반 갱신 호환
   useEffect(() => {
     window.addEventListener("portfolio:refresh", refetch);
     return () => window.removeEventListener("portfolio:refresh", refetch);
-  }, [refetch]);
+  });
 
-  return { data, loading, error, refetch };
+  return { data: data ?? null, loading: isPending, error: isError, refetch };
 }

@@ -1,23 +1,12 @@
+import { z } from "zod";
 import type { TradeType, MarketType, StrategyType, EmotionType, ReasoningTag, TradeResult } from "@/types/database";
 
 // ============================================================
-// Account validators
+// Constants (하위 호환)
 // ============================================================
 
 export const MAX_NAME_LENGTH = 50;
 export const MAX_BROKER_LENGTH = 50;
-const MAX_CASH_BALANCE = 9999999999999999.99;
-
-export function parseCashBalance(raw: unknown): number | null {
-  if (raw == null || raw === "") return 0;
-  const num = Number(String(raw).replace(/,/g, ""));
-  if (isNaN(num) || num < 0 || num > MAX_CASH_BALANCE) return null;
-  return num;
-}
-
-// ============================================================
-// Trade validators
-// ============================================================
 
 export const VALID_TRADE_TYPES: TradeType[] = ["BUY", "SELL"];
 export const VALID_MARKET_TYPES: MarketType[] = ["STOCK", "CRYPTO", "ETC"];
@@ -28,28 +17,107 @@ export const VALID_EMOTIONS: EmotionType[] = ["CONFIDENT", "ANXIOUS", "FOMO", "I
 export const VALID_REASONING_TAGS: ReasoningTag[] = ["TECHNICAL", "FUNDAMENTAL", "NEWS", "FEELING"];
 export const VALID_RESULTS: TradeResult[] = ["SUCCESS", "FAIL", "BREAKEVEN"];
 
+// ============================================================
+// Primitive helpers
+// ============================================================
+
+// "yyyy-MM-dd'T'HH:mm" KST → UTC ISO 문자열
+export function parseTradedAt(raw: string): string {
+  return new Date(`${raw}+09:00`).toISOString();
+}
+
+// 쉼표 포함 문자열/숫자 → 양수
+const commaPositive = z
+  .union([z.string(), z.number()])
+  .transform((v) => Number(String(v).replace(/,/g, "")))
+  .pipe(z.number().positive());
+
+// 쉼표 포함 문자열/숫자 → 0 이상
+const commaNonNegative = z
+  .union([z.string(), z.number()])
+  .transform((v) => Number(String(v).replace(/,/g, "")))
+  .pipe(z.number().min(0));
+
+// 쉼표 포함 문자열/숫자 → 임의 숫자(음수 허용)
+const commaNumber = z
+  .union([z.string(), z.number()])
+  .transform((v) => Number(String(v).replace(/,/g, "")))
+  .pipe(z.number());
+
+// ============================================================
+// Trade PATCH schema
+// ============================================================
+
+export const TradeUpdateSchema = z
+  .object({
+    trade_type: z.enum(["BUY", "SELL"]),
+    market_type: z.enum(["STOCK", "CRYPTO", "ETC"]),
+    account_id: z.string().trim().min(1),
+    asset_name: z.string().trim().min(1).max(100),
+    ticker_symbol: z.string().trim().nullable(),
+    country_code: z.enum(["KR", "US", "OTHER"]).default("KR"),
+    traded_at: z.string().min(1).transform(parseTradedAt),
+    price: commaPositive,
+    quantity: commaPositive,
+    commission: commaNonNegative,
+    tax: commaNonNegative,
+    strategy_type: z.enum(["SCALPING", "SWING", "LONG_TERM", "UNKNOWN"]).nullable(),
+    emotion: z.enum(["CONFIDENT", "ANXIOUS", "FOMO", "IMPULSIVE", "CALM"]).nullable(),
+    reasoning_tags: z.array(z.enum(["TECHNICAL", "FUNDAMENTAL", "NEWS", "FEELING"])),
+    buy_reason: z.string().nullable(),
+    sell_reason: z.string().nullable(),
+    result: z.enum(["SUCCESS", "FAIL", "BREAKEVEN"]).nullable(),
+    profit_loss: commaNumber.nullable(),
+    reflection_note: z.string().nullable(),
+    improvement_note: z.string().nullable(),
+  })
+  .partial();
+
+export type TradeUpdate = z.infer<typeof TradeUpdateSchema>;
+
+// ============================================================
+// Account PATCH schema
+// ============================================================
+
+const MAX_CASH_BALANCE = 9999999999999999.99;
+
+export const AccountUpdateSchema = z
+  .object({
+    name: z.string().trim().min(1).max(MAX_NAME_LENGTH),
+    broker: z.string().trim().max(MAX_BROKER_LENGTH).nullable(),
+    cash_balance: z
+      .union([z.string(), z.number()])
+      .transform((v) => (v === "" ? 0 : Number(String(v).replace(/,/g, ""))))
+      .pipe(z.number().min(0).max(MAX_CASH_BALANCE)),
+  })
+  .partial();
+
+export type AccountUpdate = z.infer<typeof AccountUpdateSchema>;
+
+// ============================================================
+// Legacy parse functions (기존 코드 하위 호환)
+// ============================================================
+
+export function parseCashBalance(raw: unknown): number | null {
+  const result = z
+    .union([z.string(), z.number()])
+    .transform((v) => (v === "" || v == null ? 0 : Number(String(v).replace(/,/g, ""))))
+    .pipe(z.number().min(0).max(MAX_CASH_BALANCE))
+    .safeParse(raw ?? "");
+  return result.success ? result.data : null;
+}
+
 export function parsePositiveNumber(raw: unknown): number | null {
-  if (raw == null || raw === "") return null;
-  const num = Number(String(raw).replace(/,/g, ""));
-  if (isNaN(num) || num <= 0) return null;
-  return num;
+  const result = commaPositive.safeParse(raw ?? "");
+  return result.success ? result.data : null;
 }
 
 export function parseNonNegativeNumber(raw: unknown): number | null {
-  if (raw == null || raw === "") return 0;
-  const num = Number(String(raw).replace(/,/g, ""));
-  if (isNaN(num) || num < 0) return null;
-  return num;
+  const result = commaNonNegative.safeParse(raw ?? "");
+  return result.success ? result.data : null;
 }
 
 export function parseNumber(raw: unknown): number | null {
-  if (raw == null || raw === "") return null;
-  const num = Number(String(raw).replace(/,/g, ""));
-  if (isNaN(num)) return null;
-  return num;
-}
-
-// "yyyy-MM-dd'T'HH:mm" 형식 입력을 KST(+09:00)로 해석해 ISO 문자열 반환
-export function parseTradedAt(raw: string): string {
-  return new Date(`${raw}+09:00`).toISOString();
+  const result = commaNumber.safeParse(raw ?? "");
+  return result.success ? result.data : null;
 }
