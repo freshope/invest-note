@@ -16,6 +16,12 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 수수료 현황 별도 패널 노출 — BUY commission 합계, 세금 합계, 순실현손익 vs 총비용 비교 (WAC 순수가격 결정의 후속 작업)
 - [ ] 테스트 보강: `period.ts` 직접 테스트 (1m/6m 구간, 월말 overflow), `computeRealizedPnL` 멀티 종목 시나리오, `byTag` FIFO 귀속 케이스
 
+## 코드 품질 — 라이브러리 도입 후속
+
+- [ ] TradeEditPanel 스키마 일관성 — `price_display: z.string()` 방식을 `TradeBasicForm`처럼 `z.number().positive()` 기반으로 통일 (출처: /custom:review)
+- [ ] zod enum 중복 추출 — `strategy_type`, `emotion` enum이 TradeMetaBuyForm, TradeMetaSellForm, TradeEditPanel, validators.ts에 4중 복사. validators.ts에서 export 후 import 통일 (출처: /custom:review)
+- [ ] 테스트 커버리지 추가 — validators.ts zod 스키마 (parseTradedAt, commaPositive 경계값), API 라우트 400/404 케이스, groupByDate KST 날짜 경계 (출처: /custom:review)
+
 ## 보안
 
 - [x] `/api/stocks/quote` + `/api/stocks/search` 인증 추가 완료 — requireUser() 적용 (2026-04-18)

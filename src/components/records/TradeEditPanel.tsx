@@ -49,10 +49,6 @@ function fmtPnL(n: number | null | undefined): string {
   return n.toLocaleString("ko-KR");
 }
 
-function parseNum(s: string): number {
-  return Number(s.replace(/,/g, "")) || 0;
-}
-
 function formatInput(raw: string): string {
   const cleaned = raw.replace(/[^0-9.]/g, "");
   const parts = cleaned.split(".");
@@ -113,6 +109,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
     watch,
     setValue,
     reset,
+    setError,
     formState: { isSubmitting, errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -170,35 +167,39 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
 
   async function onSubmit(values: FormValues) {
     const parseRaw = (s: string) => Number(s.replace(/,/g, "")) || 0;
-    await tradesApi.update(trade.id, {
-      trade_type: trade.trade_type,
-      market_type: trade.market_type,
-      account_id: values.account_id,
-      asset_name: values.asset_name,
-      ticker_symbol: values.ticker_symbol || null,
-      country_code: values.country_code,
-      traded_at: format(values.traded_at, "yyyy-MM-dd'T'HH:mm"),
-      price: parseRaw(values.price_display),
-      quantity: parseRaw(values.quantity_display),
-      commission: parseRaw(values.commission_display),
-      tax: parseRaw(values.tax_display),
-      strategy_type: values.strategy_type,
-      emotion: values.emotion,
-      reasoning_tags: values.reasoning_tags,
-      result: values.result,
-      profit_loss: values.profit_loss_display ? Number(values.profit_loss_display.replace(/,/g, "")) : null,
-      buy_reason: values.buy_reason.trim() || null,
-      sell_reason: values.sell_reason.trim() || null,
-      reflection_note: values.reflection_note.trim() || null,
-      improvement_note: values.improvement_note.trim() || null,
-    });
-    await queryClient.invalidateQueries({ queryKey: ["trade", trade.id] });
-    await queryClient.invalidateQueries({ queryKey: ["portfolio"] });
-    onOpenChange(false);
-    onSaved?.();
+    try {
+      await tradesApi.update(trade.id, {
+        trade_type: trade.trade_type,
+        market_type: trade.market_type,
+        account_id: values.account_id,
+        asset_name: values.asset_name,
+        ticker_symbol: values.ticker_symbol || null,
+        country_code: values.country_code,
+        traded_at: format(values.traded_at, "yyyy-MM-dd'T'HH:mm"),
+        price: parseRaw(values.price_display),
+        quantity: parseRaw(values.quantity_display),
+        commission: parseRaw(values.commission_display),
+        tax: parseRaw(values.tax_display),
+        strategy_type: values.strategy_type,
+        emotion: values.emotion,
+        reasoning_tags: values.reasoning_tags,
+        result: values.result,
+        profit_loss: values.profit_loss_display ? Number(values.profit_loss_display.replace(/,/g, "")) : null,
+        buy_reason: values.buy_reason.trim() || null,
+        sell_reason: values.sell_reason.trim() || null,
+        reflection_note: values.reflection_note.trim() || null,
+        improvement_note: values.improvement_note.trim() || null,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["trade", trade.id] });
+      await queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+      onOpenChange(false);
+      onSaved?.();
+    } catch (err) {
+      setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
+    }
   }
 
-  const firstError = Object.values(errors)[0]?.message as string | undefined;
+  const firstError = errors.root?.message ?? (Object.values(errors)[0]?.message as string | undefined);
 
   return (
     <FullScreenPanel open={open} onOpenChange={() => onOpenChange(false)}>

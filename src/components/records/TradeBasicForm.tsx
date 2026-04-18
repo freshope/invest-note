@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -74,6 +74,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
     handleSubmit,
     watch,
     setValue,
+    setError,
     formState: { isSubmitting, errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -91,13 +92,12 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
     },
   });
 
-  const [tradeType, price, quantity, traded_at, calOpen] = [
+  const [tradeType, price, quantity] = [
     watch("trade_type"),
     watch("price"),
     watch("quantity"),
-    watch("traded_at"),
-    false, // managed separately
   ];
+  const [calOpen, setCalOpen] = useState(false);
 
   // 가격·수량 변경 시 수수료/제세금 자동 계산
   useEffect(() => {
@@ -114,24 +114,28 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
   const total = (price || 0) * (quantity || 0);
   const totalDisplay = total > 0 ? total.toLocaleString("ko-KR") : "-";
 
-  const firstError = Object.values(errors)[0]?.message as string | undefined;
+  const firstError = errors.root?.message ?? (Object.values(errors)[0]?.message as string | undefined);
 
   async function onSubmit(values: FormValues) {
-    const result = await tradesApi.create({
-      trade_type: values.trade_type,
-      market_type: "STOCK",
-      account_id: values.account_id,
-      asset_name: values.asset_name,
-      ticker_symbol: values.ticker_symbol || null,
-      country_code: values.country_code,
-      price: values.price,
-      quantity: values.quantity,
-      commission: values.commission,
-      tax: values.tax,
-      traded_at: format(values.traded_at, "yyyy-MM-dd'T'HH:mm"),
-    });
-    await queryClient.invalidateQueries({ queryKey: ["portfolio"] });
-    onTradeCreated(result.id, result.trade_type);
+    try {
+      const result = await tradesApi.create({
+        trade_type: values.trade_type,
+        market_type: "STOCK",
+        account_id: values.account_id,
+        asset_name: values.asset_name,
+        ticker_symbol: values.ticker_symbol || null,
+        country_code: values.country_code,
+        price: values.price,
+        quantity: values.quantity,
+        commission: values.commission,
+        tax: values.tax,
+        traded_at: format(values.traded_at, "yyyy-MM-dd'T'HH:mm"),
+      });
+      await queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+      onTradeCreated(result.id, result.trade_type);
+    } catch (err) {
+      setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
+    }
   }
 
   return (
@@ -184,7 +188,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
             control={control}
             name="traded_at"
             render={({ field }) => (
-              <Popover>
+              <Popover open={calOpen} onOpenChange={setCalOpen}>
                 <PopoverTrigger className="flex h-12 w-full items-center justify-between rounded-xl bg-muted px-4 text-[15px] text-foreground">
                   <span>{format(field.value, "yyyy년 M월 d일 (EEE)", { locale: ko })}</span>
                   <CalendarIcon className="h-4 w-4 text-muted-foreground" />
@@ -193,7 +197,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                   <Calendar
                     mode="single"
                     selected={field.value}
-                    onSelect={(d) => { if (d) field.onChange(d); }}
+                    onSelect={(d) => { if (d) { field.onChange(d); setCalOpen(false); } }}
                     initialFocus
                   />
                 </PopoverContent>

@@ -23,7 +23,9 @@ export const VALID_RESULTS: TradeResult[] = ["SUCCESS", "FAIL", "BREAKEVEN"];
 
 // "yyyy-MM-dd'T'HH:mm" KST → UTC ISO 문자열
 export function parseTradedAt(raw: string): string {
-  return new Date(`${raw}+09:00`).toISOString();
+  const d = new Date(`${raw}+09:00`);
+  if (isNaN(d.getTime())) throw new Error("traded_at: 올바른 날짜/시간 형식이 아닙니다");
+  return d.toISOString();
 }
 
 // 쉼표 포함 문자열/숫자 → 양수
@@ -54,7 +56,7 @@ export const TradeUpdateSchema = z
     market_type: z.enum(["STOCK", "CRYPTO", "ETC"]),
     account_id: z.string().trim().min(1),
     asset_name: z.string().trim().min(1).max(100),
-    ticker_symbol: z.string().trim().nullable(),
+    ticker_symbol: z.string().trim().nullable().transform((v) => v || null),
     country_code: z.enum(["KR", "US", "OTHER"]).default("KR"),
     traded_at: z.string().min(1).transform(parseTradedAt),
     price: commaPositive,
@@ -84,7 +86,7 @@ export const TradeCreateSchema = z.object({
   market_type: z.enum(["STOCK", "CRYPTO", "ETC"]).default("STOCK"),
   account_id: z.string().trim().min(1),
   asset_name: z.string().trim().min(1).max(100),
-  ticker_symbol: z.string().trim().nullable().optional(),
+  ticker_symbol: z.string().trim().nullable().optional().transform((v) => v || null),
   country_code: z.enum(["KR", "US", "OTHER"]).default("KR"),
   traded_at: z.string().min(1).transform(parseTradedAt),
   price: commaPositive,
@@ -124,30 +126,3 @@ export const AccountUpdateSchema = z
 
 export type AccountUpdate = z.infer<typeof AccountUpdateSchema>;
 
-// ============================================================
-// Legacy parse functions (기존 코드 하위 호환)
-// ============================================================
-
-export function parseCashBalance(raw: unknown): number | null {
-  const result = z
-    .union([z.string(), z.number()])
-    .transform((v) => (v === "" || v == null ? 0 : Number(String(v).replace(/,/g, ""))))
-    .pipe(z.number().min(0).max(MAX_CASH_BALANCE))
-    .safeParse(raw ?? "");
-  return result.success ? result.data : null;
-}
-
-export function parsePositiveNumber(raw: unknown): number | null {
-  const result = commaPositive.safeParse(raw ?? "");
-  return result.success ? result.data : null;
-}
-
-export function parseNonNegativeNumber(raw: unknown): number | null {
-  const result = commaNonNegative.safeParse(raw ?? "");
-  return result.success ? result.data : null;
-}
-
-export function parseNumber(raw: unknown): number | null {
-  const result = commaNumber.safeParse(raw ?? "");
-  return result.success ? result.data : null;
-}

@@ -57,6 +57,7 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
     watch,
     reset,
     setValue,
+    setError,
     formState: { isSubmitting, errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -84,14 +85,18 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
       broker: values.broker || null,
       cash_balance: cash ? Number(cash) : 0,
     };
-    if (isEdit) {
-      await accountsApi.update(account!.id, input);
-    } else {
-      await accountsApi.create(input);
+    try {
+      if (isEdit) {
+        await accountsApi.update(account!.id, input);
+      } else {
+        await accountsApi.create(input);
+      }
+      await queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+      onOpenChange(false);
+      reset({ name: "", broker: null, cash_display: "" });
+    } catch (err) {
+      setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
     }
-    await queryClient.invalidateQueries({ queryKey: ["portfolio"] });
-    onOpenChange(false);
-    reset({ name: "", broker: null, cash_display: "" });
   }
 
   return (
@@ -169,6 +174,9 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
               className="sticky bottom-0 bg-background px-5 pt-3 pb-4"
               style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
             >
+              {errors.root && (
+                <p className="mb-2 text-sm text-destructive">{errors.root.message}</p>
+              )}
               <Button type="submit" size="xl" disabled={isSubmitting} className="w-full">
                 {isSubmitting ? "저장 중..." : isEdit ? "수정하기" : "추가하기"}
               </Button>

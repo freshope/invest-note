@@ -52,6 +52,7 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
     handleSubmit,
     watch,
     setValue,
+    setError,
     formState: { isSubmitting, errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -69,21 +70,25 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
   const result = watch("result");
 
   async function onSubmit(values: FormValues) {
-    const raw = values.profit_loss_display.replace(/,/g, "");
-    await tradesApi.update(tradeId, {
-      result: values.result,
-      strategy_type: values.strategy_type,
-      emotion: values.emotion,
-      profit_loss: raw ? Number(raw) : null,
-      sell_reason: values.sell_reason.trim() || null,
-      reflection_note: values.reflection_note.trim() || null,
-      improvement_note: values.improvement_note.trim() || null,
-    });
-    await queryClient.invalidateQueries({ queryKey: ["trade", tradeId] });
-    onDone();
+    try {
+      const raw = values.profit_loss_display.replace(/,/g, "");
+      await tradesApi.update(tradeId, {
+        result: values.result,
+        strategy_type: values.strategy_type,
+        emotion: values.emotion,
+        profit_loss: raw ? Number(raw) : null,
+        sell_reason: values.sell_reason.trim() || null,
+        reflection_note: values.reflection_note.trim() || null,
+        improvement_note: values.improvement_note.trim() || null,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["trade", tradeId] });
+      onDone();
+    } catch (err) {
+      setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
+    }
   }
 
-  const errorMessage = Object.values(errors)[0]?.message;
+  const errorMessage = errors.root?.message ?? Object.values(errors)[0]?.message;
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">

@@ -46,7 +46,9 @@ export function useAnalysisData(period: Period) {
   });
 
   const loading = summaryQ.isPending || behaviorQ.isPending || suggestionsQ.isPending;
-  const error = summaryQ.isError ? "분석 데이터를 불러오는 중 오류가 발생했습니다" : null;
+  const error = summaryQ.isError || behaviorQ.isError || suggestionsQ.isError
+    ? "분석 데이터를 불러오는 중 오류가 발생했습니다"
+    : null;
 
   return {
     summary: summaryQ.data ?? null,

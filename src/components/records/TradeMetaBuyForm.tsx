@@ -33,6 +33,7 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
     handleSubmit,
     setValue,
     watch,
+    setError,
     formState: { isSubmitting, errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -52,17 +53,21 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
   }
 
   async function onSubmit(values: FormValues) {
-    await tradesApi.update(tradeId, {
-      strategy_type: values.strategy_type,
-      emotion: values.emotion,
-      reasoning_tags: values.reasoning_tags,
-      buy_reason: values.buy_reason.trim() || null,
-    });
-    await queryClient.invalidateQueries({ queryKey: ["trade", tradeId] });
-    onDone();
+    try {
+      await tradesApi.update(tradeId, {
+        strategy_type: values.strategy_type,
+        emotion: values.emotion,
+        reasoning_tags: values.reasoning_tags,
+        buy_reason: values.buy_reason.trim() || null,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["trade", tradeId] });
+      onDone();
+    } catch (err) {
+      setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
+    }
   }
 
-  const errorMessage = Object.values(errors)[0]?.message;
+  const errorMessage = errors.root?.message ?? Object.values(errors)[0]?.message;
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">
