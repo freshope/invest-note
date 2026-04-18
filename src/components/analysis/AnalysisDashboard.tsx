@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { PeriodFilterTabs } from "./PeriodFilterTabs";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { SummaryCards } from "./SummaryCards";
 import { InsightHighlights } from "./InsightHighlights";
 import { EmotionBreakdown } from "./EmotionBreakdown";
@@ -97,8 +98,12 @@ export function AnalysisDashboard() {
   const isEmptyPeriod = !!isEmpty && period !== "all";
 
   return (
-    <div className="px-5 pt-5 pb-24 space-y-4">
-      <PeriodFilterTabs value={period} onChange={setPeriod} />
+    <>
+      <PageHeader
+        title="분석"
+        actions={<PeriodFilterTabs value={period} onChange={setPeriod} compact />}
+      />
+      <div className="px-5 pt-2 pb-24 space-y-4">
 
       {error && (
         <div className="rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-4 text-[13px] text-red-600 dark:text-red-400">
@@ -208,6 +213,7 @@ export function AnalysisDashboard() {
           )}
         </>
       ) : null}
-    </div>
+      </div>
+    </>
   );
 }
