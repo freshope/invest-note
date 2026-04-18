@@ -88,7 +88,7 @@ function FullScreenPanelContent({ open, children, className }: FullScreenPanelCo
       data-slot="full-screen-panel-content"
       onTransitionEnd={handleTransitionEnd}
       className={cn(
-        "fixed inset-0 z-50 flex flex-col bg-background",
+        "fixed inset-0 z-[100] flex flex-col bg-background",
         "transition-transform duration-300",
         // iOS-like ease curve
         "[transition-timing-function:cubic-bezier(0.32,0.72,0,1)]",
