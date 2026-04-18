@@ -30,7 +30,7 @@ export function PeriodFilterTabs({ value, onChange, compact = false }: PeriodFil
   const items = compact ? PERIODS_COMPACT : PERIODS_FULL;
   return (
     <Tabs value={value} onValueChange={(v) => onChange(v as Period)}>
-      <TabsList className={cn(compact ? "inline-flex h-8 p-0.5 w-auto" : "grid grid-cols-5")}>
+      <TabsList className={cn(compact ? "inline-flex h-8 p-0.5 w-auto overflow-x-auto" : "grid grid-cols-5")}>
         {items.map((p) => (
           <TabsTrigger
             key={p.value}

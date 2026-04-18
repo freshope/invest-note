@@ -37,14 +37,14 @@ export function PageHeader({
     <header
       className={cn(
         sticky && "sticky top-0 z-10",
-        "bg-background px-5 pb-3",
+        "bg-background px-5 pt-6 pb-3",
         className,
       )}
       style={{ paddingTop: "calc(1.5rem + env(safe-area-inset-top))" }}
     >
       {children ?? (
         <div className="flex items-center justify-between gap-3">
-          <h1 className="text-[20px] font-bold text-foreground leading-tight">
+          <h1 className="min-w-0 truncate text-[20px] font-bold text-foreground leading-tight">
             {title}
           </h1>
           {actions && <div className="shrink-0">{actions}</div>}
