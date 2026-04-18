@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/base/Button";
 import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
@@ -29,83 +32,74 @@ const BROKERS = [
   { name: "토스증권", short: "토스", color: "bg-blue-500" },
 ];
 
+const schema = z.object({
+  name: z.string().trim().min(1, "계좌명을 입력해주세요.").max(50),
+  broker: z.string().nullable(),
+  cash_display: z.string(),
+});
+
+type FormValues = z.infer<typeof schema>;
+
 interface AccountFormPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   account?: Account;
 }
 
-function formatNumber(value: number | string): string {
-  const num = typeof value === "string" ? value.replace(/[^0-9]/g, "") : String(value);
-  if (!num) return "";
-  return Number(num).toLocaleString("ko-KR");
-}
-
-export function AccountFormPanel({
-  open,
-  onOpenChange,
-  account,
-}: AccountFormPanelProps) {
+export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPanelProps) {
   const isEdit = !!account;
-  const router = useRouter();
-  const formRef = useRef<HTMLFormElement>(null);
-  const [selectedBroker, setSelectedBroker] = useState<string>(account?.broker ?? "");
-  const [cashDisplay, setCashDisplay] = useState<string>(
-    account?.cash_balance ? formatNumber(Number(account.cash_balance)) : ""
-  );
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const queryClient = useQueryClient();
+
+  const {
+    register,
+    control,
+    handleSubmit,
+    watch,
+    reset,
+    setValue,
+    formState: { isSubmitting, errors },
+  } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      name: account?.name ?? "",
+      broker: account?.broker ?? null,
+      cash_display: account?.cash_balance ? Number(account.cash_balance).toLocaleString("ko-KR") : "",
+    },
+  });
 
   useEffect(() => {
-    setSelectedBroker(account?.broker ?? "");
-    setCashDisplay(account?.cash_balance ? formatNumber(Number(account.cash_balance)) : "");
-    setError(null);
-  }, [account]);
+    reset({
+      name: account?.name ?? "",
+      broker: account?.broker ?? null,
+      cash_display: account?.cash_balance ? Number(account.cash_balance).toLocaleString("ko-KR") : "",
+    });
+  }, [account, reset]);
 
-  function handleCashChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const digits = e.target.value.replace(/[^0-9]/g, "");
-    setCashDisplay(digits ? Number(digits).toLocaleString("ko-KR") : "");
-  }
+  const broker = watch("broker");
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setError(null);
-    setPending(true);
-
-    const form = e.currentTarget;
-    const name = (form.elements.namedItem("name") as HTMLInputElement).value.trim();
-    const cash = cashDisplay.replace(/,/g, "");
-
-    try {
-      const input = {
-        name,
-        broker: selectedBroker || null,
-        cash_balance: cash ? Number(cash) : 0,
-      };
-      if (isEdit) {
-        await accountsApi.update(account!.id, input);
-      } else {
-        await accountsApi.create(input);
-      }
-      onOpenChange(false);
-      formRef.current?.reset();
-      setSelectedBroker("");
-      setCashDisplay("");
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "오류가 발생했습니다.");
-    } finally {
-      setPending(false);
+  async function onSubmit(values: FormValues) {
+    const cash = values.cash_display.replace(/,/g, "");
+    const input = {
+      name: values.name,
+      broker: values.broker || null,
+      cash_balance: cash ? Number(cash) : 0,
+    };
+    if (isEdit) {
+      await accountsApi.update(account!.id, input);
+    } else {
+      await accountsApi.create(input);
     }
+    await queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+    onOpenChange(false);
+    reset({ name: "", broker: null, cash_display: "" });
   }
 
   return (
     <FullScreenPanel open={open} onOpenChange={onOpenChange}>
       <FullScreenPanelContent open={open}>
         <FullScreenPanelHeader title={isEdit ? "계좌 수정" : "계좌 추가"} />
-
         <FullScreenPanelBody>
-          <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col min-h-full">
+          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">
             <div className="flex-1 px-5 pt-2 pb-4 space-y-5">
               <div className="space-y-1.5">
                 <Label htmlFor="name">
@@ -113,26 +107,25 @@ export function AccountFormPanel({
                 </Label>
                 <Input
                   id="name"
-                  name="name"
                   placeholder="예: 키움증권 위탁계좌"
-                  defaultValue={account?.name ?? ""}
                   maxLength={50}
-                  required
+                  {...register("name")}
                 />
+                {errors.name && (
+                  <p className="text-sm text-destructive">{errors.name.message}</p>
+                )}
               </div>
 
               <div className="space-y-1.5">
                 <Label>증권사</Label>
                 <div className="grid grid-cols-3 gap-2">
-                  {BROKERS.map((broker) => {
-                    const isSelected = selectedBroker === broker.name;
+                  {BROKERS.map((b) => {
+                    const isSelected = broker === b.name;
                     return (
                       <button
-                        key={broker.name}
+                        key={b.name}
                         type="button"
-                        onClick={() =>
-                          setSelectedBroker(isSelected ? "" : broker.name)
-                        }
+                        onClick={() => setValue("broker", isSelected ? null : b.name)}
                         className={cn(
                           "flex flex-col items-center gap-1.5 rounded-xl border p-3 text-center transition-colors",
                           isSelected
@@ -140,17 +133,10 @@ export function AccountFormPanel({
                             : "border-border hover:bg-muted/50"
                         )}
                       >
-                        <span
-                          className={cn(
-                            "flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold text-white",
-                            broker.color
-                          )}
-                        >
-                          {broker.short}
+                        <span className={cn("flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold text-white", b.color)}>
+                          {b.short}
                         </span>
-                        <span className="text-xs leading-tight text-foreground">
-                          {broker.name}
-                        </span>
+                        <span className="text-xs leading-tight text-foreground">{b.name}</span>
                       </button>
                     );
                   })}
@@ -158,28 +144,33 @@ export function AccountFormPanel({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="cash_balance">예수금 (원)</Label>
-                <Input
-                  id="cash_balance"
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="0"
-                  value={cashDisplay}
-                  onChange={handleCashChange}
+                <Label htmlFor="cash_display">예수금 (원)</Label>
+                <Controller
+                  control={control}
+                  name="cash_display"
+                  render={({ field }) => (
+                    <Input
+                      id="cash_display"
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="0"
+                      value={field.value}
+                      onChange={(e) => {
+                        const digits = e.target.value.replace(/[^0-9]/g, "");
+                        field.onChange(digits ? Number(digits).toLocaleString("ko-KR") : "");
+                      }}
+                    />
+                  )}
                 />
               </div>
-
-              {error && (
-                <p className="text-sm text-destructive">{error}</p>
-              )}
             </div>
 
             <div
               className="sticky bottom-0 bg-background px-5 pt-3 pb-4"
               style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
             >
-              <Button type="submit" size="xl" disabled={pending} className="w-full">
-                {pending ? "저장 중..." : isEdit ? "수정하기" : "추가하기"}
+              <Button type="submit" size="xl" disabled={isSubmitting} className="w-full">
+                {isSubmitting ? "저장 중..." : isEdit ? "수정하기" : "추가하기"}
               </Button>
             </div>
           </form>

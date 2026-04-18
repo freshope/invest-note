@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/base/Button";
 import {
   Dialog,
@@ -26,7 +26,7 @@ export function DeleteAccountDialog({
   accountId,
   accountName,
 }: DeleteAccountDialogProps) {
-  const router = useRouter();
+  const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -35,8 +35,8 @@ export function DeleteAccountDialog({
     setPending(true);
     try {
       await accountsApi.delete(accountId);
+      await queryClient.invalidateQueries({ queryKey: ["portfolio"] });
       onOpenChange(false);
-      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "삭제할 수 없습니다.");
     } finally {

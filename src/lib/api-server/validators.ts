@@ -76,19 +76,49 @@ export const TradeUpdateSchema = z
 export type TradeUpdate = z.infer<typeof TradeUpdateSchema>;
 
 // ============================================================
-// Account PATCH schema
+// Trade POST schema
+// ============================================================
+
+export const TradeCreateSchema = z.object({
+  trade_type: z.enum(["BUY", "SELL"]),
+  market_type: z.enum(["STOCK", "CRYPTO", "ETC"]).default("STOCK"),
+  account_id: z.string().trim().min(1),
+  asset_name: z.string().trim().min(1).max(100),
+  ticker_symbol: z.string().trim().nullable().optional(),
+  country_code: z.enum(["KR", "US", "OTHER"]).default("KR"),
+  traded_at: z.string().min(1).transform(parseTradedAt),
+  price: commaPositive,
+  quantity: commaPositive,
+  commission: commaNonNegative,
+  tax: commaNonNegative,
+});
+
+export type TradeCreate = z.infer<typeof TradeCreateSchema>;
+
+// ============================================================
+// Account schemas
 // ============================================================
 
 const MAX_CASH_BALANCE = 9999999999999999.99;
+
+const cashBalanceField = z
+  .union([z.string(), z.number()])
+  .transform((v) => (v === "" ? 0 : Number(String(v).replace(/,/g, ""))))
+  .pipe(z.number().min(0).max(MAX_CASH_BALANCE));
+
+export const AccountCreateSchema = z.object({
+  name: z.string().trim().min(1).max(MAX_NAME_LENGTH),
+  broker: z.string().trim().max(MAX_BROKER_LENGTH).nullable(),
+  cash_balance: cashBalanceField,
+});
+
+export type AccountCreate = z.infer<typeof AccountCreateSchema>;
 
 export const AccountUpdateSchema = z
   .object({
     name: z.string().trim().min(1).max(MAX_NAME_LENGTH),
     broker: z.string().trim().max(MAX_BROKER_LENGTH).nullable(),
-    cash_balance: z
-      .union([z.string(), z.number()])
-      .transform((v) => (v === "" ? 0 : Number(String(v).replace(/,/g, ""))))
-      .pipe(z.number().min(0).max(MAX_CASH_BALANCE)),
+    cash_balance: cashBalanceField,
   })
   .partial();
 

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useDebounce } from "@/hooks/useDebounce";
 import { Input } from "@/components/base/Input";
 
 interface StockResult {
@@ -30,69 +32,37 @@ const MARKET_BADGE: Record<string, { label: string; className: string }> = {
   OTHER: { label: "기타", className: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
 };
 
+async function fetchStocks(query: string): Promise<StockResult[]> {
+  const res = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
 export function StockSearchInput({ onSelect, value, onChange }: StockSearchInputProps) {
-  const [suggestions, setSuggestions] = useState<StockResult[]>([]);
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const debouncedValue = useDebounce(value, 300);
 
-  const fetchStocks = useCallback(async (query: string) => {
-    if (!query.trim() || query.length < 1) {
-      setSuggestions([]);
-      setOpen(false);
-      return;
-    }
-
-    // 이전 요청 취소
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setLoading(true);
-    try {
-      const res = await fetch(
-        `/api/stocks/search?q=${encodeURIComponent(query)}`,
-        { signal: controller.signal }
-      );
-      if (!res.ok) return;
-      const data: StockResult[] = await res.json();
-      setSuggestions(data);
-      setOpen(data.length > 0);
-      setActiveIndex(-1);
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
-      setSuggestions([]);
-      setOpen(false);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const handleInput = useCallback((raw: string) => {
-    onChange(raw);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchStocks(raw), 300);
-  }, [onChange, fetchStocks]);
+  const { data: suggestions = [], isFetching } = useQuery({
+    queryKey: ["stocks", "search", debouncedValue],
+    queryFn: () => fetchStocks(debouncedValue),
+    enabled: debouncedValue.trim().length >= 1,
+    staleTime: 60_000,
+  });
 
   useEffect(() => {
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      abortRef.current?.abort();
-    };
-  }, []);
+    if (suggestions.length > 0) {
+      setOpen(true);
+      setActiveIndex(-1);
+    } else {
+      setOpen(false);
+    }
+  }, [suggestions]);
 
   const handleSelect = useCallback((stock: StockResult) => {
     onChange(stock.name);
-    onSelect({
-      name: stock.name,
-      code: stock.code,
-      market: stock.market,
-      exchange: stock.exchange,
-    });
-    setSuggestions([]);
+    onSelect({ name: stock.name, code: stock.code, market: stock.market, exchange: stock.exchange });
     setOpen(false);
     setActiveIndex(-1);
   }, [onChange, onSelect]);
@@ -115,7 +85,6 @@ export function StockSearchInput({ onSelect, value, onChange }: StockSearchInput
     }
   }, [open, suggestions, activeIndex, handleSelect]);
 
-  // 외부 클릭 시 닫기
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -132,13 +101,13 @@ export function StockSearchInput({ onSelect, value, onChange }: StockSearchInput
         type="text"
         placeholder="예: 삼성전자, AAPL, 005930"
         value={value}
-        onChange={(e) => handleInput(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
         onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
         autoComplete="off"
         autoCorrect="off"
       />
-      {loading && (
+      {isFetching && (
         <div className="absolute right-4 top-1/2 -translate-y-1/2">
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" />
         </div>
@@ -150,14 +119,9 @@ export function StockSearchInput({ onSelect, value, onChange }: StockSearchInput
             return (
               <li
                 key={`${stock.market}-${stock.code}`}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  handleSelect(stock);
-                }}
+                onMouseDown={(e) => { e.preventDefault(); handleSelect(stock); }}
                 className={`flex items-center gap-3 px-4 py-3 text-[15px] cursor-default transition-colors ${
-                  i === activeIndex
-                    ? "bg-accent text-accent-foreground"
-                    : "hover:bg-accent hover:text-accent-foreground"
+                  i === activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"
                 }`}
               >
                 <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold ${badge.className}`}>
