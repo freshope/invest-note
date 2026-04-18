@@ -6,6 +6,8 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 분석 탭 성능 / 유지보수 개선
 
+- [ ] InsightSection useMemo 적용 — AnalysisDashboard.tsx의 InsightSection 내 evaluateRules() 호출을 useMemo로 메모이제이션 (176줄 룰 배열 순회+정렬이 매 렌더마다 실행됨) (출처: /custom:review)
+
 - [ ] 분석 API 3개(`/summary`, `/behavior`, `/suggestions`) Supabase 쿼리에 `.limit(1000)` 추가 — 거래 수 급증 시 메모리/응답 보호
 - [ ] `aggregate.ts` `byTag` 계산 O(n²) 개선 — `sellTime` 기준 binary search 또는 누적 Map으로 전환
 - [ ] 수수료 현황 별도 패널 노출 — BUY commission 합계, 세금 합계, 순실현손익 vs 총비용 비교 (WAC 순수가격 결정의 후속 작업)
