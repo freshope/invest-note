@@ -22,11 +22,25 @@ export const VALID_RESULTS: TradeResult[] = ["SUCCESS", "FAIL", "BREAKEVEN"];
 // ============================================================
 
 // "yyyy-MM-dd'T'HH:mm" KST → UTC ISO 문자열
+// zod v4에서 transform 내 throw는 safeParse에서 잡히지 않으므로 ctx.addIssue 패턴 사용
 export function parseTradedAt(raw: string): string {
   const d = new Date(`${raw}+09:00`);
   if (isNaN(d.getTime())) throw new Error("traded_at: 올바른 날짜/시간 형식이 아닙니다");
   return d.toISOString();
 }
+
+// zod transform 전용: safeParse-safe 버전
+const tradedAtTransform = z
+  .string()
+  .min(1, "날짜를 선택해주세요.")
+  .transform((raw, ctx) => {
+    const d = new Date(`${raw}+09:00`);
+    if (isNaN(d.getTime())) {
+      ctx.addIssue({ code: "custom", message: "traded_at: 올바른 날짜/시간 형식이 아닙니다" });
+      return z.NEVER;
+    }
+    return d.toISOString();
+  });
 
 // 쉼표 포함 문자열/숫자 → 양수
 const commaPositive = z
@@ -58,7 +72,7 @@ export const TradeUpdateSchema = z
     asset_name: z.string().trim().min(1).max(100),
     ticker_symbol: z.string().trim().nullable().transform((v) => v || null),
     country_code: z.enum(["KR", "US", "OTHER"]).default("KR"),
-    traded_at: z.string().min(1).transform(parseTradedAt),
+    traded_at: tradedAtTransform,
     price: commaPositive,
     quantity: commaPositive,
     commission: commaNonNegative,
@@ -88,7 +102,7 @@ export const TradeCreateSchema = z.object({
   asset_name: z.string().trim().min(1).max(100),
   ticker_symbol: z.string().trim().nullable().optional().transform((v) => v || null),
   country_code: z.enum(["KR", "US", "OTHER"]).default("KR"),
-  traded_at: z.string().min(1).transform(parseTradedAt),
+  traded_at: tradedAtTransform,
   price: commaPositive,
   quantity: commaPositive,
   commission: commaNonNegative,

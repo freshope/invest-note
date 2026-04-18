@@ -67,6 +67,10 @@ function formatPnL(raw: string): string {
   return (isNeg ? "-" : "") + Number(digits).toLocaleString("ko-KR");
 }
 
+function parseRaw(s: string): number {
+  return Number(s.replace(/,/g, "")) || 0;
+}
+
 const schema = z.object({
   account_id: z.string().min(1),
   asset_name: z.string().min(1, "종목명을 입력해주세요.").max(100),
@@ -167,7 +171,6 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
   }
 
   async function onSubmit(values: FormValues) {
-    const parseRaw = (s: string) => Number(s.replace(/,/g, "")) || 0;
     try {
       await tradesApi.update(trade.id, {
         trade_type: trade.trade_type,

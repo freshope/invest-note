@@ -56,7 +56,9 @@ export async function PATCH(
     if (fetchError || !existing) return jsonError("거래를 찾을 수 없습니다.", 404);
 
     const { account_id, ...rest } = parsed.data;
-    const patch: Record<string, unknown> = { ...rest };
+    const patch: Record<string, unknown> = Object.fromEntries(
+      Object.entries(rest).filter(([, v]) => v !== undefined)
+    );
 
     // account_id는 소유권 DB 검증 필요
     if (account_id !== undefined) {

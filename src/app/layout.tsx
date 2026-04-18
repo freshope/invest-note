@@ -31,8 +31,8 @@ export default function RootLayout({
   return (
     <html lang="ko" className={`${pretendard.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
-          <QueryProvider>{children}</QueryProvider>
-        </body>
+        <QueryProvider>{children}</QueryProvider>
+      </body>
     </html>
   );
 }
