@@ -13,6 +13,10 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 수수료 현황 별도 패널 노출 — BUY commission 합계, 세금 합계, 순실현손익 vs 총비용 비교 (WAC 순수가격 결정의 후속 작업)
 - [ ] 테스트 보강: `period.ts` 직접 테스트 (1m/6m 구간, 월말 overflow), `computeRealizedPnL` 멀티 종목 시나리오, `byTag` FIFO 귀속 케이스
 
+## 보안
+
+- [ ] `/api/stocks/quote` 엔드포인트 인증 추가 — 현재 인증 없이 공개됨. `requireUser()` 추가 또는 라우트 필요성 재검토 (Naver/Yahoo Finance 프록시로 서버 IP 통한 rate-limit 우회 악용 가능) (출처: /custom:review)
+
 ## MVP 잔여 — CSV 임포트
 
 - [ ] CSV 파일 파싱 로직 구현 (현재 버튼 UI만 존재, 실제 처리 없음)
