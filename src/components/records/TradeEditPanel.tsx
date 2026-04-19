@@ -142,6 +142,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
   });
 
   useEffect(() => {
+    if (!open) return;
     reset({
       account_id: trade.account_id,
       asset_name: trade.asset_name,
@@ -162,7 +163,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
       reflection_note: trade.reflection_note ?? "",
       improvement_note: trade.improvement_note ?? "",
     });
-  }, [trade, reset]);
+  }, [open, trade, reset]);
 
   const [tags, result] = [watch("reasoning_tags"), watch("result")];
   const [calOpen, setCalOpen] = useState(false);
