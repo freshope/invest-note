@@ -70,13 +70,11 @@ export function AccountCard({ account, tradeCount }: AccountCardProps) {
         )}
       </div>
 
-      {editOpen && (
-        <AccountFormPanel
-          open={editOpen}
-          onOpenChange={setEditOpen}
-          account={account}
-        />
-      )}
+      <AccountFormPanel
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        account={account}
+      />
 
       {deleteOpen && (
         <DeleteAccountDialog

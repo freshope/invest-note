@@ -4,13 +4,33 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
+// 패널 슬라이드 애니메이션 duration (CSS duration-300과 동기화)
+export const PANEL_ANIMATION_MS = 300;
+
+// scroll lock 카운터를 DOM attribute에 저장해 HMR/SSR 모듈 재실행 시 오염 방지
+function getLockCount(): number {
+  return Number(document.body.dataset.panelLockCount ?? 0);
+}
+function setLockCount(n: number) {
+  if (n <= 0) {
+    delete document.body.dataset.panelLockCount;
+  } else {
+    document.body.dataset.panelLockCount = String(n);
+  }
+}
+
 interface FullScreenPanelContextValue {
   onClose: () => void;
-  title?: string;
+  visible: boolean;
+  panelRef: React.RefObject<HTMLDivElement | null>;
+  handleTransitionEnd: (e: React.TransitionEvent<HTMLDivElement>) => void;
 }
 
 const FullScreenPanelContext = React.createContext<FullScreenPanelContextValue>({
   onClose: () => {},
+  visible: false,
+  panelRef: { current: null },
+  handleTransitionEnd: () => {},
 });
 
 interface FullScreenPanelProps {
@@ -19,70 +39,83 @@ interface FullScreenPanelProps {
   children: React.ReactNode;
 }
 
-function FullScreenPanel({ onOpenChange, children }: FullScreenPanelProps) {
+function FullScreenPanel({ open, onOpenChange, children }: FullScreenPanelProps) {
+  const [mounted, setMounted] = React.useState(false);
+  const [visible, setVisible] = React.useState(false);
+  const panelRef = React.useRef<HTMLDivElement>(null);
+
   const handleClose = React.useCallback(() => onOpenChange(false), [onOpenChange]);
+
+  // Enter: mount → double rAF → visible. Exit: visible=false, wait transitionEnd → unmount.
+  React.useEffect(() => {
+    if (open) {
+      setMounted(true);
+      let raf1 = 0, raf2 = 0;
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => setVisible(true));
+      });
+      return () => {
+        cancelAnimationFrame(raf1);
+        cancelAnimationFrame(raf2);
+      };
+    } else {
+      setVisible(false);
+    }
+  }, [open]);
+
+  // body scroll lock — DOM 카운터로 중첩 패널 방어. mounted 기준으로 exit 중에도 lock 유지.
+  React.useEffect(() => {
+    if (mounted) {
+      const count = getLockCount();
+      if (count === 0) document.body.style.overflow = "hidden";
+      setLockCount(count + 1);
+      return () => {
+        const next = getLockCount() - 1;
+        setLockCount(next);
+        if (next === 0) document.body.style.overflow = "";
+      };
+    }
+  }, [mounted]);
+
+  const handleTransitionEnd = React.useCallback(
+    (e: React.TransitionEvent<HTMLDivElement>) => {
+      if (!open && e.target === panelRef.current && e.propertyName === "transform") {
+        setMounted(false);
+      }
+    },
+    [open],
+  );
+
+  // transitionEnd 미발생 대비 fallback — gesture cancel 등으로 이벤트가 오지 않을 때 강제 언마운트
+  React.useEffect(() => {
+    if (!open) {
+      const id = setTimeout(() => setMounted(false), PANEL_ANIMATION_MS + 50);
+      return () => clearTimeout(id);
+    }
+  }, [open]);
+
+  if (!mounted) return null;
+
   return (
-    <FullScreenPanelContext.Provider value={{ onClose: handleClose }}>
+    <FullScreenPanelContext.Provider
+      value={{ onClose: handleClose, visible, panelRef, handleTransitionEnd }}
+    >
       {children}
     </FullScreenPanelContext.Provider>
   );
 }
 
 interface FullScreenPanelContentProps {
-  open: boolean;
   children: React.ReactNode;
   className?: string;
 }
 
-function FullScreenPanelContent({ open, children, className }: FullScreenPanelContentProps) {
-  const [mounted, setMounted] = React.useState(false);
-  const [visible, setVisible] = React.useState(false);
-  const [animating, setAnimating] = React.useState(false);
-  const panelRef = React.useRef<HTMLDivElement>(null);
+function FullScreenPanelContent({ children, className }: FullScreenPanelContentProps) {
+  const { visible, panelRef, handleTransitionEnd } = React.useContext(FullScreenPanelContext);
 
-  // Mount on open
-  React.useEffect(() => {
-    if (open) {
-      setMounted(true);
-      // Allow DOM to paint before triggering transition
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setVisible(true);
-          setAnimating(false);
-        });
-      });
-    } else {
-      if (mounted) {
-        setAnimating(true);
-        setVisible(false);
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  if (typeof window === "undefined") return null;
 
-  // Unmount after exit animation
-  const handleTransitionEnd = React.useCallback(() => {
-    if (!open) {
-      setMounted(false);
-      setAnimating(false);
-    }
-  }, [open]);
-
-  // Lock body scroll
-  React.useEffect(() => {
-    if (open) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, [open]);
-
-  if (!mounted && !animating) return null;
-
-  const content = (
+  return createPortal(
     <div
       ref={panelRef}
       data-slot="full-screen-panel-content"
@@ -90,18 +123,15 @@ function FullScreenPanelContent({ open, children, className }: FullScreenPanelCo
       className={cn(
         "fixed inset-0 z-[100] flex flex-col bg-background",
         "transition-transform duration-300",
-        // iOS-like ease curve
         "[transition-timing-function:cubic-bezier(0.32,0.72,0,1)]",
         visible ? "translate-x-0" : "translate-x-full",
-        className
+        className,
       )}
     >
       {children}
-    </div>
+    </div>,
+    document.body,
   );
-
-  if (typeof window === "undefined") return null;
-  return createPortal(content, document.body);
 }
 
 interface FullScreenPanelHeaderProps {
@@ -117,7 +147,7 @@ function FullScreenPanelHeader({ title, className }: FullScreenPanelHeaderProps)
       data-slot="full-screen-panel-header"
       className={cn(
         "sticky top-0 z-10 flex items-center bg-background px-2",
-        className
+        className,
       )}
       style={{
         height: `calc(3.5rem + env(safe-area-inset-top))`,
@@ -166,6 +196,16 @@ function FullScreenPanelBody({ children, className }: FullScreenPanelBodyProps) 
       {children}
     </div>
   );
+}
+
+export function useSnapshotWhileOpen<T>(open: boolean, value: T): T {
+  const ref = React.useRef(value);
+  // render 중 ref를 직접 쓰는 것은 React 공식 허용 패턴 (escape hatch).
+  // ref.current 변경은 렌더 출력에 영향을 주지 않아 concurrent 모드에서도 안전하다.
+  // eslint-disable-next-line react-hooks/refs
+  if (open) ref.current = value;
+  // eslint-disable-next-line react-hooks/refs
+  return ref.current;
 }
 
 export {

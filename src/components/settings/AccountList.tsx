@@ -51,9 +51,7 @@ export function AccountList({ accounts, tradeCounts }: AccountListProps) {
         )}
       </div>
 
-      {addOpen && (
-        <AccountFormPanel open={addOpen} onOpenChange={setAddOpen} />
-      )}
+      <AccountFormPanel open={addOpen} onOpenChange={setAddOpen} />
     </>
   );
 }

@@ -287,15 +287,13 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
         </Button>
       </div>
 
-      {editOpen && (
-        <TradeEditPanel
-          open={editOpen}
-          onOpenChange={setEditOpen}
-          trade={trade}
-          accounts={accounts}
-          onSaved={onSaved}
-        />
-      )}
+      <TradeEditPanel
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        trade={trade}
+        accounts={accounts}
+        onSaved={onSaved}
+      />
 
       <DeleteTradeDialog
         open={deleteOpen}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   FullScreenPanel,
   FullScreenPanelContent,
@@ -30,17 +30,27 @@ export function TradeFormPanel({ open, onOpenChange, accounts }: TradeFormPanelP
   const [tradeId, setTradeId] = useState<string>("");
   const [tradeType, setTradeType] = useState<TradeType>("BUY");
 
-  const handleClose = useCallback(() => {
-    onOpenChange(false);
-    // 패널 닫힌 후 상태 리셋 (애니메이션 후 처리)
-    setTimeout(() => {
+  // 패널이 열릴 때 항상 리셋 — 빠른 재오픈 시 이전 step/tradeId가 남지 않도록.
+  // React 18에서는 effect 내 setState가 자동 배칭되어 추가 렌더 없이 처리됨.
+  useEffect(() => {
+    if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setStep("basic");
       setTradeId("");
       setTradeType("BUY");
-    }, 350);
+    }
+  }, [open]);
+
+  const handleClose = useCallback(() => {
+    onOpenChange(false);
   }, [onOpenChange]);
 
+  // stale promise 방어: API pending 중 패널이 닫히면 응답이 와도 step 전환 차단
+  const openRef = useRef(open);
+  useEffect(() => { openRef.current = open; }, [open]);
+
   const handleTradeCreated = useCallback((id: string, type: TradeType) => {
+    if (!openRef.current) return;
     setTradeId(id);
     setTradeType(type);
     setStep("meta");
@@ -50,7 +60,7 @@ export function TradeFormPanel({ open, onOpenChange, accounts }: TradeFormPanelP
 
   return (
     <FullScreenPanel open={open} onOpenChange={handleClose}>
-      <FullScreenPanelContent open={open}>
+      <FullScreenPanelContent>
         <FullScreenPanelHeader title={title} />
         <FullScreenPanelBody>
           {step === "basic" && (

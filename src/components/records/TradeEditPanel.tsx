@@ -141,7 +141,13 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
     },
   });
 
+  const [calOpen, setCalOpen] = useState(false);
+
   useEffect(() => {
+    if (!open) {
+      setCalOpen(false); // 패널 닫을 때 달력 팝오버 초기화
+      return;
+    }
     reset({
       account_id: trade.account_id,
       asset_name: trade.asset_name,
@@ -162,10 +168,9 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
       reflection_note: trade.reflection_note ?? "",
       improvement_note: trade.improvement_note ?? "",
     });
-  }, [trade, reset]);
+  }, [open, trade, reset]);
 
   const [tags, result] = [watch("reasoning_tags"), watch("result")];
-  const [calOpen, setCalOpen] = useState(false);
 
   function toggleTag(tag: ReasoningTag) {
     const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
@@ -210,7 +215,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
 
   return (
     <FullScreenPanel open={open} onOpenChange={() => onOpenChange(false)}>
-      <FullScreenPanelContent open={open}>
+      <FullScreenPanelContent>
         <FullScreenPanelHeader title="거래 수정" />
         <FullScreenPanelBody>
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">

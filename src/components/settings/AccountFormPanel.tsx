@@ -70,13 +70,16 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
     },
   });
 
+  // open=true 또는 account prop이 바뀔 때 폼 갱신.
+  // 항상 마운트 상태이므로 재오픈 시 더티 상태·에러가 남지 않도록 open 기준으로 reset.
   useEffect(() => {
+    if (!open) return;
     reset({
       name: account?.name ?? "",
       broker: account?.broker ?? null,
       cash_display: account?.cash_balance ? Number(account.cash_balance).toLocaleString("ko-KR") : "",
     });
-  }, [account, reset]);
+  }, [open, account, reset]);
 
   const broker = watch("broker");
 
@@ -96,7 +99,6 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
       await queryClient.invalidateQueries({ queryKey: ["portfolio"] });
       router.refresh(); // Server Component 계좌 목록 갱신
       onOpenChange(false);
-      reset({ name: "", broker: null, cash_display: "" });
     } catch (err) {
       setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
     }
@@ -104,7 +106,7 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
 
   return (
     <FullScreenPanel open={open} onOpenChange={onOpenChange}>
-      <FullScreenPanelContent open={open}>
+      <FullScreenPanelContent>
         <FullScreenPanelHeader title={isEdit ? "계좌 수정" : "계좌 추가"} />
         <FullScreenPanelBody>
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">

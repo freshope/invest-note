@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   FullScreenPanel,
   FullScreenPanelContent,
+  useSnapshotWhileOpen,
 } from "@/components/base/FullScreenPanel";
 import { TradeDetail } from "./TradeDetail";
 import type { Account } from "@/types/database";
@@ -54,10 +55,12 @@ export function TradeDetailPanel({
     ? () => setStockOpen(true)
     : undefined;
 
+  const stockSnap = useSnapshotWhileOpen(stockOpen, { trade, allTrades, accounts });
+
   return (
     <>
       <FullScreenPanel open={open} onOpenChange={handleClose}>
-        <FullScreenPanelContent open={open} className="overflow-y-auto">
+        <FullScreenPanelContent className="overflow-y-auto">
           <TradeDetail
             trade={trade}
             accounts={accounts}
@@ -69,15 +72,15 @@ export function TradeDetailPanel({
         </FullScreenPanelContent>
       </FullScreenPanel>
 
-      {stockOpen && trade.ticker_symbol && (
+      {stockSnap.trade.ticker_symbol && (
         <StockDetailPanel
           open={stockOpen}
           onOpenChange={setStockOpen}
-          assetName={trade.asset_name}
-          ticker={trade.ticker_symbol}
-          country={trade.country_code ?? "KR"}
-          allTrades={allTrades}
-          accounts={accounts}
+          assetName={stockSnap.trade.asset_name}
+          ticker={stockSnap.trade.ticker_symbol}
+          country={stockSnap.trade.country_code ?? "KR"}
+          allTrades={stockSnap.allTrades}
+          accounts={stockSnap.accounts}
         />
       )}
     </>
