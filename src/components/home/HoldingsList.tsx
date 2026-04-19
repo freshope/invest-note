@@ -1,92 +1,80 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
-import dynamic from "next/dynamic";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HoldingCard } from "./HoldingCard";
-import { useSnapshotWhileOpen } from "@/components/base/FullScreenPanel";
+import { useDetailPanel } from "@/components/panels/DetailPanelProvider";
 import type { Position } from "@/lib/portfolio";
-import type { TradeWithAccount } from "@/lib/trade-utils";
-import type { Account } from "@/types/database";
-
-const StockDetailPanel = dynamic(
-  () => import("@/components/stocks/StockDetailPanel").then((m) => m.StockDetailPanel),
-  { ssr: false },
-);
 
 interface HoldingsListProps {
   positions: Position[];
 }
 
 export function HoldingsList({ positions }: HoldingsListProps) {
-  const [selected, setSelected] = useState<Position | null>(null);
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [stockTrades, setStockTrades] = useState<TradeWithAccount[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  const { openStock } = useDetailPanel();
   const [fetching, setFetching] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // 언마운트 시 진행 중인 fetch 취소
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   const sorted = useMemo(
     () => [...positions].sort((a, b) => (b.evaluation ?? 0) - (a.evaluation ?? 0)),
     [positions],
   );
 
-  const snap = useSnapshotWhileOpen(panelOpen, { selected, stockTrades, accounts });
-
-  const handleCardPress = useCallback(async (pos: Position) => {
-    if (fetching) return;
-    setFetching(true);
-    setSelected(pos);
-    try {
-      const res = await fetch(
-        `/api/trades?ticker=${encodeURIComponent(pos.ticker)}&country=${encodeURIComponent(pos.country)}`,
-      );
-      if (res.ok) {
-        const { trades, accounts: accs } = await res.json();
-        setStockTrades(trades);
-        setAccounts(accs);
-      } else {
-        setStockTrades([]);
-        setAccounts([]);
+  const handleCardPress = useCallback(
+    async (pos: Position) => {
+      if (fetching) return;
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setFetching(true);
+      try {
+        const res = await fetch(
+          `/api/trades?ticker=${encodeURIComponent(pos.ticker)}&country=${encodeURIComponent(pos.country)}`,
+          { signal: controller.signal },
+        );
+        const { trades, accounts } = res.ok
+          ? await res.json()
+          : { trades: [], accounts: [] };
+        openStock({
+          assetName: pos.assetName,
+          ticker: pos.ticker,
+          country: pos.country,
+          allTrades: trades,
+          accounts,
+        });
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return;
+        openStock({
+          assetName: pos.assetName,
+          ticker: pos.ticker,
+          country: pos.country,
+          allTrades: [],
+          accounts: [],
+        });
+      } finally {
+        setFetching(false);
       }
-    } catch {
-      setStockTrades([]);
-      setAccounts([]);
-    } finally {
-      setFetching(false);
-    }
-    setPanelOpen(true);
-  }, [fetching]);
-
-  const handleOpenChange = useCallback((open: boolean) => {
-    setPanelOpen(open);
-    if (!open) {
-      setSelected(null);
-      setStockTrades([]);
-    }
-  }, []);
+    },
+    [fetching, openStock],
+  );
 
   if (sorted.length === 0) return null;
 
   return (
-    <>
-      <div className="px-5 space-y-2">
-        {sorted.map((pos) => (
-          <HoldingCard
-            key={pos.key}
-            position={pos}
-            onPress={() => handleCardPress(pos)}
-          />
-        ))}
-      </div>
-
-      <StockDetailPanel
-        open={panelOpen}
-        onOpenChange={handleOpenChange}
-        assetName={snap.selected?.assetName ?? ""}
-        ticker={snap.selected?.ticker ?? ""}
-        country={snap.selected?.country ?? "KR"}
-        allTrades={snap.stockTrades}
-        accounts={snap.accounts}
-      />
-    </>
+    <div className="px-5 space-y-2">
+      {sorted.map((pos) => (
+        <HoldingCard
+          key={pos.key}
+          position={pos}
+          onPress={() => handleCardPress(pos)}
+        />
+      ))}
+    </div>
   );
 }
