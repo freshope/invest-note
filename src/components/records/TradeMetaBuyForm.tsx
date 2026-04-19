@@ -4,6 +4,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/Button";
 import { Label } from "@/components/base/Label";
 import { Textarea } from "@/components/base/Textarea";
@@ -27,6 +28,7 @@ interface TradeMetaBuyFormProps {
 
 export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const {
     control,
     register,
@@ -61,6 +63,7 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
         buy_reason: values.buy_reason.trim() || null,
       });
       await queryClient.invalidateQueries({ queryKey: ["trade", tradeId] });
+      router.refresh();
       onDone();
     } catch (err) {
       setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
