@@ -96,7 +96,6 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
       await queryClient.invalidateQueries({ queryKey: ["portfolio"] });
       router.refresh(); // Server Component 계좌 목록 갱신
       onOpenChange(false);
-      reset({ name: "", broker: null, cash_display: "" });
     } catch (err) {
       setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
     }
