@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   FullScreenPanel,
   FullScreenPanelContent,
@@ -45,7 +45,12 @@ export function TradeFormPanel({ open, onOpenChange, accounts }: TradeFormPanelP
     onOpenChange(false);
   }, [onOpenChange]);
 
+  // stale promise 방어: API pending 중 패널이 닫히면 응답이 와도 step 전환 차단
+  const openRef = useRef(open);
+  useEffect(() => { openRef.current = open; }, [open]);
+
   const handleTradeCreated = useCallback((id: string, type: TradeType) => {
+    if (!openRef.current) return;
     setTradeId(id);
     setTradeType(type);
     setStep("meta");
