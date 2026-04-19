@@ -6,7 +6,6 @@ import {
   FullScreenPanelContent,
   FullScreenPanelHeader,
   FullScreenPanelBody,
-  PANEL_ANIMATION_MS,
 } from "@/components/base/FullScreenPanel";
 import { TradeBasicForm } from "./TradeBasicForm";
 import { TradeMetaBuyForm } from "./TradeMetaBuyForm";
@@ -31,15 +30,14 @@ export function TradeFormPanel({ open, onOpenChange, accounts }: TradeFormPanelP
   const [tradeId, setTradeId] = useState<string>("");
   const [tradeType, setTradeType] = useState<TradeType>("BUY");
 
-  // 컴포넌트가 항상 마운트 상태이므로 open=false 후 폼 상태를 리셋
+  // 패널이 열릴 때 항상 리셋 — 빠른 재오픈 시 이전 step/tradeId가 남지 않도록.
+  // React 18에서는 effect 내 setState가 자동 배칭되어 추가 렌더 없이 처리됨.
   useEffect(() => {
-    if (!open) {
-      const t = setTimeout(() => {
-        setStep("basic");
-        setTradeId("");
-        setTradeType("BUY");
-      }, PANEL_ANIMATION_MS + 20);
-      return () => clearTimeout(t);
+    if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStep("basic");
+      setTradeId("");
+      setTradeType("BUY");
     }
   }, [open]);
 

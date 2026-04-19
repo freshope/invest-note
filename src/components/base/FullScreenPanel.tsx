@@ -200,6 +200,8 @@ function FullScreenPanelBody({ children, className }: FullScreenPanelBodyProps) 
 
 export function useSnapshotWhileOpen<T>(open: boolean, value: T): T {
   const ref = React.useRef(value);
+  // render 중 ref를 직접 쓰는 것은 React 공식 허용 패턴 (escape hatch).
+  // ref.current 변경은 렌더 출력에 영향을 주지 않아 concurrent 모드에서도 안전하다.
   // eslint-disable-next-line react-hooks/refs
   if (open) ref.current = value;
   // eslint-disable-next-line react-hooks/refs

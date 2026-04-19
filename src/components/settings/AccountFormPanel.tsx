@@ -70,13 +70,16 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
     },
   });
 
+  // open=true 또는 account prop이 바뀔 때 폼 갱신.
+  // 항상 마운트 상태이므로 재오픈 시 더티 상태·에러가 남지 않도록 open 기준으로 reset.
   useEffect(() => {
+    if (!open) return;
     reset({
       name: account?.name ?? "",
       broker: account?.broker ?? null,
       cash_display: account?.cash_balance ? Number(account.cash_balance).toLocaleString("ko-KR") : "",
     });
-  }, [account, reset]);
+  }, [open, account, reset]);
 
   const broker = watch("broker");
 
