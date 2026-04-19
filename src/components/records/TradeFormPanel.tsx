@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   FullScreenPanel,
   FullScreenPanelContent,
@@ -29,6 +29,18 @@ export function TradeFormPanel({ open, onOpenChange, accounts }: TradeFormPanelP
   const [step, setStep] = useState<Step>("basic");
   const [tradeId, setTradeId] = useState<string>("");
   const [tradeType, setTradeType] = useState<TradeType>("BUY");
+
+  // 컴포넌트가 항상 마운트 상태이므로 open=false 후 폼 상태를 리셋
+  useEffect(() => {
+    if (!open) {
+      const t = setTimeout(() => {
+        setStep("basic");
+        setTradeId("");
+        setTradeType("BUY");
+      }, 320); // exit animation(300ms) 완료 후 리셋
+      return () => clearTimeout(t);
+    }
+  }, [open]);
 
   const handleClose = useCallback(() => {
     onOpenChange(false);
