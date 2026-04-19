@@ -174,7 +174,7 @@ function FullScreenPanelHeader({ title, className }: FullScreenPanelHeaderProps)
           <path d="M15 18l-6-6 6-6" />
         </svg>
       </button>
-      <span className="absolute left-1/2 -translate-x-1/2 text-[17px] font-bold text-foreground">
+      <span className="absolute inset-x-0 text-center text-[17px] font-bold text-foreground pointer-events-none">
         {title}
       </span>
     </div>

@@ -100,7 +100,7 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
         >
           <ChevronLeftIcon className="h-6 w-6" strokeWidth={2.2} />
         </button>
-        <span className="absolute left-1/2 -translate-x-1/2 text-[17px] font-bold text-foreground">
+        <span className="absolute inset-x-0 text-center text-[17px] font-bold text-foreground pointer-events-none">
           거래 상세
         </span>
       </div>

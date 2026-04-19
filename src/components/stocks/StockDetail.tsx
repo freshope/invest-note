@@ -49,7 +49,7 @@ export function StockDetail({ assetName, ticker, country, trades, stats, onBack,
         >
           <ChevronLeftIcon className="h-6 w-6" strokeWidth={2.2} />
         </button>
-        <span className="absolute left-1/2 -translate-x-1/2 text-[17px] font-bold text-foreground truncate max-w-[60%]">
+        <span className="absolute inset-x-0 text-center text-[17px] font-bold text-foreground pointer-events-none truncate px-14">
           {assetName}
         </span>
       </div>
