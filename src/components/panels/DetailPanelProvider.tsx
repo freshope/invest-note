@@ -13,6 +13,7 @@ import { useRouter, usePathname } from "next/navigation";
 import {
   FullScreenPanel,
   FullScreenPanelContent,
+  PANEL_ANIMATION_MS,
   useSnapshotWhileOpen,
 } from "@/components/base/FullScreenPanel";
 import { TradeDetail } from "@/components/records/TradeDetail";
@@ -73,6 +74,11 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
 
   const close = useCallback(() => {
     setMode(null);
+    // 슬라이드 아웃 애니메이션 완료 후 payload 정리 — 닫힌 패널의 useMemo 재계산 방지
+    setTimeout(() => {
+      setTradePayload(null);
+      setStockPayload(null);
+    }, PANEL_ANIMATION_MS + 50);
   }, []);
 
   // 라우트 이동 시 열린 패널 자동 닫기
