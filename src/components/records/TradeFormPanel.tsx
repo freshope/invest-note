@@ -6,6 +6,7 @@ import {
   FullScreenPanelContent,
   FullScreenPanelHeader,
   FullScreenPanelBody,
+  PANEL_ANIMATION_MS,
 } from "@/components/base/FullScreenPanel";
 import { TradeBasicForm } from "./TradeBasicForm";
 import { TradeMetaBuyForm } from "./TradeMetaBuyForm";
@@ -37,7 +38,7 @@ export function TradeFormPanel({ open, onOpenChange, accounts }: TradeFormPanelP
         setStep("basic");
         setTradeId("");
         setTradeType("BUY");
-      }, 320); // exit animation(300ms) 완료 후 리셋
+      }, PANEL_ANIMATION_MS + 20);
       return () => clearTimeout(t);
     }
   }, [open]);

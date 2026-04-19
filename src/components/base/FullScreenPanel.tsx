@@ -4,8 +4,20 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
-// 중첩 패널에서 scroll lock이 조기에 풀리는 것을 방지하는 카운터
-let lockCount = 0;
+// 패널 슬라이드 애니메이션 duration (CSS duration-300과 동기화)
+export const PANEL_ANIMATION_MS = 300;
+
+// scroll lock 카운터를 DOM attribute에 저장해 HMR/SSR 모듈 재실행 시 오염 방지
+function getLockCount(): number {
+  return Number(document.body.dataset.panelLockCount ?? 0);
+}
+function setLockCount(n: number) {
+  if (n <= 0) {
+    delete document.body.dataset.panelLockCount;
+  } else {
+    document.body.dataset.panelLockCount = String(n);
+  }
+}
 
 interface FullScreenPanelContextValue {
   onClose: () => void;
@@ -48,18 +60,16 @@ function FullScreenPanel({ open, onOpenChange, children }: FullScreenPanelProps)
     }
   }, [open]);
 
-  // body scroll lock — 카운터로 중첩 패널 방어
+  // body scroll lock — DOM 카운터로 중첩 패널 방어
   React.useEffect(() => {
     if (open) {
-      if (lockCount === 0) {
-        document.body.style.overflow = "hidden";
-      }
-      lockCount++;
+      const count = getLockCount();
+      if (count === 0) document.body.style.overflow = "hidden";
+      setLockCount(count + 1);
       return () => {
-        lockCount--;
-        if (lockCount === 0) {
-          document.body.style.overflow = "";
-        }
+        const next = getLockCount() - 1;
+        setLockCount(next);
+        if (next === 0) document.body.style.overflow = "";
       };
     }
   }, [open]);
