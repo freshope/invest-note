@@ -16,6 +16,15 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 수수료 현황 별도 패널 노출 — BUY commission 합계, 세금 합계, 순실현손익 vs 총비용 비교 (WAC 순수가격 결정의 후속 작업)
 - [ ] 테스트 보강: `period.ts` 직접 테스트 (1m/6m 구간, 월말 overflow), `computeRealizedPnL` 멀티 종목 시나리오, `byTag` FIFO 귀속 케이스
 
+## 패널 UX 개선
+
+- [ ] HoldingsList fetch 에러 시 토스트 연동 — 네트워크 실패/401/500 시 빈 패널 오픈 대신 토스트 에러 표시 후 패널 미오픈 (출처: /custom:review)
+
+## 데이터 정확성
+
+- [ ] USD/KRW 혼합 합산 버그 — `portfolio.ts:174` US 종목 평가액을 환율 적용 없이 KRW와 직접 합산해 총평가액·미실현손익 왜곡. USD → KRW 환율 적용 필요 (출처: /custom:review)
+- [ ] 자동완성 후 종목명 수정 시 stale ticker 저장 — `TradeBasicForm.tsx:249` 자동완성 선택 후 asset_name을 수동 수정하면 이전 ticker_symbol/country_code가 남아 저장됨. 수동 수정 감지 시 ticker 관련 필드 초기화 필요 (출처: /custom:review)
+
 ## 코드 품질 — 라이브러리 도입 후속
 
 - [ ] TradeEditPanel 스키마 일관성 — `price_display: z.string()` 방식을 `TradeBasicForm`처럼 `z.number().positive()` 기반으로 통일 (출처: /custom:review)
