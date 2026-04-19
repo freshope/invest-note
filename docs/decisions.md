@@ -80,6 +80,15 @@
 
 ---
 
+## 2026-04-19 | 거래상세·종목상세 패널 상태 — Context SSOT
+
+**맥락:** `TradeDetailPanel`과 `StockDetailPanel`이 서로를 자식으로 렌더해 패널이 무한 중첩되던 문제. 두 패널이 동일 `z-[100]` portal로 쌓이며 DOM 누적.
+**결정:** 패널 오픈 상태를 호출자 로컬 state에서 끌어올려 `DetailPanelProvider` (app/layout 수준)에서 단일 `mode: "trade" | "stock" | null` 상태로 관리. Provider가 두 `<FullScreenPanel>`을 직접 소유하고, 호출자는 `openTrade()`/`openStock()`만 호출.
+**이유:** `mode` 단일 상태로 동시 오픈이 구조적으로 불가능 — 런타임 가드 없이 mutual-exclusive 보장. 기존 `FullScreenPanel`·`useSnapshotWhileOpen` 재사용으로 슬라이드 아웃 애니메이션 유지.
+**트레이드오프:** 이전에는 종목 패널에서 거래를 수정하면 거래 패널만 닫히고 종목 패널로 복귀했으나, 현재는 수정/삭제 시 두 패널 모두 닫힘. 단순한 동작이지만 UX 차이 존재. pathname 변경 시 자동 close + 애니메이션 완료 후 payload null 리셋 추가.
+
+---
+
 ## 2026-04-17 | 분석 탭: 감정/전략 룰 resultCount 가드
 
 - **결정:** `losing_strategy`, `emotion_fomo_low_winrate` 룰 모두 `resultCount >= 3` 가드 적용

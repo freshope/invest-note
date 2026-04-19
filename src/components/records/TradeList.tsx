@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { TradeCard } from "./TradeCard";
 import { TradeFormPanel } from "./TradeFormPanel";
-import { TradeDetailPanel } from "./TradeDetailPanel";
-import { useSnapshotWhileOpen } from "@/components/base/FullScreenPanel";
+import { useDetailPanel } from "@/components/panels/DetailPanelProvider";
 import { CsvUploadButton } from "./CsvUploadButton";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import type { Account } from "@/types/database";
@@ -18,16 +17,8 @@ interface TradeListProps {
 
 export function TradeList({ trades, accounts }: TradeListProps) {
   const [formOpen, setFormOpen] = useState(false);
-  const [selectedTrade, setSelectedTrade] = useState<TradeWithAccount | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
+  const { openTrade } = useDetailPanel();
   const grouped = groupByDate(trades);
-
-  const handleDetailClose = useCallback((open: boolean) => {
-    setDetailOpen(open);
-    if (!open) setSelectedTrade(null);
-  }, []);
-
-  const tradeSnap = useSnapshotWhileOpen(detailOpen, selectedTrade);
 
   return (
     <>
@@ -54,10 +45,7 @@ export function TradeList({ trades, accounts }: TradeListProps) {
                     <TradeCard
                       key={trade.id}
                       trade={trade}
-                      onPress={() => {
-                        setSelectedTrade(trade);
-                        setDetailOpen(true);
-                      }}
+                      onPress={() => openTrade({ trade, accounts, allTrades: trades })}
                     />
                   ))}
                 </div>
@@ -83,17 +71,6 @@ export function TradeList({ trades, accounts }: TradeListProps) {
         onOpenChange={setFormOpen}
         accounts={accounts}
       />
-
-      {/* 거래 상세 패널 */}
-      {tradeSnap && (
-        <TradeDetailPanel
-          open={detailOpen}
-          onOpenChange={handleDetailClose}
-          trade={tradeSnap}
-          accounts={accounts}
-          allTrades={trades}
-        />
-      )}
     </>
   );
 }
