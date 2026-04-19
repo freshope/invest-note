@@ -50,19 +50,22 @@ function FullScreenPanel({ open, onOpenChange, children }: FullScreenPanelProps)
   React.useEffect(() => {
     if (open) {
       setMounted(true);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setVisible(true);
-        });
+      let raf1 = 0, raf2 = 0;
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => setVisible(true));
       });
+      return () => {
+        cancelAnimationFrame(raf1);
+        cancelAnimationFrame(raf2);
+      };
     } else {
       setVisible(false);
     }
   }, [open]);
 
-  // body scroll lock — DOM 카운터로 중첩 패널 방어
+  // body scroll lock — DOM 카운터로 중첩 패널 방어. mounted 기준으로 exit 중에도 lock 유지.
   React.useEffect(() => {
-    if (open) {
+    if (mounted) {
       const count = getLockCount();
       if (count === 0) document.body.style.overflow = "hidden";
       setLockCount(count + 1);
@@ -72,7 +75,7 @@ function FullScreenPanel({ open, onOpenChange, children }: FullScreenPanelProps)
         if (next === 0) document.body.style.overflow = "";
       };
     }
-  }, [open]);
+  }, [mounted]);
 
   const handleTransitionEnd = React.useCallback(
     (e: React.TransitionEvent<HTMLDivElement>) => {
@@ -82,6 +85,14 @@ function FullScreenPanel({ open, onOpenChange, children }: FullScreenPanelProps)
     },
     [open],
   );
+
+  // transitionEnd 미발생 대비 fallback — gesture cancel 등으로 이벤트가 오지 않을 때 강제 언마운트
+  React.useEffect(() => {
+    if (!open) {
+      const id = setTimeout(() => setMounted(false), PANEL_ANIMATION_MS + 50);
+      return () => clearTimeout(id);
+    }
+  }, [open]);
 
   if (!mounted) return null;
 
@@ -189,7 +200,9 @@ function FullScreenPanelBody({ children, className }: FullScreenPanelBodyProps) 
 
 export function useSnapshotWhileOpen<T>(open: boolean, value: T): T {
   const ref = React.useRef(value);
+  // eslint-disable-next-line react-hooks/refs
   if (open) ref.current = value;
+  // eslint-disable-next-line react-hooks/refs
   return ref.current;
 }
 
