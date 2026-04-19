@@ -145,38 +145,34 @@ function FullScreenPanelHeader({ title, className }: FullScreenPanelHeaderProps)
   return (
     <div
       data-slot="full-screen-panel-header"
-      className={cn(
-        "sticky top-0 z-10 flex items-center bg-background px-2",
-        className,
-      )}
-      style={{
-        height: `calc(3.5rem + env(safe-area-inset-top))`,
-        paddingTop: "env(safe-area-inset-top)",
-      }}
+      className={cn("sticky top-0 z-10 bg-background", className)}
+      style={{ paddingTop: "env(safe-area-inset-top)" }}
     >
-      <button
-        type="button"
-        onClick={onClose}
-        className="flex h-10 w-10 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted active:bg-muted"
-        aria-label="뒤로"
-      >
-        <svg
-          width="24"
-          height="24"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
+      <div className="relative flex h-14 items-center px-2">
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex h-10 w-10 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted active:bg-muted"
+          aria-label="뒤로"
         >
-          <path d="M15 18l-6-6 6-6" />
-        </svg>
-      </button>
-      <span className="absolute inset-x-0 text-center text-[17px] font-bold text-foreground pointer-events-none">
-        {title}
-      </span>
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+        </button>
+        <span className="absolute inset-x-0 text-center text-[17px] font-bold text-foreground pointer-events-none">
+          {title}
+        </span>
+      </div>
     </div>
   );
 }

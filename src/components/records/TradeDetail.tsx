@@ -89,20 +89,22 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
     <>
       {/* 헤더 */}
       <div
-        className="sticky top-0 z-10 bg-background flex items-center px-2"
-        style={{ height: "calc(3.5rem + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)" }}
+        className="sticky top-0 z-10 bg-background"
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
-        <button
-          type="button"
-          onClick={onBack ?? (() => router.back())}
-          className="flex h-10 w-10 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted active:bg-muted"
-          aria-label="뒤로"
-        >
-          <ChevronLeftIcon className="h-6 w-6" strokeWidth={2.2} />
-        </button>
-        <span className="absolute inset-x-0 text-center text-[17px] font-bold text-foreground pointer-events-none">
-          거래 상세
-        </span>
+        <div className="relative flex h-14 items-center px-2">
+          <button
+            type="button"
+            onClick={onBack ?? (() => router.back())}
+            className="flex h-10 w-10 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted active:bg-muted"
+            aria-label="뒤로"
+          >
+            <ChevronLeftIcon className="h-6 w-6" strokeWidth={2.2} />
+          </button>
+          <span className="absolute inset-x-0 text-center text-[17px] font-bold text-foreground pointer-events-none">
+            거래 상세
+          </span>
+        </div>
       </div>
 
       <div className="px-5 pb-32 space-y-5">
