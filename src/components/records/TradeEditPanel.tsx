@@ -210,7 +210,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
 
   return (
     <FullScreenPanel open={open} onOpenChange={() => onOpenChange(false)}>
-      <FullScreenPanelContent open={open}>
+      <FullScreenPanelContent>
         <FullScreenPanelHeader title="거래 수정" />
         <FullScreenPanelBody>
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">

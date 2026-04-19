@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { HoldingCard } from "./HoldingCard";
+import { useSnapshotWhileOpen } from "@/components/base/FullScreenPanel";
 import type { Position } from "@/lib/portfolio";
 import type { TradeWithAccount } from "@/lib/trade-utils";
 import type { Account } from "@/types/database";
@@ -27,6 +28,8 @@ export function HoldingsList({ positions }: HoldingsListProps) {
     () => [...positions].sort((a, b) => (b.evaluation ?? 0) - (a.evaluation ?? 0)),
     [positions],
   );
+
+  const snap = useSnapshotWhileOpen(panelOpen, { selected, stockTrades, accounts });
 
   const handleCardPress = useCallback(async (pos: Position) => {
     if (fetching) return;
@@ -75,17 +78,15 @@ export function HoldingsList({ positions }: HoldingsListProps) {
         ))}
       </div>
 
-      {selected && (
-        <StockDetailPanel
-          open={panelOpen}
-          onOpenChange={handleOpenChange}
-          assetName={selected.assetName}
-          ticker={selected.ticker}
-          country={selected.country}
-          allTrades={stockTrades}
-          accounts={accounts}
-        />
-      )}
+      <StockDetailPanel
+        open={panelOpen}
+        onOpenChange={handleOpenChange}
+        assetName={snap.selected?.assetName ?? ""}
+        ticker={snap.selected?.ticker ?? ""}
+        country={snap.selected?.country ?? "KR"}
+        allTrades={snap.stockTrades}
+        accounts={snap.accounts}
+      />
     </>
   );
 }

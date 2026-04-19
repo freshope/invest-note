@@ -32,12 +32,6 @@ export function TradeFormPanel({ open, onOpenChange, accounts }: TradeFormPanelP
 
   const handleClose = useCallback(() => {
     onOpenChange(false);
-    // 패널 닫힌 후 상태 리셋 (애니메이션 후 처리)
-    setTimeout(() => {
-      setStep("basic");
-      setTradeId("");
-      setTradeType("BUY");
-    }, 350);
   }, [onOpenChange]);
 
   const handleTradeCreated = useCallback((id: string, type: TradeType) => {
@@ -50,7 +44,7 @@ export function TradeFormPanel({ open, onOpenChange, accounts }: TradeFormPanelP
 
   return (
     <FullScreenPanel open={open} onOpenChange={handleClose}>
-      <FullScreenPanelContent open={open}>
+      <FullScreenPanelContent>
         <FullScreenPanelHeader title={title} />
         <FullScreenPanelBody>
           {step === "basic" && (

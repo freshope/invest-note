@@ -104,7 +104,7 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
 
   return (
     <FullScreenPanel open={open} onOpenChange={onOpenChange}>
-      <FullScreenPanelContent open={open}>
+      <FullScreenPanelContent>
         <FullScreenPanelHeader title={isEdit ? "계좌 수정" : "계좌 추가"} />
         <FullScreenPanelBody>
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">

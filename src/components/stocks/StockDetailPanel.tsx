@@ -6,6 +6,7 @@ import { computeRealizedPnL } from "@/lib/analysis/realized-pnl";
 import {
   FullScreenPanel,
   FullScreenPanelContent,
+  useSnapshotWhileOpen,
 } from "@/components/base/FullScreenPanel";
 import { StockDetail } from "./StockDetail";
 import type { Account } from "@/types/database";
@@ -79,10 +80,12 @@ export function StockDetailPanel({
     }
   }, [queryClient]);
 
+  const tradeSnap = useSnapshotWhileOpen(tradeDetailOpen, { trade: selectedTrade, accounts, allTrades });
+
   return (
     <>
       <FullScreenPanel open={open} onOpenChange={handleClose}>
-        <FullScreenPanelContent open={open} className="overflow-y-auto">
+        <FullScreenPanelContent className="overflow-y-auto">
           <StockDetail
             assetName={assetName}
             ticker={ticker}
@@ -95,13 +98,13 @@ export function StockDetailPanel({
         </FullScreenPanelContent>
       </FullScreenPanel>
 
-      {tradeDetailOpen && selectedTrade && (
+      {tradeSnap.trade && (
         <TradeDetailPanel
           open={tradeDetailOpen}
           onOpenChange={handleTradeDetailClose}
-          trade={selectedTrade}
-          accounts={accounts}
-          allTrades={allTrades}
+          trade={tradeSnap.trade}
+          accounts={tradeSnap.accounts}
+          allTrades={tradeSnap.allTrades}
         />
       )}
     </>

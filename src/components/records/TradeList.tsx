@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import { TradeCard } from "./TradeCard";
 import { TradeFormPanel } from "./TradeFormPanel";
 import { TradeDetailPanel } from "./TradeDetailPanel";
+import { useSnapshotWhileOpen } from "@/components/base/FullScreenPanel";
 import { CsvUploadButton } from "./CsvUploadButton";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import type { Account } from "@/types/database";
@@ -25,6 +26,8 @@ export function TradeList({ trades, accounts }: TradeListProps) {
     setDetailOpen(open);
     if (!open) setSelectedTrade(null);
   }, []);
+
+  const tradeSnap = useSnapshotWhileOpen(detailOpen, selectedTrade);
 
   return (
     <>
@@ -75,20 +78,18 @@ export function TradeList({ trades, accounts }: TradeListProps) {
       </button>
 
       {/* 거래 등록 패널 */}
-      {formOpen && (
-        <TradeFormPanel
-          open={formOpen}
-          onOpenChange={setFormOpen}
-          accounts={accounts}
-        />
-      )}
+      <TradeFormPanel
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        accounts={accounts}
+      />
 
       {/* 거래 상세 패널 */}
-      {detailOpen && selectedTrade && (
+      {tradeSnap && (
         <TradeDetailPanel
           open={detailOpen}
           onOpenChange={handleDetailClose}
-          trade={selectedTrade}
+          trade={tradeSnap}
           accounts={accounts}
           allTrades={trades}
         />
