@@ -7,7 +7,17 @@ import type {
   EmotionType,
   TradeResult,
 } from "@/types/database";
+import type { StrategyEvaluation } from "@/lib/analysis/strategy-adherence";
+import type { SellBreakdown } from "@/lib/holdings";
 import type { TradeWithAccount } from "@/lib/trade-utils";
+
+export interface TradeSummary {
+  pnl: number;
+  result: TradeResult;
+  holdingDays: number | null;
+  strategyEvaluation: StrategyEvaluation | null;
+  breakdown: SellBreakdown;
+}
 
 // ============================================================
 // 공통 유틸
@@ -127,6 +137,8 @@ export const tradesApi = {
 
   delete: (id: string) =>
     apiFetch<void>(`/api/trades/${id}`, { method: "DELETE" }),
+
+  summary: (id: string) => apiFetch<TradeSummary>(`/api/trades/${id}/summary`),
 };
 
 // ============================================================

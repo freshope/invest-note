@@ -9,6 +9,7 @@ interface StrategyEmotionFieldsProps {
   emotion: EmotionType | "";
   onStrategyChange: (value: StrategyType | "") => void;
   onEmotionChange: (value: EmotionType | "") => void;
+  hideStrategy?: boolean;
 }
 
 export function StrategyEmotionFields({
@@ -16,28 +17,31 @@ export function StrategyEmotionFields({
   emotion,
   onStrategyChange,
   onEmotionChange,
+  hideStrategy = false,
 }: StrategyEmotionFieldsProps) {
   return (
     <>
-      <div className="space-y-2">
-        <Label>전략</Label>
-        <div className="grid grid-cols-4 gap-2">
-          {STRATEGIES.map((s) => (
-            <button
-              key={s.value}
-              type="button"
-              onClick={() => onStrategyChange(strategy === s.value ? "" : s.value)}
-              className={`rounded-xl border py-2.5 text-[13px] font-semibold transition-colors ${
-                strategy === s.value
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "border-border bg-muted/50 text-muted-foreground"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
+      {!hideStrategy && (
+        <div className="space-y-2">
+          <Label>전략</Label>
+          <div className="grid grid-cols-4 gap-2">
+            {STRATEGIES.map((s) => (
+              <button
+                key={s.value}
+                type="button"
+                onClick={() => onStrategyChange(strategy === s.value ? "" : s.value)}
+                className={`rounded-xl border py-2.5 text-[13px] font-semibold transition-colors ${
+                  strategy === s.value
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "border-border bg-muted/50 text-muted-foreground"
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="space-y-2">
         <Label>감정</Label>
