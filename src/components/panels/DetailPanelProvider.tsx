@@ -152,7 +152,7 @@ function TradePanel({ open, payload, onClose, onMutated, openStock }: TradePanel
 
   return (
     <FullScreenPanel open={open} onOpenChange={onClose}>
-      <FullScreenPanelContent className="overflow-y-auto">
+      <FullScreenPanelContent className="overflow-hidden">
         <TradeDetail
           trade={trade}
           accounts={accounts}

@@ -86,10 +86,10 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
   const tax = Number(trade.tax).toLocaleString("ko-KR");
 
   return (
-    <>
+    <div className="h-[100dvh] flex flex-col overflow-hidden">
       {/* 헤더 */}
       <div
-        className="sticky top-0 z-10 bg-background"
+        className="flex-none bg-background"
         style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
         <div className="relative flex h-14 items-center px-2">
@@ -107,7 +107,7 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
         </div>
       </div>
 
-      <div className="px-5 pb-32 space-y-5">
+      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5 space-y-5">
         {/* 종목 헤더 카드 */}
         <div className={cn(
           "rounded-2xl overflow-hidden",
@@ -267,7 +267,7 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
 
       {/* 하단 버튼 */}
       <div
-        className="fixed bottom-0 left-0 right-0 bg-background border-t border-border px-5 pt-3 pb-4 flex gap-3"
+        className="flex-none bg-background border-t border-border px-5 pt-3 flex gap-3"
         style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
       >
         <Button
@@ -304,6 +304,6 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
         assetName={trade.asset_name}
         onDeleted={handleDeleted}
       />
-    </>
+    </div>
   );
 }
