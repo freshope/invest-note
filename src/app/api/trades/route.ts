@@ -3,6 +3,8 @@ import { requireUser } from "@/lib/api-server/auth";
 import { jsonError, HttpError } from "@/lib/api-server/errors";
 import { TradeCreateSchema } from "@/lib/api-server/validators";
 import { computeTotalHolding } from "@/lib/holdings";
+import { recalcGroupPnL, tradeToGroupKey } from "@/lib/api-server/pnl-sync";
+import { validateMutation } from "@/lib/analysis/realized-pnl";
 import type { Trade } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
 
@@ -76,15 +78,17 @@ export async function POST(req: NextRequest) {
 
     if (acctError || !count) return jsonError("올바른 계좌를 선택해주세요.", 400);
 
+    // 기존 거래 목록 조회 (보유량 검증 + P&L 재계산 공통 사용)
+    const { data: existingTrades, error: tradesErr } = await supabase
+      .from("trades")
+      .select("*")
+      .eq("user_id", user.id);
+
+    if (tradesErr) return jsonError("거래 목록을 불러올 수 없습니다.", 500);
+    const allTrades = (existingTrades ?? []) as Trade[];
+
     if (fields.trade_type === "SELL") {
-      const { data: existingTrades, error: tradesErr } = await supabase
-        .from("trades")
-        .select("trade_type, quantity, ticker_symbol, asset_name, country_code, account_id, traded_at")
-        .eq("user_id", user.id);
-
-      if (tradesErr) return jsonError("보유 수량을 확인할 수 없습니다.", 500);
-
-      const holding = computeTotalHolding((existingTrades ?? []) as Trade[], {
+      const holding = computeTotalHolding(allTrades, {
         ticker: fields.ticker_symbol ?? null,
         assetName: fields.asset_name,
         country: fields.country_code ?? "KR",
@@ -99,6 +103,31 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // 과거 시점 삽입 시 oversell 사전 검증 (SELL 삽입이면 항상 검증)
+    const newTradeForValidation = {
+      id: "__new__",
+      user_id: user.id,
+      account_id,
+      ...fields,
+      total_amount: fields.price * fields.quantity,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      profit_loss: null,
+      strategy_type: null,
+      reasoning_tags: [],
+      buy_reason: null,
+      sell_reason: null,
+      emotion: null,
+      result: null,
+      reflection_note: null,
+      improvement_note: null,
+    } as unknown as Trade;
+
+    const validation = validateMutation(allTrades, { type: "insert", trade: newTradeForValidation });
+    if (!validation.ok) {
+      return jsonError(validation.message, 400);
+    }
+
     const { data, error } = await supabase
       .from("trades")
       .insert({ user_id: user.id, account_id, ...fields })
@@ -106,6 +135,18 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (error || !data) return jsonError("거래를 저장할 수 없습니다. 다시 시도해주세요.", 500);
+
+    // 삽입 후 해당 그룹의 SELL들 profit_loss 재계산 (평단 변동 반영)
+    const { data: freshTrades } = await supabase
+      .from("trades")
+      .select("*")
+      .eq("user_id", user.id);
+
+    if (freshTrades) {
+      const groupKey = tradeToGroupKey({ ...fields, account_id });
+      await recalcGroupPnL(supabase, user.id, freshTrades as Trade[], groupKey);
+    }
+
     return NextResponse.json(data, { status: 201 });
   } catch (e) {
     if (e instanceof HttpError) return e.toResponse();

@@ -18,7 +18,7 @@ import {
 } from "@/components/base/FullScreenPanel";
 import { TradeDetail } from "@/components/records/TradeDetail";
 import { StockDetail } from "@/components/stocks/StockDetail";
-import { computeRealizedPnL } from "@/lib/analysis/realized-pnl";
+import { buildPnlMap } from "@/lib/analysis/realized-pnl";
 import type { Account } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
 
@@ -186,7 +186,7 @@ function StockPanel({ open, payload, onClose, openTrade }: StockPanelProps) {
     [allTrades, ticker, country],
   );
 
-  const pnlMap = useMemo(() => computeRealizedPnL(allTrades), [allTrades]);
+  const pnlMap = useMemo(() => buildPnlMap(allTrades), [allTrades]);
 
   const stats = useMemo(() => {
     const sellTrades = filteredTrades.filter((t) => t.trade_type === "SELL");

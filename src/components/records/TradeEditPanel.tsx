@@ -67,11 +67,6 @@ function fmtNum(n: number | null | undefined): string {
   return n.toLocaleString("ko-KR");
 }
 
-function fmtPnL(n: number | null | undefined): string {
-  if (n == null) return "";
-  return n.toLocaleString("ko-KR");
-}
-
 function formatInput(raw: string): string {
   const cleaned = raw.replace(/[^0-9.]/g, "");
   const parts = cleaned.split(".");
@@ -79,15 +74,6 @@ function formatInput(raw: string): string {
   const decimal = parts.length > 1 ? "." + parts[1] : "";
   if (!integer && !decimal) return "";
   return (integer ? Number(integer).toLocaleString("ko-KR") : "") + decimal;
-}
-
-function formatPnL(raw: string): string {
-  const cleaned = raw.replace(/[^0-9-]/g, "");
-  if (!cleaned || cleaned === "-") return cleaned;
-  const isNeg = cleaned.startsWith("-");
-  const digits = cleaned.replace(/-/g, "");
-  if (!digits) return isNeg ? "-" : "";
-  return (isNeg ? "-" : "") + Number(digits).toLocaleString("ko-KR");
 }
 
 function parseRaw(s: string): number {
@@ -104,7 +90,6 @@ const schema = z.object({
   quantity_display: z.string(),
   commission_display: z.string(),
   tax_display: z.string(),
-  profit_loss_display: z.string(),
   strategy_type: z.enum(["SCALPING", "SWING", "LONG_TERM", "UNKNOWN"]).nullable(),
   emotion: z.enum(["CONFIDENT", "ANXIOUS", "FOMO", "IMPULSIVE", "CALM"]).nullable(),
   reasoning_tags: z.array(z.enum(["TECHNICAL", "FUNDAMENTAL", "NEWS", "FEELING"])),
@@ -151,7 +136,6 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
       quantity_display: fmtNum(trade.quantity),
       commission_display: fmtNum(trade.commission),
       tax_display: fmtNum(trade.tax),
-      profit_loss_display: fmtPnL(trade.profit_loss),
       strategy_type: trade.strategy_type ?? null,
       emotion: trade.emotion ?? null,
       reasoning_tags: (trade.reasoning_tags ?? []) as ReasoningTag[],
@@ -186,7 +170,6 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
       quantity_display: fmtNum(trade.quantity),
       commission_display: fmtNum(trade.commission),
       tax_display: fmtNum(trade.tax),
-      profit_loss_display: fmtPnL(trade.profit_loss),
       strategy_type: trade.strategy_type ?? null,
       emotion: trade.emotion ?? null,
       reasoning_tags: (trade.reasoning_tags ?? []) as ReasoningTag[],
@@ -223,7 +206,6 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
         emotion: values.emotion,
         reasoning_tags: values.reasoning_tags,
         result: isSell ? (summary?.result ?? null) : values.result,
-        profit_loss: isSell ? null : (values.profit_loss_display ? Number(values.profit_loss_display.replace(/,/g, "")) : null),
         buy_reason: values.buy_reason.trim() || null,
         sell_reason: values.sell_reason.trim() || null,
         reflection_note: values.reflection_note.trim() || null,

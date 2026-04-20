@@ -66,8 +66,8 @@ export const TradeUpdateSchema = z
     ticker_symbol: z.string().trim().min(1),
     // PATCH 스키마: .default() 사용 금지 — zod v4에서 .partial() + .default() 조합 시
     // 필드가 absent해도 default 값이 materialized되어 patch에 포함됨 → 기존 값 덮어쓰기 버그
+    // traded_at, profit_loss는 수정 불가 — traded_at은 시점 불변 정책, profit_loss는 서버 계산 전용
     country_code: z.enum(["KR", "US", "OTHER"]),
-    traded_at: tradedAtTransform,
     price: commaPositive,
     quantity: commaPositive,
     commission: commaNonNegative,
@@ -78,7 +78,6 @@ export const TradeUpdateSchema = z
     buy_reason: z.string().nullable(),
     sell_reason: z.string().nullable(),
     result: z.enum(["SUCCESS", "FAIL", "BREAKEVEN"]).nullable(),
-    profit_loss: commaNumber.nullable(),
     reflection_note: z.string().nullable(),
     improvement_note: z.string().nullable(),
   })

@@ -120,10 +120,7 @@ export function computeFlexibleBreakdown(sell: Trade, allTrades: Trade[]): SellB
       const quantity = runningQty > 0 ? Math.min(sell.quantity, runningQty) : sell.quantity;
       const sellAmount = sell.price * quantity;
       const costBasis = avgCostPrice * quantity;
-      const pnl =
-        sell.profit_loss != null
-          ? Number(sell.profit_loss)
-          : sellAmount - costBasis - sell.commission - sell.tax;
+      const pnl = sellAmount - costBasis - sell.commission - sell.tax;
       return {
         sellPrice: sell.price,
         quantity,
@@ -133,7 +130,7 @@ export function computeFlexibleBreakdown(sell: Trade, allTrades: Trade[]): SellB
         commission: sell.commission,
         tax: sell.tax,
         pnl,
-        isManualInput: sell.profit_loss != null,
+        isManualInput: false,
       };
     }
 
@@ -159,8 +156,8 @@ export function computeFlexibleBreakdown(sell: Trade, allTrades: Trade[]): SellB
     costBasis: 0,
     commission: sell.commission,
     tax: sell.tax,
-    pnl: sell.profit_loss != null ? Number(sell.profit_loss) : 0,
-    isManualInput: sell.profit_loss != null,
+    pnl: 0,
+    isManualInput: false,
   };
 }
 

@@ -1,5 +1,5 @@
 import { toKST } from "@/lib/trade-utils";
-import { computeRealizedPnL, sellPnL } from "@/lib/analysis/realized-pnl";
+import { buildPnlMap, sellPnL } from "@/lib/analysis/realized-pnl";
 import type { Trade, Account } from "@/types/database";
 
 export type QuoteMap = Record<string, { price: number; currency: string; asOf: string } | null>;
@@ -92,7 +92,9 @@ export function buildPositions(trades: Trade[]): Position[] {
     } else {
       const avgCost = lot.runningQty > 0 ? lot.runningCost / lot.runningQty : 0;
       const matchedQty = Math.min(trade.quantity, lot.runningQty);
-      lot.realizedPnL += sellPnL(trade, avgCost, matchedQty);
+      // 저장된 profit_loss 우선, 없으면 WAC fallback (백필 전 호환)
+      const pnl = trade.profit_loss != null ? Number(trade.profit_loss) : sellPnL(trade, avgCost, matchedQty);
+      lot.realizedPnL += pnl;
       lot.runningCost = Math.max(0, lot.runningCost - avgCost * matchedQty);
       lot.runningQty = Math.max(0, lot.runningQty - trade.quantity);
       const note = trade.reflection_note?.trim() || trade.sell_reason?.trim();
@@ -241,7 +243,7 @@ export function buildTotals(
   const thisYear = now.getFullYear();
   const thisMonth = now.getMonth();
 
-  const pnlMap = computeRealizedPnL(trades);
+  const pnlMap = buildPnlMap(trades);
 
   let totalRealizedPnL = 0;
   let monthRealizedPnL = 0;

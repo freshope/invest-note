@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { StockDetail } from "@/components/stocks/StockDetail";
-import { computeRealizedPnL } from "@/lib/analysis/realized-pnl";
+import { buildPnlMap } from "@/lib/analysis/realized-pnl";
 import type { Trade } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
 
@@ -45,7 +45,7 @@ export default async function StockDetailPage({ params }: StockDetailPageProps) 
   const assetName = allTrades[0].asset_name;
   const sellTrades = allTrades.filter((t) => t.trade_type === "SELL");
   const winCount = sellTrades.filter((t) => t.result === "SUCCESS").length;
-  const pnlMap = computeRealizedPnL(allTrades);
+  const pnlMap = buildPnlMap(allTrades);
   const totalProfitLoss = sellTrades.reduce(
     (sum, t) => sum + (pnlMap.get(t.id) ?? 0),
     0,
