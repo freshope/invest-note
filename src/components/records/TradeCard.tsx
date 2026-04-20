@@ -87,6 +87,13 @@ export function TradeCard({ trade, onPress }: TradeCardProps) {
             </div>
           )}
 
+          {/* 매수/매도 이유 */}
+          {(isBuy ? trade.buy_reason : trade.sell_reason) && (
+            <p className="mt-1 text-[12px] text-muted-foreground truncate">
+              {isBuy ? trade.buy_reason : trade.sell_reason}
+            </p>
+          )}
+
           {/* 메타데이터 뱃지들 */}
           {(trade.strategy_type || trade.emotion || trade.result) && (
             <div className="mt-2 flex flex-wrap gap-1.5">
