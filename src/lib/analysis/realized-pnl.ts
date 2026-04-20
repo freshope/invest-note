@@ -30,14 +30,14 @@ export function groupKey(trade: Pick<Trade, "ticker_symbol" | "asset_name" | "co
   return `${trade.ticker_symbol ?? trade.asset_name}:${trade.country_code ?? "KR"}:${trade.account_id}`;
 }
 
-// flexible 그룹 매칭 — ticker OR asset_name 중 하나가 같으면 같은 그룹으로 처리
-// migration 006 이전 null ticker 데이터(asset_name으로 백필)와 신규 ticker 데이터 혼재 대응
+// 그룹 매칭 — ticker_symbol(없으면 asset_name) 기준 단일 비교
+// migration 006에서 모든 레코드의 ticker_symbol이 보장됨
 function isSameGroup(trade: Trade, key: TradeGroupKey): boolean {
   if (trade.account_id !== key.accountId) return false;
   if ((trade.country_code ?? "KR") !== key.country) return false;
   const tradeTicker = trade.ticker_symbol ?? trade.asset_name;
   const targetTicker = key.ticker ?? key.assetName;
-  return tradeTicker === targetTicker || trade.asset_name === key.assetName;
+  return tradeTicker === targetTicker;
 }
 
 // 계산용 정렬: traded_at asc → 같은 날이면 BUY 먼저 → created_at asc
