@@ -162,10 +162,8 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
   }, [open, trade, reset]);
 
   const [tags, result] = [watch("reasoning_tags"), watch("result")];
-  const accountDisplay = (() => {
-    const acc = accounts.find((a) => a.id === trade.account_id);
-    return acc ? `${acc.name}${acc.broker ? ` · ${acc.broker}` : ""}` : trade.account_id;
-  })();
+  const acc = accounts.find((a) => a.id === trade.account_id);
+  const accountDisplay = acc ? `${acc.name}${acc.broker ? ` · ${acc.broker}` : ""}` : trade.account_id;
 
   function toggleTag(tag: ReasoningTag) {
     const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];

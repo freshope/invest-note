@@ -149,7 +149,8 @@ export function getPnL(trade: Trade, fallbackMap?: Map<string, number>): number 
 // 저장된 profit_loss 우선, null이면 WAC fallback (백필 완료 후에는 항상 저장값 사용)
 export function buildPnlMap(trades: Trade[]): Map<string, number> {
   const sells = trades.filter((t) => t.trade_type === "SELL");
-  const fallback = sells.some((t) => t.profit_loss == null) ? computeRealizedPnL(trades) : new Map<string, number>();
+  const needsFallback = sells.some((t) => t.profit_loss == null);
+  const fallback = needsFallback ? computeRealizedPnL(trades) : new Map<string, number>();
   return new Map(sells.map((t) => [t.id, getPnL(t, fallback)]));
 }
 

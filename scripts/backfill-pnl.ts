@@ -4,7 +4,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-import { computeGroupPnL, groupKey, tradeToGroupKey } from "../src/lib/analysis/realized-pnl";
+import { computeGroupPnL, groupKey, tradeToGroupKey, type TradeGroupKey } from "../src/lib/analysis/realized-pnl";
 import type { Trade } from "../src/types/database";
 import * as dotenv from "dotenv";
 import * as path from "path";
@@ -51,7 +51,7 @@ async function main() {
         const k = groupKey(t);
         if (!map.has(k)) map.set(k, tradeToGroupKey(t));
         return map;
-      }, new Map<string, ReturnType<typeof tradeToGroupKey>>())
+      }, new Map<string, TradeGroupKey>())
       .values(),
   ];
 
