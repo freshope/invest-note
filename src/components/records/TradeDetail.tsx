@@ -80,7 +80,7 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
     ? `/stocks/${trade.country_code ?? "KR"}/${trade.ticker_symbol}`
     : null;
 
-  const tradedDate = format(new Date(trade.traded_at), "yyyy년 M월 d일 (EEE) HH:mm", { locale: ko });
+  const tradedDate = format(new Date(trade.traded_at), "yyyy년 M월 d일 (EEE)", { locale: ko });
   const price = Number(trade.price).toLocaleString("ko-KR");
   const quantity = Number(trade.quantity);
   const totalAmount = Number(trade.total_amount).toLocaleString("ko-KR");
