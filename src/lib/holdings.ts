@@ -5,6 +5,7 @@ export interface LotKey {
   ticker: string;
   country: string;
   accountId: string;
+  assetName?: string; // flexible 매칭용 — 없으면 ticker와 동일하게 취급
 }
 
 export interface SellBreakdown {
@@ -65,13 +66,13 @@ export function computeLotQuantity(trades: Trade[], key: LotKey): number {
 }
 
 export function findLatestBuyStrategy(trades: Trade[], key: LotKey): StrategyType | null {
-  const lotKey = `${key.ticker}:${key.country}:${key.accountId}`;
+  const assetName = key.assetName ?? key.ticker;
 
   const buys = trades
-    .filter((t) => {
-      const tradeKey = `${t.ticker_symbol ?? t.asset_name}:${t.country_code ?? "KR"}:${t.account_id}`;
-      return t.trade_type === "BUY" && tradeKey === lotKey;
-    })
+    .filter((t) =>
+      t.trade_type === "BUY" &&
+      isFlexibleMatch(t, key.country, key.ticker, assetName, key.accountId),
+    )
     .sort((a, b) => new Date(b.traded_at).getTime() - new Date(a.traded_at).getTime());
 
   return buys[0]?.strategy_type ?? null;
@@ -114,7 +115,8 @@ export function computeFlexibleBreakdown(sell: Trade, allTrades: Trade[]): SellB
 
   for (const trade of sortByTradedAt(allTrades)) {
     if (trade.id === sell.id) {
-      const avgCostPrice = runningQty > 0 ? runningCost / runningQty : 0;
+      // runningQty=0이면 매수 이력 없음 — sell.price로 fallback해 phantom profit 방지
+      const avgCostPrice = runningQty > 0 ? runningCost / runningQty : sell.price;
       const quantity = runningQty > 0 ? Math.min(sell.quantity, runningQty) : sell.quantity;
       const sellAmount = sell.price * quantity;
       const costBasis = avgCostPrice * quantity;

@@ -55,6 +55,7 @@ export async function GET(
       ticker,
       country,
       accountId: sell.account_id,
+      assetName: sell.asset_name,
     });
 
     const strategyEval =

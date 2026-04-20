@@ -86,6 +86,8 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
         sell_reason: values.sell_reason.trim() || null,
         reflection_note: values.reflection_note.trim() || null,
         improvement_note: values.improvement_note.trim() || null,
+        result: summary?.result ?? null,
+        strategy_type: summary?.strategyEvaluation?.planned ?? null,
       });
       await queryClient.invalidateQueries({ queryKey: ["trade", tradeId] });
       router.refresh();
