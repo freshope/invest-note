@@ -29,6 +29,7 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] TOCTOU race → Postgres RPC atomic 전환 — 동시 SELL 요청이 같은 보유량 스냅샷을 보고 둘 다 통과 가능. validateMutation+write를 single RPC로 원자화 (출처: /custom:review)
 - [ ] recalcGroupPnL 실패 플래그 — UPDATE 실패 시 console.error만 하고 204 반환. partial failure 시 응답 헤더 또는 로그 강화 (출처: /custom:review)
 - [ ] portfolio.ts buildPositions avg_buy_price 우선 사용 — 현재 runningCost/runningQty WAC 재계산 중. trade.avg_buy_price 저장값 우선 사용으로 전환 (출처: /custom:review)
+- [ ] computeFlexibleBreakdown avg_buy_price 반영 — `holdings.ts`의 종목상세 breakdown 카드가 저장된 `trade.avg_buy_price`를 사용하도록 전환. 현재는 런타임 WAC 재계산에 의존 (출처: feature/persist-realized-pnl)
 
 ## 데이터 정확성
 
