@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -16,21 +16,10 @@ import { Button } from "@/components/base/Button";
 import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
 import { Textarea } from "@/components/base/Textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/base/Select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/base/Popover";
-import { Calendar } from "@/components/base/Calendar";
 import { tradesApi } from "@/lib/api-client";
-import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
 import { STRATEGIES, EMOTIONS, REASONING_TAGS } from "./constants";
 import { cn } from "@/lib/utils";
-import type { Trade, Account, TradeType, TradeResult, ReasoningTag } from "@/types/database";
-import { CalendarIcon } from "lucide-react";
+import type { Trade, Account, TradeResult, ReasoningTag } from "@/types/database";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 
@@ -81,11 +70,6 @@ function parseRaw(s: string): number {
 }
 
 const schema = z.object({
-  account_id: z.string().min(1),
-  asset_name: z.string().min(1, "종목명을 입력해주세요.").max(100),
-  ticker_symbol: z.string().nullable(),
-  country_code: z.enum(["KR", "US", "OTHER"]),
-  traded_at: z.date(),
   price_display: z.string(),
   quantity_display: z.string(),
   commission_display: z.string(),
@@ -127,11 +111,6 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      account_id: trade.account_id,
-      asset_name: trade.asset_name,
-      ticker_symbol: trade.ticker_symbol ?? null,
-      country_code: (trade.country_code as "KR" | "US" | "OTHER") ?? "KR",
-      traded_at: new Date(trade.traded_at),
       price_display: fmtNum(trade.price),
       quantity_display: fmtNum(trade.quantity),
       commission_display: fmtNum(trade.commission),
@@ -153,19 +132,9 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
     enabled: isSell && open,
   });
 
-  const [calOpen, setCalOpen] = useState(false);
-
   useEffect(() => {
-    if (!open) {
-      setCalOpen(false); // 패널 닫을 때 달력 팝오버 초기화
-      return;
-    }
+    if (!open) return;
     reset({
-      account_id: trade.account_id,
-      asset_name: trade.asset_name,
-      ticker_symbol: trade.ticker_symbol ?? null,
-      country_code: (trade.country_code as "KR" | "US" | "OTHER") ?? "KR",
-      traded_at: new Date(trade.traded_at),
       price_display: fmtNum(trade.price),
       quantity_display: fmtNum(trade.quantity),
       commission_display: fmtNum(trade.commission),
@@ -193,11 +162,6 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
       await tradesApi.update(trade.id, {
         trade_type: trade.trade_type,
         market_type: trade.market_type,
-        account_id: values.account_id,
-        asset_name: values.asset_name,
-        ticker_symbol: values.ticker_symbol || undefined,
-        country_code: values.country_code,
-        traded_at: format(values.traded_at, "yyyy-MM-dd'T'HH:mm"),
         price: parseRaw(values.price_display),
         quantity: parseRaw(values.quantity_display),
         commission: parseRaw(values.commission_display),
@@ -241,89 +205,30 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                 </div>
               </div>
 
-              {/* 날짜 */}
-              <div className="space-y-1.5">
-                <Label>날짜 <span className="text-destructive">*</span></Label>
-                <Controller
-                  control={control}
-                  name="traded_at"
-                  render={({ field }) => (
-                    <Popover open={calOpen} onOpenChange={setCalOpen}>
-                      <PopoverTrigger className="flex h-12 w-full items-center justify-between rounded-xl bg-muted px-4 text-[15px] text-foreground">
-                        <span>{format(field.value, "yyyy년 M월 d일 (EEE)", { locale: ko })}</span>
-                        <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-                      </PopoverTrigger>
-                      <PopoverContent side="bottom" align="start" className="w-auto">
-                        <Calendar
-                          mode="single"
-                          selected={field.value}
-                          onSelect={(d) => {
-                            if (d) {
-                              const updated = new Date(d);
-                              updated.setHours(field.value.getHours(), field.value.getMinutes());
-                              field.onChange(updated);
-                              setCalOpen(false);
-                            }
-                          }}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  )}
-                />
-              </div>
-
-              {/* 계좌 */}
-              <div className="space-y-1.5">
-                <Label>계좌 <span className="text-destructive">*</span></Label>
-                <Controller
-                  control={control}
-                  name="account_id"
-                  render={({ field }) => (
-                    <Select
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      items={accounts.map((acc) => ({
-                        value: acc.id,
-                        label: `${acc.name}${acc.broker ? ` · ${acc.broker}` : ""}`,
-                      }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="계좌를 선택하세요" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {accounts.map((acc) => (
-                          <SelectItem key={acc.id} value={acc.id}>
-                            {acc.name}{acc.broker ? ` · ${acc.broker}` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-              </div>
-
-              {/* 종목명 */}
-              <div className="space-y-1.5">
-                <Label>종목명 <span className="text-destructive">*</span></Label>
-                <Controller
-                  control={control}
-                  name="asset_name"
-                  render={({ field }) => (
-                    <StockSearchInput
-                      value={field.value}
-                      onChange={(v) => {
-                        field.onChange(v);
-                        if (!v) { setValue("ticker_symbol", null); setValue("country_code", "KR"); }
-                      }}
-                      onSelect={(stock: SelectedStock) => {
-                        field.onChange(stock.name);
-                        setValue("ticker_symbol", stock.code);
-                        setValue("country_code", stock.market === "KR" ? "KR" : stock.market === "US" ? "US" : "OTHER");
-                      }}
-                    />
-                  )}
-                />
+              {/* 날짜 / 계좌 / 종목 — 수정 불가 (변경 시 삭제 후 재등록) */}
+              <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 space-y-2">
+                <p className="text-[12px] text-muted-foreground">날짜·계좌·종목은 수정할 수 없습니다. 변경이 필요하면 삭제 후 재등록하세요.</p>
+                <div className="space-y-1">
+                  <span className="text-[12px] text-muted-foreground">날짜</span>
+                  <div className="flex h-10 items-center px-3 rounded-lg bg-muted text-[14px] text-foreground">
+                    {format(new Date(trade.traded_at), "yyyy년 M월 d일 (EEE)", { locale: ko })}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[12px] text-muted-foreground">계좌</span>
+                  <div className="flex h-10 items-center px-3 rounded-lg bg-muted text-[14px] text-foreground">
+                    {(() => {
+                      const acc = accounts.find((a) => a.id === trade.account_id);
+                      return acc ? `${acc.name}${acc.broker ? ` · ${acc.broker}` : ""}` : trade.account_id;
+                    })()}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[12px] text-muted-foreground">종목</span>
+                  <div className="flex h-10 items-center px-3 rounded-lg bg-muted text-[14px] text-foreground">
+                    {trade.asset_name}{trade.ticker_symbol && trade.ticker_symbol !== trade.asset_name ? ` (${trade.ticker_symbol})` : ""}
+                  </div>
+                </div>
               </div>
 
               {/* 가격 */}

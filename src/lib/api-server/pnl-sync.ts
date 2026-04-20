@@ -15,7 +15,7 @@ export async function recalcGroupPnL(
   const updates = Array.from(pnlMap.entries()).map(([sellId, entry]) =>
     supabase
       .from("trades")
-      .update({ profit_loss: entry.profit_loss })
+      .update({ profit_loss: entry.profit_loss, avg_buy_price: entry.avg_buy_price })
       .eq("id", sellId)
       .eq("user_id", userId),
   );

@@ -31,6 +31,7 @@ function makeTrade(overrides: Partial<Trade> & { id: string; trade_type: Trade["
     reflection_note: null,
     improvement_note: null,
     profit_loss: null,
+    avg_buy_price: null,
     country_code: "KR",
     commission: 0,
     tax: 0,
@@ -656,8 +657,21 @@ describe("computeGroupPnL", () => {
     const key = { ticker: "005930", assetName: "삼성전자", country: "KR", accountId: "a1" };
     const result = computeGroupPnL(trades, key);
     expect(result.get("s1")?.profit_loss).toBe(100000);
+    expect(result.get("s1")?.avg_buy_price).toBe(70000);
     expect(result.get("s1")?.matched_qty).toBe(10);
     expect(result.get("s1")?.running_qty_after).toBe(0);
+  });
+
+  it("평단가가 WAC 기준으로 정확히 반환됨", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY",  price: 60000, quantity: 10, traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "b2", trade_type: "BUY",  price: 80000, quantity: 10, traded_at: "2024-01-15T09:00:00+09:00" }),
+      makeTrade({ id: "s1", trade_type: "SELL", price: 90000, quantity: 10, traded_at: "2024-02-01T09:00:00+09:00" }),
+    ];
+    const key = { ticker: "005930", assetName: "삼성전자", country: "KR", accountId: "a1" };
+    const result = computeGroupPnL(trades, key);
+    // WAC = (60000*10 + 80000*10) / 20 = 70000
+    expect(result.get("s1")?.avg_buy_price).toBe(70000);
   });
 
   it("다른 그룹 거래는 계산에 포함하지 않음", () => {

@@ -1,12 +1,10 @@
 /**
- * 기존 SELL 거래 중 profit_loss가 null인 항목을 WAC 계산값으로 백필
+ * 기존 SELL 거래 중 profit_loss 또는 avg_buy_price가 null인 항목을 WAC 계산값으로 백필
  * 배포 전 1회 실행: pnpm tsx scripts/backfill-pnl.ts
- *
- * profit_loss IS NOT NULL인 건 그대로 유지 (이미 저장된 값 보존)
  */
 
 import { createClient } from "@supabase/supabase-js";
-import { computeRealizedPnL } from "../src/lib/analysis/realized-pnl";
+import { computeRealizedPnL, computeGroupPnL, groupKey } from "../src/lib/analysis/realized-pnl";
 import type { Trade } from "../src/types/database";
 import * as dotenv from "dotenv";
 import * as path from "path";
@@ -37,7 +35,9 @@ async function main() {
   }
 
   const trades = (allTrades ?? []) as Trade[];
-  const sellsWithNull = trades.filter((t) => t.trade_type === "SELL" && t.profit_loss == null);
+  const sellsWithNull = trades.filter(
+    (t) => t.trade_type === "SELL" && (t.profit_loss == null || t.avg_buy_price == null)
+  );
   console.log(`📊 전체 거래: ${trades.length}개, 백필 대상 SELL: ${sellsWithNull.length}개`);
 
   if (sellsWithNull.length === 0) {
@@ -45,22 +45,41 @@ async function main() {
     return;
   }
 
-  const pnlMap = computeRealizedPnL(trades);
+  // 그룹별로 한 번만 계산
+  const groupKeys = [...new Set(sellsWithNull.map((t) => groupKey(t)))];
+  const pnlEntryMap = new Map<string, { profit_loss: number; avg_buy_price: number }>();
+
+  for (const key of groupKeys) {
+    const [ticker, country, accountId] = key.split(":");
+    const groupPnL = computeGroupPnL(trades, {
+      ticker: ticker || null,
+      assetName: ticker || "",
+      country: country || "KR",
+      accountId: accountId || "",
+    });
+    for (const [id, entry] of groupPnL.entries()) {
+      pnlEntryMap.set(id, { profit_loss: entry.profit_loss, avg_buy_price: entry.avg_buy_price });
+    }
+  }
 
   let updated = 0;
   let skipped = 0;
 
   for (const sell of sellsWithNull) {
-    const pnl = pnlMap.get(sell.id);
-    if (pnl == null) {
+    const entry = pnlEntryMap.get(sell.id);
+    if (!entry) {
       console.warn(`⚠️ ${sell.id} (${sell.asset_name}) — P&L 계산 불가, 스킵`);
       skipped++;
       continue;
     }
 
+    const patch: Record<string, number> = {};
+    if (sell.profit_loss == null) patch.profit_loss = entry.profit_loss;
+    if (sell.avg_buy_price == null) patch.avg_buy_price = entry.avg_buy_price;
+
     const { error: updateError } = await supabase
       .from("trades")
-      .update({ profit_loss: pnl })
+      .update(patch)
       .eq("id", sell.id);
 
     if (updateError) {

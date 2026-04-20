@@ -16,6 +16,7 @@ export type Mutation =
 
 export type GroupPnLEntry = {
   profit_loss: number;
+  avg_buy_price: number;
   matched_qty: number;
   running_qty_after: number;
 };
@@ -69,6 +70,7 @@ export function computeGroupPnL(
       const matchedQty = Math.min(trade.quantity, runningQty);
       result.set(trade.id, {
         profit_loss: sellPnL(trade, avgCost, matchedQty),
+        avg_buy_price: avgCost,
         matched_qty: matchedQty,
         running_qty_after: Math.max(0, runningQty - trade.quantity),
       });

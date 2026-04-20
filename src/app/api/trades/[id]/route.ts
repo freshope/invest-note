@@ -34,7 +34,8 @@ export async function GET(
 }
 
 // P&L 재계산이 필요한 필드 변경 여부 확인
-const PNL_AFFECTING_FIELDS = new Set(["price", "quantity", "trade_type", "account_id", "ticker_symbol", "asset_name", "country_code", "commission", "tax"]);
+// account_id/ticker/country는 수정 불가 필드이므로 제외
+const PNL_AFFECTING_FIELDS = new Set(["price", "quantity", "trade_type", "commission", "tax"]);
 
 function hasPnLAffectingChange(patch: Record<string, unknown>): boolean {
   return Object.keys(patch).some((k) => PNL_AFFECTING_FIELDS.has(k));
@@ -64,25 +65,13 @@ export async function PATCH(
 
     if (fetchError || !existing) return jsonError("거래를 찾을 수 없습니다.", 404);
 
-    const { account_id, ...rest } = parsed.data;
     const patch: Record<string, unknown> = Object.fromEntries(
-      Object.entries(rest).filter(([, v]) => v !== undefined)
+      Object.entries(parsed.data).filter(([, v]) => v !== undefined)
     );
-
-    // account_id는 소유권 DB 검증 필요
-    if (account_id !== undefined) {
-      const { count } = await supabase
-        .from("accounts")
-        .select("id", { count: "exact", head: true })
-        .eq("id", account_id)
-        .eq("user_id", user.id);
-      if (!count) return jsonError("올바른 계좌를 선택해주세요.", 400);
-      patch.account_id = account_id;
-    }
 
     if (Object.keys(patch).length === 0) return new NextResponse(null, { status: 204 });
 
-    // P&L 영향 필드 변경 시 oversell 사전 검증
+    // P&L 영향 필드 변경 시 oversell 사전 검증 후 재계산
     if (hasPnLAffectingChange(patch)) {
       const { data: allTradesRaw } = await supabase
         .from("trades")
@@ -90,33 +79,14 @@ export async function PATCH(
         .eq("user_id", user.id);
 
       const allTrades = (allTradesRaw ?? []) as Trade[];
+      const gKey = tradeToGroupKey(existing as Trade);
 
-      // account_id/ticker 변경 시 이전 그룹과 새 그룹 모두 검증
-      const prevGroupKey = tradeToGroupKey(existing as Trade);
-      const patchedTrade = { ...existing, ...patch } as Trade;
-      const newGroupKey = tradeToGroupKey(patchedTrade);
-      const groupsToValidate = [prevGroupKey];
-      if (
-        prevGroupKey.ticker !== newGroupKey.ticker ||
-        prevGroupKey.assetName !== newGroupKey.assetName ||
-        prevGroupKey.country !== newGroupKey.country ||
-        prevGroupKey.accountId !== newGroupKey.accountId
-      ) {
-        groupsToValidate.push(newGroupKey);
-      }
-
-      for (const gKey of groupsToValidate) {
-        const validation = validateMutation(
-          allTrades.filter((t) => {
-            const key = tradeToGroupKey(t);
-            return key.ticker === gKey.ticker && key.assetName === gKey.assetName && key.country === gKey.country && key.accountId === gKey.accountId;
-          }),
-          { type: "update", trade: existing as Trade, patch: patch as Partial<Trade> },
-        );
-        if (!validation.ok) {
-          return jsonError(validation.message, 400);
-        }
-      }
+      const validation = validateMutation(allTrades, {
+        type: "update",
+        trade: existing as Trade,
+        patch: patch as Partial<Trade>,
+      });
+      if (!validation.ok) return jsonError(validation.message, 400);
 
       const { error } = await supabase
         .from("trades")
@@ -126,13 +96,9 @@ export async function PATCH(
 
       if (error) return jsonError("저장할 수 없습니다. 다시 시도해주세요.", 500);
 
-      // 업데이트 후 영향 그룹 재계산
       const { data: freshTrades } = await supabase.from("trades").select("*").eq("user_id", user.id);
       if (freshTrades) {
-        const fr = freshTrades as Trade[];
-        for (const gKey of groupsToValidate) {
-          await recalcGroupPnL(supabase, user.id, fr, gKey);
-        }
+        await recalcGroupPnL(supabase, user.id, freshTrades as Trade[], gKey);
       }
     } else {
       const { error } = await supabase
