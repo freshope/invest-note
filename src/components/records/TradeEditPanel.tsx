@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -41,6 +41,17 @@ const ADHERENCE_CONFIG = {
   DEVIATED: { label: "전략 이탈 ✗", className: "text-orange-600 bg-orange-50 border-orange-200" },
   UNKNOWN: { label: "분류 불가", className: "text-muted-foreground bg-muted border-border" },
 } as const;
+
+function ReadOnlyField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      <div className="flex h-12 items-center rounded-xl bg-muted px-4 text-[15px] text-muted-foreground">
+        {children}
+      </div>
+    </div>
+  );
+}
 
 function BreakdownRow({ label, amount, prefix }: { label: string; amount: number; prefix?: "+" | "-" }) {
   return (
@@ -205,32 +216,20 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                 </div>
               </div>
 
-              {/* 날짜 (수정 불가) */}
-              <div className="space-y-1.5">
-                <Label>날짜</Label>
-                <div className="flex h-12 items-center rounded-xl bg-muted px-4 text-[15px] text-muted-foreground">
-                  {format(new Date(trade.traded_at), "yyyy년 M월 d일 (EEE)", { locale: ko })}
-                </div>
-              </div>
+              <ReadOnlyField label="날짜">
+                {format(new Date(trade.traded_at), "yyyy년 M월 d일 (EEE)", { locale: ko })}
+              </ReadOnlyField>
 
-              {/* 계좌 (수정 불가) */}
-              <div className="space-y-1.5">
-                <Label>계좌</Label>
-                <div className="flex h-12 items-center rounded-xl bg-muted px-4 text-[15px] text-muted-foreground">
-                  {(() => {
-                    const acc = accounts.find((a) => a.id === trade.account_id);
-                    return acc ? `${acc.name}${acc.broker ? ` · ${acc.broker}` : ""}` : trade.account_id;
-                  })()}
-                </div>
-              </div>
+              <ReadOnlyField label="계좌">
+                {(() => {
+                  const acc = accounts.find((a) => a.id === trade.account_id);
+                  return acc ? `${acc.name}${acc.broker ? ` · ${acc.broker}` : ""}` : trade.account_id;
+                })()}
+              </ReadOnlyField>
 
-              {/* 종목 (수정 불가) */}
-              <div className="space-y-1.5">
-                <Label>종목</Label>
-                <div className="flex h-12 items-center rounded-xl bg-muted px-4 text-[15px] text-muted-foreground">
-                  {trade.asset_name}{trade.ticker_symbol && trade.ticker_symbol !== trade.asset_name ? ` (${trade.ticker_symbol})` : ""}
-                </div>
-              </div>
+              <ReadOnlyField label="종목">
+                {trade.asset_name}{trade.ticker_symbol && trade.ticker_symbol !== trade.asset_name ? ` (${trade.ticker_symbol})` : ""}
+              </ReadOnlyField>
 
               {/* 가격 */}
               <div className="space-y-1.5">

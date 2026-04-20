@@ -55,7 +55,6 @@ export async function PATCH(
       return jsonError(parsed.error.issues[0]?.message ?? "올바르지 않은 입력입니다.", 400);
     }
 
-    // 소유 확인 + 기존 거래 전체 정보 조회 (검증용)
     const { data: existing, error: fetchError } = await supabase
       .from("trades")
       .select("*")
@@ -71,7 +70,6 @@ export async function PATCH(
 
     if (Object.keys(patch).length === 0) return new NextResponse(null, { status: 204 });
 
-    // P&L 영향 필드 변경 시 oversell 사전 검증 후 재계산
     if (hasPnLAffectingChange(patch)) {
       const { data: allTradesRaw, error: listError } = await supabase
         .from("trades")
@@ -97,10 +95,8 @@ export async function PATCH(
 
       if (error) return jsonError("저장할 수 없습니다. 다시 시도해주세요.", 500);
 
-      const { data: freshTrades } = await supabase.from("trades").select("*").eq("user_id", user.id);
-      if (freshTrades) {
-        await recalcGroupPnL(supabase, user.id, freshTrades as Trade[], gKey);
-      }
+      const freshTrades = allTrades.map((t) => t.id === id ? { ...t, ...patch } as Trade : t);
+      await recalcGroupPnL(supabase, user.id, freshTrades, gKey);
     } else {
       const { error } = await supabase
         .from("trades")
@@ -125,7 +121,6 @@ export async function DELETE(
     const { supabase, user } = await requireUser();
     const { id } = await params;
 
-    // 삭제 대상 조회
     const { data: target, error: fetchError } = await supabase
       .from("trades")
       .select("*")
@@ -135,7 +130,6 @@ export async function DELETE(
 
     if (fetchError || !target) return jsonError("거래를 찾을 수 없습니다.", 404);
 
-    // oversell 사전 검증
     const { data: allTradesRaw, error: listError } = await supabase
       .from("trades")
       .select("*")
@@ -144,11 +138,9 @@ export async function DELETE(
     if (listError) return jsonError("거래 목록을 불러올 수 없습니다.", 500);
     const allTrades = (allTradesRaw ?? []) as Trade[];
     const validation = validateMutation(allTrades, { type: "delete", trade: target as Trade });
-    if (!validation.ok) {
-      return jsonError(validation.message, 400);
-    }
+    if (!validation.ok) return jsonError(validation.message, 400);
 
-    const groupKey = tradeToGroupKey(target as Trade);
+    const gKey = tradeToGroupKey(target as Trade);
 
     const { error } = await supabase
       .from("trades")
@@ -158,11 +150,7 @@ export async function DELETE(
 
     if (error) return jsonError("삭제할 수 없습니다. 다시 시도해주세요.", 500);
 
-    // 삭제 후 그룹 재계산
-    const { data: freshTrades } = await supabase.from("trades").select("*").eq("user_id", user.id);
-    if (freshTrades) {
-      await recalcGroupPnL(supabase, user.id, freshTrades as Trade[], groupKey);
-    }
+    await recalcGroupPnL(supabase, user.id, allTrades.filter((t) => t.id !== id), gKey);
 
     return new NextResponse(null, { status: 204 });
   } catch (e) {

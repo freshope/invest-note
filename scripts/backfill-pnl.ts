@@ -4,7 +4,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-import { computeGroupPnL, groupKey } from "../src/lib/analysis/realized-pnl";
+import { computeGroupPnL, groupKey, tradeToGroupKey } from "../src/lib/analysis/realized-pnl";
 import type { Trade } from "../src/types/database";
 import * as dotenv from "dotenv";
 import * as path from "path";
@@ -45,18 +45,14 @@ async function main() {
     return;
   }
 
-  // 그룹별로 한 번만 계산
-  const groupKeys = [...new Set(sellsWithNull.map((t) => groupKey(t)))];
-  const pnlEntryMap = new Map<string, { profit_loss: number; avg_buy_price: number }>();
+  const seenKeys = new Set<string>();
+  const uniqueGroupKeys = sellsWithNull
+    .filter((t) => { const k = groupKey(t); if (seenKeys.has(k)) return false; seenKeys.add(k); return true; })
+    .map((t) => tradeToGroupKey(t));
 
-  for (const key of groupKeys) {
-    const [ticker, country, accountId] = key.split(":");
-    const groupPnL = computeGroupPnL(trades, {
-      ticker: ticker || null,
-      assetName: ticker || "",
-      country: country || "KR",
-      accountId: accountId || "",
-    });
+  const pnlEntryMap = new Map<string, { profit_loss: number; avg_buy_price: number }>();
+  for (const gKey of uniqueGroupKeys) {
+    const groupPnL = computeGroupPnL(trades, gKey);
     for (const [id, entry] of groupPnL.entries()) {
       pnlEntryMap.set(id, { profit_loss: entry.profit_loss, avg_buy_price: entry.avg_buy_price });
     }

@@ -78,7 +78,6 @@ export async function POST(req: NextRequest) {
 
     if (acctError || !count) return jsonError("올바른 계좌를 선택해주세요.", 400);
 
-    // 기존 거래 목록 조회 (보유량 검증 + P&L 재계산 공통 사용)
     const { data: existingTrades, error: tradesErr } = await supabase
       .from("trades")
       .select("*")
@@ -103,7 +102,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 과거 시점 삽입 시 oversell 사전 검증 (SELL 삽입이면 항상 검증)
     const newTradeForValidation = {
       id: "__new__",
       user_id: user.id,
@@ -138,16 +136,9 @@ export async function POST(req: NextRequest) {
 
     if (error || !data) return jsonError("거래를 저장할 수 없습니다. 다시 시도해주세요.", 500);
 
-    // 삽입 후 해당 그룹의 SELL들 profit_loss 재계산 (평단 변동 반영)
-    const { data: freshTrades } = await supabase
-      .from("trades")
-      .select("*")
-      .eq("user_id", user.id);
-
-    if (freshTrades) {
-      const groupKey = tradeToGroupKey({ ...fields, account_id });
-      await recalcGroupPnL(supabase, user.id, freshTrades as Trade[], groupKey);
-    }
+    const gKey = tradeToGroupKey({ ...fields, account_id });
+    const freshTrades = [...allTrades, { ...newTradeForValidation, id: data.id }];
+    await recalcGroupPnL(supabase, user.id, freshTrades, gKey);
 
     return NextResponse.json(data, { status: 201 });
   } catch (e) {
