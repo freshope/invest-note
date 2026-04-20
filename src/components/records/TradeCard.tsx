@@ -3,8 +3,7 @@
 import { useRouter } from "next/navigation";
 import type { Trade, Account } from "@/types/database";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
-import { ko } from "date-fns/locale";
+
 
 interface TradeCardProps {
   trade: Trade & { account?: Pick<Account, "name" | "broker"> };
@@ -40,8 +39,6 @@ export function TradeCard({ trade, onPress }: TradeCardProps) {
   const quantity = Number(trade.quantity);
   const totalAmount = Number(trade.total_amount).toLocaleString("ko-KR");
 
-  const time = format(new Date(trade.traded_at), "HH:mm", { locale: ko });
-
   return (
     <button
       type="button"
@@ -74,8 +71,6 @@ export function TradeCard({ trade, onPress }: TradeCardProps) {
               </span>
             </div>
 
-            {/* 시간 */}
-            <span className="text-[12px] text-muted-foreground flex-shrink-0">{time}</span>
           </div>
 
           {/* 가격 × 수량 = 총액 */}
