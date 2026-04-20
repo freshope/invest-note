@@ -205,29 +205,30 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                 </div>
               </div>
 
-              {/* 날짜 / 계좌 / 종목 — 수정 불가 (변경 시 삭제 후 재등록) */}
-              <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 space-y-2">
-                <p className="text-[12px] text-muted-foreground">날짜·계좌·종목은 수정할 수 없습니다. 변경이 필요하면 삭제 후 재등록하세요.</p>
-                <div className="space-y-1">
-                  <span className="text-[12px] text-muted-foreground">날짜</span>
-                  <div className="flex h-10 items-center px-3 rounded-lg bg-muted text-[14px] text-foreground">
-                    {format(new Date(trade.traded_at), "yyyy년 M월 d일 (EEE)", { locale: ko })}
-                  </div>
+              {/* 날짜 (수정 불가) */}
+              <div className="space-y-1.5">
+                <Label>날짜</Label>
+                <div className="flex h-12 items-center rounded-xl bg-muted px-4 text-[15px] text-muted-foreground">
+                  {format(new Date(trade.traded_at), "yyyy년 M월 d일 (EEE)", { locale: ko })}
                 </div>
-                <div className="space-y-1">
-                  <span className="text-[12px] text-muted-foreground">계좌</span>
-                  <div className="flex h-10 items-center px-3 rounded-lg bg-muted text-[14px] text-foreground">
-                    {(() => {
-                      const acc = accounts.find((a) => a.id === trade.account_id);
-                      return acc ? `${acc.name}${acc.broker ? ` · ${acc.broker}` : ""}` : trade.account_id;
-                    })()}
-                  </div>
+              </div>
+
+              {/* 계좌 (수정 불가) */}
+              <div className="space-y-1.5">
+                <Label>계좌</Label>
+                <div className="flex h-12 items-center rounded-xl bg-muted px-4 text-[15px] text-muted-foreground">
+                  {(() => {
+                    const acc = accounts.find((a) => a.id === trade.account_id);
+                    return acc ? `${acc.name}${acc.broker ? ` · ${acc.broker}` : ""}` : trade.account_id;
+                  })()}
                 </div>
-                <div className="space-y-1">
-                  <span className="text-[12px] text-muted-foreground">종목</span>
-                  <div className="flex h-10 items-center px-3 rounded-lg bg-muted text-[14px] text-foreground">
-                    {trade.asset_name}{trade.ticker_symbol && trade.ticker_symbol !== trade.asset_name ? ` (${trade.ticker_symbol})` : ""}
-                  </div>
+              </div>
+
+              {/* 종목 (수정 불가) */}
+              <div className="space-y-1.5">
+                <Label>종목</Label>
+                <div className="flex h-12 items-center rounded-xl bg-muted px-4 text-[15px] text-muted-foreground">
+                  {trade.asset_name}{trade.ticker_symbol && trade.ticker_symbol !== trade.asset_name ? ` (${trade.ticker_symbol})` : ""}
                 </div>
               </div>
 
