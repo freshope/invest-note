@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-server/auth";
 import { jsonError, HttpError } from "@/lib/api-server/errors";
 import { TradeUpdateSchema } from "@/lib/api-server/validators";
-import { recalcGroupPnL, tradeToGroupKey } from "@/lib/api-server/pnl-sync";
-import { validateMutation } from "@/lib/analysis/realized-pnl";
+import { recalcGroupPnL } from "@/lib/api-server/pnl-sync";
+import { validateMutation, tradeToGroupKey } from "@/lib/analysis/realized-pnl";
 import type { Trade } from "@/types/database";
 
 export async function GET(
@@ -121,15 +121,6 @@ export async function DELETE(
     const { supabase, user } = await requireUser();
     const { id } = await params;
 
-    const { data: target, error: fetchError } = await supabase
-      .from("trades")
-      .select("*")
-      .eq("id", id)
-      .eq("user_id", user.id)
-      .single();
-
-    if (fetchError || !target) return jsonError("거래를 찾을 수 없습니다.", 404);
-
     const { data: allTradesRaw, error: listError } = await supabase
       .from("trades")
       .select("*")
@@ -137,10 +128,13 @@ export async function DELETE(
 
     if (listError) return jsonError("거래 목록을 불러올 수 없습니다.", 500);
     const allTrades = (allTradesRaw ?? []) as Trade[];
-    const validation = validateMutation(allTrades, { type: "delete", trade: target as Trade });
+    const target = allTrades.find((t) => t.id === id);
+    if (!target) return jsonError("거래를 찾을 수 없습니다.", 404);
+
+    const validation = validateMutation(allTrades, { type: "delete", trade: target });
     if (!validation.ok) return jsonError(validation.message, 400);
 
-    const gKey = tradeToGroupKey(target as Trade);
+    const gKey = tradeToGroupKey(target);
 
     const { error } = await supabase
       .from("trades")

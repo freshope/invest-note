@@ -45,10 +45,15 @@ async function main() {
     return;
   }
 
-  const seenKeys = new Set<string>();
-  const uniqueGroupKeys = sellsWithNull
-    .filter((t) => { const k = groupKey(t); if (seenKeys.has(k)) return false; seenKeys.add(k); return true; })
-    .map((t) => tradeToGroupKey(t));
+  const uniqueGroupKeys = [
+    ...sellsWithNull
+      .reduce((map, t) => {
+        const k = groupKey(t);
+        if (!map.has(k)) map.set(k, tradeToGroupKey(t));
+        return map;
+      }, new Map<string, ReturnType<typeof tradeToGroupKey>>())
+      .values(),
+  ];
 
   const pnlEntryMap = new Map<string, { profit_loss: number; avg_buy_price: number }>();
   for (const gKey of uniqueGroupKeys) {

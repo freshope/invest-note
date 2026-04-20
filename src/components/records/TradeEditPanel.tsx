@@ -162,6 +162,10 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
   }, [open, trade, reset]);
 
   const [tags, result] = [watch("reasoning_tags"), watch("result")];
+  const accountDisplay = (() => {
+    const acc = accounts.find((a) => a.id === trade.account_id);
+    return acc ? `${acc.name}${acc.broker ? ` · ${acc.broker}` : ""}` : trade.account_id;
+  })();
 
   function toggleTag(tag: ReasoningTag) {
     const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
@@ -220,12 +224,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                 {format(new Date(trade.traded_at), "yyyy년 M월 d일 (EEE)", { locale: ko })}
               </ReadOnlyField>
 
-              <ReadOnlyField label="계좌">
-                {(() => {
-                  const acc = accounts.find((a) => a.id === trade.account_id);
-                  return acc ? `${acc.name}${acc.broker ? ` · ${acc.broker}` : ""}` : trade.account_id;
-                })()}
-              </ReadOnlyField>
+              <ReadOnlyField label="계좌">{accountDisplay}</ReadOnlyField>
 
               <ReadOnlyField label="종목">
                 {trade.asset_name}{trade.ticker_symbol && trade.ticker_symbol !== trade.asset_name ? ` (${trade.ticker_symbol})` : ""}

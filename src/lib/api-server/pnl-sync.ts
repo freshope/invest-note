@@ -1,8 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Trade } from "@/types/database";
-import { computeGroupPnL, tradeToGroupKey, type TradeGroupKey } from "@/lib/analysis/realized-pnl";
-
-export { tradeToGroupKey };
+import { computeGroupPnL, type TradeGroupKey } from "@/lib/analysis/realized-pnl";
 
 // 개별 UPDATE 실패 시 콘솔 로그만 남기고 계속 (트랜잭션 미지원 대응)
 export async function recalcGroupPnL(

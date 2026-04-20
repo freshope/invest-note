@@ -97,13 +97,8 @@ export function computeGroupPnL(
 // 수정/삭제/삽입 가상 적용 후 oversell 여부 검증
 export function validateMutation(trades: Trade[], mutation: Mutation): ValidateMutationResult {
   let virtual: Trade[];
-  const mutTrade = mutation.type === "update" ? mutation.trade : mutation.trade;
-  const key: TradeGroupKey = {
-    ticker: mutTrade.ticker_symbol,
-    assetName: mutTrade.asset_name,
-    country: mutTrade.country_code ?? "KR",
-    accountId: mutTrade.account_id,
-  };
+  const mutTrade = mutation.trade;
+  const key = tradeToGroupKey(mutTrade);
 
   if (mutation.type === "insert") {
     virtual = [...trades, mutation.trade];
@@ -154,13 +149,8 @@ export function getPnL(trade: Trade, fallbackMap?: Map<string, number>): number 
 // 저장된 profit_loss 우선, null이면 WAC fallback (백필 완료 후에는 항상 저장값 사용)
 export function buildPnlMap(trades: Trade[]): Map<string, number> {
   const sells = trades.filter((t) => t.trade_type === "SELL");
-  const needsFallback = sells.some((t) => t.profit_loss == null);
-  const fallback = needsFallback ? computeRealizedPnL(trades) : new Map<string, number>();
-  const result = new Map<string, number>();
-  for (const t of sells) {
-    result.set(t.id, t.profit_loss != null ? Number(t.profit_loss) : (fallback.get(t.id) ?? 0));
-  }
-  return result;
+  const fallback = sells.some((t) => t.profit_loss == null) ? computeRealizedPnL(trades) : new Map<string, number>();
+  return new Map(sells.map((t) => [t.id, getPnL(t, fallback)]));
 }
 
 export function computeRealizedPnL(trades: Trade[]): Map<string, number> {
