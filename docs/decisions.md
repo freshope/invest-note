@@ -107,6 +107,15 @@
 
 ---
 
+## 2026-04-20 | 프리젠테이션 계층 WAC fallback 완전 제거
+
+**맥락:** `feature/persist-realized-pnl`로 SELL 행에 `profit_loss`/`avg_buy_price`가 저장되고 거래 CUD 시 `recalcGroupPnL`이 항상 갱신해 정합성을 보장. 프리젠테이션 읽기 경로는 여전히 WAC fallback(`computeRealizedPnL` 조건 호출, `sellPnL` fallback)을 유지하고 있었음.
+**결정:** `buildPnlMap`, `buildPositions`, `computeFlexibleBreakdown` 세 곳에서 WAC fallback을 제거하고 저장값(`profit_loss`, `avg_buy_price`)을 직접 읽는다. `computeRealizedPnL`은 테스트/검증용으로 export 유지.
+**이유:** 중복 연산 제거, 코드 단순화. `computeFlexibleBreakdown`은 O(n) 전체 trades 루프에서 O(1) 필드 읽기로 간소화됨.
+**트레이드오프:** `recalcGroupPnL` 실패로 null이 남은 행이 있으면 손익 0 표시. 사용자가 데이터 정합성 보장을 확인한 상태에서 적용. legacy oversell matched_qty 불일치 케이스에서 breakdown 내 sellAmount/costBasis가 pnl과 산술적으로 맞지 않을 수 있음(spec 수용).
+
+---
+
 ## 2026-04-17 | 분석 탭: 감정/전략 룰 resultCount 가드
 
 - **결정:** `losing_strategy`, `emotion_fomo_low_winrate` 룰 모두 `resultCount >= 3` 가드 적용
