@@ -30,6 +30,16 @@ export function groupKey(trade: Pick<Trade, "ticker_symbol" | "asset_name" | "co
   return `${trade.ticker_symbol ?? trade.asset_name}:${trade.country_code ?? "KR"}:${trade.account_id}`;
 }
 
+// flexible 그룹 매칭 — ticker OR asset_name 중 하나가 같으면 같은 그룹으로 처리
+// migration 006 이전 null ticker 데이터(asset_name으로 백필)와 신규 ticker 데이터 혼재 대응
+function isSameGroup(trade: Trade, key: TradeGroupKey): boolean {
+  if (trade.account_id !== key.accountId) return false;
+  if ((trade.country_code ?? "KR") !== key.country) return false;
+  const tradeTicker = trade.ticker_symbol ?? trade.asset_name;
+  const targetTicker = key.ticker ?? key.assetName;
+  return tradeTicker === targetTicker || trade.asset_name === key.assetName;
+}
+
 // 계산용 정렬: traded_at asc → 같은 날이면 BUY 먼저 → created_at asc
 export function sortForCalc(trades: Trade[]): Trade[] {
   return [...trades].sort((a, b) => {
@@ -52,11 +62,8 @@ export function computeGroupPnL(
   key: TradeGroupKey,
 ): Map<string, GroupPnLEntry> {
   const result = new Map<string, GroupPnLEntry>();
-  const keyStr = `${key.ticker ?? key.assetName}:${key.country}:${key.accountId}`;
 
-  const group = sortForCalc(
-    trades.filter((t) => groupKey(t) === keyStr)
-  );
+  const group = sortForCalc(trades.filter((t) => isSameGroup(t, key)));
 
   let runningQty = 0;
   let runningCost = 0;
@@ -84,23 +91,25 @@ export function computeGroupPnL(
 
 // 수정/삭제/삽입 가상 적용 후 oversell 여부 검증
 export function validateMutation(trades: Trade[], mutation: Mutation): ValidateMutationResult {
-  // 가상으로 적용한 거래 목록 구성
   let virtual: Trade[];
-  let keyStr: string;
+  const mutTrade = mutation.type === "update" ? mutation.trade : mutation.trade;
+  const key: TradeGroupKey = {
+    ticker: mutTrade.ticker_symbol,
+    assetName: mutTrade.asset_name,
+    country: mutTrade.country_code ?? "KR",
+    accountId: mutTrade.account_id,
+  };
 
   if (mutation.type === "insert") {
-    keyStr = groupKey(mutation.trade);
     virtual = [...trades, mutation.trade];
   } else if (mutation.type === "update") {
     const patched = { ...mutation.trade, ...mutation.patch };
-    keyStr = groupKey(mutation.trade); // 이전 그룹 기준 (account/ticker 변경 시 caller가 양쪽 그룹 각각 호출)
     virtual = trades.map((t) => (t.id === mutation.trade.id ? patched : t));
   } else {
-    keyStr = groupKey(mutation.trade);
     virtual = trades.filter((t) => t.id !== mutation.trade.id);
   }
 
-  const group = sortForCalc(virtual.filter((t) => groupKey(t) === keyStr));
+  const group = sortForCalc(virtual.filter((t) => isSameGroup(t, key)));
 
   let runningQty = 0;
   let runningCost = 0;
@@ -116,7 +125,7 @@ export function validateMutation(trades: Trade[], mutation: Mutation): ValidateM
         return { ok: false, message: "보유 수량이 없어 매도할 수 없습니다." };
       }
       if (trade.quantity > runningQty) {
-        return { ok: false, message: "수정하면 보유 수량이 부족한 매도 거래가 생깁니다." };
+        return { ok: false, message: "보유 수량이 부족한 매도 거래가 생깁니다." };
       }
       const avgCost = runningCost / runningQty;
       const matchedQty = Math.min(trade.quantity, runningQty);

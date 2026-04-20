@@ -676,9 +676,9 @@ describe("computeGroupPnL", () => {
 
   it("다른 그룹 거래는 계산에 포함하지 않음", () => {
     const trades: Trade[] = [
-      makeTrade({ id: "b1", trade_type: "BUY",  price: 70000, quantity: 10, ticker_symbol: "005930", account_id: "a1", traded_at: "2024-01-01T09:00:00+09:00" }),
-      makeTrade({ id: "b2", trade_type: "BUY",  price: 50000, quantity: 10, ticker_symbol: "000660", account_id: "a1", traded_at: "2024-01-01T09:00:00+09:00" }),
-      makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 10, ticker_symbol: "005930", account_id: "a1", traded_at: "2024-02-01T09:00:00+09:00" }),
+      makeTrade({ id: "b1", trade_type: "BUY",  price: 70000, quantity: 10, ticker_symbol: "005930", asset_name: "삼성전자", account_id: "a1", traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "b2", trade_type: "BUY",  price: 50000, quantity: 10, ticker_symbol: "000660", asset_name: "SK하이닉스", account_id: "a1", traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 10, ticker_symbol: "005930", asset_name: "삼성전자", account_id: "a1", traded_at: "2024-02-01T09:00:00+09:00" }),
     ];
     const key = { ticker: "005930", assetName: "삼성전자", country: "KR", accountId: "a1" };
     const result = computeGroupPnL(trades, key);

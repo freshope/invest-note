@@ -4,7 +4,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-import { computeRealizedPnL, computeGroupPnL, groupKey } from "../src/lib/analysis/realized-pnl";
+import { computeGroupPnL, groupKey } from "../src/lib/analysis/realized-pnl";
 import type { Trade } from "../src/types/database";
 import * as dotenv from "dotenv";
 import * as path from "path";

@@ -24,6 +24,12 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [ ] 거래 카드 computed_pnl 미표시 — `records/page.tsx`가 Supabase 직접 조회로 WAC 계산 누락. `TradeList` 클라이언트 fetch 전환(`useQuery` + `tradesApi.list()`) 또는 page.tsx에서 `computeFlexibleBreakdown` 직접 호출로 해결 필요 (출처: feature/sell-registration-improve)
 
+## 거래 손익 (persist-realized-pnl 후속)
+
+- [ ] TOCTOU race → Postgres RPC atomic 전환 — 동시 SELL 요청이 같은 보유량 스냅샷을 보고 둘 다 통과 가능. validateMutation+write를 single RPC로 원자화 (출처: /custom:review)
+- [ ] recalcGroupPnL 실패 플래그 — UPDATE 실패 시 console.error만 하고 204 반환. partial failure 시 응답 헤더 또는 로그 강화 (출처: /custom:review)
+- [ ] portfolio.ts buildPositions avg_buy_price 우선 사용 — 현재 runningCost/runningQty WAC 재계산 중. trade.avg_buy_price 저장값 우선 사용으로 전환 (출처: /custom:review)
+
 ## 데이터 정확성
 
 - [ ] USD/KRW 혼합 합산 버그 — `portfolio.ts:174` US 종목 평가액을 환율 적용 없이 KRW와 직접 합산해 총평가액·미실현손익 왜곡. USD → KRW 환율 적용 필요 (출처: /custom:review)

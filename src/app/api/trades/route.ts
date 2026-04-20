@@ -123,9 +123,11 @@ export async function POST(req: NextRequest) {
       improvement_note: null,
     } as unknown as Trade;
 
-    const validation = validateMutation(allTrades, { type: "insert", trade: newTradeForValidation });
-    if (!validation.ok) {
-      return jsonError(validation.message, 400);
+    if (fields.trade_type === "SELL") {
+      const validation = validateMutation(allTrades, { type: "insert", trade: newTradeForValidation });
+      if (!validation.ok) {
+        return jsonError(validation.message, 400);
+      }
     }
 
     const { data, error } = await supabase

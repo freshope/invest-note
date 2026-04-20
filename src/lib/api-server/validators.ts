@@ -59,11 +59,11 @@ const commaNumber = z
 
 export const TradeUpdateSchema = z
   .object({
-    trade_type: z.enum(["BUY", "SELL"]),
     market_type: z.enum(["STOCK", "CRYPTO", "ETC"]),
     // PATCH 스키마: .default() 사용 금지 — zod v4에서 .partial() + .default() 조합 시
     // 필드가 absent해도 default 값이 materialized되어 patch에 포함됨 → 기존 값 덮어쓰기 버그
-    // 수정 불가 필드: traded_at(시점 불변), profit_loss/avg_buy_price(서버 계산 전용),
+    // 수정 불가 필드: trade_type(거래 유형 불변), traded_at(시점 불변),
+    //   profit_loss/avg_buy_price(서버 계산 전용),
     //   account_id/ticker_symbol/asset_name/country_code(삭제 후 재등록 정책)
     price: commaPositive,
     quantity: commaPositive,

@@ -35,7 +35,7 @@ export async function GET(
 
 // P&L 재계산이 필요한 필드 변경 여부 확인
 // account_id/ticker/country는 수정 불가 필드이므로 제외
-const PNL_AFFECTING_FIELDS = new Set(["price", "quantity", "trade_type", "commission", "tax"]);
+const PNL_AFFECTING_FIELDS = new Set(["price", "quantity", "commission", "tax"]);
 
 function hasPnLAffectingChange(patch: Record<string, unknown>): boolean {
   return Object.keys(patch).some((k) => PNL_AFFECTING_FIELDS.has(k));
@@ -73,11 +73,12 @@ export async function PATCH(
 
     // P&L 영향 필드 변경 시 oversell 사전 검증 후 재계산
     if (hasPnLAffectingChange(patch)) {
-      const { data: allTradesRaw } = await supabase
+      const { data: allTradesRaw, error: listError } = await supabase
         .from("trades")
         .select("*")
         .eq("user_id", user.id);
 
+      if (listError) return jsonError("거래 목록을 불러올 수 없습니다.", 500);
       const allTrades = (allTradesRaw ?? []) as Trade[];
       const gKey = tradeToGroupKey(existing as Trade);
 
@@ -135,11 +136,12 @@ export async function DELETE(
     if (fetchError || !target) return jsonError("거래를 찾을 수 없습니다.", 404);
 
     // oversell 사전 검증
-    const { data: allTradesRaw } = await supabase
+    const { data: allTradesRaw, error: listError } = await supabase
       .from("trades")
       .select("*")
       .eq("user_id", user.id);
 
+    if (listError) return jsonError("거래 목록을 불러올 수 없습니다.", 500);
     const allTrades = (allTradesRaw ?? []) as Trade[];
     const validation = validateMutation(allTrades, { type: "delete", trade: target as Trade });
     if (!validation.ok) {
