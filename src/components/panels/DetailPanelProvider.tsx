@@ -93,6 +93,11 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
     router.refresh();
   }, [queryClient, router]);
 
+  const handleTradeSaved = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+    router.refresh();
+  }, [queryClient, router]);
+
   const value = useMemo<DetailPanelContextValue>(
     () => ({ openTrade, openStock, close }),
     [openTrade, openStock, close],
@@ -113,6 +118,7 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
           payload={tradeSnap}
           onClose={close}
           onMutated={handleTradeMutated}
+          onSaved={handleTradeSaved}
           openStock={openStock}
         />
       )}
@@ -133,10 +139,11 @@ interface TradePanelProps {
   payload: TradePayload;
   onClose: () => void;
   onMutated: () => void;
+  onSaved: () => void;
   openStock: (p: StockPayload) => void;
 }
 
-function TradePanel({ open, payload, onClose, onMutated, openStock }: TradePanelProps) {
+function TradePanel({ open, payload, onClose, onMutated, onSaved, openStock }: TradePanelProps) {
   const { trade, accounts, allTrades } = payload;
 
   const handleStockPress = trade.ticker_symbol
@@ -158,7 +165,7 @@ function TradePanel({ open, payload, onClose, onMutated, openStock }: TradePanel
           accounts={accounts}
           onBack={onClose}
           onDeleted={onMutated}
-          onSaved={onMutated}
+          onSaved={onSaved}
           onStockPress={handleStockPress}
         />
       </FullScreenPanelContent>
