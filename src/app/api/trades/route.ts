@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-server/auth";
 import { jsonError, HttpError } from "@/lib/api-server/errors";
 import { TradeCreateSchema } from "@/lib/api-server/validators";
-import { computeTotalHolding } from "@/lib/holdings";
+import { computeTotalHolding, computeFlexibleBreakdown } from "@/lib/holdings";
 import type { Trade } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
 
@@ -44,13 +44,37 @@ export async function GET(req: NextRequest) {
       trades = trades.filter((t) => (t.country_code ?? "KR") === country);
     }
 
+    // SELL 거래의 computed_pnl: 이미 time-ordered allTrades로 WAC 일괄 계산
+    // allTrades를 위해 전체 거래 목록을 ascending으로 재조회 (ticker 필터 없는 경우만)
+    let allTradesForPnl: Trade[] = [];
+    if (!tickerRaw) {
+      // trades는 이미 현재 사용자 전체 — ascending 정렬로 재사용
+      allTradesForPnl = [...trades].sort(
+        (a, b) => new Date(a.traded_at).getTime() - new Date(b.traded_at).getTime(),
+      ) as Trade[];
+    } else {
+      // ticker 필터 케이스: 정확한 WAC 계산을 위해 전체 거래 별도 조회
+      const { data: allRaw } = await supabase
+        .from("trades")
+        .select("trade_type, quantity, price, ticker_symbol, asset_name, country_code, account_id, traded_at, commission, tax, profit_loss, id")
+        .eq("user_id", user.id)
+        .order("traded_at", { ascending: true });
+      allTradesForPnl = (allRaw ?? []) as Trade[];
+    }
+
+    const tradesWithPnl = trades.map((t) => {
+      if (t.trade_type !== "SELL") return t;
+      const breakdown = computeFlexibleBreakdown(t as Trade, allTradesForPnl);
+      return { ...t, computed_pnl: breakdown.pnl };
+    });
+
     const { data: accountsRaw } = await supabase
       .from("accounts")
       .select("*")
       .eq("user_id", user.id)
       .order("created_at", { ascending: true });
 
-    return NextResponse.json({ trades, accounts: accountsRaw ?? [] });
+    return NextResponse.json({ trades: tradesWithPnl, accounts: accountsRaw ?? [] });
   } catch (e) {
     if (e instanceof HttpError) return e.toResponse();
     return jsonError("서버 오류가 발생했습니다.", 500);
