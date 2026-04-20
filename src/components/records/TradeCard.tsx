@@ -56,12 +56,12 @@ export function TradeCard({ trade, onPress }: TradeCardProps) {
 
         <div className="flex-1 p-4">
           <div className="flex items-start justify-between gap-2">
-            {/* 종목명 + 뱃지 */}
-            <div className="flex items-center gap-2">
-              <span className="text-[16px] font-bold text-foreground">{trade.asset_name}</span>
+            {/* 종목명 + 매수/매도 뱃지 */}
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-[16px] font-bold text-foreground truncate">{trade.asset_name}</span>
               <span
                 className={cn(
-                  "text-[11px] font-bold px-1.5 py-0.5 rounded-md",
+                  "text-[11px] font-bold px-1.5 py-0.5 rounded-md flex-shrink-0",
                   isBuy
                     ? "bg-[var(--rise)]/10 text-[var(--rise)]"
                     : "bg-[var(--fall)]/10 text-[var(--fall)]"
@@ -71,6 +71,24 @@ export function TradeCard({ trade, onPress }: TradeCardProps) {
               </span>
             </div>
 
+            {/* 매도 수익/손실 (우측) */}
+            {!isBuy && trade.result && (
+              <div className={cn(
+                "flex-shrink-0 text-right",
+                trade.result === "SUCCESS" && "text-[var(--rise)]",
+                trade.result === "FAIL" && "text-[var(--fall)]",
+                trade.result === "BREAKEVEN" && "text-muted-foreground",
+              )}>
+                <div className="text-[13px] font-bold">
+                  {RESULT_LABELS[trade.result]}
+                </div>
+                {trade.profit_loss != null && (
+                  <div className="text-[12px] font-semibold tabular-nums">
+                    {Number(trade.profit_loss) > 0 ? "+" : ""}{Number(trade.profit_loss).toLocaleString("ko-KR")}원
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 가격 × 수량 = 총액 */}
@@ -88,7 +106,7 @@ export function TradeCard({ trade, onPress }: TradeCardProps) {
           )}
 
           {/* 메타데이터 뱃지들 */}
-          {(trade.strategy_type || trade.emotion || trade.result) && (
+          {(trade.strategy_type || trade.emotion) && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {trade.strategy_type && trade.strategy_type !== "UNKNOWN" && (
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
@@ -98,21 +116,6 @@ export function TradeCard({ trade, onPress }: TradeCardProps) {
               {trade.emotion && (
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
                   {EMOTION_LABELS[trade.emotion]}
-                </span>
-              )}
-              {trade.result && (
-                <span
-                  className={cn(
-                    "text-[11px] px-2 py-0.5 rounded-full font-bold",
-                    trade.result === "SUCCESS" && "bg-[var(--rise)]/10 text-[var(--rise)]",
-                    trade.result === "FAIL" && "bg-[var(--fall)]/10 text-[var(--fall)]",
-                    trade.result === "BREAKEVEN" && "bg-muted text-muted-foreground"
-                  )}
-                >
-                  {RESULT_LABELS[trade.result]}
-                  {trade.profit_loss != null && (
-                    <> {Number(trade.profit_loss) > 0 ? "+" : ""}{Number(trade.profit_loss).toLocaleString("ko-KR")}원</>
-                  )}
                 </span>
               )}
             </div>
