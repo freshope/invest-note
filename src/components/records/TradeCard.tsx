@@ -1,12 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import type { TradeWithAccount } from "@/lib/trade-utils";
+import type { Trade, Account } from "@/types/database";
 import { cn } from "@/lib/utils";
 
 
 interface TradeCardProps {
-  trade: TradeWithAccount;
+  trade: Trade & { account?: Pick<Account, "name" | "broker"> };
   onPress?: () => void;
 }
 
@@ -82,9 +82,9 @@ export function TradeCard({ trade, onPress }: TradeCardProps) {
                 <div className="text-[13px] font-bold">
                   {RESULT_LABELS[trade.result]}
                 </div>
-                {trade.computed_pnl != null && (
+                {trade.profit_loss != null && (
                   <div className="text-[12px] font-semibold tabular-nums">
-                    {trade.computed_pnl > 0 ? "+" : ""}{trade.computed_pnl.toLocaleString("ko-KR")}원
+                    {Number(trade.profit_loss) > 0 ? "+" : ""}{Number(trade.profit_loss).toLocaleString("ko-KR")}원
                   </div>
                 )}
               </div>

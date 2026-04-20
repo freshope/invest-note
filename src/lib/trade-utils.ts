@@ -5,10 +5,7 @@ import type { Trade, Account } from "@/types/database";
 
 const KST = "Asia/Seoul";
 
-export type TradeWithAccount = Trade & {
-  account?: Pick<Account, "name" | "broker">;
-  computed_pnl?: number | null; // WAC 기반 실현손익 (GET /api/trades 응답에만 포함)
-};
+export type TradeWithAccount = Trade & { account?: Pick<Account, "name" | "broker"> };
 
 export function toKST(utcDate: Date): Date {
   return new TZDate(utcDate, KST);
