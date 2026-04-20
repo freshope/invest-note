@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeRealizedPnL, sellPnL } from "../realized-pnl";
+import { computeRealizedPnL, sellPnL, sortForCalc, computeGroupPnL, validateMutation } from "../realized-pnl";
 import { computeHoldingDays } from "../holding-period";
 import { computeConcentration } from "../concentration";
 import { computeSummary } from "../aggregate";
@@ -31,6 +31,7 @@ function makeTrade(overrides: Partial<Trade> & { id: string; trade_type: Trade["
     reflection_note: null,
     improvement_note: null,
     profit_loss: null,
+    avg_buy_price: null,
     country_code: "KR",
     commission: 0,
     tax: 0,
@@ -43,16 +44,17 @@ function makeTrade(overrides: Partial<Trade> & { id: string; trade_type: Trade["
 // ── computeRealizedPnL ──────────────────────────────────────
 
 describe("computeRealizedPnL", () => {
-  it("profit_loss 직접 입력값이 있으면 그대로 사용", () => {
+  it("profit_loss 저장값은 무시하고 항상 WAC 계산값 사용", () => {
     const trades: Trade[] = [
       makeTrade({ id: "b1", trade_type: "BUY", price: 70000, quantity: 10, traded_at: "2024-01-01T09:00:00+09:00" }),
       makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 10, profit_loss: 50000, traded_at: "2024-02-01T09:00:00+09:00" }),
     ];
     const map = computeRealizedPnL(trades);
-    expect(map.get("s1")).toBe(50000);
+    // profit_loss 저장값 50000 무시 → WAC: (80000-70000)*10 = 100000
+    expect(map.get("s1")).toBe(100000);
   });
 
-  it("WAC fallback: 단순 매수 → 매도", () => {
+  it("WAC: 단순 매수 → 매도", () => {
     const trades: Trade[] = [
       makeTrade({ id: "b1", trade_type: "BUY", price: 70000, quantity: 10, traded_at: "2024-01-01T09:00:00+09:00" }),
       makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 10, profit_loss: null, traded_at: "2024-02-01T09:00:00+09:00" }),
@@ -589,12 +591,13 @@ describe("filterByPeriod", () => {
 // ── sellPnL ────────────────────────────────────────────────────
 
 describe("sellPnL", () => {
-  it("profit_loss 직접 입력값이 있으면 그대로 반환", () => {
+  it("항상 WAC 계산값 반환 (profit_loss 저장값 무시)", () => {
     const sell = makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 10, profit_loss: 50000 });
-    expect(sellPnL(sell, 70000)).toBe(50000);
+    // profit_loss 저장값 50000 무시 → WAC: (80000-70000)*10 = 100000
+    expect(sellPnL(sell, 70000)).toBe(100000);
   });
 
-  it("fallback: price * qty - avgCost * qty - commission - tax", () => {
+  it("price * qty - avgCost * qty - commission - tax", () => {
     const sell = makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 10, commission: 500, tax: 200 });
     // 80000*10 - 70000*10 - 500 - 200 = 800000 - 700000 - 700 = 99300
     expect(sellPnL(sell, 70000)).toBe(99300);
@@ -604,6 +607,153 @@ describe("sellPnL", () => {
     const sell = makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 15, commission: 0, tax: 0 });
     // costQty=10 → 80000*10 - 70000*10 = 800000 - 700000 = 100000 (보유 수량 기준 실현손익)
     expect(sellPnL(sell, 70000, 10)).toBe(100000);
+  });
+});
+
+// ── sortForCalc ────────────────────────────────────────────────
+
+describe("sortForCalc", () => {
+  it("traded_at 오름차순 정렬", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "t2", trade_type: "BUY", traded_at: "2024-02-01T09:00:00+09:00" }),
+      makeTrade({ id: "t1", trade_type: "BUY", traded_at: "2024-01-01T09:00:00+09:00" }),
+    ];
+    const sorted = sortForCalc(trades);
+    expect(sorted[0].id).toBe("t1");
+    expect(sorted[1].id).toBe("t2");
+  });
+
+  it("같은 날 BUY가 SELL보다 먼저", () => {
+    const sameDay = "2024-01-01T09:00:00+09:00";
+    const trades: Trade[] = [
+      makeTrade({ id: "s1", trade_type: "SELL", traded_at: sameDay, created_at: "2024-01-01T01:00:00Z" }),
+      makeTrade({ id: "b1", trade_type: "BUY",  traded_at: sameDay, created_at: "2024-01-01T02:00:00Z" }),
+    ];
+    const sorted = sortForCalc(trades);
+    expect(sorted[0].id).toBe("b1");
+    expect(sorted[1].id).toBe("s1");
+  });
+
+  it("같은 날 같은 타입이면 created_at 오름차순", () => {
+    const sameDay = "2024-01-01T09:00:00+09:00";
+    const trades: Trade[] = [
+      makeTrade({ id: "b2", trade_type: "BUY", traded_at: sameDay, created_at: "2024-01-01T02:00:00Z" }),
+      makeTrade({ id: "b1", trade_type: "BUY", traded_at: sameDay, created_at: "2024-01-01T01:00:00Z" }),
+    ];
+    const sorted = sortForCalc(trades);
+    expect(sorted[0].id).toBe("b1");
+    expect(sorted[1].id).toBe("b2");
+  });
+});
+
+// ── computeGroupPnL ────────────────────────────────────────────
+
+describe("computeGroupPnL", () => {
+  it("단순 매수 → 매도 그룹 계산", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY",  price: 70000, quantity: 10, traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 10, traded_at: "2024-02-01T09:00:00+09:00" }),
+    ];
+    const key = { ticker: "005930", assetName: "삼성전자", country: "KR", accountId: "a1" };
+    const result = computeGroupPnL(trades, key);
+    expect(result.get("s1")?.profit_loss).toBe(100000);
+    expect(result.get("s1")?.avg_buy_price).toBe(70000);
+    expect(result.get("s1")?.matched_qty).toBe(10);
+    expect(result.get("s1")?.running_qty_after).toBe(0);
+  });
+
+  it("평단가가 WAC 기준으로 정확히 반환됨", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY",  price: 60000, quantity: 10, traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "b2", trade_type: "BUY",  price: 80000, quantity: 10, traded_at: "2024-01-15T09:00:00+09:00" }),
+      makeTrade({ id: "s1", trade_type: "SELL", price: 90000, quantity: 10, traded_at: "2024-02-01T09:00:00+09:00" }),
+    ];
+    const key = { ticker: "005930", assetName: "삼성전자", country: "KR", accountId: "a1" };
+    const result = computeGroupPnL(trades, key);
+    // WAC = (60000*10 + 80000*10) / 20 = 70000
+    expect(result.get("s1")?.avg_buy_price).toBe(70000);
+  });
+
+  it("다른 그룹 거래는 계산에 포함하지 않음", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY",  price: 70000, quantity: 10, ticker_symbol: "005930", asset_name: "삼성전자", account_id: "a1", traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "b2", trade_type: "BUY",  price: 50000, quantity: 10, ticker_symbol: "000660", asset_name: "SK하이닉스", account_id: "a1", traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 10, ticker_symbol: "005930", asset_name: "삼성전자", account_id: "a1", traded_at: "2024-02-01T09:00:00+09:00" }),
+    ];
+    const key = { ticker: "005930", assetName: "삼성전자", country: "KR", accountId: "a1" };
+    const result = computeGroupPnL(trades, key);
+    // s1 계산 시 b2(SK하이닉스)는 영향 없음 → avgCost=70000
+    expect(result.get("s1")?.profit_loss).toBe(100000);
+    expect(result.has("b1")).toBe(false); // BUY는 결과에 없음
+  });
+});
+
+// ── validateMutation ───────────────────────────────────────────
+
+describe("validateMutation", () => {
+  function baseTrades(): Trade[] {
+    return [
+      makeTrade({ id: "b1", trade_type: "BUY",  price: 70000, quantity: 10, traded_at: "2024-01-01T09:00:00+09:00", created_at: "2024-01-01T00:00:00Z" }),
+      makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 5,  traded_at: "2024-02-01T09:00:00+09:00", created_at: "2024-02-01T00:00:00Z" }),
+      makeTrade({ id: "s2", trade_type: "SELL", price: 90000, quantity: 5,  traded_at: "2024-03-01T09:00:00+09:00", created_at: "2024-03-01T00:00:00Z" }),
+    ];
+  }
+
+  it("BUY 삭제로 oversell 발생 → ok: false", () => {
+    const trades = baseTrades();
+    const result = validateMutation(trades, { type: "delete", trade: trades[0] });
+    expect(result.ok).toBe(false);
+  });
+
+  it("BUY 수량 감소로 이후 SELL oversell → ok: false", () => {
+    const trades = baseTrades();
+    const result = validateMutation(trades, {
+      type: "update",
+      trade: trades[0],
+      patch: { quantity: 3 }, // 10→3: SELL(5)+(5)=10 > 3 → oversell
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("BUY 수량 유지 시 ok: true + newPnL 반환", () => {
+    const trades = baseTrades();
+    const result = validateMutation(trades, {
+      type: "update",
+      trade: trades[0],
+      patch: { price: 60000 }, // 가격만 변경 → 수량 문제 없음
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.newPnL.has("s1")).toBe(true);
+      expect(result.newPnL.has("s2")).toBe(true);
+      // avgCost=60000 → s1: (80000-60000)*5=100000
+      expect(result.newPnL.get("s1")).toBe(100000);
+    }
+  });
+
+  it("SELL 삭제는 runningQty 증가 방향 → ok: true", () => {
+    const trades = baseTrades();
+    const result = validateMutation(trades, { type: "delete", trade: trades[1] }); // s1 삭제
+    expect(result.ok).toBe(true);
+  });
+
+  it("과거 시점 BUY 삽입 후 이후 SELL oversell 없으면 ok: true", () => {
+    const trades = baseTrades();
+    const newBuy = makeTrade({ id: "b2", trade_type: "BUY", price: 65000, quantity: 5, traded_at: "2024-01-15T09:00:00+09:00", created_at: "2024-01-15T00:00:00Z" });
+    const result = validateMutation(trades, { type: "insert", trade: newBuy });
+    expect(result.ok).toBe(true);
+  });
+
+  it("같은 날 BUY+SELL 삽입: BUY 먼저 처리되어 oversell 오탐 없음", () => {
+    const sameDay = "2024-04-01T09:00:00+09:00";
+    const trades: Trade[] = []; // 빈 상태에서 시작
+    // BUY 10주 삽입 후 같은 날 SELL 10주 시뮬레이션
+    const buy = makeTrade({ id: "b1", trade_type: "BUY",  price: 70000, quantity: 10, traded_at: sameDay, created_at: "2024-04-01T01:00:00Z" });
+    const sell = makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 10, traded_at: sameDay, created_at: "2024-04-01T02:00:00Z" });
+    const tradesWithBuy = [buy];
+    const result = validateMutation(tradesWithBuy, { type: "insert", trade: sell });
+    // BUY가 SELL보다 먼저 처리되어 oversell 없음
+    expect(result.ok).toBe(true);
   });
 });
 

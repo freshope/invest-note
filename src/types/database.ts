@@ -52,8 +52,9 @@ export interface Trade {
   reflection_note: string | null;
   improvement_note: string | null;
 
-  // 손익
+  // 손익 (SELL 전용 — 서버 계산 저장값)
   profit_loss: number | null;
+  avg_buy_price: number | null;
 
   // 국가 코드 (KR / US / OTHER)
   country_code: string;

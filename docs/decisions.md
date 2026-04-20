@@ -89,6 +89,24 @@
 
 ---
 
+## 2026-04-20 | SELL avg_buy_price DB 저장
+
+**맥락:** SELL profit_loss를 DB에 저장하기 시작하면서 WAC 평균단가(avg_buy_price)도 동일 시점에 함께 저장할 필요 발생. 종목상세 breakdown 카드가 avg_buy_price를 표시하는데, 저장 없이는 매번 런타임 WAC 재계산에 의존.
+**결정:** SELL 등록·재계산 시 `profit_loss`와 `avg_buy_price`를 함께 계산·저장. DB 컬럼 `avg_buy_price numeric NULL` 추가 (migration 007).
+**이유:** 조회 시점 재계산 제거 → 정적 표시 가능. profit_loss 저장과 동일한 흐름(`recalcGroupPnL`)에서 처리되어 추가 비용 없음.
+**트레이드오프:** 컬럼 하나 추가. 백필 스크립트 1회 실행 필요. 종목상세 breakdown이 저장값을 쓰도록 하는 후속 작업(`computeFlexibleBreakdown`) 은 별도 backlog.
+
+---
+
+## 2026-04-20 | 수정 불가 필드 확장 — 삭제 후 재등록 정책
+
+**맥락:** SELL profit_loss 저장 도입 후 PATCH에서 account_id/ticker/country 변경 시 "이전 그룹 + 새 그룹" 양쪽을 검증·재계산해야 하는 cross-group 로직이 필요해짐. 기존에는 traded_at·profit_loss만 수정 불가였음.
+**결정:** account_id, ticker_symbol, asset_name, country_code를 수정 불가 필드로 확장. `TradeUpdateSchema`에서 제거. 잘못 입력한 거래는 삭제 후 재등록.
+**이유:** cross-group 재계산 로직이 복잡하고 edge case(두 그룹 중 하나 oversell 등)가 많음. "삭제 후 재등록" 단순 정책이 서버 로직을 크게 줄이고 데이터 정합성 보장이 쉬움. 실제 사용 패턴에서 계좌·종목 변경 빈도는 극히 낮음.
+**트레이드오프:** UI에서 해당 필드 수정 불가 → 사용자가 인지해야 함. TradeEditPanel에 읽기 전용 표시 + 안내 추가로 UX 보완.
+
+---
+
 ## 2026-04-17 | 분석 탭: 감정/전략 룰 resultCount 가드
 
 - **결정:** `losing_strategy`, `emotion_fomo_low_winrate` 룰 모두 `resultCount >= 3` 가드 적용

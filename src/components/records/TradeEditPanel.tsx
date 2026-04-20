@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -16,21 +16,10 @@ import { Button } from "@/components/base/Button";
 import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
 import { Textarea } from "@/components/base/Textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/base/Select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/base/Popover";
-import { Calendar } from "@/components/base/Calendar";
 import { tradesApi } from "@/lib/api-client";
-import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
 import { STRATEGIES, EMOTIONS, REASONING_TAGS } from "./constants";
 import { cn } from "@/lib/utils";
-import type { Trade, Account, TradeType, TradeResult, ReasoningTag } from "@/types/database";
-import { CalendarIcon } from "lucide-react";
+import type { Trade, Account, TradeResult, ReasoningTag } from "@/types/database";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 
@@ -53,6 +42,17 @@ const ADHERENCE_CONFIG = {
   UNKNOWN: { label: "분류 불가", className: "text-muted-foreground bg-muted border-border" },
 } as const;
 
+function ReadOnlyField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      <div className="flex h-12 items-center rounded-xl bg-muted px-4 text-[15px] text-muted-foreground">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function BreakdownRow({ label, amount, prefix }: { label: string; amount: number; prefix?: "+" | "-" }) {
   return (
     <div className="flex justify-between items-center">
@@ -67,11 +67,6 @@ function fmtNum(n: number | null | undefined): string {
   return n.toLocaleString("ko-KR");
 }
 
-function fmtPnL(n: number | null | undefined): string {
-  if (n == null) return "";
-  return n.toLocaleString("ko-KR");
-}
-
 function formatInput(raw: string): string {
   const cleaned = raw.replace(/[^0-9.]/g, "");
   const parts = cleaned.split(".");
@@ -81,30 +76,15 @@ function formatInput(raw: string): string {
   return (integer ? Number(integer).toLocaleString("ko-KR") : "") + decimal;
 }
 
-function formatPnL(raw: string): string {
-  const cleaned = raw.replace(/[^0-9-]/g, "");
-  if (!cleaned || cleaned === "-") return cleaned;
-  const isNeg = cleaned.startsWith("-");
-  const digits = cleaned.replace(/-/g, "");
-  if (!digits) return isNeg ? "-" : "";
-  return (isNeg ? "-" : "") + Number(digits).toLocaleString("ko-KR");
-}
-
 function parseRaw(s: string): number {
   return Number(s.replace(/,/g, "")) || 0;
 }
 
 const schema = z.object({
-  account_id: z.string().min(1),
-  asset_name: z.string().min(1, "종목명을 입력해주세요.").max(100),
-  ticker_symbol: z.string().nullable(),
-  country_code: z.enum(["KR", "US", "OTHER"]),
-  traded_at: z.date(),
   price_display: z.string(),
   quantity_display: z.string(),
   commission_display: z.string(),
   tax_display: z.string(),
-  profit_loss_display: z.string(),
   strategy_type: z.enum(["SCALPING", "SWING", "LONG_TERM", "UNKNOWN"]).nullable(),
   emotion: z.enum(["CONFIDENT", "ANXIOUS", "FOMO", "IMPULSIVE", "CALM"]).nullable(),
   reasoning_tags: z.array(z.enum(["TECHNICAL", "FUNDAMENTAL", "NEWS", "FEELING"])),
@@ -142,16 +122,10 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      account_id: trade.account_id,
-      asset_name: trade.asset_name,
-      ticker_symbol: trade.ticker_symbol ?? null,
-      country_code: (trade.country_code as "KR" | "US" | "OTHER") ?? "KR",
-      traded_at: new Date(trade.traded_at),
       price_display: fmtNum(trade.price),
       quantity_display: fmtNum(trade.quantity),
       commission_display: fmtNum(trade.commission),
       tax_display: fmtNum(trade.tax),
-      profit_loss_display: fmtPnL(trade.profit_loss),
       strategy_type: trade.strategy_type ?? null,
       emotion: trade.emotion ?? null,
       reasoning_tags: (trade.reasoning_tags ?? []) as ReasoningTag[],
@@ -169,24 +143,13 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
     enabled: isSell && open,
   });
 
-  const [calOpen, setCalOpen] = useState(false);
-
   useEffect(() => {
-    if (!open) {
-      setCalOpen(false); // 패널 닫을 때 달력 팝오버 초기화
-      return;
-    }
+    if (!open) return;
     reset({
-      account_id: trade.account_id,
-      asset_name: trade.asset_name,
-      ticker_symbol: trade.ticker_symbol ?? null,
-      country_code: (trade.country_code as "KR" | "US" | "OTHER") ?? "KR",
-      traded_at: new Date(trade.traded_at),
       price_display: fmtNum(trade.price),
       quantity_display: fmtNum(trade.quantity),
       commission_display: fmtNum(trade.commission),
       tax_display: fmtNum(trade.tax),
-      profit_loss_display: fmtPnL(trade.profit_loss),
       strategy_type: trade.strategy_type ?? null,
       emotion: trade.emotion ?? null,
       reasoning_tags: (trade.reasoning_tags ?? []) as ReasoningTag[],
@@ -199,6 +162,8 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
   }, [open, trade, reset]);
 
   const [tags, result] = [watch("reasoning_tags"), watch("result")];
+  const acc = accounts.find((a) => a.id === trade.account_id);
+  const accountDisplay = acc ? `${acc.name}${acc.broker ? ` · ${acc.broker}` : ""}` : trade.account_id;
 
   function toggleTag(tag: ReasoningTag) {
     const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
@@ -210,11 +175,6 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
       await tradesApi.update(trade.id, {
         trade_type: trade.trade_type,
         market_type: trade.market_type,
-        account_id: values.account_id,
-        asset_name: values.asset_name,
-        ticker_symbol: values.ticker_symbol || undefined,
-        country_code: values.country_code,
-        traded_at: format(values.traded_at, "yyyy-MM-dd'T'HH:mm"),
         price: parseRaw(values.price_display),
         quantity: parseRaw(values.quantity_display),
         commission: parseRaw(values.commission_display),
@@ -223,7 +183,6 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
         emotion: values.emotion,
         reasoning_tags: values.reasoning_tags,
         result: isSell ? (summary?.result ?? null) : values.result,
-        profit_loss: isSell ? null : (values.profit_loss_display ? Number(values.profit_loss_display.replace(/,/g, "")) : null),
         buy_reason: values.buy_reason.trim() || null,
         sell_reason: values.sell_reason.trim() || null,
         reflection_note: values.reflection_note.trim() || null,
@@ -259,90 +218,15 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                 </div>
               </div>
 
-              {/* 날짜 */}
-              <div className="space-y-1.5">
-                <Label>날짜 <span className="text-destructive">*</span></Label>
-                <Controller
-                  control={control}
-                  name="traded_at"
-                  render={({ field }) => (
-                    <Popover open={calOpen} onOpenChange={setCalOpen}>
-                      <PopoverTrigger className="flex h-12 w-full items-center justify-between rounded-xl bg-muted px-4 text-[15px] text-foreground">
-                        <span>{format(field.value, "yyyy년 M월 d일 (EEE)", { locale: ko })}</span>
-                        <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-                      </PopoverTrigger>
-                      <PopoverContent side="bottom" align="start" className="w-auto">
-                        <Calendar
-                          mode="single"
-                          selected={field.value}
-                          onSelect={(d) => {
-                            if (d) {
-                              const updated = new Date(d);
-                              updated.setHours(field.value.getHours(), field.value.getMinutes());
-                              field.onChange(updated);
-                              setCalOpen(false);
-                            }
-                          }}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  )}
-                />
-              </div>
+              <ReadOnlyField label="날짜">
+                {format(new Date(trade.traded_at), "yyyy년 M월 d일 (EEE)", { locale: ko })}
+              </ReadOnlyField>
 
-              {/* 계좌 */}
-              <div className="space-y-1.5">
-                <Label>계좌 <span className="text-destructive">*</span></Label>
-                <Controller
-                  control={control}
-                  name="account_id"
-                  render={({ field }) => (
-                    <Select
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      items={accounts.map((acc) => ({
-                        value: acc.id,
-                        label: `${acc.name}${acc.broker ? ` · ${acc.broker}` : ""}`,
-                      }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="계좌를 선택하세요" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {accounts.map((acc) => (
-                          <SelectItem key={acc.id} value={acc.id}>
-                            {acc.name}{acc.broker ? ` · ${acc.broker}` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-              </div>
+              <ReadOnlyField label="계좌">{accountDisplay}</ReadOnlyField>
 
-              {/* 종목명 */}
-              <div className="space-y-1.5">
-                <Label>종목명 <span className="text-destructive">*</span></Label>
-                <Controller
-                  control={control}
-                  name="asset_name"
-                  render={({ field }) => (
-                    <StockSearchInput
-                      value={field.value}
-                      onChange={(v) => {
-                        field.onChange(v);
-                        if (!v) { setValue("ticker_symbol", null); setValue("country_code", "KR"); }
-                      }}
-                      onSelect={(stock: SelectedStock) => {
-                        field.onChange(stock.name);
-                        setValue("ticker_symbol", stock.code);
-                        setValue("country_code", stock.market === "KR" ? "KR" : stock.market === "US" ? "US" : "OTHER");
-                      }}
-                    />
-                  )}
-                />
-              </div>
+              <ReadOnlyField label="종목">
+                {trade.asset_name}{trade.ticker_symbol && trade.ticker_symbol !== trade.asset_name ? ` (${trade.ticker_symbol})` : ""}
+              </ReadOnlyField>
 
               {/* 가격 */}
               <div className="space-y-1.5">

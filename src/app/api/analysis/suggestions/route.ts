@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { HttpError } from "@/lib/api-server/errors";
 import { fetchUserTradesWithPeriod } from "@/lib/api-server/analysis-context";
 import { computeSummary } from "@/lib/analysis/aggregate";
-import { computeRealizedPnL } from "@/lib/analysis/realized-pnl";
+import { buildPnlMap } from "@/lib/analysis/realized-pnl";
 import { computeHoldingDays } from "@/lib/analysis/holding-period";
 import { computeConcentration } from "@/lib/analysis/concentration";
 import { computeProfile } from "@/lib/analysis/profile";
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     const concentration = computeConcentration(positions, allTrades);
 
     // WAC/FIFO 모두 전체 trades 기준 (기간 이전 매수 포함해야 정확)
-    const pnlMap = computeRealizedPnL(allTrades);
+    const pnlMap = buildPnlMap(allTrades);
     const holdingDaysMap = computeHoldingDays(allTrades);
     const summary = computeSummary(trades, pnlMap, holdingDaysMap, allTrades);
     const { profile } = computeProfile(trades, concentration.hhi, holdingDaysMap);
