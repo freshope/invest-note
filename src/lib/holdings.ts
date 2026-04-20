@@ -103,60 +103,21 @@ export function computeTotalHolding(
   return runningQty;
 }
 
-// WAC 기준 breakdown 계산 (동일 계좌 + flexible ticker).
-export function computeFlexibleBreakdown(sell: Trade, allTrades: Trade[]): SellBreakdown {
-  const targetCountry = sell.country_code ?? "KR";
-  const targetTicker = sell.ticker_symbol ?? sell.asset_name;
-  const targetAsset = sell.asset_name;
-  const targetAccountId = sell.account_id;
-
-  let runningQty = 0;
-  let runningCost = 0;
-
-  for (const trade of sortByTradedAt(allTrades)) {
-    if (trade.id === sell.id) {
-      // runningQty=0이면 매수 이력 없음 — sell.price로 fallback해 phantom profit 방지
-      const avgCostPrice = runningQty > 0 ? runningCost / runningQty : sell.price;
-      const quantity = runningQty > 0 ? Math.min(sell.quantity, runningQty) : sell.quantity;
-      const sellAmount = sell.price * quantity;
-      const costBasis = avgCostPrice * quantity;
-      const pnl = sellAmount - costBasis - sell.commission - sell.tax;
-      return {
-        sellPrice: sell.price,
-        quantity,
-        avgCostPrice,
-        sellAmount,
-        costBasis,
-        commission: sell.commission,
-        tax: sell.tax,
-        pnl,
-        isManualInput: false,
-      };
-    }
-
-    if (!isFlexibleMatch(trade, targetCountry, targetTicker, targetAsset, targetAccountId)) continue;
-
-    if (trade.trade_type === "BUY") {
-      runningQty += trade.quantity;
-      runningCost += trade.price * trade.quantity;
-    } else {
-      const avgCost = runningQty > 0 ? runningCost / runningQty : 0;
-      const matched = Math.min(trade.quantity, runningQty);
-      runningCost = Math.max(0, runningCost - avgCost * matched);
-      runningQty = Math.max(0, runningQty - matched);
-    }
-  }
-
-  // sell.id가 allTrades에 없는 경우 (정상적으로는 발생하지 않음)
+// 저장된 avg_buy_price / profit_loss 기반 breakdown 구성 — 정합성은 recalcGroupPnL이 보장
+export function computeFlexibleBreakdown(sell: Trade): SellBreakdown {
+  const avgCostPrice = Number(sell.avg_buy_price ?? 0);
+  const quantity = sell.quantity;
+  const sellAmount = sell.price * quantity;
+  const costBasis = avgCostPrice * quantity;
   return {
     sellPrice: sell.price,
-    quantity: sell.quantity,
-    avgCostPrice: 0,
-    sellAmount: sell.price * sell.quantity,
-    costBasis: 0,
+    quantity,
+    avgCostPrice,
+    sellAmount,
+    costBasis,
     commission: sell.commission,
     tax: sell.tax,
-    pnl: 0,
+    pnl: Number(sell.profit_loss ?? 0),
     isManualInput: false,
   };
 }

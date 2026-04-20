@@ -46,7 +46,7 @@ export async function GET(
     if (allErr) return jsonError("거래 데이터를 불러올 수 없습니다.", 500);
     const allTrades = (allTradesRaw ?? []) as Trade[];
 
-    const breakdown = computeFlexibleBreakdown(sell, allTrades);
+    const breakdown = computeFlexibleBreakdown(sell);
     const holdingDays = computeFlexibleHoldingDays(sell, allTrades);
 
     const ticker = sell.ticker_symbol ?? sell.asset_name;

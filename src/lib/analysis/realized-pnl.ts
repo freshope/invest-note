@@ -140,20 +140,13 @@ export function validateMutation(trades: Trade[], mutation: Mutation): ValidateM
   return { ok: true, affectedSellIds, newPnL };
 }
 
-// SELL 거래의 P&L 반환 — 저장값 우선, null이면 fallbackMap 조회 (백필 전 호환)
-export function getPnL(trade: Trade, fallbackMap?: Map<string, number>): number {
-  if (trade.profit_loss != null) return Number(trade.profit_loss);
-  return fallbackMap?.get(trade.id) ?? 0;
-}
-
-// 저장된 profit_loss 우선, null이면 WAC fallback (백필 완료 후에는 항상 저장값 사용)
+// 저장된 profit_loss 사용 — 정합성은 recalcGroupPnL이 보장
 export function buildPnlMap(trades: Trade[]): Map<string, number> {
   const sells = trades.filter((t) => t.trade_type === "SELL");
-  const needsFallback = sells.some((t) => t.profit_loss == null);
-  const fallback = needsFallback ? computeRealizedPnL(trades) : new Map<string, number>();
-  return new Map(sells.map((t) => [t.id, getPnL(t, fallback)]));
+  return new Map(sells.map((t) => [t.id, Number(t.profit_loss ?? 0)]));
 }
 
+// 테스트/디버깅용 — 프로덕션 읽기 경로에서는 buildPnlMap(저장값)을 사용
 export function computeRealizedPnL(trades: Trade[]): Map<string, number> {
   const result = new Map<string, number>();
   const sorted = sortForCalc(trades);

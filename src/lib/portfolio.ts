@@ -1,5 +1,5 @@
 import { toKST } from "@/lib/trade-utils";
-import { buildPnlMap, sellPnL } from "@/lib/analysis/realized-pnl";
+import { buildPnlMap } from "@/lib/analysis/realized-pnl";
 import type { Trade, Account } from "@/types/database";
 
 export type QuoteMap = Record<string, { price: number; currency: string; asOf: string } | null>;
@@ -90,11 +90,9 @@ export function buildPositions(trades: Trade[]): Position[] {
       const reason = trade.buy_reason?.trim();
       if (reason) { lot.lastNoteType = "근거"; lot.lastNote = reason; }
     } else {
-      const avgCost = lot.runningQty > 0 ? lot.runningCost / lot.runningQty : 0;
+      const avgCost = Number(trade.avg_buy_price ?? 0);
       const matchedQty = Math.min(trade.quantity, lot.runningQty);
-      // 저장된 profit_loss 우선, 없으면 WAC fallback (백필 전 호환)
-      const pnl = trade.profit_loss != null ? Number(trade.profit_loss) : sellPnL(trade, avgCost, matchedQty);
-      lot.realizedPnL += pnl;
+      lot.realizedPnL += Number(trade.profit_loss ?? 0);
       lot.runningCost = Math.max(0, lot.runningCost - avgCost * matchedQty);
       lot.runningQty = Math.max(0, lot.runningQty - trade.quantity);
       const note = trade.reflection_note?.trim() || trade.sell_reason?.trim();

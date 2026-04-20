@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeRealizedPnL, sellPnL, sortForCalc, computeGroupPnL, validateMutation } from "../realized-pnl";
+import { computeRealizedPnL, sellPnL, sortForCalc, computeGroupPnL, validateMutation, buildPnlMap } from "../realized-pnl";
 import { computeHoldingDays } from "../holding-period";
 import { computeConcentration } from "../concentration";
 import { computeSummary } from "../aggregate";
@@ -808,5 +808,39 @@ describe("computeProfile", () => {
     const { profile } = computeProfile(trades, 0.5, new Map());
     // (1 - 0.5) * 100 = 50
     expect(profile.diversification).toBe(50);
+  });
+});
+
+// ── buildPnlMap ─────────────────────────────────────────────
+
+describe("buildPnlMap", () => {
+  it("SELL의 저장된 profit_loss를 그대로 반환", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY", price: 70000, quantity: 10 }),
+      makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 10, profit_loss: 95000 }),
+    ];
+    const map = buildPnlMap(trades);
+    expect(map.get("s1")).toBe(95000);
+    expect(map.has("b1")).toBe(false);
+  });
+
+  it("profit_loss가 null이면 0 반환", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY" }),
+      makeTrade({ id: "s1", trade_type: "SELL", profit_loss: null }),
+    ];
+    const map = buildPnlMap(trades);
+    expect(map.get("s1")).toBe(0);
+  });
+
+  it("여러 SELL 모두 저장값 반환", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY", price: 70000, quantity: 20, traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 10, profit_loss: 100000, traded_at: "2024-02-01T09:00:00+09:00" }),
+      makeTrade({ id: "s2", trade_type: "SELL", price: 75000, quantity: 10, profit_loss: 50000, traded_at: "2024-03-01T09:00:00+09:00" }),
+    ];
+    const map = buildPnlMap(trades);
+    expect(map.get("s1")).toBe(100000);
+    expect(map.get("s2")).toBe(50000);
   });
 });

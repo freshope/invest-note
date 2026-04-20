@@ -46,12 +46,6 @@ const REASONING_TAG_LABELS: Record<string, string> = {
   FEELING: "감/직감",
 };
 
-const RESULT_LABELS: Record<string, string> = {
-  SUCCESS: "수익 ✅",
-  FAIL: "손실 ❌",
-  BREAKEVEN: "본전 ➖",
-};
-
 const MARKET_LABELS: Record<string, string> = {
   STOCK: "주식",
   CRYPTO: "암호화폐",
