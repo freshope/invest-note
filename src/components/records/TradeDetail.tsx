@@ -267,7 +267,7 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
 
       {/* 하단 버튼 */}
       <div
-        className="flex-none bg-background border-t border-border px-5 pt-3 flex gap-3"
+        className="flex-none bg-background px-5 pt-3 flex gap-3"
         style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
       >
         <Button
