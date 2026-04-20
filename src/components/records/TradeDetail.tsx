@@ -5,12 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/base/Button";
 import { TradeEditPanel } from "./TradeEditPanel";
 import { DeleteTradeDialog } from "./DeleteTradeDialog";
 import type { Account } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
+import { tradesApi } from "@/lib/api-client";
 import { ChevronLeftIcon } from "lucide-react";
 
 interface TradeDetailProps {
@@ -73,6 +75,12 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
   const handleDeleted = onDeleted ?? (() => router.push("/records"));
 
   const isBuy = trade.trade_type === "BUY";
+
+  const { data: summary } = useQuery({
+    queryKey: ["trade-summary", trade.id],
+    queryFn: () => tradesApi.summary(trade.id),
+    enabled: !isBuy,
+  });
   const hasStock = !!trade.ticker_symbol;
   const stockHref = hasStock && !onStockPress
     ? `/stocks/${trade.country_code ?? "KR"}/${trade.ticker_symbol}`
@@ -182,31 +190,68 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
           {isBuy ? null : <InfoRow label="제세금">{tax}원</InfoRow>}
         </div>
 
-        {/* 결과 (매도) */}
-        {!isBuy && (trade.result || trade.profit_loss != null) && (
-          <div className="rounded-2xl bg-muted/60 px-4 py-1">
-            {trade.result && (
-              <InfoRow label="결과">
+        {/* 거래 결과 (매도 자동 계산) */}
+        {!isBuy && (
+          <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
+            <p className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wide">거래 결과 (자동 계산)</p>
+            <div className="flex items-center justify-between">
+              <span className={cn(
+                "inline-flex items-center rounded-full px-2.5 py-0.5 text-[12px] font-bold border",
+                summary?.result === "SUCCESS" && "bg-[var(--rise)]/10 text-[var(--rise)] border-[var(--rise)]/30",
+                summary?.result === "FAIL" && "bg-[var(--fall)]/10 text-[var(--fall)] border-[var(--fall)]/30",
+                summary?.result === "BREAKEVEN" && "bg-muted text-foreground border-border",
+                !summary?.result && "bg-muted text-muted-foreground border-border",
+              )}>
+                {summary?.result === "SUCCESS" ? "수익 ✅" : summary?.result === "FAIL" ? "손실 ❌" : summary?.result === "BREAKEVEN" ? "본전 ➖" : "–"}
+              </span>
+              {summary?.pnl != null && (
                 <span className={cn(
-                  "font-bold",
-                  trade.result === "SUCCESS" && "text-[var(--rise)]",
-                  trade.result === "FAIL" && "text-[var(--fall)]",
+                  "text-[16px] font-bold tabular-nums",
+                  summary.pnl > 0 && "text-[var(--rise)]",
+                  summary.pnl < 0 && "text-[var(--fall)]",
                 )}>
-                  {RESULT_LABELS[trade.result]}
+                  {summary.pnl >= 0 ? "+" : ""}{summary.pnl.toLocaleString("ko-KR")}원
                 </span>
-              </InfoRow>
+              )}
+            </div>
+            {summary?.breakdown && !summary.breakdown.isManualInput && (
+              <div className="rounded-lg bg-background border border-border/60 px-3 py-2.5 space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-[11px] text-muted-foreground">{`매도금액 (${summary.breakdown.sellPrice.toLocaleString("ko-KR")}원 × ${summary.breakdown.quantity}주)`}</span>
+                  <span className="text-[12px] tabular-nums text-foreground">+{summary.breakdown.sellAmount.toLocaleString("ko-KR")}원</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[11px] text-muted-foreground">{`매수비용 (평단 ${Math.round(summary.breakdown.avgCostPrice).toLocaleString("ko-KR")}원 × ${summary.breakdown.quantity}주)`}</span>
+                  <span className="text-[12px] tabular-nums text-foreground">-{summary.breakdown.costBasis.toLocaleString("ko-KR")}원</span>
+                </div>
+                {summary.breakdown.commission > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-[11px] text-muted-foreground">수수료</span>
+                    <span className="text-[12px] tabular-nums text-foreground">-{summary.breakdown.commission.toLocaleString("ko-KR")}원</span>
+                  </div>
+                )}
+                {summary.breakdown.tax > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-[11px] text-muted-foreground">세금</span>
+                    <span className="text-[12px] tabular-nums text-foreground">-{summary.breakdown.tax.toLocaleString("ko-KR")}원</span>
+                  </div>
+                )}
+                <div className="border-t border-border/60 pt-1.5 flex justify-between items-center">
+                  <span className="text-[12px] font-semibold text-foreground">실현손익</span>
+                  <span className={cn(
+                    "text-[13px] font-bold tabular-nums",
+                    summary.pnl != null && summary.pnl > 0 && "text-[var(--rise)]",
+                    summary.pnl != null && summary.pnl < 0 && "text-[var(--fall)]",
+                  )}>
+                    {summary.pnl != null ? `${summary.pnl >= 0 ? "+" : ""}${summary.pnl.toLocaleString("ko-KR")}원` : "–"}
+                  </span>
+                </div>
+              </div>
             )}
-            {trade.profit_loss != null && (
-              <InfoRow label="손익">
-                <span className={cn(
-                  "font-bold",
-                  Number(trade.profit_loss) > 0 && "text-[var(--rise)]",
-                  Number(trade.profit_loss) < 0 && "text-[var(--fall)]",
-                )}>
-                  {Number(trade.profit_loss) > 0 ? "+" : ""}
-                  {Number(trade.profit_loss).toLocaleString("ko-KR")}원
-                </span>
-              </InfoRow>
+            {summary?.holdingDays != null && (
+              <div className="text-[12px] text-muted-foreground">
+                보유 {summary.holdingDays}일
+              </div>
             )}
           </div>
         )}
