@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
   FullScreenPanel,
@@ -39,6 +39,28 @@ const RESULTS: { value: TradeResult; label: string; color: string }[] = [
   { value: "FAIL", label: "손실 ❌", color: "bg-[var(--fall)] text-white border-[var(--fall)]" },
   { value: "BREAKEVEN", label: "본전 ➖", color: "bg-muted text-foreground border-border" },
 ];
+
+const STRATEGY_LABELS: Record<string, string> = {
+  SCALPING: "스캘핑",
+  SWING: "스윙",
+  LONG_TERM: "장기",
+  UNKNOWN: "미분류",
+};
+
+const ADHERENCE_CONFIG = {
+  FOLLOWED: { label: "전략 준수 ✓", className: "text-green-600 bg-green-50 border-green-200" },
+  DEVIATED: { label: "전략 이탈 ✗", className: "text-orange-600 bg-orange-50 border-orange-200" },
+  UNKNOWN: { label: "분류 불가", className: "text-muted-foreground bg-muted border-border" },
+} as const;
+
+function BreakdownRow({ label, amount, prefix }: { label: string; amount: number; prefix?: "+" | "-" }) {
+  return (
+    <div className="flex justify-between items-center">
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <span className="text-[12px] tabular-nums text-foreground">{prefix ?? ""}{amount.toLocaleString("ko-KR")}원</span>
+    </div>
+  );
+}
 
 function fmtNum(n: number | null | undefined): string {
   if (n == null || n === 0) return "";
@@ -141,6 +163,12 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
     },
   });
 
+  const { data: summary, isPending: summaryLoading } = useQuery({
+    queryKey: ["trade-summary", trade.id],
+    queryFn: () => tradesApi.summary(trade.id),
+    enabled: isSell && open,
+  });
+
   const [calOpen, setCalOpen] = useState(false);
 
   useEffect(() => {
@@ -191,11 +219,11 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
         quantity: parseRaw(values.quantity_display),
         commission: parseRaw(values.commission_display),
         tax: parseRaw(values.tax_display),
-        strategy_type: values.strategy_type,
+        strategy_type: isSell ? (summary?.strategyEvaluation?.planned ?? null) : values.strategy_type,
         emotion: values.emotion,
         reasoning_tags: values.reasoning_tags,
-        result: values.result,
-        profit_loss: values.profit_loss_display ? Number(values.profit_loss_display.replace(/,/g, "")) : null,
+        result: isSell ? (summary?.result ?? null) : values.result,
+        profit_loss: isSell ? null : (values.profit_loss_display ? Number(values.profit_loss_display.replace(/,/g, "")) : null),
         buy_reason: values.buy_reason.trim() || null,
         sell_reason: values.sell_reason.trim() || null,
         reflection_note: values.reflection_note.trim() || null,
@@ -383,42 +411,84 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                   {isSell ? "회고 / 결과" : "근거 / 감정"}
                 </p>
 
-                {/* 거래 결과 (매도) */}
+                {/* 자동 계산 요약 카드 (매도) */}
                 {isSell && (
-                  <div className="space-y-2 mb-5">
-                    <Label>거래 결과</Label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {RESULTS.map((r) => (
-                        <button key={r.value} type="button"
-                          onClick={() => setValue("result", result === r.value ? null : r.value)}
-                          className={`rounded-xl border py-3 text-[13px] font-bold transition-colors ${
-                            result === r.value ? r.color : "border-border bg-muted/50 text-muted-foreground"
-                          }`}
-                        >{r.label}</button>
-                      ))}
-                    </div>
+                  <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3 mb-5">
+                    <p className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wide">거래 결과 (자동 계산)</p>
+                    {summaryLoading ? (
+                      <p className="text-[13px] text-muted-foreground">계산 중...</p>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className={cn(
+                            "inline-flex items-center rounded-full px-2.5 py-0.5 text-[12px] font-bold border",
+                            summary?.result === "SUCCESS" && "bg-[var(--rise)]/10 text-[var(--rise)] border-[var(--rise)]/30",
+                            summary?.result === "FAIL" && "bg-[var(--fall)]/10 text-[var(--fall)] border-[var(--fall)]/30",
+                            summary?.result === "BREAKEVEN" && "bg-muted text-foreground border-border",
+                            !summary?.result && "bg-muted text-muted-foreground border-border",
+                          )}>
+                            {summary?.result === "SUCCESS" ? "수익 ✅" : summary?.result === "FAIL" ? "손실 ❌" : summary?.result === "BREAKEVEN" ? "본전 ➖" : "–"}
+                          </span>
+                          {summary?.pnl != null && (
+                            <span className={cn(
+                              "text-[16px] font-bold tabular-nums",
+                              summary.pnl > 0 && "text-[var(--rise)]",
+                              summary.pnl < 0 && "text-[var(--fall)]",
+                            )}>
+                              {summary.pnl >= 0 ? "+" : ""}{summary.pnl.toLocaleString("ko-KR")}원
+                            </span>
+                          )}
+                        </div>
+                        {summary?.breakdown && !summary.breakdown.isManualInput && (
+                          <div className="rounded-lg bg-background border border-border/60 px-3 py-2.5 space-y-1.5">
+                            <BreakdownRow
+                              label={`매도금액 (${summary.breakdown.sellPrice.toLocaleString("ko-KR")}원 × ${summary.breakdown.quantity}주)`}
+                              amount={summary.breakdown.sellAmount}
+                              prefix="+"
+                            />
+                            <BreakdownRow
+                              label={`매수비용 (평단 ${Math.round(summary.breakdown.avgCostPrice).toLocaleString("ko-KR")}원 × ${summary.breakdown.quantity}주)`}
+                              amount={summary.breakdown.costBasis}
+                              prefix="-"
+                            />
+                            {summary.breakdown.commission > 0 && <BreakdownRow label="수수료" amount={summary.breakdown.commission} prefix="-" />}
+                            {summary.breakdown.tax > 0 && <BreakdownRow label="세금" amount={summary.breakdown.tax} prefix="-" />}
+                            <div className="border-t border-border/60 pt-1.5 flex justify-between items-center">
+                              <span className="text-[12px] font-semibold text-foreground">실현손익</span>
+                              <span className={cn(
+                                "text-[13px] font-bold tabular-nums",
+                                summary.pnl != null && summary.pnl > 0 && "text-[var(--rise)]",
+                                summary.pnl != null && summary.pnl < 0 && "text-[var(--fall)]",
+                              )}>
+                                {summary.pnl != null ? `${summary.pnl >= 0 ? "+" : ""}${summary.pnl.toLocaleString("ko-KR")}원` : "–"}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                        {summary?.holdingDays != null && (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[12px] text-muted-foreground">
+                              보유 {summary.holdingDays}일
+                              {summary.strategyEvaluation && ` · ${STRATEGY_LABELS[summary.strategyEvaluation.actual] ?? summary.strategyEvaluation.actual}`}
+                            </span>
+                            {summary.strategyEvaluation && summary.strategyEvaluation.adherence !== "UNKNOWN" && (
+                              <span className={cn(
+                                "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold border",
+                                ADHERENCE_CONFIG[summary.strategyEvaluation.adherence].className,
+                              )}>
+                                {summary.strategyEvaluation.planned && `계획: ${STRATEGY_LABELS[summary.strategyEvaluation.planned] ?? summary.strategyEvaluation.planned} · `}
+                                {ADHERENCE_CONFIG[summary.strategyEvaluation.adherence].label}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 )}
 
-                {/* 손익 (매도) */}
-                {isSell && (
-                  <div className="space-y-1.5 mb-5">
-                    <Label>손익 금액 (원) <span className="text-[12px] font-normal text-muted-foreground">음수=손실</span></Label>
-                    <Controller
-                      control={control}
-                      name="profit_loss_display"
-                      render={({ field }) => (
-                        <Input type="text" inputMode="numeric"
-                          placeholder="예: 150,000 또는 -50,000"
-                          value={field.value}
-                          onChange={(e) => field.onChange(formatPnL(e.target.value))}
-                        />
-                      )}
-                    />
-                  </div>
-                )}
-
-                {/* 전략 */}
+                {/* 전략 (매수만) */}
+                {!isSell && (
                 <div className="space-y-2 mb-5">
                   <Label>전략</Label>
                   <Controller
@@ -440,6 +510,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                     )}
                   />
                 </div>
+                )}
 
                 {/* 감정 */}
                 <div className="space-y-2 mb-5">
