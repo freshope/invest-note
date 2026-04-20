@@ -212,7 +212,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
         market_type: trade.market_type,
         account_id: values.account_id,
         asset_name: values.asset_name,
-        ticker_symbol: values.ticker_symbol || null,
+        ticker_symbol: values.ticker_symbol || undefined,
         country_code: values.country_code,
         traded_at: format(values.traded_at, "yyyy-MM-dd'T'HH:mm"),
         price: parseRaw(values.price_display),

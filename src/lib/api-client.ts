@@ -81,7 +81,7 @@ export interface TradeCreateInput {
   market_type: MarketType;
   account_id: string;
   asset_name: string;
-  ticker_symbol?: string | null;
+  ticker_symbol: string;
   country_code?: string;
   price: number;
   quantity: number;

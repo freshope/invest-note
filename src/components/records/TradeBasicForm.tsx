@@ -31,7 +31,7 @@ const schema = z.object({
   trade_type: z.enum(["BUY", "SELL"]),
   account_id: z.string().min(1, "계좌를 선택해주세요."),
   asset_name: z.string().min(1, "종목명을 입력해주세요.").max(100),
-  ticker_symbol: z.string().nullable(),
+  ticker_symbol: z.string().min(1, "자동완성으로 종목을 선택해주세요."),
   country_code: z.enum(["KR", "US", "OTHER"]),
   traded_at: z.date(),
   price: z.number({ message: "올바른 가격을 입력해주세요." }).positive("올바른 가격을 입력해주세요."),
@@ -84,7 +84,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
       trade_type: "BUY",
       account_id: "",
       asset_name: "",
-      ticker_symbol: null,
+      ticker_symbol: "",
       country_code: "OTHER",
       traded_at: new Date(),
       price: 0,
@@ -162,7 +162,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         market_type: "STOCK",
         account_id: values.account_id,
         asset_name: values.asset_name,
-        ticker_symbol: values.ticker_symbol || null,
+        ticker_symbol: values.ticker_symbol,
         country_code: values.country_code,
         price: values.price,
         quantity: values.quantity,
@@ -287,7 +287,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 value={field.value}
                 onChange={(v) => {
                   field.onChange(v);
-                  if (!v) { setValue("ticker_symbol", null); setValue("country_code", "OTHER"); }
+                  if (!v) { setValue("ticker_symbol", ""); setValue("country_code", "OTHER"); }
                 }}
                 onSelect={(stock: SelectedStock) => {
                   field.onChange(stock.name);

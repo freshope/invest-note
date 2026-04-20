@@ -30,7 +30,7 @@ export interface Trade {
 
   // 거래 기본 정보
   asset_name: string;
-  ticker_symbol: string | null;
+  ticker_symbol: string;
   market_type: MarketType;
   trade_type: TradeType;
   price: number;
