@@ -3,21 +3,17 @@
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/Button";
-import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
 import { Textarea } from "@/components/base/Textarea";
 import { tradesApi } from "@/lib/api-client";
-import type { TradeResult } from "@/types/database";
 import { StrategyEmotionFields } from "./StrategyEmotionFields";
+import { cn } from "@/lib/utils";
 
 const schema = z.object({
-  result: z.enum(["SUCCESS", "FAIL", "BREAKEVEN"]).nullable(),
-  strategy_type: z.enum(["SCALPING", "SWING", "LONG_TERM", "UNKNOWN"]).nullable(),
   emotion: z.enum(["CONFIDENT", "ANXIOUS", "FOMO", "IMPULSIVE", "CALM"]).nullable(),
-  profit_loss_display: z.string(),
   sell_reason: z.string(),
   reflection_note: z.string(),
   improvement_note: z.string(),
@@ -25,20 +21,33 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
-const RESULTS: { value: TradeResult; label: string; color: string }[] = [
-  { value: "SUCCESS", label: "수익 ✅", color: "bg-[var(--rise)] text-white border-[var(--rise)]" },
-  { value: "FAIL", label: "손실 ❌", color: "bg-[var(--fall)] text-white border-[var(--fall)]" },
-  { value: "BREAKEVEN", label: "본전 ➖", color: "bg-muted text-foreground border-border" },
-];
-
-function formatNumber(raw: string): string {
-  const cleaned = raw.replace(/[^0-9-]/g, "");
-  if (!cleaned || cleaned === "-") return cleaned;
-  const isNeg = cleaned.startsWith("-");
-  const digits = cleaned.replace(/-/g, "");
-  if (!digits) return isNeg ? "-" : "";
-  return (isNeg ? "-" : "") + Number(digits).toLocaleString("ko-KR");
+function BreakdownRow({ label, amount, prefix }: {
+  label: string;
+  amount: number;
+  prefix?: "+" | "-";
+}) {
+  return (
+    <div className="flex justify-between items-center">
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <span className="text-[12px] tabular-nums text-foreground">
+        {prefix ?? ""}{amount.toLocaleString("ko-KR")}원
+      </span>
+    </div>
+  );
 }
+
+const STRATEGY_LABELS: Record<string, string> = {
+  SCALPING: "스캘핑",
+  SWING: "스윙",
+  LONG_TERM: "장기",
+  UNKNOWN: "미분류",
+};
+
+const ADHERENCE_CONFIG = {
+  FOLLOWED: { label: "전략 준수 ✓", className: "text-green-600 bg-green-50 border-green-200" },
+  DEVIATED: { label: "전략 이탈 ✗", className: "text-orange-600 bg-orange-50 border-orange-200" },
+  UNKNOWN: { label: "분류 불가", className: "text-muted-foreground bg-muted border-border" },
+} as const;
 
 interface TradeMetaSellFormProps {
   tradeId: string;
@@ -48,40 +57,37 @@ interface TradeMetaSellFormProps {
 export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
   const queryClient = useQueryClient();
   const router = useRouter();
+
+  const { data: summary, isPending: summaryLoading } = useQuery({
+    queryKey: ["trade-summary", tradeId],
+    queryFn: () => tradesApi.summary(tradeId),
+  });
+
   const {
     control,
     register,
     handleSubmit,
-    watch,
-    setValue,
     setError,
     formState: { isSubmitting, errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      result: null,
-      strategy_type: null,
       emotion: null,
-      profit_loss_display: "",
       sell_reason: "",
       reflection_note: "",
       improvement_note: "",
     },
   });
 
-  const result = watch("result");
-
   async function onSubmit(values: FormValues) {
     try {
-      const raw = values.profit_loss_display.replace(/,/g, "");
       await tradesApi.update(tradeId, {
-        result: values.result,
-        strategy_type: values.strategy_type,
         emotion: values.emotion,
-        profit_loss: raw ? Number(raw) : null,
         sell_reason: values.sell_reason.trim() || null,
         reflection_note: values.reflection_note.trim() || null,
         improvement_note: values.improvement_note.trim() || null,
+        result: summary?.result ?? null,
+        strategy_type: summary?.strategyEvaluation?.planned ?? null,
       });
       await queryClient.invalidateQueries({ queryKey: ["trade", tradeId] });
       router.refresh();
@@ -92,47 +98,100 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
   }
 
   const errorMessage = errors.root?.message ?? Object.values(errors)[0]?.message;
+  const pnl = summary?.pnl;
+  const result = summary?.result;
+  const holdingDays = summary?.holdingDays;
+  const stratEval = summary?.strategyEvaluation;
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">
       <div className="flex-1 px-5 pt-2 pb-4 space-y-6">
-        <div className="space-y-2">
-          <Label>거래 결과</Label>
-          <div className="grid grid-cols-3 gap-2">
-            {RESULTS.map((r) => (
-              <button
-                key={r.value}
-                type="button"
-                onClick={() => setValue("result", result === r.value ? null : r.value)}
-                className={`rounded-xl border py-3 text-[13px] font-bold transition-colors ${
-                  result === r.value ? r.color : "border-border bg-muted/50 text-muted-foreground"
-                }`}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
-        </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="profit_loss_input">
-            손익 금액 (원){" "}
-            <span className="text-[12px] font-normal text-muted-foreground">음수=손실</span>
-          </Label>
-          <Controller
-            control={control}
-            name="profit_loss_display"
-            render={({ field }) => (
-              <Input
-                id="profit_loss_input"
-                type="text"
-                inputMode="numeric"
-                placeholder="예: 150,000 또는 -50,000"
-                value={field.value}
-                onChange={(e) => field.onChange(formatNumber(e.target.value))}
-              />
-            )}
-          />
+        {/* 자동 계산 요약 카드 */}
+        <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
+          <p className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wide">거래 결과 (자동 계산)</p>
+
+          {summaryLoading ? (
+            <p className="text-[13px] text-muted-foreground">계산 중...</p>
+          ) : (
+            <>
+              {/* 거래 결과 + 손익 */}
+              <div className="flex items-center justify-between">
+                <span className={cn(
+                  "inline-flex items-center rounded-full px-2.5 py-0.5 text-[12px] font-bold border",
+                  result === "SUCCESS" && "bg-[var(--rise)]/10 text-[var(--rise)] border-[var(--rise)]/30",
+                  result === "FAIL" && "bg-[var(--fall)]/10 text-[var(--fall)] border-[var(--fall)]/30",
+                  result === "BREAKEVEN" && "bg-muted text-foreground border-border",
+                  !result && "bg-muted text-muted-foreground border-border",
+                )}>
+                  {result === "SUCCESS" ? "수익 ✅" : result === "FAIL" ? "손실 ❌" : result === "BREAKEVEN" ? "본전 ➖" : "–"}
+                </span>
+                {pnl != null && (
+                  <span className={cn(
+                    "text-[16px] font-bold tabular-nums",
+                    pnl > 0 && "text-[var(--rise)]",
+                    pnl < 0 && "text-[var(--fall)]",
+                  )}>
+                    {pnl >= 0 ? "+" : ""}{pnl.toLocaleString("ko-KR")}원
+                  </span>
+                )}
+              </div>
+
+              {/* 계산 과정 */}
+              {summary?.breakdown && !summary.breakdown.isManualInput && (
+                <div className="rounded-lg bg-background border border-border/60 px-3 py-2.5 space-y-1.5">
+                  <BreakdownRow
+                    label={`매도금액 (${summary.breakdown.sellPrice.toLocaleString("ko-KR")}원 × ${summary.breakdown.quantity}주)`}
+                    amount={summary.breakdown.sellAmount}
+                    prefix="+"
+                  />
+                  <BreakdownRow
+                    label={`매수비용 (평단 ${Math.round(summary.breakdown.avgCostPrice).toLocaleString("ko-KR")}원 × ${summary.breakdown.quantity}주)`}
+                    amount={summary.breakdown.costBasis}
+                    prefix="-"
+                  />
+                  {summary.breakdown.commission > 0 && (
+                    <BreakdownRow label="수수료" amount={summary.breakdown.commission} prefix="-" />
+                  )}
+                  {summary.breakdown.tax > 0 && (
+                    <BreakdownRow label="세금" amount={summary.breakdown.tax} prefix="-" />
+                  )}
+                  <div className="border-t border-border/60 pt-1.5 flex justify-between items-center">
+                    <span className="text-[12px] font-semibold text-foreground">실현손익</span>
+                    <span className={cn(
+                      "text-[13px] font-bold tabular-nums",
+                      pnl != null && pnl > 0 && "text-[var(--rise)]",
+                      pnl != null && pnl < 0 && "text-[var(--fall)]",
+                    )}>
+                      {pnl != null ? `${pnl >= 0 ? "+" : ""}${pnl.toLocaleString("ko-KR")}원` : "–"}
+                    </span>
+                  </div>
+                </div>
+              )}
+              {summary?.breakdown?.isManualInput && (
+                <p className="text-[11px] text-muted-foreground">직접 입력한 손익 금액을 사용합니다.</p>
+              )}
+
+              {/* 보유 기간 + 전략 평가 */}
+              {holdingDays != null && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[12px] text-muted-foreground">
+                    보유 {holdingDays}일
+                    {stratEval && ` · ${STRATEGY_LABELS[stratEval.actual] ?? stratEval.actual}`}
+                  </span>
+                  {stratEval && stratEval.adherence !== "UNKNOWN" && (
+                    <span className={cn(
+                      "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold border",
+                      ADHERENCE_CONFIG[stratEval.adherence].className,
+                    )}>
+                      {stratEval.planned && `계획: ${STRATEGY_LABELS[stratEval.planned] ?? stratEval.planned} · `}
+                      {ADHERENCE_CONFIG[stratEval.adherence].label}
+                    </span>
+                  )}
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         <div className="space-y-1.5">
@@ -167,19 +226,14 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
 
         <Controller
           control={control}
-          name="strategy_type"
-          render={({ field: stratField }) => (
-            <Controller
-              control={control}
-              name="emotion"
-              render={({ field: emoField }) => (
-                <StrategyEmotionFields
-                  strategy={stratField.value ?? ""}
-                  emotion={emoField.value ?? ""}
-                  onStrategyChange={(v) => stratField.onChange(v || null)}
-                  onEmotionChange={(v) => emoField.onChange(v || null)}
-                />
-              )}
+          name="emotion"
+          render={({ field: emoField }) => (
+            <StrategyEmotionFields
+              strategy=""
+              emotion={emoField.value ?? ""}
+              onStrategyChange={() => {}}
+              onEmotionChange={(v) => emoField.onChange(v || null)}
+              hideStrategy
             />
           )}
         />

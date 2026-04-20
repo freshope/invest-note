@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-server/auth";
 import { jsonError, HttpError } from "@/lib/api-server/errors";
 import { TradeCreateSchema } from "@/lib/api-server/validators";
+import { computeTotalHolding } from "@/lib/holdings";
 import type { Trade } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
 
@@ -74,6 +75,29 @@ export async function POST(req: NextRequest) {
       .eq("user_id", user.id);
 
     if (acctError || !count) return jsonError("올바른 계좌를 선택해주세요.", 400);
+
+    if (fields.trade_type === "SELL") {
+      const { data: existingTrades, error: tradesErr } = await supabase
+        .from("trades")
+        .select("trade_type, quantity, ticker_symbol, asset_name, country_code, account_id, traded_at")
+        .eq("user_id", user.id);
+
+      if (tradesErr) return jsonError("보유 수량을 확인할 수 없습니다.", 500);
+
+      const holding = computeTotalHolding((existingTrades ?? []) as Trade[], {
+        ticker: fields.ticker_symbol ?? null,
+        assetName: fields.asset_name,
+        country: fields.country_code ?? "KR",
+        accountId: account_id,
+      });
+
+      if (holding <= 0) {
+        return jsonError("보유하지 않은 종목입니다.", 400);
+      }
+      if (fields.quantity > holding) {
+        return jsonError(`보유 수량이 부족합니다 (현재 ${holding}주).`, 400);
+      }
+    }
 
     const { data, error } = await supabase
       .from("trades")

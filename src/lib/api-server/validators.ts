@@ -63,7 +63,7 @@ export const TradeUpdateSchema = z
     market_type: z.enum(["STOCK", "CRYPTO", "ETC"]),
     account_id: z.string().trim().min(1),
     asset_name: z.string().trim().min(1).max(100),
-    ticker_symbol: z.string().trim().nullable().transform((v) => v || null),
+    ticker_symbol: z.string().trim().min(1),
     // PATCH 스키마: .default() 사용 금지 — zod v4에서 .partial() + .default() 조합 시
     // 필드가 absent해도 default 값이 materialized되어 patch에 포함됨 → 기존 값 덮어쓰기 버그
     country_code: z.enum(["KR", "US", "OTHER"]),
@@ -95,7 +95,7 @@ export const TradeCreateSchema = z.object({
   market_type: z.enum(["STOCK", "CRYPTO", "ETC"]).default("STOCK"),
   account_id: z.string().trim().min(1),
   asset_name: z.string().trim().min(1).max(100),
-  ticker_symbol: z.string().trim().nullable().optional().transform((v) => v || null),
+  ticker_symbol: z.string().trim().min(1),
   country_code: z.enum(["KR", "US", "OTHER"]).default("KR"),
   traded_at: tradedAtTransform,
   price: commaPositive,

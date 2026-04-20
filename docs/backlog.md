@@ -20,6 +20,10 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [ ] HoldingsList fetch 에러 시 토스트 연동 — 네트워크 실패/401/500 시 빈 패널 오픈 대신 토스트 에러 표시 후 패널 미오픈 (출처: /custom:review)
 
+## 기록 탭
+
+- [ ] 거래 카드 computed_pnl 미표시 — `records/page.tsx`가 Supabase 직접 조회로 WAC 계산 누락. `TradeList` 클라이언트 fetch 전환(`useQuery` + `tradesApi.list()`) 또는 page.tsx에서 `computeFlexibleBreakdown` 직접 호출로 해결 필요 (출처: feature/sell-registration-improve)
+
 ## 데이터 정확성
 
 - [ ] USD/KRW 혼합 합산 버그 — `portfolio.ts:174` US 종목 평가액을 환율 적용 없이 KRW와 직접 합산해 총평가액·미실현손익 왜곡. USD → KRW 환율 적용 필요 (출처: /custom:review)
