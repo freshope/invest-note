@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { TradeCard } from "./TradeCard";
 import { TradeFormPanel } from "./TradeFormPanel";
 import { useDetailPanel } from "@/components/panels/DetailPanelProvider";
 import { CsvUploadButton } from "./CsvUploadButton";
+import { AccountFilter } from "./AccountFilter";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import type { Account } from "@/types/database";
 import { PlusIcon } from "lucide-react";
@@ -17,20 +18,52 @@ interface TradeListProps {
 
 export function TradeList({ trades, accounts }: TradeListProps) {
   const [formOpen, setFormOpen] = useState(false);
+  const [selectedAccountId, setSelectedAccountId] = useState("all");
   const { openTrade } = useDetailPanel();
-  const grouped = groupByDate(trades);
+
+  useEffect(() => {
+    if (selectedAccountId === "all") return;
+    if (!accounts.some((a) => a.id === selectedAccountId)) {
+      setSelectedAccountId("all");
+    }
+  }, [accounts]);
+
+  const filteredTrades = useMemo(
+    () =>
+      selectedAccountId === "all"
+        ? trades
+        : trades.filter((t) => t.account_id === selectedAccountId),
+    [trades, selectedAccountId],
+  );
+
+  const grouped = useMemo(() => groupByDate(filteredTrades), [filteredTrades]);
 
   return (
     <>
-      <PageHeader title="기록" actions={<CsvUploadButton />} />
+      <div className="sticky top-0 z-10 bg-background">
+        <PageHeader title="기록" actions={<CsvUploadButton />} sticky={false} />
+        {accounts.length >= 2 && (
+          <AccountFilter
+            accounts={accounts}
+            value={selectedAccountId}
+            onChange={setSelectedAccountId}
+          />
+        )}
+      </div>
 
-      {/* 목록 */}
       <div className="px-5 pb-6">
         {trades.length === 0 ? (
           <div className="rounded-2xl bg-muted/60 p-8 text-center space-y-4 mt-2">
             <p className="text-[15px] font-semibold text-foreground">거래 기록이 없어요</p>
             <p className="text-[13px] text-muted-foreground leading-relaxed">
               우측 하단 버튼을 눌러<br />첫 거래를 기록해보세요
+            </p>
+          </div>
+        ) : filteredTrades.length === 0 ? (
+          <div className="rounded-2xl bg-muted/60 p-8 text-center space-y-4 mt-2">
+            <p className="text-[15px] font-semibold text-foreground">해당 계좌의 기록이 없어요</p>
+            <p className="text-[13px] text-muted-foreground leading-relaxed">
+              다른 계좌를 선택하거나<br />새 거래를 기록해보세요
             </p>
           </div>
         ) : (
