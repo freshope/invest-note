@@ -4,6 +4,12 @@ MVP 이후 구현할 작업 후보 목록.
 
 ---
 
+## 기록 탭
+
+- [ ] 계좌 필터 컨텍스트 → 종목 패널 전달 — 계좌 A 필터 상태에서 종목 클릭 시 종목 패널에 해당 계좌 거래만 표시. 현재는 전체 거래 기준. `openTrade`에 `contextAccountId` 추가 필요 (출처: gstack-review BUG-06)
+
+---
+
 ## 분석 탭 성능 / 유지보수 개선
 
 - [ ] InsightSection useMemo 적용 — AnalysisDashboard.tsx의 InsightSection 내 evaluateRules() 호출을 useMemo로 메모이제이션 (176줄 룰 배열 순회+정렬이 매 렌더마다 실행됨) (출처: /custom:review)

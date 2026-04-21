@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import { QueryProvider } from "@/components/providers/QueryProvider";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 const pretendard = localFont({
@@ -32,6 +33,7 @@ export default function RootLayout({
     <html lang="ko" className={`${pretendard.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         <QueryProvider>{children}</QueryProvider>
+        <Toaster position="top-center" richColors />
       </body>
     </html>
   );
