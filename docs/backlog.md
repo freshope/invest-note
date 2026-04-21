@@ -34,6 +34,10 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] USD/KRW 혼합 합산 버그 — `portfolio.ts:174` US 종목 평가액을 환율 적용 없이 KRW와 직접 합산해 총평가액·미실현손익 왜곡. USD → KRW 환율 적용 필요 (출처: /custom:review)
 - [ ] 자동완성 후 종목명 수정 시 stale ticker 저장 — `TradeBasicForm.tsx:249` 자동완성 선택 후 asset_name을 수동 수정하면 이전 ticker_symbol/country_code가 남아 저장됨. 수동 수정 감지 시 ticker 관련 필드 초기화 필요 (출처: /custom:review)
 
+## 코드 품질 — 라벨 상수
+
+- [ ] MARKET_LABELS 중앙화 — `TradeDetail.tsx`("암호화폐")와 `DiversificationPanel.tsx`("코인") 불일치. 공유 상수 파일(`src/lib/constants.ts` 또는 `src/components/records/constants.ts`)로 통합 필요 (출처: /simplify)
+
 ## 코드 품질 — 라이브러리 도입 후속
 
 - [ ] TradeEditPanel 스키마 일관성 — `price_display: z.string()` 방식을 `TradeBasicForm`처럼 `z.number().positive()` 기반으로 통일 (출처: /custom:review)

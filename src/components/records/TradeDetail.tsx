@@ -61,6 +61,15 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
+function CompactRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <span className="text-[13px] text-foreground">{children}</span>
+    </div>
+  );
+}
+
 export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onStockPress }: TradeDetailProps) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
@@ -86,6 +95,13 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
   const totalAmount = Number(trade.total_amount).toLocaleString("ko-KR");
   const commission = Number(trade.commission).toLocaleString("ko-KR");
   const tax = Number(trade.tax).toLocaleString("ko-KR");
+
+  const countryCode = trade.country_code ?? "KR";
+  const isStock = trade.market_type === "STOCK";
+  const countryLabel = isStock ? (countryCode === "KR" ? "국내" : countryCode === "US" ? "해외" : null) : null;
+  const marketDisplay = [MARKET_LABELS[trade.market_type] ?? trade.market_type, countryLabel, isStock ? trade.exchange : null]
+    .filter(Boolean)
+    .join("·");
 
   return (
     <div className="h-[100dvh] flex flex-col overflow-hidden">
@@ -165,23 +181,33 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
                 </span>
               </div>
             )}
+            <div className="mt-4 pt-4 border-t border-border/40">
+              <p className={cn(
+                "text-[24px] font-bold tabular-nums text-right",
+                isBuy ? "text-[var(--rise)]" : "text-[var(--fall)]"
+              )}>
+                {totalAmount}원
+              </p>
+              <p className="text-[12px] text-muted-foreground text-right mt-0.5 tabular-nums">
+                {price}원 × {quantity}{trade.market_type === "CRYPTO" ? "개" : trade.market_type === "ETC" ? "" : "주"}
+              </p>
+            </div>
           </div>
         </div>
 
         {/* 기본 거래 정보 */}
-        <div className="rounded-2xl bg-muted/60 px-4 py-1">
-          <InfoRow label="날짜">{tradedDate}</InfoRow>
-          <InfoRow label="계좌">
-            {trade.account
-              ? `${trade.account.name}${trade.account.broker ? ` · ${trade.account.broker}` : ""}`
-              : "-"}
-          </InfoRow>
-          <InfoRow label="시장">{MARKET_LABELS[trade.market_type] ?? trade.market_type}</InfoRow>
-          <InfoRow label="가격">{price}원</InfoRow>
-          <InfoRow label="수량">{quantity}주</InfoRow>
-          <InfoRow label="총액"><span className="font-semibold">{totalAmount}원</span></InfoRow>
-          <InfoRow label="수수료">{commission}원</InfoRow>
-          {isBuy ? null : <InfoRow label="제세금">{tax}원</InfoRow>}
+        <div className="rounded-2xl bg-muted/60 p-4">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+            <CompactRow label="날짜">{tradedDate}</CompactRow>
+            <CompactRow label="계좌">
+              {trade.account
+                ? `${trade.account.name}${trade.account.broker ? ` · ${trade.account.broker}` : ""}`
+                : "-"}
+            </CompactRow>
+            <CompactRow label="시장">{marketDisplay}</CompactRow>
+            <CompactRow label="수수료">{commission}원</CompactRow>
+            {!isBuy && <CompactRow label="제세금">{tax}원</CompactRow>}
+          </div>
         </div>
 
         {/* 거래 결과 (매도 자동 계산) */}
