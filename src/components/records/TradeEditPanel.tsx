@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -18,6 +18,7 @@ import { Label } from "@/components/base/Label";
 import { Textarea } from "@/components/base/Textarea";
 import { tradesApi } from "@/lib/api-client";
 import { STRATEGIES, EMOTIONS, REASONING_TAGS } from "./constants";
+import { buildMarketDisplay, getQuantityUnit, CompactRow, CountryBadge } from "./trade-display";
 import { cn } from "@/lib/utils";
 import type { Trade, Account, TradeResult, ReasoningTag } from "@/types/database";
 import { format } from "date-fns";
@@ -41,17 +42,6 @@ const ADHERENCE_CONFIG = {
   DEVIATED: { label: "전략 이탈 ✗", className: "text-orange-600 bg-orange-50 border-orange-200" },
   UNKNOWN: { label: "분류 불가", className: "text-muted-foreground bg-muted border-border" },
 } as const;
-
-function ReadOnlyField({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <Label>{label}</Label>
-      <div className="flex h-12 items-center rounded-xl bg-muted px-4 text-[15px] text-muted-foreground">
-        {children}
-      </div>
-    </div>
-  );
-}
 
 function BreakdownRow({ label, amount, prefix }: { label: string; amount: number; prefix?: "+" | "-" }) {
   return (
@@ -161,9 +151,12 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
     });
   }, [open, trade, reset]);
 
-  const [tags, result] = [watch("reasoning_tags"), watch("result")];
+  const { reasoning_tags: tags, result, price_display: priceDisplay, quantity_display: quantityDisplay } = watch();
+  const livePrice = parseRaw(priceDisplay);
+  const liveQty = parseRaw(quantityDisplay);
+  const liveTotal = livePrice * liveQty;
   const acc = accounts.find((a) => a.id === trade.account_id);
-  const accountDisplay = acc ? `${acc.name}${acc.broker ? ` · ${acc.broker}` : ""}` : trade.account_id;
+  const accountDisplay = acc ? `${acc.name}${acc.broker ? ` · ${acc.broker}` : ""}` : "알 수 없는 계좌";
 
   function toggleTag(tag: ReasoningTag) {
     const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
@@ -190,7 +183,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
       });
       await queryClient.invalidateQueries({ queryKey: ["trade", trade.id] });
       await queryClient.invalidateQueries({ queryKey: ["portfolio"] });
-      router.refresh(); // Server Component 거래 목록 갱신
+      router.refresh();
       onOpenChange(false);
       onSaved?.();
     } catch (err) {
@@ -207,26 +200,51 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
         <FullScreenPanelBody>
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">
             <div className="flex-1 px-5 pt-2 pb-4 space-y-5">
-              {/* 거래 유형 (수정 불가) */}
-              <div className="space-y-1.5">
-                <Label>거래 유형</Label>
-                <div className={cn(
-                  "flex h-12 items-center rounded-xl px-4 text-[15px] font-bold",
-                  isSell ? "bg-[var(--fall)]/10 text-[var(--fall)]" : "bg-[var(--rise)]/10 text-[var(--rise)]"
-                )}>
-                  {isSell ? "매도" : "매수"}
+              {/* 종목 헤더 카드 */}
+              <div className="rounded-2xl overflow-hidden bg-muted/60">
+                <div className={cn("h-1", isSell ? "bg-[var(--fall)]" : "bg-[var(--rise)]")} />
+                <div className="p-5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[20px] font-bold text-foreground">{trade.asset_name}</span>
+                    <span className={cn(
+                      "text-[12px] font-bold px-2 py-0.5 rounded-md",
+                      isSell
+                        ? "bg-[var(--fall)]/10 text-[var(--fall)]"
+                        : "bg-[var(--rise)]/10 text-[var(--rise)]"
+                    )}>
+                      {isSell ? "매도" : "매수"}
+                    </span>
+                  </div>
+                  {trade.ticker_symbol && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px] font-mono text-muted-foreground">{trade.ticker_symbol}</span>
+                      <CountryBadge countryCode={trade.country_code ?? "KR"} />
+                    </div>
+                  )}
+                  <div className="mt-4 pt-4 border-t border-border/40">
+                    <p className={cn(
+                      "text-[24px] font-bold tabular-nums text-right",
+                      isSell ? "text-[var(--fall)]" : "text-[var(--rise)]"
+                    )}>
+                      {liveTotal.toLocaleString("ko-KR")}원
+                    </p>
+                    <p className="text-[12px] text-muted-foreground text-right mt-0.5 tabular-nums">
+                      {livePrice.toLocaleString("ko-KR")}원 × {liveQty}{getQuantityUnit(trade.market_type)}
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              <ReadOnlyField label="날짜">
-                {format(new Date(trade.traded_at), "yyyy년 M월 d일 (EEE)", { locale: ko })}
-              </ReadOnlyField>
-
-              <ReadOnlyField label="계좌">{accountDisplay}</ReadOnlyField>
-
-              <ReadOnlyField label="종목">
-                {trade.asset_name}{trade.ticker_symbol && trade.ticker_symbol !== trade.asset_name ? ` (${trade.ticker_symbol})` : ""}
-              </ReadOnlyField>
+              {/* 기본 거래 정보 */}
+              <div className="rounded-2xl bg-muted/60 p-4">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                  <CompactRow label="날짜">
+                    {format(new Date(trade.traded_at), "yyyy년 M월 d일 (EEE)", { locale: ko })}
+                  </CompactRow>
+                  <CompactRow label="계좌">{accountDisplay}</CompactRow>
+                  <CompactRow label="시장">{buildMarketDisplay(trade)}</CompactRow>
+                </div>
+              </div>
 
               {/* 가격 */}
               <div className="space-y-1.5">

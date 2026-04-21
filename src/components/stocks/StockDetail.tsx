@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import { TradeCard } from "@/components/records/TradeCard";
 import { ChevronLeftIcon } from "lucide-react";
+import { CountryBadge } from "@/components/records/trade-display";
 
 interface StockStats {
   totalTrades: number;
@@ -61,16 +62,7 @@ export function StockDetail({ assetName, ticker, country, trades, stats, onBack,
         <div className="rounded-2xl bg-muted/60 p-4">
           <div className="flex items-center gap-2">
             <span className="text-[22px] font-bold text-foreground">{assetName}</span>
-            <span className={cn(
-              "text-[11px] font-bold px-1.5 py-0.5 rounded-md",
-              country === "KR"
-                ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
-                : country === "US"
-                ? "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300"
-                : "bg-muted text-muted-foreground"
-            )}>
-              {country === "KR" ? "국내" : country === "US" ? "해외" : "기타"}
-            </span>
+            <CountryBadge countryCode={country} />
           </div>
           <span className="text-[13px] font-mono text-muted-foreground">{ticker}</span>
         </div>

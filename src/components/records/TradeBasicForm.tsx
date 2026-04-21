@@ -21,6 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/base/Popov
 import { Calendar } from "@/components/base/Calendar";
 import { tradesApi } from "@/lib/api-client";
 import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
+import { CountryBadge } from "./trade-display";
 import { cn } from "@/lib/utils";
 import type { Account, TradeType } from "@/types/database";
 import { CalendarIcon } from "lucide-react";
@@ -313,12 +314,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 {field.value ? (
                   <>
                     <span className="font-mono font-medium">{field.value}</span>
-                    {watch("country_code") === "KR" && (
-                      <span className="rounded-md bg-blue-100 px-1.5 py-0.5 text-[11px] font-bold text-blue-700">국내</span>
-                    )}
-                    {watch("country_code") === "US" && (
-                      <span className="rounded-md bg-orange-100 px-1.5 py-0.5 text-[11px] font-bold text-orange-700">해외</span>
-                    )}
+                    <CountryBadge countryCode={watch("country_code")} />
                   </>
                 ) : (
                   <span className="text-muted-foreground font-normal">종목 선택 시 자동 입력</span>
