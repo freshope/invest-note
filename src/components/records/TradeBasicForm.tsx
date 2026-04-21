@@ -253,6 +253,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                     defaultMonth={field.value}
                     onSelect={(d) => { if (d) { field.onChange(d); setCalOpen(false); } }}
                     initialFocus
+                    className="[--cell-size:--spacing(10)]"
                   />
                 </PopoverContent>
               </Popover>
