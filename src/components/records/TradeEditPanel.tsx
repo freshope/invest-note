@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -133,8 +133,15 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
     enabled: isSell && open,
   });
 
+  // 패널이 열리는 순간에만 reset — 배경 refetch로 trade prop이 바뀌어도 편집 중인 내용을 덮지 않도록.
+  const initializedRef = useRef(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initializedRef.current = false;
+      return;
+    }
+    if (initializedRef.current) return;
+    initializedRef.current = true;
     reset({
       price_display: fmtNum(trade.price),
       quantity_display: fmtNum(trade.quantity),
@@ -181,8 +188,11 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
         reflection_note: values.reflection_note.trim() || null,
         improvement_note: values.improvement_note.trim() || null,
       });
-      await queryClient.invalidateQueries({ queryKey: ["trade", trade.id] });
-      await queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["trade", trade.id] }),
+        queryClient.invalidateQueries({ queryKey: ["trade-summary", trade.id] }),
+        queryClient.invalidateQueries({ queryKey: ["portfolio"] }),
+      ]);
       router.refresh();
       onOpenChange(false);
       onSaved?.();

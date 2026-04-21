@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/Button";
 import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
-import { ToggleGroup, ToggleGroupItem } from "@/components/base/ToggleGroup";
+import { Tabs, TabsList, TabsTrigger } from "@/components/base/Tabs";
 import {
   Select,
   SelectContent,
@@ -201,53 +201,38 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
       <div className="flex-1 px-5 pt-2 pb-4 space-y-5">
         {firstError && <p className="text-sm text-destructive">{firstError}</p>}
 
-        {/* 매수/매도 토글 */}
-        <div className="space-y-1.5">
-          <Controller
-            control={control}
-            name="trade_type"
-            render={({ field }) => (
-              <ToggleGroup spacing={2} className="gap-2">
-                <ToggleGroupItem
+        <Controller
+          control={control}
+          name="trade_type"
+          render={({ field }) => (
+            <Tabs
+              value={field.value}
+              onValueChange={(v) => {
+                if (v && v !== field.value) {
+                  setValue("asset_name", "");
+                  setValue("ticker_symbol", "");
+                  setValue("exchange", null);
+                  field.onChange(v);
+                }
+              }}
+            >
+              <TabsList className="group-data-horizontal/tabs:h-12 p-1">
+                <TabsTrigger
                   value="BUY"
-                  pressed={field.value === "BUY"}
-                  onPressedChange={(pressed) => {
-                    if (pressed) {
-                      if (field.value === "SELL") { setValue("asset_name", ""); setValue("ticker_symbol", ""); setValue("exchange", null); }
-                      field.onChange("BUY");
-                    }
-                  }}
-                  className={cn(
-                    "h-12 text-[16px] font-bold",
-                    field.value === "BUY"
-                      ? "!bg-[var(--rise)] !text-white !border-[var(--rise)]"
-                      : "text-[var(--rise)] border-[var(--rise)]/30"
-                  )}
+                  className="flex-1 text-[16px] font-bold text-[var(--rise)] data-active:bg-[var(--rise)] data-active:text-white"
                 >
                   매수
-                </ToggleGroupItem>
-                <ToggleGroupItem
+                </TabsTrigger>
+                <TabsTrigger
                   value="SELL"
-                  pressed={field.value === "SELL"}
-                  onPressedChange={(pressed) => {
-                    if (pressed) {
-                      if (field.value === "BUY") { setValue("asset_name", ""); setValue("ticker_symbol", ""); setValue("exchange", null); }
-                      field.onChange("SELL");
-                    }
-                  }}
-                  className={cn(
-                    "h-12 text-[16px] font-bold",
-                    field.value === "SELL"
-                      ? "!bg-[var(--fall)] !text-white !border-[var(--fall)]"
-                      : "text-[var(--fall)] border-[var(--fall)]/30"
-                  )}
+                  className="flex-1 text-[16px] font-bold text-[var(--fall)] data-active:bg-[var(--fall)] data-active:text-white"
                 >
                   매도
-                </ToggleGroupItem>
-              </ToggleGroup>
-            )}
-          />
-        </div>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
+        />
 
         {/* 날짜 */}
         <div className="space-y-1.5">
@@ -265,6 +250,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                   <Calendar
                     mode="single"
                     selected={field.value}
+                    defaultMonth={field.value}
                     onSelect={(d) => { if (d) { field.onChange(d); setCalOpen(false); } }}
                     initialFocus
                   />
