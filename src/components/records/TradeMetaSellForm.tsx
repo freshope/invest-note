@@ -108,7 +108,7 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
       <div className="flex-1 px-5 pt-2 pb-4 space-y-6">
 
         {/* 자동 계산 요약 카드 */}
-        <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
+        <div className="rounded-2xl bg-muted/60 p-4 space-y-3">
           <p className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wide">거래 결과 (자동 계산)</p>
 
           {summaryLoading ? (

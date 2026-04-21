@@ -315,7 +315,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
 
                 {/* 자동 계산 요약 카드 (매도) */}
                 {isSell && (
-                  <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3 mb-5">
+                  <div className="rounded-2xl bg-muted/60 p-4 space-y-3 mb-5">
                     <p className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wide">거래 결과 (자동 계산)</p>
                     {summaryLoading ? (
                       <p className="text-[13px] text-muted-foreground">계산 중...</p>

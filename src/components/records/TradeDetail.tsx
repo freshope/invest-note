@@ -184,7 +184,7 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
 
         {/* 거래 결과 (매도 자동 계산) */}
         {!isBuy && (
-          <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
+          <div className="rounded-2xl bg-muted/60 p-4 space-y-3">
             <p className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wide">거래 결과 (자동 계산)</p>
             <div className="flex items-center justify-between">
               <span className={cn(
