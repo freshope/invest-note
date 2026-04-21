@@ -10,14 +10,14 @@ interface StockResult {
   code: string;
   name: string;
   market: "KR" | "US" | "OTHER";
-  exchange: string | null;
+  exchange: string;
 }
 
 export interface SelectedStock {
   name: string;
   code: string;
   market: "KR" | "US" | "OTHER";
-  exchange: string | null;
+  exchange: string;
 }
 
 interface StockSearchInputProps {

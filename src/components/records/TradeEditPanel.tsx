@@ -209,7 +209,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
         <FullScreenPanelHeader title="거래 수정" />
         <FullScreenPanelBody>
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">
-            <div className="flex-1 px-5 pt-2 pb-4 space-y-5">
+            <div className="flex-1 px-5 pt-5 pb-4 space-y-5">
               {/* 종목 헤더 카드 */}
               <div className="rounded-2xl overflow-hidden bg-muted/60">
                 <div className={cn("h-1", isSell ? "bg-[var(--fall)]" : "bg-[var(--rise)]")} />

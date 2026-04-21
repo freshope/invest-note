@@ -93,7 +93,7 @@ export const TradeCreateSchema = z.object({
   asset_name: z.string().trim().min(1).max(100),
   ticker_symbol: z.string().trim().min(1),
   country_code: z.enum(["KR", "US", "OTHER"]).default("KR"),
-  exchange: z.string().max(50).nullable().optional(),
+  exchange: z.string().trim().max(50).default(""),
   traded_at: tradedAtTransform,
   price: commaPositive,
   quantity: commaPositive,

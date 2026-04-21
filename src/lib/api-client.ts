@@ -83,7 +83,7 @@ export interface TradeCreateInput {
   asset_name: string;
   ticker_symbol: string;
   country_code?: string;
-  exchange?: string | null;
+  exchange?: string; // optional: server default("") fills absent value
   price: number;
   quantity: number;
   commission?: number;

@@ -5,7 +5,7 @@ interface StockResult {
   code: string;
   name: string;
   market: "KR" | "US" | "OTHER";
-  exchange: string | null;
+  exchange: string;
 }
 
 
@@ -45,7 +45,7 @@ async function searchKR(q: string): Promise<StockResult[]> {
         code: code.slice(0, 20),
         name: name.slice(0, 50),
         market: "KR" as const,
-        exchange: typeCode || null,
+        exchange: typeCode || "",
       }));
   } catch {
     return [];
