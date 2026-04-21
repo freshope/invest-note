@@ -10,18 +10,19 @@ interface StockResult {
   code: string;
   name: string;
   market: "KR" | "US" | "OTHER";
-  exchange: string;
+  exchange: string | null;
 }
 
 export interface SelectedStock {
   name: string;
   code: string;
   market: "KR" | "US" | "OTHER";
-  exchange: string;
+  exchange: string | null;
 }
 
 interface StockSearchInputProps {
   onSelect: (stock: SelectedStock) => void;
+  onSelectComplete?: () => void;
   value: string;
   onChange: (value: string) => void;
 }
@@ -40,10 +41,11 @@ async function fetchStocks(query: string): Promise<StockResult[]> {
   return res.json();
 }
 
-export function StockSearchInput({ onSelect, value, onChange }: StockSearchInputProps) {
+export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }: StockSearchInputProps) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
+  const lastSelectedRef = useRef<string>("");
   const debouncedValue = useDebounce(value, 300);
 
   const { data: suggestions = [], isFetching } = useQuery({
@@ -54,6 +56,10 @@ export function StockSearchInput({ onSelect, value, onChange }: StockSearchInput
   });
 
   useEffect(() => {
+    if (value && value === lastSelectedRef.current) {
+      setOpen(false);
+      return;
+    }
     if (!value.trim()) {
       setOpen(false);
       return;
@@ -67,11 +73,13 @@ export function StockSearchInput({ onSelect, value, onChange }: StockSearchInput
   }, [suggestions, value]);
 
   const handleSelect = useCallback((stock: StockResult) => {
+    lastSelectedRef.current = stock.name;
     onChange(stock.name);
     onSelect({ name: stock.name, code: stock.code, market: stock.market, exchange: stock.exchange });
     setOpen(false);
     setActiveIndex(-1);
-  }, [onChange, onSelect]);
+    onSelectComplete?.();
+  }, [onChange, onSelect, onSelectComplete]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!open) return;
@@ -107,7 +115,7 @@ export function StockSearchInput({ onSelect, value, onChange }: StockSearchInput
         type="text"
         placeholder="예: 삼성전자, AAPL, 005930"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => { lastSelectedRef.current = ""; onChange(e.target.value); }}
         onKeyDown={handleKeyDown}
         onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
         autoComplete="off"
