@@ -14,7 +14,7 @@ import type { Account } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
 import { tradesApi } from "@/lib/api-client";
 import { ChevronLeftIcon } from "lucide-react";
-import { buildMarketDisplay, getQuantityUnit, CompactRow, CountryBadge } from "./trade-display";
+import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
 
 interface TradeDetailProps {
   trade: TradeWithAccount;
@@ -82,8 +82,6 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
   const commission = Number(trade.commission).toLocaleString("ko-KR");
   const tax = Number(trade.tax).toLocaleString("ko-KR");
 
-  const marketDisplay = buildMarketDisplay(trade);
-
   return (
     <div className="h-[100dvh] flex flex-col overflow-hidden">
       {/* 헤더 */}
@@ -147,12 +145,18 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
                 {isBuy ? "매수" : "매도"}
               </span>
             </div>
-            {trade.ticker_symbol && (
-              <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              {trade.ticker_symbol && (
                 <span className="text-[13px] font-mono text-muted-foreground">{trade.ticker_symbol}</span>
-                <CountryBadge countryCode={trade.country_code ?? "KR"} />
-              </div>
-            )}
+              )}
+              <MarketTypeBadge marketType={trade.market_type} />
+              {trade.market_type === "STOCK" && (
+                <>
+                  <CountryBadge countryCode={trade.country_code ?? "KR"} />
+                  <ExchangeBadge exchange={trade.exchange} />
+                </>
+              )}
+            </div>
             <div className="mt-4 pt-4 border-t border-border/40">
               <p className={cn(
                 "text-[24px] font-bold tabular-nums text-right",
@@ -176,7 +180,6 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
                 ? `${trade.account.name}${trade.account.broker ? ` · ${trade.account.broker}` : ""}`
                 : "-"}
             </CompactRow>
-            <CompactRow label="시장">{marketDisplay}</CompactRow>
             <CompactRow label="수수료">{commission}원</CompactRow>
             {!isBuy && <CompactRow label="제세금">{tax}원</CompactRow>}
           </div>

@@ -1,9 +1,10 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { getCountryLabel } from "./trade-formatters";
+import { getCountryLabel, MARKET_LABELS } from "./trade-formatters";
+import type { MarketType } from "@/types/database";
 
-export { buildMarketDisplay, getQuantityUnit, getCountryLabel } from "./trade-formatters";
+export { getQuantityUnit, getCountryLabel, MARKET_LABELS } from "./trade-formatters";
 
 export function CompactRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -12,6 +13,21 @@ export function CompactRow({ label, children }: { label: string; children: React
       <span className="text-[13px] text-foreground">{children}</span>
     </div>
   );
+}
+
+const mutedBadgeClass = "text-[11px] font-bold px-1.5 py-0.5 rounded-md bg-muted text-foreground";
+
+export function MarketTypeBadge({ marketType }: { marketType: MarketType }) {
+  return (
+    <span className={mutedBadgeClass}>
+      {MARKET_LABELS[marketType] ?? marketType}
+    </span>
+  );
+}
+
+export function ExchangeBadge({ exchange }: { exchange: string | null | undefined }) {
+  if (!exchange) return null;
+  return <span className={mutedBadgeClass}>{exchange}</span>;
 }
 
 export function CountryBadge({ countryCode }: { countryCode: string }) {
