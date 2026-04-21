@@ -5,8 +5,14 @@ interface StockResult {
   code: string;
   name: string;
   market: "KR" | "US" | "OTHER";
-  exchange: string;
+  exchange: string | null;
 }
+
+const KR_EXCHANGE_MAP: Record<string, string> = {
+  "0": "KOSPI",
+  "1": "KOSDAQ",
+  "3": "KONEX",
+};
 
 // 한글 포함 여부 — KR 검색 경로 결정
 function hasKorean(str: string): boolean {
@@ -44,7 +50,7 @@ async function searchKR(q: string): Promise<StockResult[]> {
         code: code.slice(0, 20),
         name: name.slice(0, 50),
         market: "KR" as const,
-        exchange: typeCode || "KR",
+        exchange: KR_EXCHANGE_MAP[typeCode] ?? null,
       }));
   } catch {
     return [];
