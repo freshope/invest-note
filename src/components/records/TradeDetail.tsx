@@ -14,6 +14,7 @@ import type { Account } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
 import { tradesApi } from "@/lib/api-client";
 import { ChevronLeftIcon } from "lucide-react";
+import { buildMarketDisplay, getQuantityUnit, CompactRow, CountryBadge } from "./trade-display";
 
 interface TradeDetailProps {
   trade: TradeWithAccount;
@@ -46,26 +47,11 @@ const REASONING_TAG_LABELS: Record<string, string> = {
   FEELING: "감/직감",
 };
 
-const MARKET_LABELS: Record<string, string> = {
-  STOCK: "주식",
-  CRYPTO: "암호화폐",
-  ETC: "기타",
-};
-
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4 py-3 border-b border-border/50 last:border-0">
       <span className="text-[13px] text-muted-foreground flex-shrink-0">{label}</span>
       <span className="text-[14px] text-foreground text-right">{children}</span>
-    </div>
-  );
-}
-
-function CompactRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[11px] text-muted-foreground">{label}</span>
-      <span className="text-[13px] text-foreground">{children}</span>
     </div>
   );
 }
@@ -96,12 +82,7 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
   const commission = Number(trade.commission).toLocaleString("ko-KR");
   const tax = Number(trade.tax).toLocaleString("ko-KR");
 
-  const countryCode = trade.country_code ?? "KR";
-  const isStock = trade.market_type === "STOCK";
-  const countryLabel = isStock ? (countryCode === "KR" ? "국내" : countryCode === "US" ? "해외" : null) : null;
-  const marketDisplay = [MARKET_LABELS[trade.market_type] ?? trade.market_type, countryLabel, isStock ? trade.exchange : null]
-    .filter(Boolean)
-    .join("·");
+  const marketDisplay = buildMarketDisplay(trade);
 
   return (
     <div className="h-[100dvh] flex flex-col overflow-hidden">
@@ -169,16 +150,7 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
             {trade.ticker_symbol && (
               <div className="flex items-center gap-2">
                 <span className="text-[13px] font-mono text-muted-foreground">{trade.ticker_symbol}</span>
-                <span className={cn(
-                  "text-[11px] font-bold px-1.5 py-0.5 rounded-md",
-                  (trade.country_code ?? "KR") === "KR"
-                    ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
-                    : (trade.country_code ?? "KR") === "US"
-                    ? "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300"
-                    : "bg-muted text-muted-foreground"
-                )}>
-                  {(trade.country_code ?? "KR") === "KR" ? "국내" : (trade.country_code ?? "KR") === "US" ? "해외" : "기타"}
-                </span>
+                <CountryBadge countryCode={trade.country_code ?? "KR"} />
               </div>
             )}
             <div className="mt-4 pt-4 border-t border-border/40">
@@ -189,7 +161,7 @@ export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onSto
                 {totalAmount}원
               </p>
               <p className="text-[12px] text-muted-foreground text-right mt-0.5 tabular-nums">
-                {price}원 × {quantity}{trade.market_type === "CRYPTO" ? "개" : trade.market_type === "ETC" ? "" : "주"}
+                {price}원 × {quantity}{getQuantityUnit(trade.market_type)}
               </p>
             </div>
           </div>

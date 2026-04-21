@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
 import { fmt } from "@/lib/format";
 import type { Position } from "@/lib/portfolio";
+import { CountryBadge } from "@/components/records/trade-display";
 
 interface HoldingCardProps {
   position: Position;
@@ -36,18 +37,7 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-[16px] font-bold text-foreground">{assetName}</span>
-            <span
-              className={cn(
-                "text-[10px] font-bold px-1.5 py-0.5 rounded-md",
-                country === "KR"
-                  ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
-                  : country === "US"
-                    ? "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300"
-                    : "bg-muted text-muted-foreground",
-              )}
-            >
-              {country === "KR" ? "국내" : country === "US" ? "해외" : "기타"}
-            </span>
+            <CountryBadge countryCode={country} />
           </div>
           <p className="text-[12px] font-mono text-muted-foreground">{ticker}</p>
         </div>
