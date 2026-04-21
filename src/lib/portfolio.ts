@@ -9,7 +9,7 @@ export interface Position {
   ticker: string;
   country: string;
   assetName: string;
-  exchange: string | null;
+  exchange: string;
   holdingQuantity: number;      // sum(buy.qty) - sum(sell.qty)
   avgBuyPrice: number;          // WAC: sum(buy.price*qty) / sum(buy.qty)
   costBasis: number;            // avgBuyPrice * holdingQuantity
@@ -49,7 +49,7 @@ export function buildPositions(trades: Trade[]): Position[] {
     country: string;
     assetName: string;
     accountId: string;
-    exchange: string | null;
+    exchange: string;
     runningQty: number;
     runningCost: number;
     realizedPnL: number;
@@ -74,7 +74,7 @@ export function buildPositions(trades: Trade[]): Position[] {
         country,
         assetName: trade.asset_name,
         accountId: trade.account_id,
-        exchange: trade.exchange ?? null,
+        exchange: trade.exchange,
         runningQty: 0,
         runningCost: 0,
         realizedPnL: 0,
@@ -86,6 +86,7 @@ export function buildPositions(trades: Trade[]): Position[] {
 
     const lot = lotMap.get(lotKey)!;
     lot.lastTradedAt = trade.traded_at;
+    // 빈 문자열이면 이전 lot의 거래소 값을 보존 (자동완성 없이 입력된 거래 방어)
     if (trade.exchange) lot.exchange = trade.exchange;
 
     if (trade.trade_type === "BUY") {
@@ -109,7 +110,7 @@ export function buildPositions(trades: Trade[]): Position[] {
     ticker: string;
     country: string;
     assetName: string;
-    exchange: string | null;
+    exchange: string;
     runningQty: number;
     runningCost: number;
     realizedPnL: number;

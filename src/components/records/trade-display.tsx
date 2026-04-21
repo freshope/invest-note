@@ -25,7 +25,8 @@ export function MarketTypeBadge({ marketType }: { marketType: MarketType }) {
   );
 }
 
-export function ExchangeBadge({ exchange }: { exchange: string | null | undefined }) {
+/** exchange가 빈 문자열("")이면 배지를 숨긴다 — 미상 거래소의 sentinel값 */
+export function ExchangeBadge({ exchange }: { exchange: string }) {
   if (!exchange) return null;
   return <span className={mutedBadgeClass}>{exchange}</span>;
 }

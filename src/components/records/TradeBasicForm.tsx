@@ -37,7 +37,7 @@ const schema = z.object({
   asset_name: z.string().min(1, "종목명을 입력해주세요.").max(100),
   ticker_symbol: z.string().min(1, "자동완성으로 종목을 선택해주세요."),
   country_code: z.enum(["KR", "US", "OTHER"]),
-  exchange: z.string().nullable().optional(),
+  exchange: z.string().trim().max(50),
   traded_at: z.date(),
   price: z.number({ message: "올바른 가격을 입력해주세요." }).positive("올바른 가격을 입력해주세요."),
   quantity: z.number({ message: "올바른 수량을 입력해주세요." }).positive("올바른 수량을 입력해주세요."),
@@ -91,6 +91,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
       asset_name: "",
       ticker_symbol: "",
       country_code: "OTHER",
+      exchange: "",
       traded_at: new Date(),
       price: 0,
       quantity: 0,
@@ -180,7 +181,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         asset_name: values.asset_name,
         ticker_symbol: values.ticker_symbol,
         country_code: values.country_code,
-        exchange: values.exchange ?? null,
+        exchange: values.exchange,
         price: values.price,
         quantity: values.quantity,
         commission: values.commission,
@@ -211,7 +212,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 if (v && v !== field.value) {
                   setValue("asset_name", "");
                   setValue("ticker_symbol", "");
-                  setValue("exchange", null);
+                  setValue("exchange", "");
                   field.onChange(v);
                 }
               }}
@@ -302,7 +303,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 field.onChange(stock.name);
                 setValue("ticker_symbol", stock.code);
                 setValue("country_code", stock.market);
-                setValue("exchange", stock.exchange ?? null);
+                setValue("exchange", stock.exchange);
               };
 
               if (tradeType === "SELL") {
@@ -321,7 +322,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                   value={field.value}
                   onChange={(v) => {
                     field.onChange(v);
-                    if (!v) { setValue("ticker_symbol", ""); setValue("country_code", "OTHER"); setValue("exchange", null); }
+                    if (!v) { setValue("ticker_symbol", ""); setValue("country_code", "OTHER"); setValue("exchange", ""); }
                   }}
                   onSelect={handleStockSelect}
                   onSelectComplete={handleFocusPrice}

@@ -59,8 +59,8 @@ export interface Trade {
   // 국가 코드 (KR / US / OTHER)
   country_code: string;
 
-  // 거래소 (KOSPI / KOSDAQ / NYSE / NASDAQ 등)
-  exchange?: string | null;
+  // 거래소 (KOSPI / KOSDAQ / NYSE / NASDAQ 등, 미상은 빈 문자열)
+  exchange: string;
 
   // 수수료 / 제세금
   commission: number;

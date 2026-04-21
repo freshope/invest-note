@@ -26,6 +26,7 @@ function makeSell(overrides: Partial<Trade> = {}): Trade {
     profit_loss: null,
     avg_buy_price: null,
     country_code: "KR",
+    exchange: "",
     commission: 0,
     tax: 0,
     created_at: "2024-01-01T00:00:00Z",
