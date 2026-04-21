@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
@@ -56,10 +56,18 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-export function TradeDetail({ trade, accounts, onBack, onDeleted, onSaved, onStockPress }: TradeDetailProps) {
+export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, onSaved, onStockPress }: TradeDetailProps) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  const mountedAt = useMemo(() => Date.now(), []);
+  const { data: trade = initialTrade } = useQuery({
+    queryKey: ["trade", initialTrade.id],
+    queryFn: () => tradesApi.get(initialTrade.id),
+    initialData: initialTrade,
+    initialDataUpdatedAt: mountedAt,
+  });
 
   const handleDeleted = onDeleted ?? (() => router.push("/records"));
 
