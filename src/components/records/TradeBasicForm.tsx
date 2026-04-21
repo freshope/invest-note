@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -21,12 +21,15 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/base/Popov
 import { Calendar } from "@/components/base/Calendar";
 import { tradesApi } from "@/lib/api-client";
 import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
+import { HoldingSelectInput } from "./HoldingSelectInput";
 import { CountryBadge } from "./trade-display";
 import { cn } from "@/lib/utils";
 import type { Account, TradeType } from "@/types/database";
 import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
+
+const LAST_ACCOUNT_KEY = "invest-note:last-account-id";
 
 const schema = z.object({
   trade_type: z.enum(["BUY", "SELL"]),
@@ -106,6 +109,17 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
     watch("country_code"),
   ];
   const [calOpen, setCalOpen] = useState(false);
+  const priceInputRef = useRef<HTMLInputElement>(null);
+  const handleFocusPrice = useCallback(() => priceInputRef.current?.focus(), []);
+
+  // 마운트 후 localStorage에서 마지막 사용 계좌 복원
+  useEffect(() => {
+    const stored = window.localStorage.getItem(LAST_ACCOUNT_KEY);
+    if (stored && accounts.some((a) => a.id === stored)) {
+      setValue("account_id", stored);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 매도 시 계좌별 보유 수량 조회 (계좌 + flexible ticker 기준)
   const holdingEnabled = tradeType === "SELL" && !!accountId && !!assetName;
@@ -173,6 +187,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         tax: values.tax,
         traded_at: format(values.traded_at, "yyyy-MM-dd'T'HH:mm"),
       });
+      window.localStorage.setItem(LAST_ACCOUNT_KEY, values.account_id);
       await queryClient.invalidateQueries({ queryKey: ["portfolio"] });
       router.refresh(); // Server Component 거래 목록 갱신
       onTradeCreated(result.id, result.trade_type);
@@ -196,7 +211,12 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 <ToggleGroupItem
                   value="BUY"
                   pressed={field.value === "BUY"}
-                  onPressedChange={(pressed) => { if (pressed) field.onChange("BUY"); }}
+                  onPressedChange={(pressed) => {
+                    if (pressed) {
+                      if (field.value === "SELL") { setValue("asset_name", ""); setValue("ticker_symbol", ""); setValue("exchange", null); }
+                      field.onChange("BUY");
+                    }
+                  }}
                   className={cn(
                     "h-12 text-[16px] font-bold",
                     field.value === "BUY"
@@ -209,7 +229,12 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 <ToggleGroupItem
                   value="SELL"
                   pressed={field.value === "SELL"}
-                  onPressedChange={(pressed) => { if (pressed) field.onChange("SELL"); }}
+                  onPressedChange={(pressed) => {
+                    if (pressed) {
+                      if (field.value === "BUY") { setValue("asset_name", ""); setValue("ticker_symbol", ""); setValue("exchange", null); }
+                      field.onChange("SELL");
+                    }
+                  }}
                   className={cn(
                     "h-12 text-[16px] font-bold",
                     field.value === "SELL"
@@ -285,21 +310,37 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
           <Controller
             control={control}
             name="asset_name"
-            render={({ field }) => (
-              <StockSearchInput
-                value={field.value}
-                onChange={(v) => {
-                  field.onChange(v);
-                  if (!v) { setValue("ticker_symbol", ""); setValue("country_code", "OTHER"); setValue("exchange", null); }
-                }}
-                onSelect={(stock: SelectedStock) => {
-                  field.onChange(stock.name);
-                  setValue("ticker_symbol", stock.code);
-                  setValue("country_code", stock.market === "KR" ? "KR" : stock.market === "US" ? "US" : "OTHER");
-                  setValue("exchange", stock.exchange ?? null);
-                }}
-              />
-            )}
+            render={({ field }) => {
+              const handleStockSelect = (stock: SelectedStock) => {
+                field.onChange(stock.name);
+                setValue("ticker_symbol", stock.code);
+                setValue("country_code", stock.market);
+                setValue("exchange", stock.exchange ?? null);
+              };
+
+              if (tradeType === "SELL") {
+                return (
+                  <HoldingSelectInput
+                    accountId={accountId}
+                    value={field.value}
+                    onSelect={handleStockSelect}
+                    onSelectComplete={handleFocusPrice}
+                  />
+                );
+              }
+
+              return (
+                <StockSearchInput
+                  value={field.value}
+                  onChange={(v) => {
+                    field.onChange(v);
+                    if (!v) { setValue("ticker_symbol", ""); setValue("country_code", "OTHER"); setValue("exchange", null); }
+                  }}
+                  onSelect={handleStockSelect}
+                  onSelectComplete={handleFocusPrice}
+                />
+              );
+            }}
           />
         </div>
 
@@ -332,6 +373,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
             name="price"
             render={({ field }) => (
               <Input
+                ref={priceInputRef}
                 id="price"
                 type="text"
                 inputMode="numeric"
