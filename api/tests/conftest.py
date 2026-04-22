@@ -71,6 +71,29 @@ def client() -> TestClient:
 
 
 @pytest.fixture
+def accounts_client() -> TestClient:
+    """인증 + pool이 override된 클라이언트 — accounts 엔드포인트 테스트용.
+
+    acquire_for_user는 각 테스트에서 직접 patch한다.
+    """
+    from invest_note_api.auth.dependency import get_current_user
+    from invest_note_api.auth.jwt import AuthenticatedUser
+    from invest_note_api.db import get_pool
+
+    app = _make_app()
+
+    async def mock_user() -> AuthenticatedUser:
+        return AuthenticatedUser(id=UUID(TEST_USER_ID), email=TEST_EMAIL, raw={})
+
+    async def mock_pool() -> None:
+        return None
+
+    app.dependency_overrides[get_current_user] = mock_user
+    app.dependency_overrides[get_pool] = mock_pool
+    return TestClient(app)
+
+
+@pytest.fixture
 def auth_client():
     """실제 JWT 검증을 수행하는 클라이언트 — 401 케이스 테스트에 사용."""
     from invest_note_api.auth.jwt import _get_jwks_client
