@@ -1,5 +1,12 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## 디렉터리 구조
+
+- `app/` — Next.js 프론트엔드
+- `api/` — FastAPI 백엔드 (예정)
+- `docs/` — 프로젝트 문서
+- `supabase/` — DB migrations / config (공용)
+
 ## Getting Started
 
 First, run the development server:
