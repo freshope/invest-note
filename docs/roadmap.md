@@ -19,7 +19,8 @@
 | 스타일링 | Tailwind CSS |
 | 백엔드/DB | Supabase (PostgreSQL + Auth + RLS) |
 | 시세 | 네이버 금융 (KR), Yahoo Finance (US) — 비공식 API, 지연 시세 |
-| 배포 | Vercel |
+| 배포 | Vercel (웹), Render → Railway (FastAPI API 서버, v2.5) |
+| 모바일 | Capacitor (iOS/Android, v2.5), 향후 React Native 전환 검토 |
 
 ## 디자인 원칙
 
@@ -42,13 +43,14 @@
 | 버전 | 내용 | 상태 |
 |------|------|------|
 | MVP | 수동 매매 기록, 포트폴리오 조회, 홈 대시보드, 분석 탭 | 🚧 진행 중 |
+| v2.5 | 소셜 로그인 (Google/Kakao/Apple), FastAPI 백엔드 분리, Capacitor 모바일앱 (iOS/Android) | 예정 |
 | v2 | KIS API 자동 연동 | 예정 |
-| v3 | AI 패턴 분석, 모바일 네이티브 앱 | 예정 |
+| v3 | AI 패턴 분석, 모바일 네이티브 전환 (React Native, 필요 시) | 예정 |
 
 ## MVP 제외 항목 (v2+)
 
 - 증권사 API 자동 연동
 - 실시간 시세 (현재: 지연 시세 비공식 API 사용)
 - AI 분석
-- 푸시 알림
+- 푸시 알림 (v2.5 모바일앱에서 구현)
 - 세금 계산 자동화

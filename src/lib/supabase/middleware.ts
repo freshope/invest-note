@@ -30,11 +30,6 @@ export async function updateSession(request: NextRequest) {
     error: getUserError,
   } = await supabase.auth.getUser();
 
-  // API 라우트는 자체 auth 검사(requireUser)를 수행 — 세션 쿠키만 갱신 후 리다이렉트 없이 반환
-  if (request.nextUrl.pathname.startsWith("/api/")) {
-    return supabaseResponse;
-  }
-
   // Supabase 장애 시 보호된 페이지 경로만 차단
   if (getUserError) {
     const { pathname } = request.nextUrl;
@@ -49,7 +44,7 @@ export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // 인증 필요 경로에 비로그인 접근 시 로그인 페이지로 리다이렉트
-  // /auth/ 경로는 제외 (이메일 인증 콜백 등)
+  // /auth/ 경로는 제외 (소셜 로그인 콜백 등)
   if (!user && pathname !== "/login" && !pathname.startsWith("/auth/")) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
