@@ -1,0 +1,84 @@
+import json
+import time
+from unittest.mock import MagicMock, patch
+from uuid import UUID, uuid4
+
+import jwt
+import pytest
+from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, generate_private_key
+from fastapi.testclient import TestClient
+from jwt import PyJWK
+from jwt.algorithms import ECAlgorithm
+
+TEST_USER_ID = str(uuid4())
+TEST_EMAIL = "test@example.com"
+TEST_SUPABASE_URL = "https://test.supabase.co"
+TEST_JWKS_URI = f"{TEST_SUPABASE_URL}/auth/v1/.well-known/jwks.json"
+
+# 테스트용 EC 키쌍 (세션당 1회 생성)
+_private_key = generate_private_key(SECP256R1())
+_public_key = _private_key.public_key()
+_kid = "test-key-id"
+
+
+def _make_mock_jwks_client() -> MagicMock:
+    """네트워크 없이 테스트 키로 서명 검증하는 mock PyJWKClient."""
+    signing_key = PyJWK.from_dict(
+        {**json.loads(ECAlgorithm.to_jwk(_public_key)), "kid": _kid, "alg": "ES256"}
+    )
+    mock_client = MagicMock()
+    mock_client.get_signing_key_from_jwt.return_value = signing_key
+    # _get_jwks_client(uri) 호출 형태이므로 callable로 감쌈
+    return MagicMock(return_value=mock_client)
+
+
+def make_jwt(
+    user_id: str = TEST_USER_ID,
+    email: str = TEST_EMAIL,
+    expires_delta: int = 3600,
+) -> str:
+    payload = {
+        "sub": user_id,
+        "email": email,
+        "aud": "authenticated",
+        "iat": int(time.time()),
+        "exp": int(time.time()) + expires_delta,
+    }
+    return jwt.encode(payload, _private_key, algorithm="ES256", headers={"kid": _kid})
+
+
+def _make_app():
+    from invest_note_api.config import Settings
+    from invest_note_api.main import create_app
+
+    settings = Settings(supabase_url=TEST_SUPABASE_URL)
+    return create_app(settings)
+
+
+@pytest.fixture
+def client() -> TestClient:
+    """인증이 override된 클라이언트 — 대부분의 엔드포인트 테스트에 사용."""
+    from invest_note_api.auth.dependency import get_current_user
+    from invest_note_api.auth.jwt import AuthenticatedUser
+
+    app = _make_app()
+
+    async def mock_user() -> AuthenticatedUser:
+        return AuthenticatedUser(id=UUID(TEST_USER_ID), email=TEST_EMAIL, raw={})
+
+    app.dependency_overrides[get_current_user] = mock_user
+    return TestClient(app)
+
+
+@pytest.fixture
+def auth_client():
+    """실제 JWT 검증을 수행하는 클라이언트 — 401 케이스 테스트에 사용."""
+    from invest_note_api.auth.jwt import _get_jwks_client
+
+    app = _make_app()
+
+    with patch("invest_note_api.auth.jwt._get_jwks_client", _make_mock_jwks_client()):
+        with TestClient(app) as c:
+            yield c
+
+    _get_jwks_client.cache_clear()

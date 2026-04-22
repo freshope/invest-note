@@ -125,6 +125,15 @@
 
 ---
 
+## 2026-04-22 | FastAPI 인증: Supabase JWKS(ES256) 선택
+
+**맥락:** FastAPI 백엔드에서 Supabase 발급 JWT를 검증하는 방법으로 HS256(JWT Secret 대칭키)과 ES256/JWKS(비대칭키 공개키 검증) 두 가지 선택지가 있었음. Supabase 대시보드 UI 변경(Publishable/Secret Key 노출)으로 기존 JWT Secret 방식이 deprecated 징후였음.
+**결정:** `PyJWKClient`로 Supabase JWKS 엔드포인트(`/auth/v1/.well-known/jwks.json`)에서 공개키를 가져와 ES256 서명 검증. `_get_jwks_client(uri)`에 `@lru_cache`를 적용해 프로세스당 클라이언트 1개 유지.
+**이유:** Supabase 권장 방식 — 공개키 검증이므로 서버에 시크릿을 저장하지 않아도 됨. 키 로테이션 시 JWKS 엔드포인트가 자동 갱신되어 재배포 불필요. 제3자 백엔드에 적합한 비대칭키 방식.
+**트레이드오프:** 최초 요청(cold start) 시 JWKS 엔드포인트에 동기 HTTP 호출 발생(~100ms). `cache_keys=True`로 이후 요청은 메모리 조회. 비동기 이벤트 루프 블로킹 가능성 있으나 키 캐시 이후엔 무의미한 수준.
+
+---
+
 ## 2026-04-17 | 분석 탭: 감정/전략 룰 resultCount 가드
 
 - **결정:** `losing_strategy`, `emotion_fomo_low_winrate` 룰 모두 `resultCount >= 3` 가드 적용
