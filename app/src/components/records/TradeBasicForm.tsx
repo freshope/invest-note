@@ -20,7 +20,7 @@ import {
 } from "@/components/base/Select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/base/Popover";
 import { Calendar } from "@/components/base/Calendar";
-import { tradesApi } from "@/lib/api-client";
+import { tradesApi, portfolioApi } from "@/lib/api-client";
 import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
 import { HoldingSelectInput } from "./HoldingSelectInput";
 import { CountryBadge } from "./trade-display";
@@ -128,15 +128,16 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
   const { data: holdingData, isPending: holdingPending } = useQuery({
     queryKey: ["holding", accountId, tickerSymbol, assetName, countryCode],
     queryFn: async () => {
-      const params = new URLSearchParams({
-        accountId,
-        assetName,
-        country: countryCode ?? "KR",
-        ...(tickerSymbol ? { ticker: tickerSymbol } : {}),
-      });
-      const res = await fetch(`/api/portfolio/holding?${params}`);
-      if (!res.ok) return { quantity: 0, avgBuyPrice: null };
-      return res.json() as Promise<{ quantity: number; avgBuyPrice: number | null }>;
+      try {
+        return await portfolioApi.holding({
+          accountId,
+          assetName,
+          ticker: tickerSymbol,
+          country: countryCode ?? "KR",
+        });
+      } catch {
+        return { quantity: 0, avgBuyPrice: null };
+      }
     },
     enabled: holdingEnabled,
     staleTime: 0,

@@ -2,45 +2,24 @@
 
 import { useQueries } from "@tanstack/react-query";
 import type { Period } from "@/lib/analysis/period";
-import type { AnalysisSummary } from "@/lib/analysis/aggregate";
-import type { BehaviorProfile, ProfileInputRates } from "@/lib/analysis/profile";
-import type { ConcentrationData } from "@/lib/analysis/concentration";
-import type { Suggestion } from "@/lib/analysis/rules";
+import { analysisApi } from "@/lib/api-client";
 
-export interface BehaviorData {
-  period?: Period;
-  profile: BehaviorProfile;
-  inputRates: ProfileInputRates;
-  holdingPeriodDist: { bucket: string; count: number }[];
-  positionSizeDist: { bucket: string; count: number }[];
-  concentration: ConcentrationData;
-}
-
-export interface SuggestionsData {
-  period?: Period;
-  suggestions: Suggestion[];
-}
-
-async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`fetch failed: ${url}`);
-  return res.json();
-}
+export type { BehaviorData, SuggestionsData } from "@/lib/api-client";
 
 export function useAnalysisData(period: Period) {
   const [summaryQ, behaviorQ, suggestionsQ] = useQueries({
     queries: [
       {
         queryKey: ["analysis", "summary", period],
-        queryFn: () => fetchJson<AnalysisSummary>(`/api/analysis/summary?period=${period}`),
+        queryFn: () => analysisApi.summary(period),
       },
       {
         queryKey: ["analysis", "behavior", period],
-        queryFn: () => fetchJson<BehaviorData>(`/api/analysis/behavior?period=${period}`),
+        queryFn: () => analysisApi.behavior(period),
       },
       {
         queryKey: ["analysis", "suggestions", period],
-        queryFn: () => fetchJson<SuggestionsData>(`/api/analysis/suggestions?period=${period}`),
+        queryFn: () => analysisApi.suggestions(period),
       },
     ],
   });
