@@ -172,6 +172,19 @@ curl -H "Authorization: Bearer $TOKEN" \
 curl -H "Authorization: Bearer $TOKEN" \
   "http://localhost:8000/api/stocks/search?q=apple"
 # → [{code, name, market, exchange}, ...]
+
+# Analysis (period: 1m | 3m | 6m | ytd | all)
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8000/api/analysis/summary?period=3m"
+# → {period, totalTrades, sellTrades, winRate, totalProfitLoss, byStrategy[], byEmotion[], byTag[], ...}
+
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8000/api/analysis/behavior?period=all"
+# → {period, profile:{tempo,...}, inputRates, holdingPeriodDist[], positionSizeDist[], concentration}
+
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8000/api/analysis/suggestions?period=ytd"
+# → {period, suggestions:[{id, severity, title, body, metric?, linkSection?}]}
 ```
 
 ### 6. 테스트 실행

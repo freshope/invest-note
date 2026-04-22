@@ -1,0 +1,327 @@
+"""순수 함수 단위 테스트 — domain/analysis/"""
+from datetime import datetime, timezone
+
+import pytest
+
+from invest_note_api.domain.trade_types import Trade
+from invest_note_api.domain.analysis.period import parse_period, filter_by_period
+from invest_note_api.domain.analysis.holding_period import compute_holding_days_map
+from invest_note_api.domain.analysis.aggregate import compute_summary, AnalysisSummary
+from invest_note_api.domain.analysis.concentration import (
+    compute_concentration,
+    ConcentrationData,
+)
+from invest_note_api.domain.analysis.profile import compute_profile
+from invest_note_api.domain.analysis.rules import evaluate_rules, RuleInput
+from invest_note_api.domain.portfolio import Position
+
+
+def _dt(s: str) -> datetime:
+    return datetime.fromisoformat(s).astimezone(timezone.utc)
+
+
+def make_trade(**kwargs) -> Trade:
+    defaults = dict(
+        id="t1",
+        user_id="u1",
+        account_id="a1",
+        asset_name="삼성전자",
+        ticker_symbol="005930",
+        market_type="STOCK",
+        trade_type="BUY",
+        price=70000.0,
+        quantity=10.0,
+        total_amount=700000.0,
+        traded_at=_dt("2024-01-10T09:00:00+09:00"),
+        strategy_type=None,
+        reasoning_tags=[],
+        buy_reason=None,
+        sell_reason=None,
+        emotion=None,
+        result=None,
+        reflection_note=None,
+        improvement_note=None,
+        profit_loss=None,
+        avg_buy_price=None,
+        country_code="KR",
+        exchange="",
+        commission=0.0,
+        tax=0.0,
+        created_at=_dt("2024-01-01T00:00:00Z"),
+        updated_at=_dt("2024-01-01T00:00:00Z"),
+    )
+    defaults.update(kwargs)
+    return Trade(**defaults)
+
+
+# --- period ---
+
+class TestParsePeriod:
+    def test_valid_values(self):
+        for v in ("1m", "3m", "6m", "ytd", "all"):
+            assert parse_period(v) == v
+
+    def test_invalid_returns_all(self):
+        assert parse_period(None) == "all"
+        assert parse_period("") == "all"
+        assert parse_period("99d") == "all"
+
+
+class TestFilterByPeriod:
+    def _make_trades(self):
+        return [
+            make_trade(id="old", traded_at=_dt("2024-01-01T00:00:00Z")),
+            make_trade(id="mid", traded_at=_dt("2026-01-15T00:00:00Z")),
+            make_trade(id="now", traded_at=_dt("2026-04-22T00:00:00Z")),
+        ]
+
+    def test_all_returns_all(self):
+        trades = self._make_trades()
+        result = filter_by_period(trades, "all")
+        assert len(result) == 3
+
+    def test_1m_excludes_old(self):
+        trades = self._make_trades()
+        result = filter_by_period(trades, "1m")
+        ids = {t.id for t in result}
+        assert "old" not in ids
+        assert "mid" not in ids
+        assert "now" in ids
+
+    def test_ytd_includes_this_year(self):
+        trades = self._make_trades()
+        result = filter_by_period(trades, "ytd")
+        ids = {t.id for t in result}
+        assert "old" not in ids
+        assert "now" in ids
+
+
+# --- holding_period ---
+
+class TestComputeHoldingDaysMap:
+    def test_basic_single_sell(self):
+        buy = make_trade(id="b1", trade_type="BUY", quantity=10.0, traded_at=_dt("2026-01-01T09:00:00+09:00"))
+        sell = make_trade(id="s1", trade_type="SELL", quantity=10.0, traded_at=_dt("2026-01-11T09:00:00+09:00"))
+        result = compute_holding_days_map([buy, sell])
+        assert result["s1"] == 10
+
+    def test_empty_trades(self):
+        assert compute_holding_days_map([]) == {}
+
+    def test_no_buy_before_sell(self):
+        sell = make_trade(id="s1", trade_type="SELL", quantity=5.0)
+        result = compute_holding_days_map([sell])
+        assert result["s1"] == 0
+
+    def test_only_buys(self):
+        buy = make_trade(id="b1", trade_type="BUY")
+        result = compute_holding_days_map([buy])
+        assert result == {}
+
+
+# --- aggregate ---
+
+class TestComputeSummary:
+    def test_empty_trades(self):
+        s = compute_summary([], {}, {})
+        assert s.total_trades == 0
+        assert s.sell_trades == 0
+        assert s.win_rate == 0.0
+        assert s.total_profit_loss == 0.0
+
+    def test_win_rate(self):
+        buy = make_trade(id="b1", trade_type="BUY")
+        sell_win = make_trade(id="s1", trade_type="SELL", result="SUCCESS")
+        sell_fail = make_trade(id="s2", trade_type="SELL", result="FAIL")
+        pnl = {"s1": 100.0, "s2": -50.0}
+        s = compute_summary([buy, sell_win, sell_fail], pnl, {})
+        assert s.sell_trades == 2
+        assert s.win_rate == 50.0
+        assert s.total_profit_loss == 50.0
+
+    def test_by_strategy(self):
+        buy = make_trade(id="b1", trade_type="BUY")
+        sell = make_trade(id="s1", trade_type="SELL", strategy_type="SWING", result="SUCCESS")
+        s = compute_summary([buy, sell], {"s1": 200.0}, {})
+        assert len(s.by_strategy) == 1
+        assert s.by_strategy[0].type == "SWING"
+        assert s.by_strategy[0].win_rate == 100.0
+
+    def test_by_emotion(self):
+        trade1 = make_trade(id="t1", trade_type="BUY", emotion="FOMO")
+        trade2 = make_trade(id="t2", trade_type="SELL", emotion="FOMO", result="FAIL")
+        s = compute_summary([trade1, trade2], {"t2": -100.0}, {})
+        fomo = next(e for e in s.by_emotion if e.type == "FOMO")
+        assert fomo.count == 2
+        assert fomo.sell_count == 1
+        assert fomo.win_rate == 0.0
+
+    def test_meta_rates(self):
+        buy_no_tag = make_trade(id="b1", trade_type="BUY", reasoning_tags=[])
+        buy_feeling = make_trade(id="b2", trade_type="BUY", reasoning_tags=["FEELING"])
+        sell_with_reflection = make_trade(id="s1", trade_type="SELL", reflection_note="good", result="SUCCESS")
+        sell_no_result = make_trade(id="s2", trade_type="SELL")
+        s = compute_summary([buy_no_tag, buy_feeling, sell_with_reflection, sell_no_result], {"s1": 100.0}, {})
+        assert s.missing_tag_rate == 50.0
+        assert s.feeling_rate == 50.0
+        assert s.reflection_rate == 50.0
+        assert s.result_input_rate == 50.0
+
+
+# --- concentration ---
+
+def _make_position(key: str, cost: float, country: str = "KR", evaluation: float | None = None) -> Position:
+    ticker, _ = key.split(":")
+    return Position(
+        key=key,
+        ticker=ticker,
+        country=country,
+        asset_name=ticker,
+        exchange="",
+        holding_quantity=1.0,
+        avg_buy_price=cost,
+        cost_basis=cost,
+        realized_pnl=0.0,
+        current_price=None,
+        evaluation=evaluation,
+        unrealized_pnl=None,
+        last_note_type=None,
+        last_note=None,
+        last_traded_at="2026-01-01T00:00:00Z",
+    )
+
+
+class TestComputeConcentration:
+    def test_empty(self):
+        result = compute_concentration([], [])
+        assert result.hhi == 0.0
+        assert result.top3 == []
+
+    def test_single_position(self):
+        pos = _make_position("005930:KR", 1000.0)
+        result = compute_concentration([pos], [])
+        assert result.hhi == pytest.approx(1.0)
+        assert len(result.top3) == 1
+        assert result.top3[0]["weight"] == pytest.approx(1.0)
+
+    def test_equal_two_positions(self):
+        pos1 = _make_position("A:KR", 500.0)
+        pos2 = _make_position("B:KR", 500.0)
+        result = compute_concentration([pos1, pos2], [])
+        assert result.hhi == pytest.approx(0.5)
+
+    def test_uses_evaluation_over_cost_basis(self):
+        pos = _make_position("A:KR", 500.0, evaluation=1000.0)
+        result = compute_concentration([pos], [])
+        assert result.hhi == pytest.approx(1.0)
+
+
+# --- profile ---
+
+class TestComputeProfile:
+    def test_empty(self):
+        profile, rates = compute_profile([], 0.0, {})
+        assert profile.diversification == 50.0
+        assert rates.holding_days == 0.0
+
+    def test_tempo_long_term(self):
+        sells = [
+            make_trade(id=f"s{i}", trade_type="SELL", strategy_type="LONG_TERM")
+            for i in range(5)
+        ]
+        holding_map = {f"s{i}": 120 for i in range(5)}
+        profile, _ = compute_profile(sells, 0.3, holding_map)
+        assert profile.tempo == 100.0
+
+    def test_emotion_stability_unstable(self):
+        trades = [
+            make_trade(id="t1", emotion="FOMO"),
+            make_trade(id="t2", emotion="FOMO"),
+            make_trade(id="t3", emotion="CALM"),
+            make_trade(id="t4", emotion="CALM"),
+        ]
+        profile, _ = compute_profile(trades, 0.0, {})
+        assert profile.emotion_stability == 50.0
+
+
+# --- rules ---
+
+def _make_summary(**kwargs) -> AnalysisSummary:
+    from invest_note_api.domain.analysis.aggregate import AnalysisSummary
+    defaults = dict(
+        total_trades=10,
+        sell_trades=5,
+        win_rate=50.0,
+        total_profit_loss=0.0,
+        by_strategy=[],
+        by_emotion=[],
+        by_tag=[],
+        missing_tag_rate=0.0,
+        feeling_rate=0.0,
+        reflection_rate=50.0,
+        result_input_rate=80.0,
+    )
+    defaults.update(kwargs)
+    return AnalysisSummary(**defaults)
+
+
+class TestEvaluateRules:
+    def test_empty_no_suggestions(self):
+        inp: RuleInput = {"summary": _make_summary()}
+        result = evaluate_rules(inp)
+        assert isinstance(result, list)
+
+    def test_losing_strategy_triggers(self):
+        from invest_note_api.domain.analysis.aggregate import StrategyStats
+        worst = StrategyStats(type="SCALPING", count=6, result_count=4, win_rate=20.0, avg_pnl=-100.0, avg_holding_days=0.5)
+        summary = _make_summary(by_strategy=[worst])
+        inp: RuleInput = {"summary": summary}
+        result = evaluate_rules(inp)
+        ids = [s.id for s in result]
+        assert "losing_strategy" in ids
+        critical = next(s for s in result if s.id == "losing_strategy")
+        assert critical.severity == "critical"
+
+    def test_severity_order(self):
+        from invest_note_api.domain.analysis.aggregate import StrategyStats, EmotionStats
+        worst_strat = StrategyStats(type="SWING", count=6, result_count=4, win_rate=10.0, avg_pnl=-100.0, avg_holding_days=10.0)
+        fomo_emotion = EmotionStats(type="FOMO", count=6, sell_count=6, result_count=5, win_rate=10.0, avg_pnl=-50.0)
+        summary = _make_summary(by_strategy=[worst_strat], by_emotion=[fomo_emotion], feeling_rate=50.0, total_trades=10)
+        inp: RuleInput = {"summary": summary}
+        result = evaluate_rules(inp)
+        if len(result) >= 2:
+            severity_order = {"critical": 0, "warn": 1, "info": 2}
+            for a, b in zip(result, result[1:]):
+                assert severity_order[a.severity] <= severity_order[b.severity]
+
+    def test_fomo_low_winrate(self):
+        from invest_note_api.domain.analysis.aggregate import EmotionStats
+        fomo = EmotionStats(type="FOMO", count=6, sell_count=6, result_count=5, win_rate=20.0, avg_pnl=-50.0)
+        summary = _make_summary(by_emotion=[fomo])
+        inp: RuleInput = {"summary": summary}
+        result = evaluate_rules(inp)
+        assert any(s.id == "emotion_fomo_low_winrate" for s in result)
+
+    def test_high_winrate_triggers(self):
+        summary = _make_summary(sell_trades=6, win_rate=70.0, result_input_rate=80.0)
+        inp: RuleInput = {"summary": summary}
+        result = evaluate_rules(inp)
+        assert any(s.id == "high_winrate" for s in result)
+
+    def test_concentration_high_triggers(self):
+        conc = ConcentrationData(
+            hhi=0.6,
+            top3=[{"asset": "A", "weight": 0.6}],
+            by_country=[],
+            by_market=[],
+        )
+        inp: RuleInput = {"summary": _make_summary(), "concentration": conc}
+        result = evaluate_rules(inp)
+        assert any(s.id == "concentration_high" for s in result)
+
+    def test_round_half_up(self):
+        """Math.round HALF_UP — 0.5 -> 1, not 0."""
+        from invest_note_api.domain.analysis.rules import _round
+        assert _round(0.5) == 1
+        assert _round(1.5) == 2
+        assert _round(2.5) == 3

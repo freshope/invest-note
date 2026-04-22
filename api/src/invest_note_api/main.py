@@ -8,7 +8,7 @@ from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import create_pool
 from invest_note_api.errors import APIError, api_error_handler, validation_error_handler
 from invest_note_api.routers import accounts, health, me
-from invest_note_api.routers import trades, portfolio, stocks
+from invest_note_api.routers import trades, portfolio, stocks, analysis
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -45,6 +45,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(trades.router)
     application.include_router(portfolio.router)
     application.include_router(stocks.router)
+    application.include_router(analysis.router)
 
     return application
 
