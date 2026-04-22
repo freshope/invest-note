@@ -116,6 +116,15 @@
 
 ---
 
+## 2026-04-22 | 모노레포 구조 선택 — pnpm workspace app + api 분리
+
+**맥락:** FastAPI 백엔드 분리(2단계) 진입 전, 현재 단일 Next.js 프로젝트를 프론트엔드(`app/`)와 백엔드(`api/`)로 분리할 구조가 필요해짐.
+**결정:** pnpm workspace를 사용해 `app/`(Next.js)과 `api/`(FastAPI, 예정) 두 패키지를 모노레포로 관리. 루트 `package.json`은 위임 스크립트만 보유.
+**이유:** 별도 레포보다 단일 레포에서 코드·히스토리·이슈를 함께 관리하는 게 팀(1인) 규모에 적합. pnpm workspace는 Node.js 툴링 공유와 루트 스크립트 위임이 간단. `app/`은 독립 레포로 분리 가능하도록 자체 `.gitignore` 보유.
+**트레이드오프:** `app/node_modules/`가 별도 생성됨(pnpm 로컬 링크). Vercel 배포 시 Root Directory를 `app`으로 변경해야 함(수동). `scripts/backfill-pnl.ts`는 `app/` 디렉터리에서 실행해야 `.env.local` 경로가 맞음.
+
+---
+
 ## 2026-04-17 | 분석 탭: 감정/전략 룰 resultCount 가드
 
 - **결정:** `losing_strategy`, `emotion_fomo_low_winrate` 룰 모두 `resultCount >= 3` 가드 적용
