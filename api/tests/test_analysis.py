@@ -1,17 +1,12 @@
 """analysis 라우터 통합 테스트 — FakePool 기반."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from unittest.mock import patch, AsyncMock
 
 import pytest
 
-from tests.conftest import TEST_USER_ID
+from tests.conftest import TEST_USER_ID, dt as _dt
 from tests.fake_pool import FakeConnection, make_fake_acquire
-
-
-def _dt(s: str) -> datetime:
-    return datetime.fromisoformat(s).astimezone(timezone.utc)
 
 
 def _make_trade_row(

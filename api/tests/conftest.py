@@ -1,5 +1,6 @@
 import json
 import time
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -11,6 +12,11 @@ from jwt import PyJWK
 from jwt.algorithms import ECAlgorithm
 
 TEST_USER_ID = str(uuid4())
+
+
+def dt(s: str) -> datetime:
+    """ISO 문자열 → UTC datetime."""
+    return datetime.fromisoformat(s).astimezone(timezone.utc)
 TEST_EMAIL = "test@example.com"
 TEST_SUPABASE_URL = "https://test.supabase.co"
 TEST_JWKS_URI = f"{TEST_SUPABASE_URL}/auth/v1/.well-known/jwks.json"

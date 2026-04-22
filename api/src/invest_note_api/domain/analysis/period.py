@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import calendar
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 from zoneinfo import ZoneInfo
+
+from invest_note_api.domain.trade_utils import to_kst
 
 if TYPE_CHECKING:
     from invest_note_api.domain.trade_types import Trade
@@ -48,10 +50,7 @@ def filter_by_period(trades: list[Trade], period: Period) -> list[Trade]:
 
     result = []
     for t in trades:
-        traded_at = t.traded_at
-        if traded_at.tzinfo is None:
-            traded_at = traded_at.replace(tzinfo=timezone.utc)
-        ts = traded_at.astimezone(_KST).timestamp()
+        ts = to_kst(t.traded_at).timestamp()
         if from_ts is not None and ts < from_ts:
             continue
         if ts <= to_ts:

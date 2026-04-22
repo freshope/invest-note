@@ -51,6 +51,10 @@ class AnalysisSummary:
     result_input_rate: float = 0.0
 
 
+def _win_rate(results: list[str]) -> float:
+    return sum(1 for r in results if r == "SUCCESS") / len(results) * 100 if results else 0.0
+
+
 def compute_summary(
     trades: list[Trade],
     pnl_map: dict[str, float],
@@ -85,10 +89,7 @@ def compute_summary(
                 type=k,
                 count=len(s["pnls"]),
                 result_count=len(s["results"]),
-                win_rate=(
-                    sum(1 for r in s["results"] if r == "SUCCESS") / len(s["results"]) * 100
-                    if s["results"] else 0.0
-                ),
+                win_rate=_win_rate(s["results"]),
                 avg_pnl=sum(s["pnls"]) / len(s["pnls"]) if s["pnls"] else 0.0,
                 avg_holding_days=sum(s["days"]) / len(s["days"]) if s["days"] else 0.0,
             )
@@ -120,10 +121,7 @@ def compute_summary(
                 count=e["total_count"],
                 sell_count=e["sell_count"],
                 result_count=len(e["results"]),
-                win_rate=(
-                    sum(1 for r in e["results"] if r == "SUCCESS") / len(e["results"]) * 100
-                    if e["results"] else 0.0
-                ),
+                win_rate=_win_rate(e["results"]),
                 avg_pnl=sum(e["pnls"]) / len(e["pnls"]) if e["pnls"] else 0.0,
             )
             for k, e in emotion_map.items()
@@ -163,10 +161,7 @@ def compute_summary(
             TagStats(
                 tag=tag,
                 count=len(tm["pnls"]),
-                win_rate=(
-                    sum(1 for r in tm["results"] if r == "SUCCESS") / len(tm["results"]) * 100
-                    if tm["results"] else 0.0
-                ),
+                win_rate=_win_rate(tm["results"]),
                 avg_pnl=sum(tm["pnls"]) / len(tm["pnls"]) if tm["pnls"] else 0.0,
             )
             for tag, tm in tag_map.items()

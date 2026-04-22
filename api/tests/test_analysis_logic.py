@@ -1,6 +1,4 @@
 """순수 함수 단위 테스트 — domain/analysis/"""
-from datetime import datetime, timezone
-
 import pytest
 
 from invest_note_api.domain.trade_types import Trade
@@ -14,10 +12,7 @@ from invest_note_api.domain.analysis.concentration import (
 from invest_note_api.domain.analysis.profile import compute_profile
 from invest_note_api.domain.analysis.rules import evaluate_rules, RuleInput
 from invest_note_api.domain.portfolio import Position
-
-
-def _dt(s: str) -> datetime:
-    return datetime.fromisoformat(s).astimezone(timezone.utc)
+from tests.conftest import dt as _dt
 
 
 def make_trade(**kwargs) -> Trade:

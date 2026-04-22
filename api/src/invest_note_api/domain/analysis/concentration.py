@@ -53,10 +53,9 @@ def compute_concentration(positions: list[Position], trades: list[Trade]) -> Con
     )
 
     market_by_key: dict[str, str] = {}
-    for t in sorted(trades, key=lambda t: t.traded_at):
-        if t.trade_type == "BUY":
-            key = f"{t.ticker_symbol or t.asset_name}:{t.country_code or 'KR'}"
-            market_by_key[key] = t.market_type
+    for t in sorted((t for t in trades if t.trade_type == "BUY"), key=lambda t: t.traded_at):
+        key = f"{t.ticker_symbol or t.asset_name}:{t.country_code or 'KR'}"
+        market_by_key[key] = t.market_type
 
     market_map: dict[str, float] = {}
     for v in values:
