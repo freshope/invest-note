@@ -4,14 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useDebounce } from "@/hooks/useDebounce";
 import { Input } from "@/components/base/Input";
-
-interface StockResult {
-  symbol: string;
-  code: string;
-  name: string;
-  market: "KR" | "US" | "OTHER";
-  exchange: string;
-}
+import { stocksApi, type StockSearchResult } from "@/lib/api-client";
 
 export interface SelectedStock {
   name: string;
@@ -33,19 +26,17 @@ const MARKET_BADGE: Record<string, { label: string; className: string }> = {
   OTHER: { label: "기타", className: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
 };
 
-async function fetchStocks(query: string): Promise<StockResult[]> {
-  const res = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`);
-  // 오류를 throw해야 TanStack Query가 error 상태로 전환 + retry 처리
-  // return []는 빈 결과가 staleTime 동안 캐시되어 서버 오류를 숨김
-  if (!res.ok) throw new Error(`stock search failed: ${res.status}`);
-  return res.json();
+async function fetchStocks(query: string): Promise<StockSearchResult[]> {
+  return stocksApi.search(query);
 }
 
 export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }: StockSearchInputProps) {
-  const [open, setOpen] = useState(false);
+  // hidden: 사용자가 명시적으로 닫은 상태 (Escape / 외부 클릭)
+  const [hidden, setHidden] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  // 마지막으로 선택한 종목명 — value와 일치하면 드롭다운 억제
+  const [lastSelected, setLastSelected] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
-  const lastSelectedRef = useRef<string>("");
   const debouncedValue = useDebounce(value, 300);
 
   const { data: suggestions = [], isFetching } = useQuery({
@@ -55,28 +46,29 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
     staleTime: 60_000,
   });
 
-  useEffect(() => {
-    if (value && value === lastSelectedRef.current) {
-      setOpen(false);
-      return;
-    }
-    if (!value.trim()) {
-      setOpen(false);
-      return;
-    }
-    if (suggestions.length > 0) {
-      setOpen(true);
-      setActiveIndex(-1);
-    } else {
-      setOpen(false);
-    }
-  }, [suggestions, value]);
+  // 새 쿼리 결과 도착 시 activeIndex 초기화 — useState 비교 패턴 (effect 불필요)
+  const [prevSuggestions, setPrevSuggestions] = useState(suggestions);
+  if (prevSuggestions !== suggestions) {
+    setPrevSuggestions(suggestions);
+    setActiveIndex(-1);
+  }
 
-  const handleSelect = useCallback((stock: StockResult) => {
-    lastSelectedRef.current = stock.name;
+  // open은 렌더 시점에 직접 파생 — useEffect 불필요
+  const open = !hidden
+    && value.trim().length > 0
+    && value !== lastSelected
+    && suggestions.length > 0;
+
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setLastSelected("");
+    setHidden(false);
+    onChange(e.target.value);
+  }, [onChange]);
+
+  const handleSelect = useCallback((stock: StockSearchResult) => {
+    setLastSelected(stock.name);
     onChange(stock.name);
     onSelect({ name: stock.name, code: stock.code, market: stock.market, exchange: stock.exchange });
-    setOpen(false);
     setActiveIndex(-1);
     onSelectComplete?.();
   }, [onChange, onSelect, onSelectComplete]);
@@ -95,14 +87,14 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
         handleSelect(suggestions[activeIndex]);
       }
     } else if (e.key === "Escape") {
-      setOpen(false);
+      setHidden(true);
     }
   }, [open, suggestions, activeIndex, handleSelect]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
+        setHidden(true);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -115,9 +107,9 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
         type="text"
         placeholder="예: 삼성전자, AAPL, 005930"
         value={value}
-        onChange={(e) => { lastSelectedRef.current = ""; onChange(e.target.value); }}
+        onChange={handleInputChange}
         onKeyDown={handleKeyDown}
-        onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
+        onFocus={() => { if (suggestions.length > 0) setHidden(false); }}
         autoComplete="off"
         autoCorrect="off"
       />
