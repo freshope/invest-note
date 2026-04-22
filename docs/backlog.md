@@ -87,9 +87,14 @@ MVP 이후 구현할 작업 후보 목록.
   - [x] trades + portfolio + stocks 10개 라우터 포팅 (P2)
   - [x] analysis 3개 라우터 포팅 (P3)
   - [x] **Chunk A — 클라이언트 컷오버** (2026-04-22): `NEXT_PUBLIC_API_BASE_URL` 환경변수 + `apiFetch` Bearer 주입, 브라우저 fetch 4곳 api-client 래퍼로 통일
-  - (삭제)[ ] **Chunk B — 배포**: Render에 FastAPI 배포 (render.yaml / Dockerfile), `CORS_ORIGINS`에 Vercel 도메인 추가, Vercel에 `NEXT_PUBLIC_API_BASE_URL` 주입 → 운영 안정화 후 Railway 이전
-  - [ ] **Chunk C — SSR 컷오버**: `records/page.tsx`, `settings/page.tsx`, `(app)/page.tsx` 등 서버 컴포넌트의 Supabase 직접 조회를 FastAPI 경유로 전환 (서버측 Bearer 토큰 포워딩 헬퍼 필요)
-  - [ ] **Chunk D — Next.js `/api/*` 제거**: B/C 완료 및 응답 파리티 검증 후 `app/src/app/api/`와 `app/src/lib/api-server/` 삭제
+  - (삭제) **Chunk B — 배포**: Capacitor 정적 export 결정으로 불필요
+  - (삭제) **Chunk C — SSR 컷오버**: 정적 export 시 SSR 자체를 제거하므로 불필요
+  - [ ] **Chunk D — 정적 export 전환 + Next.js `/api/*` 제거** (구 Chunk C/D 통합):
+    - [ ] Server Components 6개 → Client Component 전환 (`records`, `records/[id]`, `settings`, `stocks/[country]/[ticker]`, `(app)/page`, auth callback)
+    - [ ] `app/src/lib/supabase/middleware.ts` 제거, 라우트 가드 클라이언트화
+    - [ ] `next.config` `output: 'export'` 설정
+    - [ ] `app/src/app/api/` + `app/src/lib/api-server/` 삭제 (Next.js API Routes 전체 제거)
+- [x] **(a)/(b) 결정** (2026-04-22): **정적 export (a) 선택** — Capacitor가 정적 번들 직접 로드, SSR 제거
 - [ ] **3단계: Capacitor 모바일 래핑 (iOS/Android)**
   - Capacitor 프로젝트 셋업 + iOS/Android 플랫폼 추가
   - 소셜 OAuth deep link 처리 (Capacitor Browser + Custom URL Scheme)
@@ -99,8 +104,6 @@ MVP 이후 구현할 작업 후보 목록.
   - Safe area, Android 백버튼, 외부 링크, 키보드 처리
   - 강제 업데이트 메커니즘 (웹/앱 버전 동기화 안전망)
   - 앱 아이콘, 스플래시, 스토어 메타데이터, 개인정보처리방침
-- [ ] **(a)/(b) 결정**: 3단계 진입 직전 Vercel SSR 유지(b) vs 정적 export(a) 최종 결정
-  - (a) 추가 작업 약 3~4일: Server Components 6개 → Client 전환, middleware 제거, 라우트 가드 클라이언트화, `output: 'export'` 설정
 
 ## v3 — AI 분석
 
