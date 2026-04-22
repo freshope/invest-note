@@ -39,6 +39,8 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [ ] USD/KRW 혼합 합산 버그 — `portfolio.ts:174` US 종목 평가액을 환율 적용 없이 KRW와 직접 합산해 총평가액·미실현손익 왜곡. USD → KRW 환율 적용 필요 (출처: /custom:review)
 - [ ] 자동완성 후 종목명 수정 시 stale ticker 저장 — `TradeBasicForm.tsx:249` 자동완성 선택 후 asset_name을 수동 수정하면 이전 ticker_symbol/country_code가 남아 저장됨. 수동 수정 감지 시 ticker 관련 필드 초기화 필요 (출처: /custom:review)
+- [ ] HHI 크로스-통화 왜곡 — `concentration.py`: KRW/USD 혼합 포트폴리오에서 USD 포지션 평가액을 환율 변환 없이 합산해 HHI 왜곡. USD→KRW 변환 후 비중 계산 필요 (출처: gstack-review INVESTIGATE)
+- [ ] 미래 거래 묵시 필터링 — `period.py filter_by_period`: "all" 기간에서 `to_ts = now`로 미래 거래 조용히 제외. 의도된 동작이면 주석으로 문서화, 아니면 명시적 경고 추가 (출처: gstack-review INVESTIGATE)
 
 ## 코드 품질 — 라벨 상수
 
