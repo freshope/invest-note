@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { BrokerLogo } from "@/components/base/BrokerLogo";
 import type { Account } from "@/types/database";
 
 interface AccountFilterProps {
@@ -9,24 +10,33 @@ interface AccountFilterProps {
   onChange: (value: string) => void;
 }
 
-export function AccountFilter({ accounts, value, onChange }: AccountFilterProps) {
-  const chips = [{ id: "all", name: "전체" }, ...accounts.map((a) => ({ id: a.id, name: a.name }))];
+function chipClass(active: boolean, extra?: string) {
+  return cn(
+    "shrink-0 rounded-full text-[13px] font-medium transition-colors",
+    active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80",
+    extra
+  );
+}
 
+export function AccountFilter({ accounts, value, onChange }: AccountFilterProps) {
   return (
     <div className="flex gap-2 overflow-x-auto scrollbar-hide px-5 pb-3">
-      {chips.map((chip) => (
+      <button
+        type="button"
+        onClick={() => onChange("all")}
+        className={chipClass(value === "all", "px-3.5 py-1")}
+      >
+        전체
+      </button>
+      {accounts.map((acc) => (
         <button
-          key={chip.id}
+          key={acc.id}
           type="button"
-          onClick={() => onChange(chip.id)}
-          className={cn(
-            "shrink-0 rounded-full px-3.5 py-1 text-[13px] font-medium transition-colors",
-            value === chip.id
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-muted-foreground hover:bg-muted/80"
-          )}
+          onClick={() => onChange(acc.id)}
+          className={chipClass(value === acc.id, "inline-flex items-center gap-1.5 pl-1.5 pr-3.5 py-1")}
         >
-          {chip.name}
+          {acc.broker && <BrokerLogo broker={acc.broker} size={18} />}
+          {acc.name}
         </button>
       ))}
     </div>

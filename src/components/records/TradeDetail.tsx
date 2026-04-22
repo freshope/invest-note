@@ -8,6 +8,7 @@ import { ko } from "date-fns/locale";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/base/Button";
+import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { TradeEditPanel } from "./TradeEditPanel";
 import { DeleteTradeDialog } from "./DeleteTradeDialog";
 import type { Account } from "@/types/database";
@@ -184,9 +185,12 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
           <div className="grid grid-cols-2 gap-x-4 gap-y-3">
             <CompactRow label="날짜">{tradedDate}</CompactRow>
             <CompactRow label="계좌">
-              {trade.account
-                ? `${trade.account.name}${trade.account.broker ? ` · ${trade.account.broker}` : ""}`
-                : "-"}
+              {trade.account ? (
+                <span className="inline-flex items-center gap-1">
+                  {trade.account.broker && <BrokerLogo broker={trade.account.broker} size={16} />}
+                  {trade.account.name}
+                </span>
+              ) : "-"}
             </CompactRow>
             <CompactRow label="수수료">{commission}원</CompactRow>
             {!isBuy && <CompactRow label="제세금">{tax}원</CompactRow>}

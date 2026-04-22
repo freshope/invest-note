@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import type { Trade, Account } from "@/types/database";
 import { cn } from "@/lib/utils";
+import { BrokerLogo } from "@/components/base/BrokerLogo";
 
 
 interface TradeCardProps {
@@ -97,11 +98,10 @@ export function TradeCard({ trade, onPress }: TradeCardProps) {
             <span className="font-semibold text-foreground">{totalAmount}원</span>
           </div>
 
-          {/* 계좌명 */}
           {trade.account && (
-            <div className="mt-1 text-[12px] text-muted-foreground">
+            <div className="mt-1 flex items-center gap-1 text-[12px] text-muted-foreground">
+              {trade.account.broker && <BrokerLogo broker={trade.account.broker} size={14} />}
               {trade.account.name}
-              {trade.account.broker ? ` · ${trade.account.broker}` : ""}
             </div>
           )}
 
