@@ -43,7 +43,7 @@
 | 버전 | 내용 | 상태 |
 |------|------|------|
 | MVP | 수동 매매 기록, 포트폴리오 조회, 홈 대시보드, 분석 탭 | 🚧 진행 중 |
-| v2.5 | 소셜 로그인 (Google/Kakao/Apple), FastAPI 백엔드 분리, Capacitor 모바일앱 (iOS/Android) | 🚧 진행 중 (P1a 완료) |
+| v2.5 | 소셜 로그인 (Google/Kakao/Apple), FastAPI 백엔드 분리, Capacitor 모바일앱 (iOS/Android) | 🚧 진행 중 (P1b 완료: accounts CRUD) |
 | v2 | KIS API 자동 연동 | 예정 |
 | v3 | AI 패턴 분석, 모바일 네이티브 전환 (React Native, 필요 시) | 예정 |
 
