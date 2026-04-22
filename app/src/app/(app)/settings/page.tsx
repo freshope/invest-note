@@ -10,17 +10,18 @@ import { PageHeader } from "@/components/layout/PageHeader";
 export default function SettingsPage() {
   const { user } = useAuth();
 
-  const { data: accounts, isLoading: accountsLoading } = useQuery({
+  const { data: accounts, isLoading: accountsLoading, isError: accountsError, refetch: refetchAccounts } = useQuery({
     queryKey: ["accounts"],
     queryFn: accountsApi.list,
   });
 
-  const { data: tradesData, isLoading: tradesLoading } = useQuery({
+  const { data: tradesData, isLoading: tradesLoading, isError: tradesError, refetch: refetchTrades } = useQuery({
     queryKey: ["trades"],
     queryFn: () => tradesApi.list(),
   });
 
   const loading = accountsLoading || tradesLoading;
+  const isError = accountsError || tradesError;
 
   const countMap: Record<string, number> = {};
   if (tradesData) {
@@ -37,6 +38,24 @@ export default function SettingsPage() {
           {[0, 1].map((i) => (
             <div key={i} className="rounded-2xl bg-muted/60 h-24" />
           ))}
+        </div>
+      </>
+    );
+  }
+
+  if (isError) {
+    return (
+      <>
+        <PageHeader title="설정" />
+        <div className="px-5 pt-6 text-center space-y-3">
+          <p className="text-[13px] text-muted-foreground">데이터를 불러오지 못했어요.</p>
+          <button
+            type="button"
+            onClick={() => { refetchAccounts(); refetchTrades(); }}
+            className="text-primary text-[13px] font-medium"
+          >
+            다시 시도
+          </button>
         </div>
       </>
     );
