@@ -62,7 +62,10 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
         reasoning_tags: values.reasoning_tags,
         buy_reason: values.buy_reason.trim() || null,
       });
-      await queryClient.invalidateQueries({ queryKey: ["trade", tradeId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["trade", tradeId] }),
+        queryClient.invalidateQueries({ queryKey: ["trades"] }),
+      ]);
       router.refresh();
       onDone();
     } catch (err) {

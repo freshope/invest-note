@@ -89,7 +89,10 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
         result: summary?.result ?? null,
         strategy_type: summary?.strategyEvaluation?.planned ?? null,
       });
-      await queryClient.invalidateQueries({ queryKey: ["trade", tradeId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["trade", tradeId] }),
+        queryClient.invalidateQueries({ queryKey: ["trades"] }),
+      ]);
       router.refresh();
       onDone();
     } catch (err) {

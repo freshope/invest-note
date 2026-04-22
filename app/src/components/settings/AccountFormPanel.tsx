@@ -84,8 +84,11 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
       } else {
         await accountsApi.create(input);
       }
-      await queryClient.invalidateQueries({ queryKey: ["portfolio"] });
-      router.refresh(); // Server Component 계좌 목록 갱신
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["portfolio"] }),
+        queryClient.invalidateQueries({ queryKey: ["accounts"] }),
+      ]);
+      router.refresh();
       onOpenChange(false);
     } catch (err) {
       setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });

@@ -191,8 +191,11 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         traded_at: format(values.traded_at, "yyyy-MM-dd'T'HH:mm"),
       });
       window.localStorage.setItem(LAST_ACCOUNT_KEY, values.account_id);
-      await queryClient.invalidateQueries({ queryKey: ["portfolio"] });
-      router.refresh(); // Server Component 거래 목록 갱신
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["portfolio"] }),
+        queryClient.invalidateQueries({ queryKey: ["trades"] }),
+      ]);
+      router.refresh();
       onTradeCreated(result.id, result.trade_type);
     } catch (err) {
       setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });

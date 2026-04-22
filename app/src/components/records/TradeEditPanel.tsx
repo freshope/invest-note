@@ -192,6 +192,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
         queryClient.invalidateQueries({ queryKey: ["trade", trade.id] }),
         queryClient.invalidateQueries({ queryKey: ["trade-summary", trade.id] }),
         queryClient.invalidateQueries({ queryKey: ["portfolio"] }),
+        queryClient.invalidateQueries({ queryKey: ["trades"] }),
       ]);
       router.refresh();
       onOpenChange(false);

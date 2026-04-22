@@ -37,8 +37,12 @@ export function DeleteAccountDialog({
     setPending(true);
     try {
       await accountsApi.delete(accountId);
-      await queryClient.invalidateQueries({ queryKey: ["portfolio"] });
-      router.refresh(); // Server Component 계좌 목록 갱신
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["portfolio"] }),
+        queryClient.invalidateQueries({ queryKey: ["accounts"] }),
+        queryClient.invalidateQueries({ queryKey: ["trades"] }),
+      ]);
+      router.refresh();
       onOpenChange(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "삭제할 수 없습니다.");

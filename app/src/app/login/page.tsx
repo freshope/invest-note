@@ -40,7 +40,7 @@ function LoginForm() {
     setPending(provider);
     try {
       const supabase = createClient();
-      const redirectTo = `${window.location.origin}/auth/callback`;
+      const redirectTo = `${window.location.origin}/auth/callback/`;
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: { redirectTo },

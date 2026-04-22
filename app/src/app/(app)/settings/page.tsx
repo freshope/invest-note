@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { accountsApi, tradesApi } from "@/lib/api-client";
 import { useAuth } from "@/components/providers/AuthProvider";
@@ -23,12 +24,13 @@ export default function SettingsPage() {
   const loading = accountsLoading || tradesLoading;
   const isError = accountsError || tradesError;
 
-  const countMap: Record<string, number> = {};
-  if (tradesData) {
-    for (const t of tradesData.trades) {
-      countMap[t.account_id] = (countMap[t.account_id] ?? 0) + 1;
+  const countMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const t of tradesData?.trades ?? []) {
+      m[t.account_id] = (m[t.account_id] ?? 0) + 1;
     }
-  }
+    return m;
+  }, [tradesData]);
 
   if (loading) {
     return (
