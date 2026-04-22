@@ -8,6 +8,7 @@ export default function AuthCallbackPage() {
   const router = useRouter();
 
   useEffect(() => {
+    let mounted = true;
     const supabase = createClient();
     const code = new URLSearchParams(window.location.search).get("code");
 
@@ -19,12 +20,15 @@ export default function AuthCallbackPage() {
     supabase.auth
       .exchangeCodeForSession(code)
       .then(({ error }) => {
+        if (!mounted) return;
         if (error) {
           router.replace("/login?error=oauth_failed");
         } else {
           router.replace("/");
         }
       });
+
+    return () => { mounted = false; };
   }, [router]);
 
   return (
