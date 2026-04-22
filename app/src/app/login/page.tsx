@@ -1,8 +1,10 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/components/providers/AuthProvider";
 
 const KAKAO_BG = "#FEE500";
 const KAKAO_FG = "#3C1E1E";
@@ -85,6 +87,15 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && user) {
+      router.replace("/");
+    }
+  }, [loading, user, router]);
+
   return (
     <div className="flex min-h-svh flex-col items-center justify-center bg-background px-5">
       <div className="w-full max-w-sm">

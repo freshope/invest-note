@@ -1,39 +1,46 @@
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
+import { accountsApi, tradesApi } from "@/lib/api-client";
+import { useAuth } from "@/components/providers/AuthProvider";
 import { AccountList } from "@/components/settings/AccountList";
 import { UserInfoSection } from "@/components/settings/UserInfoSection";
 import { PageHeader } from "@/components/layout/PageHeader";
-import type { Account } from "@/types/database";
 
-type AccountWithCount = Account & { trade_count: number };
+export default function SettingsPage() {
+  const { user } = useAuth();
 
-export default async function SettingsPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const { data: accounts, isLoading: accountsLoading } = useQuery({
+    queryKey: ["accounts"],
+    queryFn: accountsApi.list,
+  });
 
-  const [{ data: accountsRaw }, { data: tradeCounts }] = await Promise.all([
-    supabase
-      .from("accounts")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: true }),
-    supabase
-      .from("trades")
-      .select("account_id")
-      .eq("user_id", user.id),
-  ]);
+  const { data: tradesData, isLoading: tradesLoading } = useQuery({
+    queryKey: ["trades"],
+    queryFn: () => tradesApi.list(),
+  });
+
+  const loading = accountsLoading || tradesLoading;
 
   const countMap: Record<string, number> = {};
-  for (const t of tradeCounts ?? []) {
-    countMap[t.account_id] = (countMap[t.account_id] ?? 0) + 1;
+  if (tradesData) {
+    for (const t of tradesData.trades) {
+      countMap[t.account_id] = (countMap[t.account_id] ?? 0) + 1;
+    }
   }
 
-  const accounts: AccountWithCount[] = (accountsRaw ?? []).map((a) => ({
-    ...a,
-    cash_balance: Number(a.cash_balance),
-    trade_count: countMap[a.id] ?? 0,
-  }));
+  if (loading) {
+    return (
+      <>
+        <PageHeader title="설정" />
+        <div className="px-5 pt-2 pb-6 space-y-4 animate-pulse">
+          {[0, 1].map((i) => (
+            <div key={i} className="rounded-2xl bg-muted/60 h-24" />
+          ))}
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -41,12 +48,12 @@ export default async function SettingsPage() {
       <div className="px-5 pt-2 pb-8 space-y-10">
         <section className="space-y-3">
           <h2 className="text-[13px] font-semibold text-muted-foreground px-1">계좌 관리</h2>
-          <AccountList accounts={accounts} tradeCounts={countMap} />
+          <AccountList accounts={accounts ?? []} tradeCounts={countMap} />
         </section>
 
         <section className="space-y-3">
           <h2 className="text-[13px] font-semibold text-muted-foreground px-1">내 정보</h2>
-          <UserInfoSection email={user.email ?? ""} />
+          <UserInfoSection email={user?.email ?? ""} />
         </section>
 
         <p className="text-xs text-center text-muted-foreground">

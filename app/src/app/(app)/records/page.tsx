@@ -1,40 +1,48 @@
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
+import { tradesApi } from "@/lib/api-client";
 import { TradeList } from "@/components/records/TradeList";
-import type { Account, Trade } from "@/types/database";
-import type { TradeWithAccount } from "@/lib/trade-utils";
+import { PageHeader } from "@/components/layout/PageHeader";
 
-export default async function RecordsPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+function Skeleton() {
+  return (
+    <>
+      <PageHeader title="기록" />
+      <div className="px-5 pt-2 pb-6 space-y-3 animate-pulse">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="rounded-2xl bg-muted/60 h-28" />
+        ))}
+      </div>
+    </>
+  );
+}
 
-  const [{ data: tradesRaw, error: tradesError }, { data: accountsRaw, error: accountsError }] = await Promise.all([
-    supabase
-      .from("trades")
-      .select("*, accounts(name, broker)")
-      .eq("user_id", user.id)
-      .order("traded_at", { ascending: false }),
-    supabase
-      .from("accounts")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: true }),
-  ]);
-
-  if (tradesError || accountsError) throw new Error("데이터를 불러오는 중 오류가 발생했어요");
-
-  const trades: TradeWithAccount[] = (tradesRaw ?? []).map((t) => {
-    const { accounts: acc, ...trade } = t as Trade & {
-      accounts: { name: string; broker: string | null } | null;
-    };
-    return { ...trade, account: acc ?? undefined };
+export default function RecordsPage() {
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ["trades"],
+    queryFn: () => tradesApi.list(),
   });
 
-  const accounts: Account[] = (accountsRaw ?? []).map((a) => ({
-    ...a,
-    cash_balance: Number(a.cash_balance),
-  }));
+  if (isLoading) return <Skeleton />;
 
-  return <TradeList trades={trades} accounts={accounts} />;
+  if (isError) {
+    return (
+      <>
+        <PageHeader title="기록" />
+        <div className="px-5 pt-6 text-center space-y-3">
+          <p className="text-[13px] text-muted-foreground">데이터를 불러오지 못했어요.</p>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="text-primary text-[13px] font-medium"
+          >
+            다시 시도
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  return <TradeList trades={data?.trades ?? []} accounts={data?.accounts ?? []} />;
 }

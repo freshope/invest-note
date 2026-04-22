@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import type { Trade, Account } from "@/types/database";
 import { cn } from "@/lib/utils";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
@@ -33,7 +32,6 @@ const RESULT_LABELS: Record<string, string> = {
 };
 
 export function TradeCard({ trade, onPress }: TradeCardProps) {
-  const router = useRouter();
   const isBuy = trade.trade_type === "BUY";
 
   const price = Number(trade.price).toLocaleString("ko-KR");
@@ -43,7 +41,7 @@ export function TradeCard({ trade, onPress }: TradeCardProps) {
   return (
     <button
       type="button"
-      onClick={() => onPress ? onPress() : router.push(`/records/${trade.id}`)}
+      onClick={() => onPress?.()}
       className="w-full text-left rounded-2xl bg-muted/60 overflow-hidden active:scale-[0.99] transition-transform"
     >
       <div className="flex">

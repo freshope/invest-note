@@ -89,11 +89,14 @@ MVP 이후 구현할 작업 후보 목록.
   - [x] **Chunk A — 클라이언트 컷오버** (2026-04-22): `NEXT_PUBLIC_API_BASE_URL` 환경변수 + `apiFetch` Bearer 주입, 브라우저 fetch 4곳 api-client 래퍼로 통일
   - (삭제) **Chunk B — 배포**: Capacitor 정적 export 결정으로 불필요
   - (삭제) **Chunk C — SSR 컷오버**: 정적 export 시 SSR 자체를 제거하므로 불필요
-  - [ ] **Chunk D — 정적 export 전환 + Next.js `/api/*` 제거** (구 Chunk C/D 통합):
-    - [ ] Server Components 6개 → Client Component 전환 (`records`, `records/[id]`, `settings`, `stocks/[country]/[ticker]`, `(app)/page`, auth callback)
-    - [ ] `app/src/lib/supabase/middleware.ts` 제거, 라우트 가드 클라이언트화
-    - [ ] `next.config` `output: 'export'` 설정
-    - [ ] `app/src/app/api/` + `app/src/lib/api-server/` 삭제 (Next.js API Routes 전체 제거)
+  - [x] **Chunk D — 정적 export 전환 + Next.js `/api/*` 제거** (2026-04-22, 구 Chunk C/D 통합):
+    - [x] Server Components 5개 → Client Component 전환 (`records`, `settings`, `(app)/page` 인증 게이트 제거, auth callback)
+    - [x] 동적 라우트 2개(`records/[id]`, `stocks/[country]/[ticker]`) 삭제 — 이미 패널 기반 진입이므로 불필요
+    - [x] `AuthProvider` + `(app)/layout.tsx` AuthGuard로 클라이언트 인증 가드 일원화
+    - [x] `app/src/lib/supabase/middleware.ts` + `server.ts` + `proxy.ts` 제거
+    - [x] `next.config` `output: 'export'`, `trailingSlash: true`, `images.unoptimized: true` 설정
+    - [x] `app/src/app/api/` + `app/src/lib/api-server/` 삭제 (Next.js API Routes 전체 제거)
+    - [x] `HoldingsList.tsx` 잔존 fetch → `tradesApi.list()` 교체 (Chunk A 누락분 보완)
 - [x] **(a)/(b) 결정** (2026-04-22): **정적 export (a) 선택** — Capacitor가 정적 번들 직접 로드, SSR 제거
 - [ ] **3단계: Capacitor 모바일 래핑 (iOS/Android)**
   - Capacitor 프로젝트 셋업 + iOS/Android 플랫폼 추가
