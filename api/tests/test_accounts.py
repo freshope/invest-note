@@ -2,8 +2,9 @@ from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi.testclient import TestClient
 
-from tests.conftest import TEST_USER_ID
+from tests.conftest import TEST_USER_ID, make_jwt
 from tests.fake_pool import FakeConnection, make_fake_acquire
 
 ACC_ID = uuid4()
@@ -170,3 +171,69 @@ def test_trade_count_account_not_found(accounts_client):
         r = accounts_client.get(f"/api/accounts/{ACC_ID}/trade-count")
     assert r.status_code == 404
     assert r.json() == {"error": "계좌를 찾을 수 없습니다."}
+
+
+def test_trade_count_returns_zero_when_count_is_none(accounts_client):
+    conn = FakeConnection(ACC_ID, None)  # exists OK, count None → 0
+    with _patch(conn):
+        r = accounts_client.get(f"/api/accounts/{ACC_ID}/trade-count")
+    assert r.status_code == 200
+    assert r.json() == {"count": 0}
+
+
+# ─── 401 인증 미제공 ──────────────────────────────────────────────────────────
+
+def test_unauthenticated_list_accounts_returns_401(client):
+    """auth_client 없이 raw client로 인증 헤더 없이 요청 — 401 반환."""
+    from invest_note_api.auth.dependency import get_current_user
+    from invest_note_api.auth.jwt import AuthenticatedUser
+    from invest_note_api.db import get_pool
+
+    from tests.conftest import _make_app
+
+    app = _make_app()
+
+    async def mock_pool():
+        return None
+
+    app.dependency_overrides[get_pool] = mock_pool
+    c = TestClient(app, raise_server_exceptions=False)
+    r = c.get("/api/accounts")
+    assert r.status_code == 401
+    assert r.json() == {"error": "Unauthorized"}
+
+
+# ─── 500 엣지 케이스 ──────────────────────────────────────────────────────────
+
+def test_create_account_db_returns_none_gives_500(accounts_client):
+    conn = FakeConnection(None)  # fetchrow returns None
+    with _patch(conn):
+        r = accounts_client.post(
+            "/api/accounts",
+            json={"name": "계좌", "cash_balance": 0},
+        )
+    assert r.status_code == 500
+
+
+# ─── 400 추가 케이스 ──────────────────────────────────────────────────────────
+
+def test_create_account_negative_cash_balance_returns_400(accounts_client):
+    conn = FakeConnection()
+    with _patch(conn):
+        r = accounts_client.post(
+            "/api/accounts",
+            json={"name": "계좌", "cash_balance": "-1"},
+        )
+    assert r.status_code == 400
+    assert "error" in r.json()
+
+
+def test_update_account_invalid_name_returns_400(accounts_client):
+    conn = FakeConnection()
+    with _patch(conn):
+        r = accounts_client.patch(
+            f"/api/accounts/{ACC_ID}",
+            json={"name": "x" * 51},
+        )
+    assert r.status_code == 400
+    assert "error" in r.json()

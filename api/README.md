@@ -36,11 +36,11 @@ cp .env.example .env.local
 `.env.local` 파일을 열어 다음 값을 채웁니다:
 
 - `SUPABASE_URL` — `https://<ref>.supabase.co` (Supabase Dashboard → Project Settings → API)
-- `DATABASE_URL` — Supabase Supavisor Pooler URL (transaction mode, port **6543**):
+- `DATABASE_URL` — Supabase Supavisor Session Pooler URL (IPv4 지원, port **5432**):
   ```
-  postgresql://postgres.<project_ref>:<DB_PASSWORD>@aws-0-<region>.pooler.supabase.com:6543/postgres
+  postgresql://postgres.<project_ref>:<DB_PASSWORD>@aws-0-<region>.pooler.supabase.com:5432/postgres
   ```
-  Dashboard → Project Settings → Database → Connection string (Transaction mode) 에서 확인.
+  Dashboard → Project Settings → Database → Connection string (Session mode) 에서 확인.
 
 ### 4. 서버 실행
 

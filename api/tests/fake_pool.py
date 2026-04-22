@@ -24,7 +24,7 @@ class FakeConnection:
 
     def _is_internal(self, query: str) -> bool:
         q = query.strip().upper()
-        return q.startswith("SET LOCAL") or "SET_CONFIG" in q.upper()
+        return q.startswith("SET LOCAL") or "SET_CONFIG" in q
 
     async def execute(self, query: str, *args: Any) -> str:
         if self._is_internal(query):

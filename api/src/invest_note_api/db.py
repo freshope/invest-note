@@ -25,9 +25,9 @@ async def acquire_for_user(pool: asyncpg.Pool, user_id: UUID) -> AsyncGenerator[
     """
     async with pool.acquire() as conn:
         async with conn.transaction():
-            await conn.execute("SET LOCAL role = 'authenticated'")
             await conn.execute(
-                "SELECT set_config('request.jwt.claims', $1, true)",
+                "SELECT set_config('role', 'authenticated', true),"
+                "       set_config('request.jwt.claims', $1, true)",
                 json.dumps({"sub": str(user_id), "role": "authenticated"}),
             )
             yield conn

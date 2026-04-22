@@ -1,11 +1,12 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
 from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import create_pool
-from invest_note_api.errors import APIError, api_error_handler
+from invest_note_api.errors import APIError, api_error_handler, validation_error_handler
 from invest_note_api.routers import accounts, health, me
 
 
@@ -35,6 +36,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     application.add_exception_handler(APIError, api_error_handler)
+    application.add_exception_handler(RequestValidationError, validation_error_handler)
 
     application.include_router(health.router)
     application.include_router(me.router)

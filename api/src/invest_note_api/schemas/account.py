@@ -23,6 +23,30 @@ def _parse_cash(value: object) -> Decimal:
     return d
 
 
+def _parse_name(v: object) -> str:
+    if not isinstance(v, str):
+        raise ValueError("계좌 이름을 입력해주세요.")
+    v = v.strip()
+    if len(v) < 1:
+        raise ValueError("계좌 이름을 입력해주세요.")
+    if len(v) > _MAX_NAME:
+        raise ValueError(f"계좌 이름은 {_MAX_NAME}자 이내여야 합니다.")
+    return v
+
+
+def _parse_broker(v: object) -> str | None:
+    if v is None:
+        return None
+    if not isinstance(v, str):
+        raise ValueError("증권사 이름이 올바르지 않습니다.")
+    v = v.strip()
+    if not v:
+        return None
+    if len(v) > _MAX_BROKER:
+        raise ValueError(f"증권사 이름은 {_MAX_BROKER}자 이내여야 합니다.")
+    return v
+
+
 class AccountCreate(BaseModel):
     name: str
     broker: str | None = None
@@ -31,28 +55,12 @@ class AccountCreate(BaseModel):
     @field_validator("name", mode="before")
     @classmethod
     def _clean_name(cls, v: object) -> str:
-        if not isinstance(v, str):
-            raise ValueError("계좌 이름을 입력해주세요.")
-        v = v.strip()
-        if len(v) < 1:
-            raise ValueError("계좌 이름을 입력해주세요.")
-        if len(v) > _MAX_NAME:
-            raise ValueError(f"계좌 이름은 {_MAX_NAME}자 이내여야 합니다.")
-        return v
+        return _parse_name(v)
 
     @field_validator("broker", mode="before")
     @classmethod
     def _clean_broker(cls, v: object) -> str | None:
-        if v is None:
-            return None
-        if not isinstance(v, str):
-            raise ValueError("증권사 이름이 올바르지 않습니다.")
-        v = v.strip()
-        if not v:
-            return None
-        if len(v) > _MAX_BROKER:
-            raise ValueError(f"증권사 이름은 {_MAX_BROKER}자 이내여야 합니다.")
-        return v
+        return _parse_broker(v)
 
     @field_validator("cash_balance", mode="before")
     @classmethod
@@ -68,34 +76,14 @@ class AccountUpdate(BaseModel):
     @field_validator("name", mode="before")
     @classmethod
     def _clean_name(cls, v: object) -> str | None:
-        if v is None:
-            return None
-        if not isinstance(v, str):
-            raise ValueError("계좌 이름을 입력해주세요.")
-        v = v.strip()
-        if len(v) < 1:
-            raise ValueError("계좌 이름을 입력해주세요.")
-        if len(v) > _MAX_NAME:
-            raise ValueError(f"계좌 이름은 {_MAX_NAME}자 이내여야 합니다.")
-        return v
+        return None if v is None else _parse_name(v)
 
     @field_validator("broker", mode="before")
     @classmethod
     def _clean_broker(cls, v: object) -> str | None:
-        if v is None:
-            return None
-        if not isinstance(v, str):
-            raise ValueError("증권사 이름이 올바르지 않습니다.")
-        v = v.strip()
-        if not v:
-            return None
-        if len(v) > _MAX_BROKER:
-            raise ValueError(f"증권사 이름은 {_MAX_BROKER}자 이내여야 합니다.")
-        return v
+        return _parse_broker(v)
 
     @field_validator("cash_balance", mode="before")
     @classmethod
     def _clean_cash(cls, v: object) -> Decimal | None:
-        if v is None:
-            return None
-        return _parse_cash(v)
+        return None if v is None else _parse_cash(v)
