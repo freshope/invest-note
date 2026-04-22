@@ -132,19 +132,19 @@ def compute_summary(
         reverse=True,
     )
 
-    # byTag — 기간 밖 BUY도 포함 (allTrades 기준)
+    # byTag — 기간 밖 BUY도 포함 (allTrades 기준), 계좌별 분리
     all_buys = sorted(
         [t for t in (all_trades or trades) if t.trade_type == "BUY"],
-        key=lambda t: t.traded_at,
+        key=lambda t: (t.traded_at, 0),  # BUY-first tie-break (BUY=0 < SELL=1)
     )
     buys_by_key: dict[str, list[Trade]] = {}
     for t in all_buys:
-        key = f"{t.ticker_symbol or t.asset_name}:{t.country_code or 'KR'}"
+        key = f"{t.ticker_symbol or t.asset_name}:{t.country_code or 'KR'}:{t.account_id}"
         buys_by_key.setdefault(key, []).append(t)
 
     tag_map: dict[str, dict] = {}
     for sell in sells:
-        key = f"{sell.ticker_symbol or sell.asset_name}:{sell.country_code or 'KR'}"
+        key = f"{sell.ticker_symbol or sell.asset_name}:{sell.country_code or 'KR'}:{sell.account_id}"
         buys_for_key = buys_by_key.get(key, [])
         prev_buys = [b for b in buys_for_key if b.traded_at <= sell.traded_at]
         tags = prev_buys[-1].reasoning_tags if prev_buys else []
@@ -180,7 +180,7 @@ def compute_summary(
         sum(1 for t in buys if not t.reasoning_tags) / len(buys) * 100 if buys else 0.0
     )
     feeling_rate = (
-        sum(1 for t in buys if "FEELING" in t.reasoning_tags) / len(buys) * 100 if buys else 0.0
+        sum(1 for t in buys if "FEELING" in (t.reasoning_tags or [])) / len(buys) * 100 if buys else 0.0
     )
     reflection_rate = (
         sum(1 for t in sells if t.reflection_note and t.reflection_note.strip()) / len(sells) * 100

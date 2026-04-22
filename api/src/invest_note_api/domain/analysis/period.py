@@ -44,6 +44,7 @@ def _period_to_range(period: Period) -> tuple[datetime | None, datetime]:
 def filter_by_period(trades: list[Trade], period: Period) -> list[Trade]:
     from_dt, to_dt = _period_to_range(period)
     to_ts = to_dt.timestamp()
+    from_ts = from_dt.timestamp() if from_dt else None
 
     result = []
     for t in trades:
@@ -51,7 +52,7 @@ def filter_by_period(trades: list[Trade], period: Period) -> list[Trade]:
         if traded_at.tzinfo is None:
             traded_at = traded_at.replace(tzinfo=timezone.utc)
         ts = traded_at.astimezone(_KST).timestamp()
-        if from_dt and ts < from_dt.timestamp():
+        if from_ts is not None and ts < from_ts:
             continue
         if ts <= to_ts:
             result.append(t)

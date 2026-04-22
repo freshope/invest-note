@@ -1,9 +1,10 @@
 """analysis 라우터 — summary / behavior / suggestions."""
 from __future__ import annotations
 
+import logging
+
 import asyncpg
 from fastapi import APIRouter, Depends, Query
-
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.db import acquire_for_user, get_pool
@@ -17,6 +18,8 @@ from invest_note_api.domain.analysis.rules import evaluate_rules
 from invest_note_api.domain.portfolio import build_positions, merge_quotes
 from invest_note_api.domain.realized_pnl import build_pnl_map
 from invest_note_api.external.quotes import fetch_quotes_by_keys
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/analysis")
 
@@ -55,7 +58,7 @@ def _size_bucket(amount: float) -> str:
     return "5천만 이상"
 
 
-async def _get_trades_context(period_str: str, user_id, pool):
+async def _get_trades_context(period_str: str, user_id: str, pool: asyncpg.Pool):
     """공통 컨텍스트: (all_trades, trades, period)."""
     async with acquire_for_user(pool, user_id) as conn:
         all_trades = await list_trades(conn, user_id)
@@ -72,7 +75,7 @@ async def get_analysis_summary(
 ) -> dict:
     all_trades, trades, period_val = await _get_trades_context(period, user.id, pool)
 
-    pnl_map = {k: v for k, v in build_pnl_map(all_trades).items()}
+    pnl_map = build_pnl_map(all_trades)
     holding_days_map = compute_holding_days_map(all_trades)
     summary = compute_summary(trades, pnl_map, holding_days_map, all_trades)
 
@@ -133,8 +136,8 @@ async def get_analysis_behavior(
     try:
         quotes = await fetch_quotes_by_keys([p.key for p in positions0])
         positions = merge_quotes(positions0, quotes)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("시세 fetch 실패, cost_basis fallback: %s", e)
 
     concentration = compute_concentration(positions, all_trades)
     all_holding_days_map = compute_holding_days_map(all_trades)
@@ -201,7 +204,7 @@ async def get_analysis_suggestions(
 
     positions = build_positions(all_trades)
     concentration = compute_concentration(positions, all_trades)
-    pnl_map = {k: v for k, v in build_pnl_map(all_trades).items()}
+    pnl_map = build_pnl_map(all_trades)
     holding_days_map = compute_holding_days_map(all_trades)
     summary = compute_summary(trades, pnl_map, holding_days_map, all_trades)
     profile, _ = compute_profile(trades, concentration.hhi, holding_days_map)

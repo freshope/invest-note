@@ -61,7 +61,7 @@ def compute_profile(
     )
 
     # 근거 품질
-    buys_with_feeling = sum(1 for t in buys if "FEELING" in t.reasoning_tags)
+    buys_with_feeling = sum(1 for t in buys if "FEELING" in (t.reasoning_tags or []))
     buys_with_no_tag = sum(1 for t in buys if not t.reasoning_tags)
     poor_ratio = (buys_with_feeling + buys_with_no_tag) / len(buys) if buys else 0.0
     reasoning_quality = _clamp((1 - min(1.0, poor_ratio)) * 100)

@@ -1,6 +1,8 @@
 """FIFO 가중평균 보유일 계산 — 모든 SELL에 대해 dict로 반환."""
 from __future__ import annotations
 
+import math
+from collections import deque
 from typing import TYPE_CHECKING
 
 from invest_note_api.domain.trade_utils import to_kst
@@ -14,14 +16,17 @@ _MS_PER_DAY = 1000 * 60 * 60 * 24
 def compute_holding_days_map(trades: list[Trade]) -> dict[str, int]:
     """각 SELL trade.id → FIFO 기준 가중평균 보유 기간(일)."""
     result: dict[str, int] = {}
-    sorted_trades = sorted(trades, key=lambda t: t.traded_at)
+    sorted_trades = sorted(
+        trades,
+        key=lambda t: (t.traded_at, 0 if t.trade_type == "BUY" else 1),
+    )
 
-    queue_map: dict[str, list[dict]] = {}
+    queue_map: dict[str, deque] = {}
 
     for trade in sorted_trades:
-        key = f"{trade.ticker_symbol or trade.asset_name}:{trade.country_code or 'KR'}"
+        key = f"{trade.ticker_symbol or trade.asset_name}:{trade.country_code or 'KR'}:{trade.account_id}"
         if key not in queue_map:
-            queue_map[key] = []
+            queue_map[key] = deque()
         queue = queue_map[key]
 
         if trade.trade_type == "BUY":
@@ -40,10 +45,10 @@ def compute_holding_days_map(trades: list[Trade]) -> dict[str, int]:
                 remaining -= consume
                 slot["qty"] -= consume
                 if slot["qty"] <= 0:
-                    queue.pop(0)
+                    queue.popleft()
 
             if total_consumed > 0:
-                result[trade.id] = round(weighted_ms / total_consumed / _MS_PER_DAY)
+                result[trade.id] = math.floor(weighted_ms / total_consumed / _MS_PER_DAY + 0.5)
             else:
                 result[trade.id] = 0
 
