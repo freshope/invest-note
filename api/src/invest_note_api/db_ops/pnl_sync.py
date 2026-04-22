@@ -15,7 +15,6 @@ from invest_note_api.errors import APIError
 
 async def recalc_group_pnl(
     conn: Any,
-    user_id: str,
     trades: list[Trade],
     key: TradeGroupKey,
 ) -> None:
@@ -35,4 +34,4 @@ async def recalc_group_pnl(
             rows,
         )
     except Exception as exc:
-        raise APIError(500, f"PnL 동기화 실패: {exc}") from exc
+        raise APIError(f"PnL 동기화 실패: {exc}", 500) from exc

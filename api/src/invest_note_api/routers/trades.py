@@ -195,7 +195,7 @@ async def create_trade(
 
         key = trade_to_group_key(new_trade)
         fresh_trades = [*all_trades, Trade(**{**new_trade.model_dump(), "id": row["id"]})]
-        await recalc_group_pnl(conn, user.id, fresh_trades, key)
+        await recalc_group_pnl(conn, fresh_trades, key)
 
     return row
 
@@ -300,7 +300,7 @@ async def update_trade(
 
             fresh_trades = [Trade(**{**t.model_dump(), **patch}) if t.id == trade_id else t for t in all_trades]
             key = trade_to_group_key(existing)
-            await recalc_group_pnl(conn, user.id, fresh_trades, key)
+            await recalc_group_pnl(conn, fresh_trades, key)
         else:
             await patch_trade(conn, trade_id, user.id, patch)
 
@@ -327,6 +327,6 @@ async def delete_trade_endpoint(
         await delete_trade(conn, trade_id, user.id)
 
         remaining = [t for t in all_trades if t.id != trade_id]
-        await recalc_group_pnl(conn, user.id, remaining, key)
+        await recalc_group_pnl(conn, remaining, key)
 
     return Response(status_code=204)

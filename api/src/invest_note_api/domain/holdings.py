@@ -99,6 +99,33 @@ def compute_total_holding(
     return running_qty
 
 
+def compute_wac(
+    trades: list["Trade"],
+    ticker: str | None,
+    asset_name: str,
+    country: str,
+    account_id: str,
+) -> float | None:
+    """가중평균단가(WAC) 계산. 보유 수량이 없으면 None."""
+    target_ticker = ticker or asset_name
+    running_qty = 0.0
+    running_cost = 0.0
+
+    for trade in _sort_by_traded_at(trades):
+        if not _is_flexible_match(trade, country, target_ticker, asset_name, account_id):
+            continue
+        if trade.trade_type == "BUY":
+            running_qty += trade.quantity
+            running_cost += trade.price * trade.quantity
+        else:
+            avg_cost = running_cost / running_qty if running_qty > 0 else 0.0
+            matched = min(trade.quantity, running_qty)
+            running_cost = max(0.0, running_cost - avg_cost * matched)
+            running_qty = max(0.0, running_qty - matched)
+
+    return running_cost / running_qty if running_qty > 0 else None
+
+
 def compute_flexible_breakdown(sell: "Trade") -> SellBreakdown:
     avg_cost_price = sell.avg_buy_price or 0.0
     quantity = sell.quantity

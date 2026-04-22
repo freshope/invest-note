@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.db import acquire_for_user, get_pool
-from invest_note_api.domain.holdings import compute_total_holding
+from invest_note_api.domain.holdings import compute_total_holding, compute_wac
 from invest_note_api.domain.portfolio import (
     Account,
     build_account_snapshots,
@@ -15,7 +15,7 @@ from invest_note_api.domain.portfolio import (
     build_totals,
     merge_quotes,
 )
-from invest_note_api.domain.trade_types import Trade
+from invest_note_api.domain.trade_types import Trade, TradeWithAccount
 from invest_note_api.errors import APIError
 from invest_note_api.external.quotes import fetch_quotes_by_keys
 
@@ -67,32 +67,13 @@ async def get_holding(
         country=country,
         account_id=account_id,
     )
-
-    # WAC 계산 (portfolio/holding/route.ts와 동일 로직)
-    target_ticker = ticker or asset_name
-    running_qty = 0.0
-    running_cost = 0.0
-
-    for trade in sorted(trades, key=lambda t: t.traded_at):
-        if trade.account_id != account_id:
-            continue
-        trade_country = trade.country_code or "KR"
-        if trade_country != country:
-            continue
-        trade_ticker = trade.ticker_symbol or trade.asset_name
-        if trade_ticker != target_ticker and trade.asset_name != asset_name:
-            continue
-
-        if trade.trade_type == "BUY":
-            running_qty += trade.quantity
-            running_cost += trade.price * trade.quantity
-        else:
-            avg_cost = running_cost / running_qty if running_qty > 0 else 0.0
-            matched = min(trade.quantity, running_qty)
-            running_cost = max(0.0, running_cost - avg_cost * matched)
-            running_qty = max(0.0, running_qty - matched)
-
-    avg_buy_price = running_cost / running_qty if running_qty > 0 else None
+    avg_buy_price = compute_wac(
+        trades,
+        ticker=ticker,
+        asset_name=asset_name,
+        country=country,
+        account_id=account_id,
+    )
 
     return {"quantity": quantity, "avgBuyPrice": avg_buy_price}
 
@@ -119,7 +100,6 @@ async def get_portfolio_summary(
             "SELECT * FROM accounts ORDER BY created_at ASC"
         )
 
-    from invest_note_api.domain.trade_types import TradeWithAccount
     trades = [TradeWithAccount(**dict(r)) for r in trade_rows]
     accounts = [_account_from_row(r) for r in account_rows]
 

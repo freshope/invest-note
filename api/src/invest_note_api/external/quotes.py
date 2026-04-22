@@ -6,6 +6,7 @@ Next.js `fetch(..., { next: { revalidate: 60 } })` 동작과 등가.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 from typing import TypedDict
 
 import httpx
@@ -36,7 +37,6 @@ async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult |
             )
             price = float(raw) if raw else 0.0
             if price > 0:
-                from datetime import datetime, timezone
                 return {"price": price, "currency": "KRW", "as_of": datetime.now(timezone.utc).isoformat()}
     except Exception:
         pass
@@ -54,7 +54,6 @@ async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult |
             )
             price = float(raw) if raw else 0.0
             if price > 0:
-                from datetime import datetime, timezone
                 return {"price": price, "currency": "KRW", "as_of": datetime.now(timezone.utc).isoformat()}
     except Exception:
         pass
@@ -75,7 +74,6 @@ async def _fetch_us_price(client: httpx.AsyncClient, symbol: str) -> QuoteResult
         meta = results[0].get("meta", {})
         price = float(meta.get("regularMarketPrice") or 0)
         if price > 0:
-            from datetime import datetime, timezone
             return {
                 "price": price,
                 "currency": meta.get("currency", "USD"),
