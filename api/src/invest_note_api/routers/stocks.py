@@ -57,9 +57,13 @@ async def search_stocks(
 
 async def _search_kr(q: str) -> list:
     try:
-        url = f"https://ac.stock.naver.com/ac?q={q}&target=stock"
         async with httpx.AsyncClient() as client:
-            res = await client.get(url, headers=_HEADERS, timeout=5.0)
+            res = await client.get(
+                "https://ac.stock.naver.com/ac",
+                params={"q": q, "target": "stock"},
+                headers=_HEADERS,
+                timeout=5.0,
+            )
         if res.status_code != 200:
             return []
 

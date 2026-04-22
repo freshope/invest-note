@@ -263,7 +263,11 @@ async def get_trade(
 
     if trade is None:
         raise APIError("거래를 찾을 수 없습니다.", 404)
-    return _trade_dict(trade)
+    d = _trade_dict(trade)
+    account_name = d.pop("account_name", None)
+    account_broker = d.pop("account_broker", None)
+    d["account"] = {"name": account_name, "broker": account_broker}
+    return d
 
 
 @router.patch("/{trade_id}", responses={204: {"description": "No fields to update"}})
