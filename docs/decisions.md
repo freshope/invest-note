@@ -139,3 +139,25 @@
 - **결정:** `losing_strategy`, `emotion_fomo_low_winrate` 룰 모두 `resultCount >= 3` 가드 적용
 - **이유:** `result` 미입력 거래만 있을 경우 `winRate=0`이 되어 규칙이 오발동하는 false positive 방지
 - **적용 범위:** `EmotionStats`에 `resultCount` 필드 추가, `StrategyStats`의 기존 `resultCount`와 동일한 패턴
+
+---
+
+## 2026-04-22 | FastAPI DB 드라이버: asyncpg + Supabase RLS GUC 주입
+
+**맥락:** FastAPI 백엔드에서 Postgres에 직접 붙는 방법으로 supabase-py(REST API 경유)와 asyncpg(직접 연결) 두 선택지가 있었음. 기존 Next.js는 supabase-js 클라이언트로 RLS를 적용했으나, FastAPI는 독립 서버이므로 쿠키 기반 세션을 재사용할 수 없음.
+**결정:** asyncpg 풀을 사용하고, `acquire_for_user()` context manager가 transaction 내부에서 두 GUC를 주입해 기존 RLS policy를 재활용:
+```sql
+SELECT set_config('role', 'authenticated', true),
+       set_config('request.jwt.claims', '{"sub":"<uid>","role":"authenticated"}', true)
+```
+**이유:** supabase-py는 트랜잭션 지원이 없고 REST API 경유라 SQL 표현력이 제한됨. asyncpg는 명시적 SQL + 트랜잭션 지원으로 복잡한 쿼리에 유리. GUC 주입으로 `auth.uid()` 함수가 올바르게 동작해 RLS policy(`auth.uid() = user_id`)가 자동 적용 — SQL에 `WHERE user_id` 명시 불필요.
+**트레이드오프:** Supabase 내장 함수(`auth.uid()`)에 의존하므로 순수 Postgres 환경에서는 동작 안 함. 모든 요청마다 GUC 세팅 쿼리 1회 추가 (1-RTT, `set_config` 2개를 단일 SELECT로 통합해 최소화).
+
+---
+
+## 2026-04-22 | Supabase Pooler: Session mode (port 5432) 선택
+
+**맥락:** asyncpg로 Supabase에 연결할 때 Direct Connection / Session Pooler(5432) / Transaction Pooler(6543) 세 가지 선택지 존재. Transaction Pooler가 처음 계획이었으나 실제 연결 테스트에서 Session Pooler가 필요함이 확인됨.
+**결정:** Supabase Supavisor Session Pooler (port **5432**) 사용.
+**이유:** Direct Connection은 Supabase IPv6-only 직접 연결 문제로 로컬/Render 환경에서 접속 불가. Transaction Pooler(6543)는 `SET LOCAL`이 connection 반환 후 다른 요청에 영향을 줄 수 있음. Session Pooler는 connection당 1 세션이 보장되어 `SET LOCAL`이 transaction scope에 안전하게 격리됨. `statement_cache_size=0` 설정으로 pgbouncer/Supavisor 호환 유지.
+**트레이드오프:** Session Pooler는 connection 재사용 횟수가 Transaction Pooler보다 적어 동시 접속이 많을 때 풀 소진 가능. MVP 트래픽 수준에서는 문제없음. 운영 트래픽 증가 시 Transaction Pooler + `SET SESSION`/connection-level GUC 방식으로 전환 검토.

@@ -36,6 +36,11 @@ cp .env.example .env.local
 `.env.local` 파일을 열어 다음 값을 채웁니다:
 
 - `SUPABASE_URL` — `https://<ref>.supabase.co` (Supabase Dashboard → Project Settings → API)
+- `DATABASE_URL` — Supabase Supavisor Session Pooler URL (IPv4 지원, port **5432**):
+  ```
+  postgresql://postgres.<project_ref>:<DB_PASSWORD>@aws-0-<region>.pooler.supabase.com:5432/postgres
+  ```
+  Dashboard → Project Settings → Database → Connection string (Session mode) 에서 확인.
 
 ### 4. 서버 실행
 
@@ -58,6 +63,30 @@ curl http://localhost:8000/healthz
 # session.access_token 값을 복사
 curl -H "Authorization: Bearer <token>" http://localhost:8000/me
 # → {"user_id":"<uuid>","email":"<email>"}
+
+# accounts 목록
+curl -H "Authorization: Bearer <token>" http://localhost:8000/api/accounts
+# → [{id, name, broker, cash_balance, trade_count, ...}, ...]
+
+# accounts 생성
+curl -i -X POST http://localhost:8000/api/accounts \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"name":"테스트","broker":"키움","cash_balance":"1,000,000"}'
+# → 201, {id, name, broker, cash_balance, ...}
+
+# accounts 부분 수정
+curl -i -X PATCH http://localhost:8000/api/accounts/<id> \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"broker":"미래에셋"}'
+# → 200, updated row (빈 body {} → 204)
+
+# trade-count
+curl -H "Authorization: Bearer <token>" http://localhost:8000/api/accounts/<id>/trade-count
+# → {"count": 0}
+
+# accounts 삭제 (거래 없는 계좌)
+curl -i -X DELETE -H "Authorization: Bearer <token>" http://localhost:8000/api/accounts/<id>
+# → 204 (거래 있으면 409)
 ```
 
 ### 6. 테스트 실행

@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     supabase_url: str
     cors_origins: list[str] = ["http://localhost:3000", "https://localhost:3000"]
+    database_url: str = ""
 
     model_config = SettingsConfigDict(env_file=".env.local", extra="ignore")
 
