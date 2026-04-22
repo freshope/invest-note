@@ -35,8 +35,7 @@ cp .env.example .env.local
 
 `.env.local` 파일을 열어 다음 값을 채웁니다:
 
-- `SUPABASE_JWT_SECRET` — Supabase Dashboard → Project Settings → API → **JWT Secret** (anon key와 다름)
-- `SUPABASE_URL` — `https://<ref>.supabase.co`
+- `SUPABASE_URL` — `https://<ref>.supabase.co` (Supabase Dashboard → Project Settings → API)
 
 ### 4. 서버 실행
 

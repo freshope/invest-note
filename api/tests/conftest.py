@@ -1,27 +1,35 @@
 import json
 import time
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, generate_private_key
 from fastapi.testclient import TestClient
+from jwt import PyJWK
 from jwt.algorithms import ECAlgorithm
 
 TEST_USER_ID = str(uuid4())
 TEST_EMAIL = "test@example.com"
 TEST_SUPABASE_URL = "https://test.supabase.co"
+TEST_JWKS_URI = f"{TEST_SUPABASE_URL}/auth/v1/.well-known/jwks.json"
 
 # 테스트용 EC 키쌍 (세션당 1회 생성)
 _private_key = generate_private_key(SECP256R1())
 _public_key = _private_key.public_key()
 _kid = "test-key-id"
-_jwks = {
-    "keys": [
-        {**json.loads(ECAlgorithm.to_jwk(_public_key)), "kid": _kid, "alg": "ES256", "use": "sig"}
-    ]
-}
+
+
+def _make_mock_jwks_client() -> MagicMock:
+    """네트워크 없이 테스트 키로 서명 검증하는 mock PyJWKClient."""
+    signing_key = PyJWK.from_dict(
+        {**json.loads(ECAlgorithm.to_jwk(_public_key)), "kid": _kid, "alg": "ES256"}
+    )
+    mock_client = MagicMock()
+    mock_client.get_signing_key_from_jwt.return_value = signing_key
+    # _get_jwks_client(uri) 호출 형태이므로 callable로 감쌈
+    return MagicMock(return_value=mock_client)
 
 
 def make_jwt(
@@ -65,9 +73,12 @@ def client() -> TestClient:
 @pytest.fixture
 def auth_client():
     """실제 JWT 검증을 수행하는 클라이언트 — 401 케이스 테스트에 사용."""
+    from invest_note_api.auth.jwt import _get_jwks_client
+
     app = _make_app()
 
-    # PyJWKClient의 fetch_data를 테스트용 JWKS로 교체
-    with patch.object(jwt.PyJWKClient, "fetch_data", return_value=_jwks):
+    with patch("invest_note_api.auth.jwt._get_jwks_client", _make_mock_jwks_client()):
         with TestClient(app) as c:
             yield c
+
+    _get_jwks_client.cache_clear()

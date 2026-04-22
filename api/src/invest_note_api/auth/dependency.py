@@ -18,5 +18,5 @@ async def get_current_user(
     token = authorization.removeprefix("Bearer ")
     try:
         return decode_supabase_jwt(token, settings.jwks_uri)
-    except jwt.InvalidTokenError:
+    except (jwt.InvalidTokenError, jwt.exceptions.PyJWKClientError):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
