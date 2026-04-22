@@ -32,6 +32,9 @@ class FakeConnection:
         result = self._next()
         return result if isinstance(result, str) else "OK"
 
+    async def executemany(self, query: str, args: Any) -> None:
+        pass  # no-op — PnL 동기화 테스트에서 실제 UPDATE 불필요
+
     async def fetch(self, query: str, *args: Any) -> list[Any]:
         result = self._next()
         return result if result is not None else []

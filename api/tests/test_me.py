@@ -1,7 +1,6 @@
 import time
 
 import jwt
-import pytest
 from fastapi.testclient import TestClient
 
 from tests.conftest import TEST_EMAIL, TEST_USER_ID, _kid, _private_key, make_jwt

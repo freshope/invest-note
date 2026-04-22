@@ -3,26 +3,17 @@ from uuid import UUID
 
 import asyncpg
 from fastapi import APIRouter, Depends, Response
-from pydantic import BaseModel, ValidationError
 
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.db import acquire_for_user, get_pool
-from invest_note_api.errors import APIError
+from invest_note_api.errors import APIError, validate_body
 from invest_note_api.schemas.account import AccountCreate, AccountUpdate
 
 router = APIRouter(prefix="/api/accounts")
 
 _UPDATABLE_COLS = frozenset({"name", "broker", "cash_balance"})
 _DELETE_ZERO = "DELETE 0"
-
-
-def _validate_body[T: BaseModel](model_cls: type[T], body: dict) -> T:
-    try:
-        return model_cls.model_validate(body)
-    except ValidationError as e:
-        first = e.errors()[0]
-        raise APIError(first.get("msg", "올바르지 않은 입력입니다."), 400)
 
 
 def _row_to_dict(row: asyncpg.Record) -> dict:
@@ -59,7 +50,7 @@ async def create_account(
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> dict:
-    data = _validate_body(AccountCreate, body)
+    data = validate_body(AccountCreate, body)
 
     async with acquire_for_user(pool, user.id) as conn:
         row = await conn.fetchrow(
@@ -83,7 +74,7 @@ async def update_account(
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
 ):
-    data = _validate_body(AccountUpdate, body)
+    data = validate_body(AccountUpdate, body)
 
     fields = data.model_fields_set & _UPDATABLE_COLS
     if not fields:

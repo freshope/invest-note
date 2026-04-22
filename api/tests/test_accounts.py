@@ -1,10 +1,9 @@
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
-import pytest
 from fastapi.testclient import TestClient
 
-from tests.conftest import TEST_USER_ID, make_jwt
+from tests.conftest import TEST_USER_ID
 from tests.fake_pool import FakeConnection, make_fake_acquire
 
 ACC_ID = uuid4()
@@ -185,8 +184,6 @@ def test_trade_count_returns_zero_when_count_is_none(accounts_client):
 
 def test_unauthenticated_list_accounts_returns_401(client):
     """auth_client 없이 raw client로 인증 헤더 없이 요청 — 401 반환."""
-    from invest_note_api.auth.dependency import get_current_user
-    from invest_note_api.auth.jwt import AuthenticatedUser
     from invest_note_api.db import get_pool
 
     from tests.conftest import _make_app

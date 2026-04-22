@@ -54,39 +54,124 @@ make dev
 ### 5. 동작 확인
 
 ```bash
+# 브라우저 콘솔에서 Supabase JWT 추출
+# const { data: { session } } = await supabase.auth.getSession();
+# session.access_token 값을 복사
+TOKEN="<your_supabase_jwt>"
+
 # 헬스체크
 curl http://localhost:8000/healthz
 # → {"status":"ok"}
 
-# 인증 테스트 (브라우저 콘솔에서 토큰 추출)
-# const { data: { session } } = await supabase.auth.getSession();
-# session.access_token 값을 복사
-curl -H "Authorization: Bearer <token>" http://localhost:8000/me
+# 인증 확인
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/me
 # → {"user_id":"<uuid>","email":"<email>"}
+```
 
-# accounts 목록
-curl -H "Authorization: Bearer <token>" http://localhost:8000/api/accounts
-# → [{id, name, broker, cash_balance, trade_count, ...}, ...]
+#### Accounts (P1b)
 
-# accounts 생성
+```bash
+# 계좌 목록
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/accounts
+
+# 계좌 생성
 curl -i -X POST http://localhost:8000/api/accounts \
-  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"name":"테스트","broker":"키움","cash_balance":"1,000,000"}'
-# → 201, {id, name, broker, cash_balance, ...}
+# → 201
 
-# accounts 부분 수정
-curl -i -X PATCH http://localhost:8000/api/accounts/<id> \
-  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+# 계좌 수정
+curl -i -X PATCH "http://localhost:8000/api/accounts/<id>" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"broker":"미래에셋"}'
-# → 200, updated row (빈 body {} → 204)
+# → 200 (빈 body {} → 204)
 
-# trade-count
-curl -H "Authorization: Bearer <token>" http://localhost:8000/api/accounts/<id>/trade-count
-# → {"count": 0}
-
-# accounts 삭제 (거래 없는 계좌)
-curl -i -X DELETE -H "Authorization: Bearer <token>" http://localhost:8000/api/accounts/<id>
+# 계좌 삭제 (거래 없는 계좌)
+curl -i -X DELETE -H "Authorization: Bearer $TOKEN" "http://localhost:8000/api/accounts/<id>"
 # → 204 (거래 있으면 409)
+
+# 거래 수
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/api/accounts/<id>/trade-count"
+# → {"count": 0}
+```
+
+#### Trades (P2)
+
+```bash
+# 거래 목록
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/trades
+
+# ticker + country 필터
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8000/api/trades?ticker=005930&country=KR"
+
+# 거래 생성 (BUY)
+curl -i -X POST http://localhost:8000/api/trades \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "trade_type": "BUY",
+    "market_type": "STOCK",
+    "account_id": "<account_id>",
+    "asset_name": "삼성전자",
+    "ticker_symbol": "005930",
+    "country_code": "KR",
+    "exchange": "KOSPI",
+    "traded_at": "2026-04-22T10:00:00",
+    "price": 70000,
+    "quantity": 10,
+    "commission": 0,
+    "tax": 0
+  }'
+# → 201, {id, trade_type, ...}
+
+# 거래 단건 조회
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/api/trades/<trade_id>"
+
+# 거래 수정 (PnL 영향 필드 포함 시 recalc 실행)
+curl -i -X PATCH "http://localhost:8000/api/trades/<trade_id>" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"price": 71000}'
+# → 204
+
+# 거래 삭제
+curl -i -X DELETE -H "Authorization: Bearer $TOKEN" "http://localhost:8000/api/trades/<trade_id>"
+# → 204
+
+# 매도 거래 요약 (PnL + 보유일 + 전략 평가)
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8000/api/trades/<sell_trade_id>/summary"
+# → {pnl, result, holdingDays, strategyEvaluation, breakdown}
+```
+
+#### Portfolio (P2)
+
+```bash
+# 보유 수량 조회
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8000/api/portfolio/holding?accountId=<id>&assetName=삼성전자&ticker=005930&country=KR"
+# → {quantity, avgBuyPrice}
+
+# 포트폴리오 요약 (positions + snapshots + totals + 실시간 시세)
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/portfolio/summary
+# → {totals, positions, snapshots, hasAccounts, hasTrades}
+```
+
+#### Stocks (P2)
+
+```bash
+# 시세 조회 (복수 가능, KR/US 혼합)
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8000/api/stocks/quote?symbols=005930:KR,AAPL:US"
+# → {"005930:KR": {price, currency, as_of}, "AAPL:US": {price, currency, as_of}}
+
+# 종목 검색 (한글/종목코드 → KR, 영문 → US)
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8000/api/stocks/search?q=삼성"
+# → [{code, name, market, exchange}, ...]
+
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8000/api/stocks/search?q=apple"
+# → [{code, name, market, exchange}, ...]
 ```
 
 ### 6. 테스트 실행
