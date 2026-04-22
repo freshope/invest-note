@@ -76,6 +76,25 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 홈 위젯 커스터마이징
 - [ ] 종목/거래 상세 패널 스택 어색함 해소 — `StockDetailPanel`과 `TradeDetailPanel`이 서로를 dynamic import로 호출하며 React 트리에 중첩 마운트되어 같은 종목/거래가 반복 누적될 수 있음 (예: A종목 → A의 거래 → 거래의 A종목 링크 → 또 A종목...). 헤더 뒤로가기는 자기 패널만 닫으므로 깊어진 만큼 N번 눌러야 원래 자리로 복귀. 1순위: 새로 열려는 대상이 부모 스택에 이미 있으면 새로 푸시하지 않고 그 단계까지 pop. 2순위: 헤더에 깊이 인디케이터 + "모두 닫기" 액션. 3순위: URL/history 연동(시스템 뒤로가기·새로고침 복원·딥링크). 관련 파일: `src/components/stocks/StockDetailPanel.tsx`, `src/components/records/TradeDetailPanel.tsx`, `src/components/common/full-screen-panel.tsx`.
 
+## 모바일앱 배포 후속 단계
+
+- [ ] **2단계: FastAPI 백엔드 분리** — Next.js API Routes 16개 + 분석 로직 9개를 Python(FastAPI)로 재작성
+  - Render(개발/초기 운영) → 운영 안정화 후 Railway로 이전 (cold start 회피)
+  - Supabase JWT 검증 미들웨어 적용
+  - 클라이언트 `src/lib/api-client.ts`의 base URL을 FastAPI로 변경
+  - 분석 로직 재작성 시 WAC/FIFO PnL 계산 정확도 검증 필수
+- [ ] **3단계: Capacitor 모바일 래핑 (iOS/Android)**
+  - Capacitor 프로젝트 셋업 + iOS/Android 플랫폼 추가
+  - 소셜 OAuth deep link 처리 (Capacitor Browser + Custom URL Scheme)
+  - Apple Sign-in 추가 (Apple Developer Program $99/년 가입 필요, App Store 심사 4.8 규정 필수)
+  - 푸시 알림 (Apple 심사 통과 핵심)
+  - 생체인증 (Face ID / 지문)
+  - Safe area, Android 백버튼, 외부 링크, 키보드 처리
+  - 강제 업데이트 메커니즘 (웹/앱 버전 동기화 안전망)
+  - 앱 아이콘, 스플래시, 스토어 메타데이터, 개인정보처리방침
+- [ ] **(a)/(b) 결정**: 3단계 진입 직전 Vercel SSR 유지(b) vs 정적 export(a) 최종 결정
+  - (a) 추가 작업 약 3~4일: Server Components 6개 → Client 전환, middleware 제거, 라우트 가드 클라이언트화, `output: 'export'` 설정
+
 ## v3 — AI 분석
 
 - [ ] 매매 패턴 분석 고도화 (감정-결과 상관관계 등)

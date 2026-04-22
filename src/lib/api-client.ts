@@ -142,22 +142,3 @@ export const tradesApi = {
   summary: (id: string) => apiFetch<TradeSummary>(`/api/trades/${id}/summary`),
 };
 
-// ============================================================
-// Auth
-// ============================================================
-
-export const authApi = {
-  signIn: (email: string, password: string) =>
-    apiFetch<void>("/api/auth/signin", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    }),
-
-  signUp: (email: string, password: string) =>
-    apiFetch<void>("/api/auth/signup", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    }),
-
-  signOut: () => apiFetch<void>("/api/auth/signout", { method: "POST" }),
-};

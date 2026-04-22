@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/Button";
-import { authApi } from "@/lib/api-client";
+import { createClient } from "@/lib/supabase/client";
 
 interface UserInfoSectionProps {
   email: string;
@@ -16,7 +16,8 @@ export function UserInfoSection({ email }: UserInfoSectionProps) {
   async function handleSignOut() {
     setPending(true);
     try {
-      await authApi.signOut();
+      const supabase = createClient();
+      await supabase.auth.signOut();
       router.push("/login");
     } catch {
       setPending(false);
