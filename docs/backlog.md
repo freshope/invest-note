@@ -86,7 +86,7 @@ MVP 이후 구현할 작업 후보 목록.
   - [x] accounts CRUD + asyncpg + Supabase RLS GUC 주입 (P1b)
   - [x] trades + portfolio + stocks 10개 라우터 포팅 (P2)
   - [x] analysis 3개 라우터 포팅 (P3)
-  - [ ] **Chunk A — 클라이언트 컷오버** ← _현재 진행 중_ : `NEXT_PUBLIC_API_BASE_URL` 환경변수 + `apiFetch` Bearer 주입, 브라우저 fetch 4곳 api-client 래퍼로 통일, 로컬 E2E 검증
+  - [x] **Chunk A — 클라이언트 컷오버** (2026-04-22): `NEXT_PUBLIC_API_BASE_URL` 환경변수 + `apiFetch` Bearer 주입, 브라우저 fetch 4곳 api-client 래퍼로 통일
   - (삭제)[ ] **Chunk B — 배포**: Render에 FastAPI 배포 (render.yaml / Dockerfile), `CORS_ORIGINS`에 Vercel 도메인 추가, Vercel에 `NEXT_PUBLIC_API_BASE_URL` 주입 → 운영 안정화 후 Railway 이전
   - [ ] **Chunk C — SSR 컷오버**: `records/page.tsx`, `settings/page.tsx`, `(app)/page.tsx` 등 서버 컴포넌트의 Supabase 직접 조회를 FastAPI 경유로 전환 (서버측 Bearer 토큰 포워딩 헬퍼 필요)
   - [ ] **Chunk D — Next.js `/api/*` 제거**: B/C 완료 및 응답 파리티 검증 후 `app/src/app/api/`와 `app/src/lib/api-server/` 삭제
