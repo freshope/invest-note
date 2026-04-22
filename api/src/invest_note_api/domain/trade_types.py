@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, field_validator
 
@@ -51,6 +52,13 @@ class Trade(BaseModel):
 
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("id", "user_id", "account_id", mode="before")
+    @classmethod
+    def _uuid_to_str(cls, v: object) -> str:
+        if isinstance(v, UUID):
+            return str(v)
+        return v  # type: ignore[return-value]
 
     @field_validator("price", "quantity", "total_amount", "commission", "tax", mode="before")
     @classmethod
