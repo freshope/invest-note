@@ -1,35 +1,22 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/components/providers/AuthProvider";
 
 export default function AuthCallbackPage() {
+  const { user, loading } = useAuth();
   const router = useRouter();
-  const exchanged = useRef(false);
 
   useEffect(() => {
-    if (exchanged.current) return;
-    exchanged.current = true;
-
-    const supabase = createClient();
-    const code = new URLSearchParams(window.location.search).get("code");
-
-    if (!code) {
-      router.replace("/login?error=oauth_failed");
-      return;
+    if (!loading) {
+      if (user) {
+        router.replace("/");
+      } else {
+        router.replace("/login?error=oauth_failed");
+      }
     }
-
-    supabase.auth
-      .exchangeCodeForSession(code)
-      .then(({ error }) => {
-        if (error) {
-          router.replace("/login?error=oauth_failed");
-        } else {
-          router.replace("/");
-        }
-      });
-  }, [router]);
+  }, [loading, user, router]);
 
   return (
     <div className="flex min-h-svh items-center justify-center">
