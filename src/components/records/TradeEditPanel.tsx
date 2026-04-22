@@ -13,6 +13,7 @@ import {
   FullScreenPanelBody,
 } from "@/components/base/FullScreenPanel";
 import { Button } from "@/components/base/Button";
+import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
 import { Textarea } from "@/components/base/Textarea";
@@ -163,7 +164,6 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
   const liveQty = parseRaw(quantityDisplay);
   const liveTotal = livePrice * liveQty;
   const acc = accounts.find((a) => a.id === trade.account_id);
-  const accountDisplay = acc ? `${acc.name}${acc.broker ? ` · ${acc.broker}` : ""}` : "알 수 없는 계좌";
 
   function toggleTag(tag: ReasoningTag) {
     const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
@@ -257,7 +257,12 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                   <CompactRow label="날짜">
                     {format(new Date(trade.traded_at), "yyyy년 M월 d일 (EEE)", { locale: ko })}
                   </CompactRow>
-                  <CompactRow label="계좌">{accountDisplay}</CompactRow>
+                  <CompactRow label="계좌">
+                    <span className="inline-flex items-center gap-1">
+                      {acc?.broker && <BrokerLogo broker={acc.broker} size={16} />}
+                      {acc?.name ?? "알 수 없는 계좌"}
+                    </span>
+                  </CompactRow>
                 </div>
               </div>
 

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/Button";
+import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/base/Tabs";
@@ -269,21 +270,17 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
             control={control}
             name="account_id"
             render={({ field }) => (
-              <Select
-                value={field.value}
-                onValueChange={field.onChange}
-                items={accounts.map((acc) => ({
-                  value: acc.id,
-                  label: `${acc.name}${acc.broker ? ` · ${acc.broker}` : ""}`,
-                }))}
-              >
+              <Select value={field.value} onValueChange={field.onChange}>
                 <SelectTrigger>
                   <SelectValue placeholder="계좌를 선택하세요" />
                 </SelectTrigger>
                 <SelectContent>
                   {accounts.map((acc) => (
                     <SelectItem key={acc.id} value={acc.id}>
-                      {acc.name}{acc.broker ? ` · ${acc.broker}` : ""}
+                      <span className="inline-flex items-center gap-1.5">
+                        {acc.broker && <BrokerLogo broker={acc.broker} size={16} />}
+                        {acc.name}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>

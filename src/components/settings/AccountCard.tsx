@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/base/Button";
+import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { AccountFormPanel } from "./AccountFormPanel";
 import { DeleteAccountDialog } from "./DeleteAccountDialog";
 import type { Account } from "@/types/database";
@@ -25,12 +26,12 @@ export function AccountCard({ account, tradeCount }: AccountCardProps) {
       <div className="rounded-2xl bg-muted/60 p-5 space-y-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="text-[17px] font-bold text-foreground truncate leading-tight">
-              {account.name}
-            </p>
-            {account.broker && (
-              <p className="text-[13px] text-muted-foreground mt-0.5">{account.broker}</p>
-            )}
+            <div className="flex items-center gap-1.5">
+              {account.broker && <BrokerLogo broker={account.broker} size={20} />}
+              <p className="min-w-0 text-[17px] font-bold text-foreground truncate leading-tight">
+                {account.name}
+              </p>
+            </div>
           </div>
           <div className="flex gap-1 shrink-0">
             <Button

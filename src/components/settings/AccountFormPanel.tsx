@@ -17,21 +17,9 @@ import {
 } from "@/components/base/FullScreenPanel";
 import { accountsApi } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { BROKERS } from "@/lib/brokers";
+import { BrokerLogo } from "@/components/base/BrokerLogo";
 import type { Account } from "@/types/database";
-
-const BROKERS = [
-  { name: "키움증권", short: "키움", color: "bg-orange-500" },
-  { name: "미래에셋증권", short: "미래", color: "bg-blue-600" },
-  { name: "NH투자증권", short: "NH", color: "bg-green-600" },
-  { name: "삼성증권", short: "삼성", color: "bg-blue-800" },
-  { name: "KB증권", short: "KB", color: "bg-amber-500" },
-  { name: "한국투자증권", short: "한투", color: "bg-sky-600" },
-  { name: "대신증권", short: "대신", color: "bg-red-600" },
-  { name: "신한투자증권", short: "신한", color: "bg-indigo-500" },
-  { name: "메리츠증권", short: "메리츠", color: "bg-teal-600" },
-  { name: "하나증권", short: "하나", color: "bg-emerald-500" },
-  { name: "토스증권", short: "토스", color: "bg-blue-500" },
-];
 
 const schema = z.object({
   name: z.string().trim().min(1, "계좌명을 입력해주세요.").max(50),
@@ -143,9 +131,7 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
                             : "border-border hover:bg-muted/50"
                         )}
                       >
-                        <span className={cn("flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold text-white", b.color)}>
-                          {b.short}
-                        </span>
+                        <BrokerLogo broker={b.name} size={36} />
                         <span className="text-xs leading-tight text-foreground">{b.name}</span>
                       </button>
                     );
