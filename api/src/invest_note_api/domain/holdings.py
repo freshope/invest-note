@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 
 from invest_note_api.domain.trade_utils import to_kst
 
+_MS_PER_DAY = 1000 * 60 * 60 * 24
+
 if TYPE_CHECKING:
     from invest_note_api.domain.trade_types import Trade, StrategyType
 
@@ -169,7 +171,7 @@ def compute_flexible_holding_days(sell: "Trade", all_trades: list["Trade"]) -> i
                 remaining -= consume
 
             if total_consumed > 0:
-                return round(weighted_ms / total_consumed / (1000 * 60 * 60 * 24))
+                return round(weighted_ms / total_consumed / _MS_PER_DAY)
             return None
 
         if not _is_flexible_match(trade, target_country, target_ticker, target_asset, target_account_id):

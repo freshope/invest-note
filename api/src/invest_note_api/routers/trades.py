@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 
 import asyncpg
 from fastapi import APIRouter, Depends, Query, Response
-from pydantic import ValidationError
 
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
@@ -31,7 +30,7 @@ from invest_note_api.domain.holdings import (
 )
 from invest_note_api.domain.realized_pnl import trade_to_group_key, validate_mutation
 from invest_note_api.domain.trade_types import Trade
-from invest_note_api.errors import APIError
+from invest_note_api.errors import APIError, validate_body
 from invest_note_api.schemas.trade import TradeCreate, TradeUpdate
 
 router = APIRouter(prefix="/api/trades")
@@ -39,23 +38,8 @@ router = APIRouter(prefix="/api/trades")
 _TICKER_RE = re.compile(r"^[A-Za-z0-9.\-_가-힣]+$")
 
 
-def _validate_body[T](model_cls: type[T], body: dict) -> T:
-    try:
-        return model_cls.model_validate(body)
-    except ValidationError as e:
-        first = e.errors()[0]
-        raise APIError(first.get("msg", "올바르지 않은 입력입니다."), 400)
-
-
 def _trade_dict(trade) -> dict:
-    d = trade.model_dump()
-    if isinstance(d.get("traded_at"), datetime):
-        d["traded_at"] = d["traded_at"].isoformat()
-    if isinstance(d.get("created_at"), datetime):
-        d["created_at"] = d["created_at"].isoformat()
-    if isinstance(d.get("updated_at"), datetime):
-        d["updated_at"] = d["updated_at"].isoformat()
-    return d
+    return trade.model_dump(mode="json")
 
 
 def _breakdown_dict(bd: SellBreakdown) -> dict:
@@ -127,7 +111,7 @@ async def create_trade(
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> dict:
-    data = _validate_body(TradeCreate, body)
+    data = validate_body(TradeCreate, body)
 
     async with acquire_for_user(pool, user.id) as conn:
         # 계좌 존재 확인
@@ -277,7 +261,7 @@ async def update_trade(
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
 ):
-    data = _validate_body(TradeUpdate, body)
+    data = validate_body(TradeUpdate, body)
     fields = data.model_fields_set
     if not fields:
         return Response(status_code=204)

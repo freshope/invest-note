@@ -1,6 +1,7 @@
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ValidationError
 
 
 class APIError(Exception):
@@ -8,6 +9,14 @@ class APIError(Exception):
         self.message = message
         self.status = status
         super().__init__(message)
+
+
+def validate_body[T: BaseModel](model_cls: type[T], body: dict) -> T:
+    try:
+        return model_cls.model_validate(body)
+    except ValidationError as e:
+        first = e.errors()[0]
+        raise APIError(first.get("msg", "올바르지 않은 입력입니다."), 400)
 
 
 async def api_error_handler(request: Request, exc: APIError) -> JSONResponse:
