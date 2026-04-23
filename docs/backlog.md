@@ -101,6 +101,8 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] **3단계: Capacitor 모바일 래핑 (iOS/Android)**
   - [x] Capacitor 프로젝트 셋업 + iOS/Android 플랫폼 추가 (2026-04-23, Capacitor 8.3.1, `app/ios` + `app/android` 생성, `cap sync` 통과)
   - 소셜 OAuth deep link 처리 (Capacitor Browser + Custom URL Scheme)
+  - FastAPI CORS — Capacitor WebView origin(iOS `capacitor://localhost`, Android `https://localhost`) 허용 추가 필요 (현재 `NEXT_PUBLIC_API_BASE_URL` 호스트만 허용됨)
+  - `trailingSlash: true` WebView 라우팅 검증 — iOS/Android 시뮬레이터에서 정적 export 라우트(`/login/`, `/auth/callback/` 등) 404 없이 로드되는지 확인
   - Apple Sign-in 추가 (Apple Developer Program $99/년 가입 필요, App Store 심사 4.8 규정 필수)
   - 푸시 알림 (Apple 심사 통과 핵심)
   - 생체인증 (Face ID / 지문)
