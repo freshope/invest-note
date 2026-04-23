@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { OAUTH_BROWSER_FINISHED_EVENT } from "@/components/providers/CapacitorDeepLinkHandler";
+import { isNativePlatform } from "@/lib/platform";
+import { NATIVE_REDIRECT_URL, WEB_CALLBACK_PATH } from "@/lib/auth/oauth-config";
 
 const KAKAO_BG = "#FEE500";
 const KAKAO_FG = "#3C1E1E";
@@ -35,17 +38,37 @@ function LoginForm() {
   const [pending, setPending] = useState<"google" | "kakao" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // 네이티브에서 사용자가 인앱 브라우저를 수동으로 닫으면 pending 상태 해제
+  useEffect(() => {
+    const handler = () => setPending(null);
+    window.addEventListener(OAUTH_BROWSER_FINISHED_EVENT, handler);
+    return () => window.removeEventListener(OAUTH_BROWSER_FINISHED_EVENT, handler);
+  }, []);
+
   async function handleSocialLogin(provider: "google" | "kakao") {
     setError(null);
     setPending(provider);
     try {
       const supabase = createClient();
-      const redirectTo = `${window.location.origin}/auth/callback/`;
-      const { error } = await supabase.auth.signInWithOAuth({
+      const native = isNativePlatform();
+      const redirectTo = native
+        ? NATIVE_REDIRECT_URL
+        : `${window.location.origin}${WEB_CALLBACK_PATH}`;
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
-        options: { redirectTo },
+        options: {
+          redirectTo,
+          skipBrowserRedirect: native,
+        },
       });
       if (error) throw error;
+
+      if (native && data?.url) {
+        const { Browser } = await import("@capacitor/browser");
+        await Browser.open({ url: data.url, presentationStyle: "popover" });
+        // pending 해제는 딥링크 핸들러(성공)나 browserFinished 이벤트(취소)에서 처리
+      }
     } catch {
       setError(AUTH_ERROR_MSG);
       setPending(null);
