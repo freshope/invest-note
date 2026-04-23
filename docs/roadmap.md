@@ -43,7 +43,7 @@
 | 버전 | 내용 | 상태 |
 |------|------|------|
 | MVP | 수동 매매 기록, 포트폴리오 조회, 홈 대시보드, 분석 탭 | 🚧 진행 중 |
-| v2.5 | 소셜 로그인 (Google/Kakao/Apple), FastAPI 백엔드 분리, Capacitor 모바일앱 (iOS/Android) | 🚧 진행 중 (P1-P3 + Chunk A 클라이언트 컷오버 + Chunk D 정적 export 전환 + Capacitor 셋업/iOS·Android 플랫폼 생성 + OAuth deep link 처리 완료 — FastAPI 배포·CORS·Apple Sign-in·스토어 심사 대기) |
+| v2.5 | 소셜 로그인 (Google/Kakao/Apple), FastAPI 백엔드 분리, Capacitor 모바일앱 (iOS/Android) | 🚧 진행 중 (P1-P3 + Chunk A 클라이언트 컷오버 + Chunk D 정적 export 전환 + Capacitor 셋업/iOS·Android 플랫폼 생성 + OAuth deep link 처리 + FastAPI CORS Capacitor origin 허용 완료 — FastAPI 배포·Apple Sign-in·스토어 심사 대기) |
 | v2 | KIS API 자동 연동 | 예정 |
 | v3 | AI 패턴 분석, 모바일 네이티브 전환 (React Native, 필요 시) | 예정 |
 
