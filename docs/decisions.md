@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-04-23 | FastAPI CORS — Capacitor WebView origin 허용
+
+- **결정:** `api/src/invest_note_api/config.py`의 `Settings.cors_origins` 기본값과 `api/.env.example`의 `CORS_ORIGINS`에 `capacitor://localhost`(iOS)와 `https://localhost`(Android, 포트 없음)를 추가. `allow_credentials=True`, 고정 리스트, `allow_origin_regex` 미도입 유지.
+- **이유:**
+  - Capacitor WKWebView는 iOS에서 `capacitor://localhost`, Android에서 포트 없는 `https://localhost` origin으로 페이지를 서빙하므로 기존 웹 origin(`http://localhost:3000`, `https://localhost:3000`)만으로는 CORS preflight가 거부되어 홈 데이터 미로딩 발생.
+  - origin 집합이 2개로 고정이라 regex 복잡도 불필요 — 단순 리스트가 회귀 위험 최소.
+  - JWT Bearer 인증이라 쿠키는 사용하지 않지만 웹 호환을 위해 `allow_credentials=True` 유지 (와일드카드 origin 금지 제약은 고정 리스트라 해당 없음).
+- **트레이드오프:** production 배포 환경(`CORS_ORIGINS` 환경변수)은 코드 기본값과 별개로 명시 설정되어 있을 경우 여전히 실패 — 배포 환경변수에도 두 origin을 반드시 추가해야 함(아래 후속 참고).
+- **후속:**
+  - production `CORS_ORIGINS` 환경변수에 `capacitor://localhost`, `https://localhost` 추가 반영.
+  - iOS 실기기 + Android 실기기에서 홈 데이터 로딩 E2E 검증.
+
+---
+
 ## 2026-04-23 | OAuth Deep Link — URL Scheme `com.investnote.app://auth/callback`
 
 - **결정:** Capacitor 네이티브 앱의 OAuth 복귀용 URL Scheme을 reverse-DNS 형식인 `com.investnote.app://auth/callback`으로 고정. 짧은 형식(`investnote://`)은 채택하지 않음.
