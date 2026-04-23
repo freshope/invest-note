@@ -102,7 +102,8 @@ MVP 이후 구현할 작업 후보 목록.
   - [x] Capacitor 프로젝트 셋업 + iOS/Android 플랫폼 추가 (2026-04-23, Capacitor 8.3.1, `app/ios` + `app/android` 생성, `cap sync` 통과)
   - [x] 소셜 OAuth deep link 처리 (2026-04-23, Capacitor Browser + Custom URL Scheme `com.investnote.app://auth/callback`, `@capacitor/browser`+`@capacitor/app` 도입, iOS/Android 네이티브 배선, `CapacitorDeepLinkHandler` 루트 상주, Supabase client `@supabase/ssr`→`@supabase/supabase-js` 교체, iOS 실기기 Google/Kakao E2E 통과)
   - [ ] Android 실기기 Google/Kakao OAuth E2E — 에뮬레이터 성능 이슈로 미확인. 동일 JS 번들이 iOS 실기기에서 통과했고 Android 배선 테스트(`adb shell am start` deep link)는 통과. 실기기 접근 확보 시 1회 확인.
-  - FastAPI CORS — Capacitor WebView origin(iOS `capacitor://localhost`, Android `https://localhost`) 허용 추가 필요 (현재 `NEXT_PUBLIC_API_BASE_URL` 호스트만 허용됨). **홈 데이터 미로딩 원인.**
+  - [x] FastAPI CORS — Capacitor WebView origin(iOS `capacitor://localhost`, Android `https://localhost`) 허용 (2026-04-23, `Settings.cors_origins` 기본값 + `.env.example` + `tests/test_cors.py` 6개. iOS Simulator 홈 데이터 로딩 E2E 통과. **production 배포 환경의 `CORS_ORIGINS` 환경변수에 두 origin 추가 반영 필요**.)
+  - [ ] Next.js 16 prefetch / records 흰 화면 — iOS Simulator에서 records 등 2차 탭 진입 시 페이지 로드 실패. 콘솔에 `__next.!KGFwcCk.__PAGE__.txt` 404(홈은 동일 리소스로 정상 동작하므로 `!` 문자 가설은 모순). 진단 단계: (1) Safari Web Inspector Network/Console 전체 로그 확보, (2) `npx serve out` + Simulator Safari 브라우저 재현 테스트로 Next.js 이슈 vs Capacitor WKWebView 이슈 분기, (3) records 외 다른 탭(settings/analysis) 재현 여부. 별도 spec에서 처리.
   - `trailingSlash: true` WebView 라우팅 검증 — iOS/Android 시뮬레이터에서 정적 export 라우트(`/login/`, `/auth/callback/` 등) 404 없이 로드되는지 확인
   - Apple Sign-in 추가 (Apple Developer Program $99/년 가입 필요, App Store 심사 4.8 규정 필수)
   - 푸시 알림 (Apple 심사 통과 핵심)
