@@ -4,11 +4,11 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/Button";
 import { Label } from "@/components/base/Label";
 import { Textarea } from "@/components/base/Textarea";
 import { tradesApi } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 import { StrategyEmotionFields } from "./StrategyEmotionFields";
 import { cn } from "@/lib/utils";
 
@@ -56,10 +56,9 @@ interface TradeMetaSellFormProps {
 
 export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
   const queryClient = useQueryClient();
-  const router = useRouter();
 
   const { data: summary, isPending: summaryLoading } = useQuery({
-    queryKey: ["trade-summary", tradeId],
+    queryKey: queryKeys.tradeSummary(tradeId),
     queryFn: () => tradesApi.summary(tradeId),
   });
 
@@ -90,10 +89,9 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
         strategy_type: summary?.strategyEvaluation?.planned ?? null,
       });
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["trade", tradeId] }),
-        queryClient.invalidateQueries({ queryKey: ["trades"] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.trade(tradeId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
       ]);
-      router.refresh();
       onDone();
     } catch (err) {
       setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });

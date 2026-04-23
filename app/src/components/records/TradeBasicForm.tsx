@@ -5,7 +5,6 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/Button";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { Input } from "@/components/base/Input";
@@ -21,6 +20,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/base/Popover";
 import { Calendar } from "@/components/base/Calendar";
 import { tradesApi, portfolioApi } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
 import { HoldingSelectInput } from "./HoldingSelectInput";
 import { CountryBadge } from "./trade-display";
@@ -75,7 +75,6 @@ interface TradeBasicFormProps {
 
 export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps) {
   const queryClient = useQueryClient();
-  const router = useRouter();
 
   const {
     control,
@@ -126,7 +125,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
   // 매도 시 계좌별 보유 수량 조회 (계좌 + flexible ticker 기준)
   const holdingEnabled = tradeType === "SELL" && !!accountId && !!assetName;
   const { data: holdingData, isPending: holdingPending } = useQuery({
-    queryKey: ["holding", accountId, tickerSymbol, assetName, countryCode],
+    queryKey: queryKeys.holding(accountId, tickerSymbol, assetName, countryCode ?? "KR"),
     queryFn: async () => {
       try {
         return await portfolioApi.holding({
@@ -192,10 +191,9 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
       });
       window.localStorage.setItem(LAST_ACCOUNT_KEY, values.account_id);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["portfolio"] }),
-        queryClient.invalidateQueries({ queryKey: ["trades"] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
       ]);
-      router.refresh();
       onTradeCreated(result.id, result.trade_type);
     } catch (err) {
       setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });

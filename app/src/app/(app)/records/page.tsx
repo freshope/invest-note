@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { tradesApi } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 import { TradeList } from "@/components/records/TradeList";
 import { PageHeader } from "@/components/layout/PageHeader";
 
@@ -20,7 +21,7 @@ function Skeleton() {
 
 export default function RecordsPage() {
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["trades"],
+    queryKey: queryKeys.trades,
     queryFn: () => tradesApi.list(),
   });
 

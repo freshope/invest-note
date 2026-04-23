@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { accountsApi, tradesApi } from "@/lib/api-client";
+import { accountsApi } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { AccountList } from "@/components/settings/AccountList";
 import { UserInfoSection } from "@/components/settings/UserInfoSection";
@@ -11,28 +11,12 @@ import { PageHeader } from "@/components/layout/PageHeader";
 export default function SettingsPage() {
   const { user } = useAuth();
 
-  const { data: accounts, isLoading: accountsLoading, isError: accountsError, refetch: refetchAccounts } = useQuery({
-    queryKey: ["accounts"],
+  const { data: accounts, isLoading, isError, refetch } = useQuery({
+    queryKey: queryKeys.accounts,
     queryFn: accountsApi.list,
   });
 
-  const { data: tradesData, isLoading: tradesLoading, isError: tradesError, refetch: refetchTrades } = useQuery({
-    queryKey: ["trades"],
-    queryFn: () => tradesApi.list(),
-  });
-
-  const loading = accountsLoading || tradesLoading;
-  const isError = accountsError || tradesError;
-
-  const countMap = useMemo(() => {
-    const m: Record<string, number> = {};
-    for (const t of tradesData?.trades ?? []) {
-      m[t.account_id] = (m[t.account_id] ?? 0) + 1;
-    }
-    return m;
-  }, [tradesData]);
-
-  if (loading) {
+  if (isLoading) {
     return (
       <>
         <PageHeader title="설정" />
@@ -53,7 +37,7 @@ export default function SettingsPage() {
           <p className="text-[13px] text-muted-foreground">데이터를 불러오지 못했어요.</p>
           <button
             type="button"
-            onClick={() => { refetchAccounts(); refetchTrades(); }}
+            onClick={() => refetch()}
             className="text-primary text-[13px] font-medium"
           >
             다시 시도
@@ -69,7 +53,7 @@ export default function SettingsPage() {
       <div className="px-5 pt-2 pb-8 space-y-10">
         <section className="space-y-3">
           <h2 className="text-[13px] font-semibold text-muted-foreground px-1">계좌 관리</h2>
-          <AccountList accounts={accounts ?? []} tradeCounts={countMap} />
+          <AccountList accounts={accounts ?? []} />
         </section>
 
         <section className="space-y-3">

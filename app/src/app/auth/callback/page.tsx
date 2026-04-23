@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { FullPageSpinner } from "@/components/base/FullPageSpinner";
 
 export default function AuthCallbackPage() {
   const { user, loading } = useAuth();
@@ -10,17 +11,9 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     if (!loading) {
-      if (user) {
-        router.replace("/");
-      } else {
-        router.replace("/login?error=oauth_failed");
-      }
+      router.replace(user ? "/" : "/login?error=oauth_failed");
     }
   }, [loading, user, router]);
 
-  return (
-    <div className="flex min-h-svh items-center justify-center">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-    </div>
-  );
+  return <FullPageSpinner />;
 }

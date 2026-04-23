@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { DetailPanelProvider } from "@/components/panels/DetailPanelProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { FullPageSpinner } from "@/components/base/FullPageSpinner";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -16,13 +17,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [loading, user, router]);
 
-  if (loading) {
-    return (
-      <div className="flex min-h-svh items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-      </div>
-    );
-  }
+  if (loading) return <FullPageSpinner />;
 
   if (!user) return null;
 
