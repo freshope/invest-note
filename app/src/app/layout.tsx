@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import { AuthProvider } from "@/components/providers/AuthProvider";
+import { CapacitorDeepLinkHandler } from "@/components/providers/CapacitorDeepLinkHandler";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 import { Toaster } from "sonner";
 import "./globals.css";
@@ -34,6 +35,7 @@ export default function RootLayout({
     <html lang="ko" className={`${pretendard.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         <AuthProvider>
+          <CapacitorDeepLinkHandler />
           <QueryProvider>{children}</QueryProvider>
         </AuthProvider>
         <Toaster position="top-center" richColors />

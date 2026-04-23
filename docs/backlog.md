@@ -100,8 +100,9 @@ MVP 이후 구현할 작업 후보 목록.
 - [x] **(a)/(b) 결정** (2026-04-22): **정적 export (a) 선택** — Capacitor가 정적 번들 직접 로드, SSR 제거
 - [ ] **3단계: Capacitor 모바일 래핑 (iOS/Android)**
   - [x] Capacitor 프로젝트 셋업 + iOS/Android 플랫폼 추가 (2026-04-23, Capacitor 8.3.1, `app/ios` + `app/android` 생성, `cap sync` 통과)
-  - 소셜 OAuth deep link 처리 (Capacitor Browser + Custom URL Scheme)
-  - FastAPI CORS — Capacitor WebView origin(iOS `capacitor://localhost`, Android `https://localhost`) 허용 추가 필요 (현재 `NEXT_PUBLIC_API_BASE_URL` 호스트만 허용됨)
+  - [x] 소셜 OAuth deep link 처리 (2026-04-23, Capacitor Browser + Custom URL Scheme `com.investnote.app://auth/callback`, `@capacitor/browser`+`@capacitor/app` 도입, iOS/Android 네이티브 배선, `CapacitorDeepLinkHandler` 루트 상주, Supabase client `@supabase/ssr`→`@supabase/supabase-js` 교체, iOS 실기기 Google/Kakao E2E 통과)
+  - [ ] Android 실기기 Google/Kakao OAuth E2E — 에뮬레이터 성능 이슈로 미확인. 동일 JS 번들이 iOS 실기기에서 통과했고 Android 배선 테스트(`adb shell am start` deep link)는 통과. 실기기 접근 확보 시 1회 확인.
+  - FastAPI CORS — Capacitor WebView origin(iOS `capacitor://localhost`, Android `https://localhost`) 허용 추가 필요 (현재 `NEXT_PUBLIC_API_BASE_URL` 호스트만 허용됨). **홈 데이터 미로딩 원인.**
   - `trailingSlash: true` WebView 라우팅 검증 — iOS/Android 시뮬레이터에서 정적 export 라우트(`/login/`, `/auth/callback/` 등) 404 없이 로드되는지 확인
   - Apple Sign-in 추가 (Apple Developer Program $99/년 가입 필요, App Store 심사 4.8 규정 필수)
   - 푸시 알림 (Apple 심사 통과 핵심)

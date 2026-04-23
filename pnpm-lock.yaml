@@ -13,15 +13,21 @@ importers:
       '@base-ui/react':
         specifier: ^1.4.0
         version: 1.4.0(@date-fns/tz@1.4.1)(@types/react@19.2.14)(date-fns@4.1.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@capacitor/app':
+        specifier: ^8.1.0
+        version: 8.1.0(@capacitor/core@8.3.1)
+      '@capacitor/browser':
+        specifier: ^8.0.3
+        version: 8.0.3(@capacitor/core@8.3.1)
+      '@capacitor/core':
+        specifier: ^8.3.1
+        version: 8.3.1
       '@date-fns/tz':
         specifier: ^1.4.1
         version: 1.4.1
       '@hookform/resolvers':
         specifier: ^5.2.2
         version: 5.2.2(react-hook-form@7.72.1(react@19.2.4))
-      '@supabase/ssr':
-        specifier: ^0.10.2
-        version: 0.10.2(@supabase/supabase-js@2.103.0)
       '@supabase/supabase-js':
         specifier: ^2.103.0
         version: 2.103.0
@@ -78,9 +84,6 @@ importers:
         specifier: ^8.3.1
         version: 8.3.1(@capacitor/core@8.3.1)
       '@capacitor/cli':
-        specifier: ^8.3.1
-        version: 8.3.1
-      '@capacitor/core':
         specifier: ^8.3.1
         version: 8.3.1
       '@capacitor/ios':
@@ -320,6 +323,16 @@ packages:
     resolution: {integrity: sha512-hjskIG8YcBEh3X4yaTXvE9gcqpdcxunTgFruSKnuPxtMxAUzEK4Oq25x0Z1g3cz+MQPc+lRG09R7Ovc+ydKsNw==}
     peerDependencies:
       '@capacitor/core': ^8.3.0
+
+  '@capacitor/app@8.1.0':
+    resolution: {integrity: sha512-MlmttTOWHDedr/G4SrhNRxsXMqY+R75S4MM4eIgzsgCzOYhb/MpCkA5Q3nuOCfL1oHm26xjUzqZ5aupbOwdfYg==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
+
+  '@capacitor/browser@8.0.3':
+    resolution: {integrity: sha512-WJWPHEPbweiFoHYmVlCbZf5yrqJ2Rchx2Xvbmd+3Lf+Zkpq3nXBThThY2CF69lYEg1NINGF9BcHThIOEU1gZlQ==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
 
   '@capacitor/cli@8.3.1':
     resolution: {integrity: sha512-1sPGW4THTDfR6YjXwZ0jM7oAfAtciPOHN00qs/3sNAQx1kKrrEYSfDPwCm1/xlAgi0OeL69SiRfw314Ans+1sw==}
@@ -1340,11 +1353,6 @@ packages:
   '@supabase/realtime-js@2.103.0':
     resolution: {integrity: sha512-gcPtXzZ6izyyBVf2of7K3dEt8CScPJn8VcSlQq6oWL9QoE1kqfQl0oFrOMHd5qrcADewxI7OxxosLB8W4XqtIQ==}
     engines: {node: '>=20.0.0'}
-
-  '@supabase/ssr@0.10.2':
-    resolution: {integrity: sha512-JFbchN63CXLFHJRNT7udec4/RoD9PmXkSGko3QSO6vUuqGBtSzdmxR7FPfQNr7SuFd65I7Xv46q66ALjEN1cgQ==}
-    peerDependencies:
-      '@supabase/supabase-js': ^2.102.1
 
   '@supabase/storage-js@2.103.0':
     resolution: {integrity: sha512-DHmlvdAXwtOmZNbkIZi4lkobPR3XjIzoOgzoz5duMf6G+sDeY015YrzMJCnqdccuYr7X5x4yYuSwF//RoN2dvQ==}
@@ -4654,6 +4662,14 @@ snapshots:
     dependencies:
       '@capacitor/core': 8.3.1
 
+  '@capacitor/app@8.1.0(@capacitor/core@8.3.1)':
+    dependencies:
+      '@capacitor/core': 8.3.1
+
+  '@capacitor/browser@8.0.3(@capacitor/core@8.3.1)':
+    dependencies:
+      '@capacitor/core': 8.3.1
+
   '@capacitor/cli@8.3.1':
     dependencies:
       '@ionic/cli-framework-output': 2.2.8
@@ -5470,11 +5486,6 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
-
-  '@supabase/ssr@0.10.2(@supabase/supabase-js@2.103.0)':
-    dependencies:
-      '@supabase/supabase-js': 2.103.0
-      cookie: 1.1.1
 
   '@supabase/storage-js@2.103.0':
     dependencies:

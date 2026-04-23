@@ -4,6 +4,50 @@
 
 ---
 
+## 2026-04-23 | OAuth Deep Link — URL Scheme `com.investnote.app://auth/callback`
+
+- **결정:** Capacitor 네이티브 앱의 OAuth 복귀용 URL Scheme을 reverse-DNS 형식인 `com.investnote.app://auth/callback`으로 고정. 짧은 형식(`investnote://`)은 채택하지 않음.
+- **이유:**
+  - Bundle ID / applicationId(`com.investnote.app`)와 일치 → mental model 단일화.
+  - iOS는 동명 스킴 충돌 시 undefined behavior. reverse-DNS는 App Store 유니크성 보장으로 하이재킹 위험 최소.
+  - 커스텀 스킴은 사용자 가시성이 없어 길이 페널티 없음.
+- **트레이드오프:** Universal Links(https)가 아니라 검증 불가능한 커스텀 스킴 → 다른 앱도 같은 스킴 등록 가능성은 존재(OAuth 용도에선 Supabase PKCE verifier 불일치로 자동 거부). 향후 공유 링크 등 다른 용도를 같은 스킴에 얹을 때 서명 검증 필요.
+- **후속:** Universal Links / App Links 전환 여부는 도메인·심사 정책 확정 후 재검토.
+
+---
+
+## 2026-04-23 | Supabase 클라이언트 — `@supabase/ssr` → `@supabase/supabase-js` + PKCE + Implicit Fallback
+
+- **결정:**
+  1. `app/src/lib/supabase/client.ts` 를 `@supabase/ssr`의 `createBrowserClient` 에서 `@supabase/supabase-js` 의 `createClient`로 교체.
+  2. `auth.flowType: 'pkce'` 명시.
+  3. `CapacitorDeepLinkHandler`는 `?code=` (PKCE) + `#access_token=&refresh_token=` (implicit) 두 형태 모두 수용 (fragment는 `setSession()`으로 처리).
+  4. `@supabase/ssr` 의존성 제거.
+- **이유:**
+  - `@supabase/ssr` 은 기본 storage가 **쿠키** 기반인데 Capacitor iOS의 `capacitor://localhost` 스킴에서 WebKit이 쿠키를 저장하지 않음 → `signInWithOAuth`가 PKCE verifier를 어디에도 남기지 못해 `exchangeCodeForSession`이 `PKCE code verifier not found in storage`로 실패.
+  - `auth.storage` 옵션으로 localStorage 주입을 시도했으나 `@supabase/ssr` 내부 경로에서 일부 호출이 여전히 쿠키를 사용 → 부분 해결에 그침.
+  - 정적 export + Capacitor는 SSR 쿠키 공유가 원천적으로 불필요하므로 SSR 변종을 쓸 이유가 없음.
+  - `supabase-js`는 기본 storage가 localStorage라 Capacitor WKWebView에서 안정적으로 persist.
+  - flowType은 명시 안 하면 버전에 따라 `implicit` 기본으로 동작하는 사례가 있어 `'pkce'`를 못박음. 그럼에도 Supabase OAuth provider 설정이나 타이밍 이슈로 implicit 응답이 올 가능성을 완전히 배제할 수 없어 fragment fallback을 유지.
+- **트레이드오프:**
+  - 서버 측 세션 검증·쿠키 공유가 필요해지면 `@supabase/ssr`을 재도입해야 함 — 현재 FastAPI 백엔드가 JWT Bearer로 분리돼 있어 해당 필요 없음.
+  - Handler가 두 flow를 모두 처리하는 분기 한 줄 더 늘어나는 대신, provider/버전 이슈에 탄성 확보.
+- **후속:** Android 실기기 E2E 1회(iOS 실기기 통과 후 동일 코드 경로).
+
+---
+
+## 2026-04-23 | OAuth Deep Link 리스너 — 루트 레이아웃 상주 컴포넌트
+
+- **결정:** Deep link 수신 리스너를 `CapacitorDeepLinkHandler` 단일 컴포넌트로 분리해 루트 `layout.tsx`의 `AuthProvider` 하위에 상주 마운트. `@capacitor/app`·`@capacitor/browser`는 dynamic import.
+- **이유:**
+  - Cold start 시 `auth/callback` 라우트가 아예 열리지 않으므로 `App.getLaunchUrl()`을 **리스너 등록 전**에 반드시 호출해야 이벤트 손실 방지.
+  - 루트에 상주시키면 로그인 페이지 이탈/재진입 간 경쟁 상태 제거.
+  - Dynamic import로 웹 번들에 Capacitor 플러그인 chunk 미포함 → 브라우저 사용자는 코스트 0.
+  - `AuthProvider`는 `onAuthStateChange` 구독 전담. `exchangeCodeForSession` 성공 시 자동 발화되므로 `AuthProvider` 코드는 수정하지 않음.
+- **트레이드오프:** 모든 페이지에서 리스너가 살아있음 — `useEffect` 1회 setup이라 오버헤드 무시 가능. `@capacitor/core`만 번들에 포함되지만 수 KB 수준.
+
+---
+
 ## 2026-04-23 | Capacitor 셋업 — 설치 위치 `app/`, appId `com.investnote.app`
 
 - **결정:** Capacitor 8.x를 `app/` 워크스페이스 내부에 설치. `appId=com.investnote.app`, `appName=투자노트`, `webDir=out`. iOS/Android 네이티브 프로젝트는 `app/ios/`, `app/android/`로 생성하고 git 커밋.
