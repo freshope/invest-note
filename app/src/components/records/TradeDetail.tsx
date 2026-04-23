@@ -14,6 +14,7 @@ import { DeleteTradeDialog } from "./DeleteTradeDialog";
 import type { Account } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
 import { tradesApi } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 import { ChevronLeftIcon } from "lucide-react";
 import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
 
@@ -64,7 +65,7 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
 
   const mountedAt = useMemo(() => Date.now(), []);
   const { data: trade = initialTrade } = useQuery({
-    queryKey: ["trade", initialTrade.id],
+    queryKey: queryKeys.trade(initialTrade.id),
     queryFn: () => tradesApi.get(initialTrade.id),
     initialData: initialTrade,
     initialDataUpdatedAt: mountedAt,
@@ -75,7 +76,7 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
   const isBuy = trade.trade_type === "BUY";
 
   const { data: summary } = useQuery({
-    queryKey: ["trade-summary", trade.id],
+    queryKey: queryKeys.tradeSummary(trade.id),
     queryFn: () => tradesApi.summary(trade.id),
     enabled: !isBuy,
   });

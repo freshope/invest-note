@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   FullScreenPanel,
   FullScreenPanelContent,
@@ -19,6 +19,7 @@ import {
 import { TradeDetail } from "@/components/records/TradeDetail";
 import { StockDetail } from "@/components/stocks/StockDetail";
 import { buildPnlMap } from "@/lib/analysis/realized-pnl";
+import { queryKeys } from "@/lib/query-keys";
 import type { Account } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
 
@@ -56,7 +57,6 @@ export function useDetailPanel(): DetailPanelContextValue {
 
 export function DetailPanelProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
-  const router = useRouter();
 
   const [mode, setMode] = useState<Mode>(null);
   const [tradePayload, setTradePayload] = useState<TradePayload | null>(null);
@@ -89,14 +89,14 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
 
   const handleTradeMutated = useCallback(() => {
     setMode(null);
-    queryClient.invalidateQueries({ queryKey: ["portfolio"] });
-    router.refresh();
-  }, [queryClient, router]);
+    queryClient.invalidateQueries({ queryKey: queryKeys.portfolio });
+    queryClient.invalidateQueries({ queryKey: queryKeys.trades });
+  }, [queryClient]);
 
   const handleTradeSaved = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ["portfolio"] });
-    router.refresh();
-  }, [queryClient, router]);
+    queryClient.invalidateQueries({ queryKey: queryKeys.portfolio });
+    queryClient.invalidateQueries({ queryKey: queryKeys.trades });
+  }, [queryClient]);
 
   const value = useMemo<DetailPanelContextValue>(
     () => ({ openTrade, openStock, close }),

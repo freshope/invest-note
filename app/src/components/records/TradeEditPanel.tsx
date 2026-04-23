@@ -5,7 +5,6 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
 import {
   FullScreenPanel,
   FullScreenPanelContent,
@@ -18,6 +17,7 @@ import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
 import { Textarea } from "@/components/base/Textarea";
 import { tradesApi } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 import { STRATEGIES, EMOTIONS, REASONING_TAGS } from "./constants";
 import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
 import { cn } from "@/lib/utils";
@@ -98,7 +98,6 @@ interface TradeEditPanelProps {
 
 export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }: TradeEditPanelProps) {
   const queryClient = useQueryClient();
-  const router = useRouter();
   const isSell = trade.trade_type === "SELL";
 
   const {
@@ -129,7 +128,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
   });
 
   const { data: summary, isPending: summaryLoading } = useQuery({
-    queryKey: ["trade-summary", trade.id],
+    queryKey: queryKeys.tradeSummary(trade.id),
     queryFn: () => tradesApi.summary(trade.id),
     enabled: isSell && open,
   });
@@ -189,11 +188,11 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
         improvement_note: values.improvement_note.trim() || null,
       });
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["trade", trade.id] }),
-        queryClient.invalidateQueries({ queryKey: ["trade-summary", trade.id] }),
-        queryClient.invalidateQueries({ queryKey: ["portfolio"] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.trade(trade.id) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.tradeSummary(trade.id) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
       ]);
-      router.refresh();
       onOpenChange(false);
       onSaved?.();
     } catch (err) {

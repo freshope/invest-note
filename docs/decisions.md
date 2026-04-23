@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-04-22 | 정적 export 전환 + Next.js API Routes 제거 (Chunk D)
+
+- **결정:** Next.js를 `output: 'export'` 정적 모드로 전환. Server Component + Route Handler 전부 제거.
+- **이유:** Capacitor 모바일 앱은 정적 번들을 WebView에서 직접 로드하므로 SSR/쿠키 기반 서버 기능 사용 불가. FastAPI 백엔드가 모든 API 엔드포인트를 커버하므로 Next.js API Routes 필요 없음.
+- **트레이드오프:**
+  - 동적 라우트 `records/[id]`, `stocks/[country]/[ticker]`는 삭제 (정적 열거 불가 + 이미 패널 기반 진입). 딥링크 소실.
+  - 인증이 localStorage 기반으로 이동 (`createBrowserClient`). 실제 OAuth 플로우 테스트 필요.
+  - `NEXT_PUBLIC_API_BASE_URL` 미설정 시 모든 API 호출 실패 — 배포 시 필수 설정.
+- **향후:** 3단계(Capacitor 래핑)에서 OAuth deep link + `window.location.origin` → Capacitor URL scheme 처리.
+
+---
+
 ## 2026-04-17 | 시세 API: 비공식 API 사용
 
 - **결정:** 네이버 금융(KR), Yahoo Finance(US) 비공식 API 사용

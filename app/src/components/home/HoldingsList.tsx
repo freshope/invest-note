@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { HoldingCard } from "./HoldingCard";
 import { useDetailPanel } from "@/components/panels/DetailPanelProvider";
+import { tradesApi } from "@/lib/api-client";
 import type { Position } from "@/lib/portfolio";
 
 interface HoldingsListProps {
@@ -12,14 +13,6 @@ interface HoldingsListProps {
 export function HoldingsList({ positions }: HoldingsListProps) {
   const { openStock } = useDetailPanel();
   const [fetching, setFetching] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
-
-  // 언마운트 시 진행 중인 fetch 취소
-  useEffect(() => {
-    return () => {
-      abortRef.current?.abort();
-    };
-  }, []);
 
   const sorted = useMemo(
     () => [...positions].sort((a, b) => (b.evaluation ?? 0) - (a.evaluation ?? 0)),
@@ -29,18 +22,12 @@ export function HoldingsList({ positions }: HoldingsListProps) {
   const handleCardPress = useCallback(
     async (pos: Position) => {
       if (fetching) return;
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
       setFetching(true);
       try {
-        const res = await fetch(
-          `/api/trades?ticker=${encodeURIComponent(pos.ticker)}&country=${encodeURIComponent(pos.country)}`,
-          { signal: controller.signal },
-        );
-        const { trades, accounts } = res.ok
-          ? await res.json()
-          : { trades: [], accounts: [] };
+        const { trades, accounts } = await tradesApi.list({
+          ticker: pos.ticker,
+          country: pos.country,
+        });
         openStock({
           assetName: pos.assetName,
           ticker: pos.ticker,
@@ -48,8 +35,7 @@ export function HoldingsList({ positions }: HoldingsListProps) {
           allTrades: trades,
           accounts,
         });
-      } catch (err) {
-        if ((err as Error).name === "AbortError") return;
+      } catch {
         openStock({
           assetName: pos.assetName,
           ticker: pos.ticker,

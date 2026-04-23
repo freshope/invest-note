@@ -8,10 +8,9 @@ import type { Account } from "@/types/database";
 
 interface AccountListProps {
   accounts: Account[];
-  tradeCounts: Record<string, number>;
 }
 
-export function AccountList({ accounts, tradeCounts }: AccountListProps) {
+export function AccountList({ accounts }: AccountListProps) {
   const [addOpen, setAddOpen] = useState(false);
 
   return (
@@ -37,7 +36,7 @@ export function AccountList({ accounts, tradeCounts }: AccountListProps) {
               <AccountCard
                 key={account.id}
                 account={account}
-                tradeCount={tradeCounts[account.id] ?? 0}
+                tradeCount={account.trade_count ?? 0}
               />
             ))}
             <button

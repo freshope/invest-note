@@ -3,17 +3,18 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { portfolioApi } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 
 export function usePortfolioSummary() {
   const queryClient = useQueryClient();
 
   const { data, isPending, isError } = useQuery({
-    queryKey: ["portfolio", "summary"],
+    queryKey: queryKeys.portfolioSummary,
     queryFn: portfolioApi.summary,
   });
 
   const refetch = useCallback(
-    () => queryClient.invalidateQueries({ queryKey: ["portfolio"] }),
+    () => queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
     [queryClient]
   );
 

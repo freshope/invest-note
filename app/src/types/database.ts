@@ -21,6 +21,7 @@ export interface Account {
   cash_balance: number;
   created_at: string;
   updated_at: string;
+  trade_count?: number;
 }
 
 export interface Trade {

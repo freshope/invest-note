@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useDebounce } from "@/hooks/useDebounce";
 import { Input } from "@/components/base/Input";
 import { stocksApi, type StockSearchResult } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 
 export interface SelectedStock {
   name: string;
@@ -40,7 +41,7 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
   const debouncedValue = useDebounce(value, 300);
 
   const { data: suggestions = [], isFetching } = useQuery({
-    queryKey: ["stocks", "search", debouncedValue],
+    queryKey: queryKeys.stockSearch(debouncedValue),
     queryFn: () => fetchStocks(debouncedValue),
     enabled: debouncedValue.trim().length >= 1,
     staleTime: 60_000,

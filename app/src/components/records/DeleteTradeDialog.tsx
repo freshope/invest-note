@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/Button";
 import {
   Dialog,
@@ -28,7 +27,6 @@ export function DeleteTradeDialog({
   assetName,
   onDeleted,
 }: DeleteTradeDialogProps) {
-  const router = useRouter();
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState("");
 
@@ -39,7 +37,6 @@ export function DeleteTradeDialog({
       await tradesApi.delete(tradeId);
       onOpenChange(false);
       onDeleted?.();
-      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "삭제할 수 없습니다.");
     } finally {

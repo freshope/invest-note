@@ -22,10 +22,7 @@ import { createClient } from "@/lib/supabase/client";
 // 공통 유틸
 // ============================================================
 
-// NEXT_PUBLIC_API_BASE_URL이 설정돼 있으면 FastAPI origin으로,
-// 비어있으면 상대경로(Next.js /api/*) 그대로 사용 — 롤백 스위치.
-// FastAPI는 Bearer 토큰 검증, Next.js 라우트는 쿠키 세션을 사용하므로
-// API_BASE가 없을 때는 Bearer 헤더를 첨부하지 않는다.
+// NEXT_PUBLIC_API_BASE_URL: FastAPI 서버 주소. 정적 export 환경에서는 필수.
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
 
 // 지연 초기화 싱글턴 — SSR import 시 createBrowserClient 실행을 피하기 위해
@@ -38,9 +35,13 @@ function getSupabase() {
 
 async function getBearerHeader(): Promise<Record<string, string>> {
   if (!API_BASE) return {};
-  const { data: { session } } = await getSupabase().auth.getSession();
-  if (!session?.access_token) return {};
-  return { Authorization: `Bearer ${session.access_token}` };
+  try {
+    const { data: { session } } = await getSupabase().auth.getSession();
+    if (!session?.access_token) return {};
+    return { Authorization: `Bearer ${session.access_token}` };
+  } catch {
+    return {};
+  }
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {

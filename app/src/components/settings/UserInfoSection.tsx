@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/base/Button";
 import { createClient } from "@/lib/supabase/client";
 
@@ -10,7 +10,7 @@ interface UserInfoSectionProps {
 }
 
 export function UserInfoSection({ email }: UserInfoSectionProps) {
-  const router = useRouter();
+  const queryClient = useQueryClient();
   const [pending, setPending] = useState(false);
 
   async function handleSignOut() {
@@ -18,7 +18,8 @@ export function UserInfoSection({ email }: UserInfoSectionProps) {
     try {
       const supabase = createClient();
       await supabase.auth.signOut();
-      router.push("/login");
+      queryClient.clear();
+      // AuthGuard(onAuthStateChange → user=null)가 /login으로 리다이렉트 처리
     } catch {
       setPending(false);
     }
