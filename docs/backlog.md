@@ -99,7 +99,7 @@ MVP 이후 구현할 작업 후보 목록.
     - [x] `HoldingsList.tsx` 잔존 fetch → `tradesApi.list()` 교체 (Chunk A 누락분 보완)
 - [x] **(a)/(b) 결정** (2026-04-22): **정적 export (a) 선택** — Capacitor가 정적 번들 직접 로드, SSR 제거
 - [ ] **3단계: Capacitor 모바일 래핑 (iOS/Android)**
-  - Capacitor 프로젝트 셋업 + iOS/Android 플랫폼 추가
+  - [x] Capacitor 프로젝트 셋업 + iOS/Android 플랫폼 추가 (2026-04-23, Capacitor 8.3.1, `app/ios` + `app/android` 생성, `cap sync` 통과)
   - 소셜 OAuth deep link 처리 (Capacitor Browser + Custom URL Scheme)
   - Apple Sign-in 추가 (Apple Developer Program $99/년 가입 필요, App Store 심사 4.8 규정 필수)
   - 푸시 알림 (Apple 심사 통과 핵심)

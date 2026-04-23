@@ -4,6 +4,28 @@
 
 ---
 
+## 2026-04-23 | Capacitor 셋업 — 설치 위치 `app/`, appId `com.investnote.app`
+
+- **결정:** Capacitor 8.x를 `app/` 워크스페이스 내부에 설치. `appId=com.investnote.app`, `appName=투자노트`, `webDir=out`. iOS/Android 네이티브 프로젝트는 `app/ios/`, `app/android/`로 생성하고 git 커밋.
+- **이유:**
+  - 설치 위치: `webDir`가 Next.js export 결과물인 `app/out/` 을 상대 경로 `out`으로 가리켜야 하고, `cap` CLI는 `capacitor.config.ts` 기준으로 동작.
+  - appId: 무난한 역도메인(`com.investnote.app`) 선택 — 개인 도메인 소유 여부와 무관하게 스토어 등록 가능.
+  - 네이티브 커밋: Capacitor 공식 권장. 네이티브 설정·플러그인 변경이 버전 관리되어 재현성 확보.
+- **트레이드오프:**
+  - appId는 App Store/Play Console 등록 후 변경 불가 — 스토어 등록 전 변경 가능 시점에 재확인 필요.
+  - 네이티브 디렉토리 커밋으로 레포 크기 증가(수 MB). 빌드 산출물(Pods/build/.gradle/assets/public)은 Capacitor 자동 생성 `ios/.gitignore`·`android/.gitignore`가 커버.
+- **후속 작업:** OAuth deep link(Custom URL Scheme + Capacitor Browser), Apple Sign-in, 푸시·생체인증, FastAPI CORS 허용(Capacitor WebView origin `capacitor://localhost` / `https://localhost`), 앱 아이콘·스플래시 리소스 — 별도 spec.
+
+---
+
+## 2026-04-23 | iOS 의존성: CocoaPods 설치 (Homebrew)
+
+- **결정:** 로컬 개발 머신에 CocoaPods 1.16.2를 `brew install cocoapods` 로 설치.
+- **이유:** `cap add ios` 가 Swift Package Manager(Capacitor 8 기본) + CocoaPods 혼합 환경을 지원. 일부 플러그인이 여전히 CocoaPods를 요구하므로 사전 설치가 안전.
+- **트레이드오프:** Homebrew의 `ruby` 4.0.3 + `libyaml` 추가 설치(약 60MB). 향후 SPM 전용 플러그인만 사용한다면 불필요해질 가능성 있음.
+
+---
+
 ## 2026-04-22 | 정적 export 전환 + Next.js API Routes 제거 (Chunk D)
 
 - **결정:** Next.js를 `output: 'export'` 정적 모드로 전환. Server Component + Route Handler 전부 제거.
