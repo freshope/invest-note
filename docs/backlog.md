@@ -6,114 +6,70 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 기록 탭
 
-- [ ] 계좌 필터 컨텍스트 → 종목 패널 전달 — 계좌 A 필터 상태에서 종목 클릭 시 종목 패널에 해당 계좌 거래만 표시. 현재는 전체 거래 기준. `openTrade`에 `contextAccountId` 추가 필요 (출처: gstack-review BUG-06)
+- [ ] 계좌 필터 컨텍스트 → 종목 패널 전달 — 계좌 A 필터 상태에서 종목 클릭 시 종목 패널에 해당 계좌 거래만 표시. `openTrade`에 `contextAccountId` 추가
+- [ ] 종목/거래 상세 패널 스택 중첩 누적 — `StockDetailPanel` ↔ `TradeDetailPanel` 상호 dynamic import로 같은 종목/거래가 반복 push됨. 1순위: 부모 스택에 이미 있으면 그 단계까지 pop. 2순위: 헤더 깊이 인디케이터 + "모두 닫기". 3순위: URL/history 연동
 
----
+## 분석 탭 성능 / 유지보수
 
-## 분석 탭 성능 / 유지보수 개선
+- [ ] InsightSection `useMemo` 적용 — `evaluateRules()` 호출 메모이제이션 (176줄 룰 배열이 매 렌더마다 실행)
+- [ ] InsightSection 룰 일관성 — `suggestionsData` null 시 빈 배열 fallback으로 서버/클라이언트 룰 불일치 제거
+- [ ] 분석 API 3개(`/summary`, `/behavior`, `/suggestions`) 단일 엔드포인트 통합 또는 캐싱 — 동일 거래 데이터를 3번 조회
+- [ ] 분석 API 쿼리 `.limit(1000)` 가드 — 거래 수 급증 시 메모리/응답 보호
+- [ ] `aggregate.ts` `byTag` O(n²) → binary search / 누적 Map 개선
+- [ ] 수수료 현황 별도 패널 — BUY commission·세금 합계, 순실현손익 vs 총비용 비교
+- [ ] 테스트 보강 — `period.ts` 경계값, `computeRealizedPnL` 멀티 종목, `byTag` FIFO 귀속
 
-- [ ] InsightSection useMemo 적용 — AnalysisDashboard.tsx의 InsightSection 내 evaluateRules() 호출을 useMemo로 메모이제이션 (176줄 룰 배열 순회+정렬이 매 렌더마다 실행됨) (출처: /custom:review)
-- [ ] InsightSection 룰 일관성 — suggestionsData null 시 빈 배열 fallback으로 서버 룰과 클라이언트 룰 불일치 제거 (출처: /custom:review)
-- [ ] PeriodFilterTabs compact 모드 터치 타겟 — min-h-[44px] 적용해 44px 미달 개선 (출처: /custom:review)
+## UX / 기타
 
-- [ ] 분석 API 3개(`/summary`, `/behavior`, `/suggestions`) 단일 엔드포인트 통합 또는 캐싱 레이어 추가 — 현재 동일 거래 데이터를 3번 독립 조회 (출처: /custom:review)
-- [ ] 분석 API 3개(`/summary`, `/behavior`, `/suggestions`) Supabase 쿼리에 `.limit(1000)` 추가 — 거래 수 급증 시 메모리/응답 보호
-- [ ] `aggregate.ts` `byTag` 계산 O(n²) 개선 — `sellTime` 기준 binary search 또는 누적 Map으로 전환
-- [ ] 수수료 현황 별도 패널 노출 — BUY commission 합계, 세금 합계, 순실현손익 vs 총비용 비교 (WAC 순수가격 결정의 후속 작업)
-- [ ] 테스트 보강: `period.ts` 직접 테스트 (1m/6m 구간, 월말 overflow), `computeRealizedPnL` 멀티 종목 시나리오, `byTag` FIFO 귀속 케이스
+- [ ] PeriodFilterTabs compact 모드 터치 타겟 `min-h-[44px]`
+- [ ] HoldingsList fetch 에러 시 토스트 연동 — 네트워크 실패/401/500 시 빈 패널 대신 토스트 + 패널 미오픈
 
-## 패널 UX 개선
+## 거래 손익 정합성
 
-- [ ] HoldingsList fetch 에러 시 토스트 연동 — 네트워크 실패/401/500 시 빈 패널 오픈 대신 토스트 에러 표시 후 패널 미오픈 (출처: /custom:review)
-
-## 기록 탭
-
-- [ ] 거래 카드 computed_pnl 미표시 — `records/page.tsx`가 Supabase 직접 조회로 WAC 계산 누락. `TradeList` 클라이언트 fetch 전환(`useQuery` + `tradesApi.list()`) 또는 page.tsx에서 `computeFlexibleBreakdown` 직접 호출로 해결 필요 (출처: feature/sell-registration-improve)
-
-## 거래 손익 (persist-realized-pnl 후속)
-
-- [ ] TOCTOU race → Postgres RPC atomic 전환 — 동시 SELL 요청이 같은 보유량 스냅샷을 보고 둘 다 통과 가능. validateMutation+write를 single RPC로 원자화 (출처: /custom:review)
-- [ ] recalcGroupPnL 실패 플래그 — UPDATE 실패 시 console.error만 하고 204 반환. partial failure 시 응답 헤더 또는 로그 강화 (출처: /custom:review)
+- [ ] TOCTOU race → Postgres RPC atomic — 동시 SELL 요청이 같은 보유량 스냅샷으로 둘 다 통과 가능. validate+write 원자화 (FastAPI trades 라우터)
+- [ ] recalcGroupPnL 실패 시 응답 경고 — UPDATE 실패를 로그만 남기고 성공 반환. partial failure 헤더/로그 강화
 
 ## 데이터 정확성
 
-- [ ] USD/KRW 혼합 합산 버그 — `portfolio.ts:174` US 종목 평가액을 환율 적용 없이 KRW와 직접 합산해 총평가액·미실현손익 왜곡. USD → KRW 환율 적용 필요 (출처: /custom:review)
-- [ ] 자동완성 후 종목명 수정 시 stale ticker 저장 — `TradeBasicForm.tsx:249` 자동완성 선택 후 asset_name을 수동 수정하면 이전 ticker_symbol/country_code가 남아 저장됨. 수동 수정 감지 시 ticker 관련 필드 초기화 필요 (출처: /custom:review)
-- [ ] HHI 크로스-통화 왜곡 — `concentration.py`: KRW/USD 혼합 포트폴리오에서 USD 포지션 평가액을 환율 변환 없이 합산해 HHI 왜곡. USD→KRW 변환 후 비중 계산 필요 (출처: gstack-review INVESTIGATE)
-- [ ] 미래 거래 묵시 필터링 — `period.py filter_by_period`: "all" 기간에서 `to_ts = now`로 미래 거래 조용히 제외. 의도된 동작이면 주석으로 문서화, 아니면 명시적 경고 추가 (출처: gstack-review INVESTIGATE)
+- [ ] USD/KRW 혼합 합산 — `portfolio.ts` US 종목 평가액을 환율 적용 없이 KRW와 합산해 총평가액·미실현손익 왜곡. USD→KRW 환율 적용 필요
+- [ ] HHI 크로스-통화 왜곡 — `concentration.py` 가 USD 포지션 평가액을 환율 변환 없이 합산. USD→KRW 변환 후 비중 계산
+- [ ] 자동완성 후 종목명 수정 시 stale ticker 저장 — `TradeBasicForm.tsx` 자동완성 후 asset_name 수동 수정하면 이전 ticker_symbol/country_code 유지. 수동 수정 감지 시 ticker 필드 초기화
+- [ ] 미래 거래 묵시 필터링 — `period.py filter_by_period` 가 "all" 기간에 `to_ts = now`로 미래 거래 제외. 의도면 문서화, 아니면 명시 경고
 
-## 코드 품질 — 라벨 상수
+## 코드 품질
 
-- [ ] MARKET_LABELS 중앙화 — `TradeDetail.tsx`("암호화폐")와 `DiversificationPanel.tsx`("코인") 불일치. 공유 상수 파일(`src/lib/constants.ts` 또는 `src/components/records/constants.ts`)로 통합 필요 (출처: /simplify)
-
-## 코드 품질 — 라이브러리 도입 후속
-
-- [ ] TradeEditPanel 스키마 일관성 — `price_display: z.string()` 방식을 `TradeBasicForm`처럼 `z.number().positive()` 기반으로 통일 (출처: /custom:review)
-- [ ] zod enum 중복 추출 — `strategy_type`, `emotion` enum이 TradeMetaBuyForm, TradeMetaSellForm, TradeEditPanel, validators.ts에 4중 복사. validators.ts에서 export 후 import 통일 (출처: /custom:review)
-- [ ] 테스트 커버리지 추가 — validators.ts zod 스키마 (parseTradedAt, commaPositive 경계값), API 라우트 400/404 케이스, groupByDate KST 날짜 경계 (출처: /custom:review)
-- [ ] StockSearchInput open 조건 — value 대신 debouncedValue 기준으로 드롭다운 열고 닫기 (캐시 반환 시 잠깐 열리는 경합 제거) (출처: /custom:review)
-- [ ] StrategyEmotionFields Controller 중첩 개선 — strategy/emotion 각각을 별도 Controller로 감싸고 StrategyEmotionFields에 props 전달하는 이중 중첩 구조를 sibling Controller 배치로 교체 (출처: /custom:review)
-- [ ] parseTradedAt zod transform throw 방식 검토 — transform 내 `throw new Error()`가 zod v4에서 `.issues`가 아닌 unhandled exception으로 전파될 수 있음. `ctx.addIssue()` 패턴으로 교체 검토 (출처: /custom:review)
-
-## 보안
-
-- [x] `/api/stocks/quote` + `/api/stocks/search` 인증 추가 완료 — requireUser() 적용 (2026-04-18)
-- [ ] 자유 텍스트 필드 길이 제한 — buy_reason, sell_reason, reflection_note, improvement_note 5000자 제한 추가. API route + DB CHECK constraint (출처: /custom:review)
+- [ ] MARKET_LABELS 중앙화 — `TradeDetail.tsx`("암호화폐") vs `DiversificationPanel.tsx`("코인") 불일치. 공유 상수로 통합
+- [ ] TradeEditPanel 스키마 일관성 — `price_display: z.string()` → `z.number().positive()` 기반으로 `TradeBasicForm`과 통일
+- [ ] zod enum 공유 — `strategy_type`, `emotion` enum이 TradeMetaBuyForm·TradeMetaSellForm·TradeEditPanel에 중복. 공통 상수로 통일
+- [ ] StrategyEmotionFields Controller 중첩 — strategy/emotion 이중 Controller → sibling Controller 배치
+- [ ] 자유 텍스트 필드 길이 제한 — buy_reason, sell_reason, reflection_note, improvement_note 5000자 제한 (FastAPI validation + DB CHECK)
 
 ## MVP 잔여 — CSV 임포트
 
-- [ ] CSV 파일 파싱 로직 구현 (현재 버튼 UI만 존재, 실제 처리 없음)
-- [ ] 파싱 결과 → Supabase insert
 - [ ] 임포트 포맷 정의 (컬럼 매핑)
+- [ ] CSV 파일 파싱 로직 (현재 `CsvUploadButton` UI만)
+- [ ] 파싱 결과 → DB insert
+
+## 모바일앱 (v2.5) 잔여
+
+- [ ] Android 실기기 Google/Kakao OAuth E2E — 에뮬레이터 성능 이슈로 미확인. iOS 실기기 통과 + Android 배선 테스트(`adb shell am start` deep link) 통과로 배선은 증명. 실기기 확보 시 1회 확인
+- [ ] `trailingSlash: true` WebView 라우팅 검증 — 정적 export 라우트가 WKWebView/Chrome WebView에서 404 없이 로드되는지 확인
+- [ ] production `CORS_ORIGINS` 환경변수에 `capacitor://localhost`, `https://localhost` 반영
+- [ ] Apple Sign-in (Apple Developer Program $99/년, App Store 4.8 심사 필수)
+- [ ] 푸시 알림, 생체인증(Face ID/지문), safe area/Android 백버튼/외부 링크/키보드, 강제 업데이트 메커니즘
+- [ ] 앱 아이콘·스플래시·스토어 메타데이터·개인정보처리방침
 
 ## v2 — KIS API 연동
 
-- [ ] 한국투자증권 Open API 연동
-- [ ] 거래 내역 자동 임포트
-- [ ] 공식 실시간 시세 연동 (현재: 네이버/Yahoo Finance 지연 시세)
+- [ ] 한국투자증권 Open API 연동 — 거래 내역 자동 임포트, 공식 실시간 시세
 
-## v2 — UX 개선
+## v2 — UX
 
 - [ ] 다크 모드
 - [ ] 홈 위젯 커스터마이징
-- [ ] 종목/거래 상세 패널 스택 어색함 해소 — `StockDetailPanel`과 `TradeDetailPanel`이 서로를 dynamic import로 호출하며 React 트리에 중첩 마운트되어 같은 종목/거래가 반복 누적될 수 있음 (예: A종목 → A의 거래 → 거래의 A종목 링크 → 또 A종목...). 헤더 뒤로가기는 자기 패널만 닫으므로 깊어진 만큼 N번 눌러야 원래 자리로 복귀. 1순위: 새로 열려는 대상이 부모 스택에 이미 있으면 새로 푸시하지 않고 그 단계까지 pop. 2순위: 헤더에 깊이 인디케이터 + "모두 닫기" 액션. 3순위: URL/history 연동(시스템 뒤로가기·새로고침 복원·딥링크). 관련 파일: `src/components/stocks/StockDetailPanel.tsx`, `src/components/records/TradeDetailPanel.tsx`, `src/components/common/full-screen-panel.tsx`.
-
-## 모바일앱 배포 후속 단계
-
-- [ ] **2단계: FastAPI 백엔드 분리** — 라우터 포팅(P1a·P1b·P2·P3) 완료. 배포·컷오버 진행 중.
-  - [x] 모노레포 구조 분리 (app/ + api/)
-  - [x] FastAPI skeleton + Supabase JWT(JWKS/ES256) 인증 미들웨어 (P1a)
-  - [x] accounts CRUD + asyncpg + Supabase RLS GUC 주입 (P1b)
-  - [x] trades + portfolio + stocks 10개 라우터 포팅 (P2)
-  - [x] analysis 3개 라우터 포팅 (P3)
-  - [x] **Chunk A — 클라이언트 컷오버** (2026-04-22): `NEXT_PUBLIC_API_BASE_URL` 환경변수 + `apiFetch` Bearer 주입, 브라우저 fetch 4곳 api-client 래퍼로 통일
-  - (삭제) **Chunk B — 배포**: Capacitor 정적 export 결정으로 불필요
-  - (삭제) **Chunk C — SSR 컷오버**: 정적 export 시 SSR 자체를 제거하므로 불필요
-  - [x] **Chunk D — 정적 export 전환 + Next.js `/api/*` 제거** (2026-04-22, 구 Chunk C/D 통합):
-    - [x] Server Components 5개 → Client Component 전환 (`records`, `settings`, `(app)/page` 인증 게이트 제거, auth callback)
-    - [x] 동적 라우트 2개(`records/[id]`, `stocks/[country]/[ticker]`) 삭제 — 이미 패널 기반 진입이므로 불필요
-    - [x] `AuthProvider` + `(app)/layout.tsx` AuthGuard로 클라이언트 인증 가드 일원화
-    - [x] `app/src/lib/supabase/middleware.ts` + `server.ts` + `proxy.ts` 제거
-    - [x] `next.config` `output: 'export'`, `trailingSlash: true`, `images.unoptimized: true` 설정
-    - [x] `app/src/app/api/` + `app/src/lib/api-server/` 삭제 (Next.js API Routes 전체 제거)
-    - [x] `HoldingsList.tsx` 잔존 fetch → `tradesApi.list()` 교체 (Chunk A 누락분 보완)
-- [x] **(a)/(b) 결정** (2026-04-22): **정적 export (a) 선택** — Capacitor가 정적 번들 직접 로드, SSR 제거
-- [ ] **3단계: Capacitor 모바일 래핑 (iOS/Android)**
-  - [x] Capacitor 프로젝트 셋업 + iOS/Android 플랫폼 추가 (2026-04-23, Capacitor 8.3.1, `app/ios` + `app/android` 생성, `cap sync` 통과)
-  - [x] 소셜 OAuth deep link 처리 (2026-04-23, Capacitor Browser + Custom URL Scheme `com.investnote.app://auth/callback`, `@capacitor/browser`+`@capacitor/app` 도입, iOS/Android 네이티브 배선, `CapacitorDeepLinkHandler` 루트 상주, Supabase client `@supabase/ssr`→`@supabase/supabase-js` 교체, iOS 실기기 Google/Kakao E2E 통과)
-  - [ ] Android 실기기 Google/Kakao OAuth E2E — 에뮬레이터 성능 이슈로 미확인. 동일 JS 번들이 iOS 실기기에서 통과했고 Android 배선 테스트(`adb shell am start` deep link)는 통과. 실기기 접근 확보 시 1회 확인.
-  - [x] FastAPI CORS — Capacitor WebView origin(iOS `capacitor://localhost`, Android `https://localhost`) 허용 (2026-04-23, `Settings.cors_origins` 기본값 + `.env.example` + `tests/test_cors.py` 6개. iOS Simulator 홈 데이터 로딩 E2E 통과. **production 배포 환경의 `CORS_ORIGINS` 환경변수에 두 origin 추가 반영 필요**.)
-  - [ ] Next.js 16 prefetch / records 흰 화면 — iOS Simulator에서 records 등 2차 탭 진입 시 페이지 로드 실패. 콘솔에 `__next.!KGFwcCk.__PAGE__.txt` 404(홈은 동일 리소스로 정상 동작하므로 `!` 문자 가설은 모순). 진단 단계: (1) Safari Web Inspector Network/Console 전체 로그 확보, (2) `npx serve out` + Simulator Safari 브라우저 재현 테스트로 Next.js 이슈 vs Capacitor WKWebView 이슈 분기, (3) records 외 다른 탭(settings/analysis) 재현 여부. 별도 spec에서 처리.
-  - `trailingSlash: true` WebView 라우팅 검증 — iOS/Android 시뮬레이터에서 정적 export 라우트(`/login/`, `/auth/callback/` 등) 404 없이 로드되는지 확인
-  - Apple Sign-in 추가 (Apple Developer Program $99/년 가입 필요, App Store 심사 4.8 규정 필수)
-  - 푸시 알림 (Apple 심사 통과 핵심)
-  - 생체인증 (Face ID / 지문)
-  - Safe area, Android 백버튼, 외부 링크, 키보드 처리
-  - 강제 업데이트 메커니즘 (웹/앱 버전 동기화 안전망)
-  - 앱 아이콘, 스플래시, 스토어 메타데이터, 개인정보처리방침
 
 ## v3 — AI 분석
 
 - [ ] 매매 패턴 분석 고도화 (감정-결과 상관관계 등)
 - [ ] AI 기반 복기 제안
-- [ ] 모바일 네이티브 앱 (React Native / Expo)
+- [ ] 모바일 네이티브 앱 (React Native / Expo) 검토

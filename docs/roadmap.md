@@ -2,55 +2,47 @@
 
 ## 제품 개요
 
-개인 투자자를 위한 매매일지 & 포트폴리오 관리 웹앱.
+개인 투자자를 위한 매매일지 & 포트폴리오 관리 앱.
 매매 기록을 빠르게 입력하고, 이유·감정과 함께 저장해 이후 패턴 분석이 가능하도록 설계.
 
 ## 핵심 목표
 
-- 매매 기록을 **3~5초 이내**에 입력 가능
-- 단순 데이터가 아닌 **매매 이유 + 감정**을 함께 기록
-- 이후 **승률·행동 패턴 분석**이 가능한 구조
+- 매매 기록을 **3~5초 이내** 입력
+- 단순 데이터가 아닌 **매매 이유 + 감정** 기록
+- **승률·행동 패턴 분석** 가능한 구조
 
 ## 기술 스택
 
 | 영역 | 선택 |
 |------|------|
-| 프레임워크 | Next.js (App Router) + TypeScript |
+| 프론트엔드 | Next.js (App Router, 정적 export) + TypeScript |
 | 스타일링 | Tailwind CSS |
-| 백엔드/DB | Supabase (PostgreSQL + Auth + RLS) |
-| 시세 | 네이버 금융 (KR), Yahoo Finance (US) — 비공식 API, 지연 시세 |
-| 배포 | Vercel (웹), Render → Railway (FastAPI API 서버, v2.5) |
-| 모바일 | Capacitor (iOS/Android, v2.5), 향후 React Native 전환 검토 |
+| 백엔드 | FastAPI (Python) — Supabase JWKS(ES256) 인증 + asyncpg + RLS |
+| DB/Auth | Supabase (PostgreSQL + Auth + RLS) |
+| 시세 | 네이버 금융(KR), Yahoo Finance(US) — 비공식 지연 시세 |
+| 배포 | Vercel (웹), Render → Railway (API, 예정) |
+| 모바일 | Capacitor (iOS/Android), 향후 React Native 검토 |
 
 ## 디자인 원칙
 
-- **모바일 우선** (320px~430px 기준)
+- **모바일 우선** (320px~430px)
 - **버튼 기반 선택** — 타이핑 최소화
 - 색상: 상승=빨강 `#F04452` / 하락=파랑 `#1B6AC9` (한국 주식 관행)
 - 폰트: Pretendard, 금액 tabular-nums
-
-## 탭 구조
-
-| 탭 | 경로 | 내용 | 상태 |
-|----|------|------|------|
-| 홈 | `/` | 총 자산, 평가/확정 손익, 보유 종목 카드, 계좌 도넛 차트 | ✅ 완료 |
-| 기록 | `/records` | 매매 입력, 매매일지 목록, 종목 상세 | ✅ 완료 |
-| 분석 | `/analysis` | 승률, 패턴, 감정 분석 | ✅ 완료 |
-| 설정 | `/settings` | 계좌 관리, 사용자 정보 | ✅ 완료 |
 
 ## 릴리즈 계획
 
 | 버전 | 내용 | 상태 |
 |------|------|------|
-| MVP | 수동 매매 기록, 포트폴리오 조회, 홈 대시보드, 분석 탭 | 🚧 진행 중 |
-| v2.5 | 소셜 로그인 (Google/Kakao/Apple), FastAPI 백엔드 분리, Capacitor 모바일앱 (iOS/Android) | 🚧 진행 중 (P1-P3 + Chunk A 클라이언트 컷오버 + Chunk D 정적 export 전환 + Capacitor 셋업/iOS·Android 플랫폼 생성 + OAuth deep link 처리 + FastAPI CORS Capacitor origin 허용 완료 — FastAPI 배포·Apple Sign-in·스토어 심사 대기) |
-| v2 | KIS API 자동 연동 | 예정 |
-| v3 | AI 패턴 분석, 모바일 네이티브 전환 (React Native, 필요 시) | 예정 |
+| MVP | 수동 매매 기록, 포트폴리오 조회, 홈 대시보드, 분석 탭 | 🚧 CSV 임포트 잔여 |
+| v2.5 | FastAPI 백엔드 분리 + Capacitor 모바일앱 (iOS/Android) | 🚧 FastAPI 배포·Android 실기기 E2E·Apple Sign-in·스토어 심사 대기 |
+| v2 | KIS API 자동 연동, 공식 실시간 시세 | 예정 |
+| v3 | AI 패턴 분석, 모바일 네이티브 전환 검토 (RN) | 예정 |
 
 ## MVP 제외 항목 (v2+)
 
 - 증권사 API 자동 연동
-- 실시간 시세 (현재: 지연 시세 비공식 API 사용)
+- 실시간 시세 (현재: 지연 시세 비공식 API)
 - AI 분석
-- 푸시 알림 (v2.5 모바일앱에서 구현)
+- 푸시 알림 (v2.5 모바일앱에서)
 - 세금 계산 자동화
