@@ -47,10 +47,11 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
     staleTime: 60_000,
   });
 
-  // 새 쿼리 결과 도착 시 activeIndex 초기화 — useState 비교 패턴 (effect 불필요)
-  const [prevSuggestions, setPrevSuggestions] = useState(suggestions);
-  if (prevSuggestions !== suggestions) {
-    setPrevSuggestions(suggestions);
+  // 쿼리 키(debouncedValue) 변경 시 activeIndex 초기화 — 렌더 중 state 비교 패턴.
+  // suggestions 참조 비교는 useQuery 구조분해 기본값 `= []`가 매 렌더 새 배열을 만들어 무한 루프 유발.
+  const [prevQuery, setPrevQuery] = useState(debouncedValue);
+  if (prevQuery !== debouncedValue) {
+    setPrevQuery(debouncedValue);
     setActiveIndex(-1);
   }
 
