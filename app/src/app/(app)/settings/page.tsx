@@ -7,6 +7,7 @@ import { useAuth } from "@/components/providers/AuthProvider";
 import { AccountList } from "@/components/settings/AccountList";
 import { UserInfoSection } from "@/components/settings/UserInfoSection";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { ErrorState } from "@/components/shared/ErrorState";
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -33,16 +34,7 @@ export default function SettingsPage() {
     return (
       <>
         <PageHeader title="설정" />
-        <div className="px-5 pt-6 text-center space-y-3">
-          <p className="text-[13px] text-muted-foreground">데이터를 불러오지 못했어요.</p>
-          <button
-            type="button"
-            onClick={() => refetch()}
-            className="text-primary text-[13px] font-medium"
-          >
-            다시 시도
-          </button>
-        </div>
+        <ErrorState onRetry={refetch} />
       </>
     );
   }

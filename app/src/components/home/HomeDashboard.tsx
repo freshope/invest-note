@@ -5,6 +5,7 @@ import { AllocationTabs } from "./AllocationTabs";
 import { HoldingsList } from "./HoldingsList";
 import { EmptyState } from "./EmptyState";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { usePortfolioSummary } from "@/hooks/usePortfolioSummary";
 
 function Skeleton() {
@@ -44,16 +45,7 @@ export function HomeDashboard() {
     return (
       <>
         <PageHeader title="홈" />
-        <div className="px-5 pt-6 text-center space-y-3">
-          <p className="text-[13px] text-muted-foreground">데이터를 불러오지 못했어요.</p>
-          <button
-            type="button"
-            onClick={refetch}
-            className="text-[13px] font-semibold text-foreground underline underline-offset-2"
-          >
-            다시 시도
-          </button>
-        </div>
+        <ErrorState onRetry={refetch} />
       </>
     );
   }

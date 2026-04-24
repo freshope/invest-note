@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import { useQueries } from "@tanstack/react-query";
 import type { Period } from "@/lib/analysis/period";
 import { analysisApi } from "@/lib/api-client";
@@ -26,15 +27,20 @@ export function useAnalysisData(period: Period) {
   });
 
   const loading = summaryQ.isPending || behaviorQ.isPending || suggestionsQ.isPending;
-  const error = summaryQ.isError || behaviorQ.isError || suggestionsQ.isError
-    ? "분석 데이터를 불러오는 중 오류가 발생했습니다"
-    : null;
+  const isError = summaryQ.isError || behaviorQ.isError || suggestionsQ.isError;
+
+  const refetch = useCallback(() => {
+    summaryQ.refetch();
+    behaviorQ.refetch();
+    suggestionsQ.refetch();
+  }, [summaryQ.refetch, behaviorQ.refetch, suggestionsQ.refetch]);
 
   return {
     summary: summaryQ.data ?? null,
     behavior: behaviorQ.data ?? null,
     suggestionsData: suggestionsQ.data ?? null,
     loading,
-    error,
+    isError,
+    refetch,
   };
 }
