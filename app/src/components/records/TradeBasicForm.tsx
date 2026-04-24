@@ -15,7 +15,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/base/Select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/base/Popover";
 import { Calendar } from "@/components/base/Calendar";
@@ -279,7 +278,16 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
             render={({ field }) => (
               <Select value={field.value} onValueChange={field.onChange}>
                 <SelectTrigger>
-                  <SelectValue placeholder="계좌를 선택하세요" />
+                  {(() => {
+                    const acc = accounts.find((a) => a.id === field.value);
+                    if (!acc) return <span className="text-muted-foreground">계좌를 선택하세요</span>;
+                    return (
+                      <span className="inline-flex items-center gap-1.5">
+                        {acc.broker && <BrokerLogo broker={acc.broker} size={16} />}
+                        {acc.name}
+                      </span>
+                    );
+                  })()}
                 </SelectTrigger>
                 <SelectContent>
                   {accounts.map((acc) => (

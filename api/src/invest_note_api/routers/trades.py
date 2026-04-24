@@ -53,6 +53,12 @@ def _trade_dict(trade) -> dict:
     return trade.model_dump(mode="json")
 
 
+def _trade_with_account_dict(trade) -> dict:
+    d = _trade_dict(trade)
+    d["account"] = {"name": d.pop("account_name", None), "broker": d.pop("account_broker", None)}
+    return d
+
+
 def _breakdown_dict(bd: SellBreakdown) -> dict:
     return {
         "sellPrice": bd.sell_price,
@@ -113,7 +119,7 @@ async def list_trades_endpoint(
         if "cash_balance" in a and a["cash_balance"] is not None:
             a["cash_balance"] = float(a["cash_balance"])
 
-    return {"trades": [_trade_dict(t) for t in trades], "accounts": accounts}
+    return {"trades": [_trade_with_account_dict(t) for t in trades], "accounts": accounts}
 
 
 @router.post("", status_code=201)
