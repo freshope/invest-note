@@ -121,7 +121,7 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
       {children}
       {tradeSnap && (
         <TradePanel
-          key={tradeKey}
+          key={`trade-${tradeKey}`}
           open={tradePayload !== null}
           payload={tradeSnap}
           onClose={closeTrade}
@@ -132,7 +132,7 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
       )}
       {stockSnap && (
         <StockPanel
-          key={stockKey}
+          key={`stock-${stockKey}`}
           open={stockPayload !== null}
           payload={stockSnap}
           onClose={closeStock}
