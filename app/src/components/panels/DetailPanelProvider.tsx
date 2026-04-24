@@ -20,6 +20,7 @@ import { TradeDetail } from "@/components/records/TradeDetail";
 import { StockDetail } from "@/components/stocks/StockDetail";
 import { buildPnlMap } from "@/lib/analysis/realized-pnl";
 import { queryKeys } from "@/lib/query-keys";
+import { ACCOUNT_FILTER_ALL, useAccountFilter, useEnsureValidAccount } from "@/components/providers/AccountFilterProvider";
 import type { Account } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
 
@@ -232,15 +233,18 @@ interface StockPanelProps {
 
 function StockPanel({ open, payload, onClose, openTrade }: StockPanelProps) {
   const { assetName, ticker, country, allTrades, accounts } = payload;
+  const { selectedAccountId } = useAccountFilter();
+  useEnsureValidAccount(accounts);
 
   const filteredTrades = useMemo(
     () =>
       allTrades.filter(
         (t) =>
           (t.ticker_symbol ?? t.asset_name) === ticker &&
-          (t.country_code ?? "KR") === country,
+          (t.country_code ?? "KR") === country &&
+          (selectedAccountId === ACCOUNT_FILTER_ALL || t.account_id === selectedAccountId),
       ),
-    [allTrades, ticker, country],
+    [allTrades, ticker, country, selectedAccountId],
   );
 
   const pnlMap = useMemo(() => buildPnlMap(allTrades), [allTrades]);
@@ -276,6 +280,7 @@ function StockPanel({ open, payload, onClose, openTrade }: StockPanelProps) {
           country={country}
           trades={filteredTrades}
           stats={stats}
+          accounts={accounts}
           onBack={onClose}
           onTradePress={handleTradePress}
         />

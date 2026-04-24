@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
+import { ACCOUNT_FILTER_ALL } from "@/components/providers/AccountFilterProvider";
 import type { Account } from "@/types/database";
 
 interface AccountFilterProps {
@@ -23,8 +24,8 @@ export function AccountFilter({ accounts, value, onChange }: AccountFilterProps)
     <div className="flex gap-2 overflow-x-auto scrollbar-hide px-5 pb-3">
       <button
         type="button"
-        onClick={() => onChange("all")}
-        className={chipClass(value === "all", "px-3.5 py-1")}
+        onClick={() => onChange(ACCOUNT_FILTER_ALL)}
+        className={chipClass(value === ACCOUNT_FILTER_ALL, "px-3.5 py-1")}
       >
         전체
       </button>

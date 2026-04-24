@@ -6,6 +6,9 @@ import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade
 import { TradeCard } from "@/components/records/TradeCard";
 import { ChevronLeftIcon } from "lucide-react";
 import { CountryBadge } from "@/components/records/trade-display";
+import { AccountFilter } from "@/components/shared/AccountFilter";
+import { ACCOUNT_FILTER_ALL, useAccountFilter } from "@/components/providers/AccountFilterProvider";
+import type { Account } from "@/types/database";
 
 interface StockStats {
   totalTrades: number;
@@ -20,12 +23,15 @@ interface StockDetailProps {
   country: string;
   trades: TradeWithAccount[];
   stats: StockStats;
+  accounts: Account[];
   onBack?: () => void;
   onTradePress?: (trade: TradeWithAccount) => void;
 }
 
-export function StockDetail({ assetName, ticker, country, trades, stats, onBack, onTradePress }: StockDetailProps) {
+export function StockDetail({ assetName, ticker, country, trades, stats, accounts, onBack, onTradePress }: StockDetailProps) {
   const router = useRouter();
+  const { selectedAccountId, setSelectedAccountId } = useAccountFilter();
+  const isFiltered = selectedAccountId !== ACCOUNT_FILTER_ALL;
   const grouped = groupByDate(trades);
 
   const winRate = stats.sellCount > 0
@@ -55,6 +61,9 @@ export function StockDetail({ assetName, ticker, country, trades, stats, onBack,
             {assetName}
           </span>
         </div>
+        {accounts.length >= 2 && (
+          <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} />
+        )}
       </div>
 
       <div className="px-5 pb-8 space-y-5">
@@ -101,8 +110,13 @@ export function StockDetail({ assetName, ticker, country, trades, stats, onBack,
         <div>
           <p className="text-[13px] font-semibold text-muted-foreground mb-2">거래 히스토리</p>
           {trades.length === 0 ? (
-            <div className="rounded-2xl bg-muted/60 p-8 text-center">
-              <p className="text-[14px] text-muted-foreground">거래 기록이 없습니다</p>
+            <div className="rounded-2xl bg-muted/60 p-8 text-center space-y-1">
+              <p className="text-[14px] font-semibold text-foreground">
+                {isFiltered ? "해당 계좌의 거래 기록이 없어요" : "거래 기록이 없습니다"}
+              </p>
+              {isFiltered && (
+                <p className="text-[13px] text-muted-foreground">다른 계좌를 선택해보세요</p>
+              )}
             </div>
           ) : (
             <div className="space-y-6">
