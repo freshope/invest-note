@@ -14,10 +14,6 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 수수료 현황 별도 패널 — BUY commission·세금 합계, 순실현손익 vs 총비용 비교
 - [ ] 테스트 보강 — `period.ts` 경계값, `computeRealizedPnL` 멀티 종목, `byTag` FIFO 귀속
 
-## UX / 기타
-
-- [ ] HoldingsList fetch 에러 시 토스트 연동 — 네트워크 실패/401/500 시 빈 패널 대신 토스트 + 패널 미오픈
-
 ## 거래 손익 정합성
 
 - [ ] TOCTOU race → Postgres RPC atomic — 동시 SELL 요청이 같은 보유량 스냅샷으로 둘 다 통과 가능. validate+write 원자화 (FastAPI trades 라우터)
