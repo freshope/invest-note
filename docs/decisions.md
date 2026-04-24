@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-04-24 | TOCTOU race — pg_advisory_xact_lock 선택
+
+- **맥락:** trades 라우터의 `list_trades → validate → write` 흐름에서 동시 SELL 요청이 같은 보유량 스냅샷을 읽고 둘 다 validate를 통과해 음수 보유량이 발생 가능. `FOR UPDATE`를 걸 행이 없고(보유량은 trades 집계로 유도), `SERIALIZABLE` 격리는 retry loop가 필요해 라우터 구조 변경 비용이 큼.
+- **결정:** transaction-scoped advisory lock(`pg_advisory_xact_lock`) 사용. 키는 `TradeGroupKey(ticker, asset_name, country, account_id)` + `user_id`를 `hashtextextended`로 bigint 해시. create/update/delete 세 mutation 경로에 `list_trades` 이전 삽입.
+- **이유:** xact 변종은 트랜잭션 종료 시 자동 해제 → Supavisor transaction mode pooler에서 session-level 변종(`pg_advisory_lock`) 대비 leak 없음. 마이그레이션 불필요(Postgres 11+ 내장). 기존 `TradeGroupKey` 도메인 타입 재사용으로 그룹 경계 일관성 유지.
+- **트레이드오프:** 해시 충돌 시 불필요한 직렬화 발생(정합성 영향 없음, 64-bit 충돌 확률 무시 가능). lock_timeout 미설정 상태 — hang 방어용 `SET LOCAL lock_timeout` 후속 필요.
+
+---
+
 ## 2026-04-24 | FE constants — 레이어 분리 + 중앙화 (BE co-location 미적용)
 
 - **결정:** FE 상수는 BE처럼 도메인 폴더 내 co-location이 아닌 `app/src/lib/constants/` 중앙 폴더로 관리. 단일 파일에서만 쓰이는 UI 로컬 상수(색상, 애니메이션 ms, 탭 정의 등)는 컴포넌트 파일 내 유지.

@@ -16,8 +16,9 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 거래 손익 정합성
 
-- [ ] TOCTOU race → Postgres RPC atomic — 동시 SELL 요청이 같은 보유량 스냅샷으로 둘 다 통과 가능. validate+write 원자화 (FastAPI trades 라우터)
-- [ ] recalcGroupPnL 실패 시 응답 경고 — UPDATE 실패를 로그만 남기고 성공 반환. partial failure 헤더/로그 강화
+- [x] TOCTOU race → pg_advisory_xact_lock 원자화 완료 (feature/toctou-advisory-lock, 2026-04-24)
+- [ ] advisory lock timeout — `acquire_trade_group_lock` 내부에 `SET LOCAL lock_timeout = '2s'` 추가, 운영 hang 방어
+- [ ] 동시성 통합 테스트 — testcontainers-python + asyncpg + asyncio.gather 기반 실 Postgres race 재현 (현재 FakeConnection만으로는 실제 race 미검증)
 
 ## 데이터 정확성
 
