@@ -19,6 +19,7 @@ import type { AnalysisSummary } from "@/lib/analysis/aggregate";
 import type { SuggestionsData } from "@/hooks/useAnalysisData";
 import { evaluateRules } from "@/lib/analysis/rules";
 import { useAnalysisData } from "@/hooks/useAnalysisData";
+import { ErrorState } from "@/components/shared/ErrorState";
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -49,24 +50,27 @@ function InsightSection({
 
 export function AnalysisDashboard() {
   const [period, setPeriod] = useState<Period>(DEFAULT_ANALYSIS_PERIOD);
-  const { summary, behavior, suggestionsData, loading, error } = useAnalysisData(period);
+  const { summary, behavior, suggestionsData, loading, isError, refetch } = useAnalysisData(period);
 
   const isEmpty = summary && summary.totalTrades === 0;
   const isEmptyPeriod = !!isEmpty && period !== "all";
+
+  if (!loading && isError) {
+    return (
+      <>
+        <PageHeader title="분석" />
+        <ErrorState onRetry={refetch} />
+      </>
+    );
+  }
 
   return (
     <>
       <PageHeader
         title="분석"
-        actions={<PeriodFilterTabs value={period} onChange={setPeriod} compact />}
+        actions={loading ? undefined : <PeriodFilterTabs value={period} onChange={setPeriod} compact />}
       />
       <div className="px-5 pt-2 pb-24 space-y-4">
-        {error && (
-          <div className="rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-4 text-[13px] text-red-600 dark:text-red-400">
-            {error}
-          </div>
-        )}
-
         {loading ? (
           <>
             <div className="grid grid-cols-2 gap-2">
