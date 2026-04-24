@@ -40,7 +40,6 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [ ] MARKET_LABELS 중앙화 — `TradeDetail.tsx`("암호화폐") vs `DiversificationPanel.tsx`("코인") 불일치. 공유 상수로 통합
 - [ ] TradeEditPanel 스키마 일관성 — `price_display: z.string()` → `z.number().positive()` 기반으로 `TradeBasicForm`과 통일
-- [ ] zod enum 공유 — `strategy_type`, `emotion` enum이 TradeMetaBuyForm·TradeMetaSellForm·TradeEditPanel에 중복. 공통 상수로 통일
 - [ ] StrategyEmotionFields Controller 중첩 — strategy/emotion 이중 Controller → sibling Controller 배치
 - [ ] 자유 텍스트 필드 길이 제한 — buy_reason, sell_reason, reflection_note, improvement_note 5000자 제한 (FastAPI validation + DB CHECK)
 
@@ -52,9 +51,6 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 모바일앱 (v2.5) 잔여
 
-- [ ] Android 실기기 Google/Kakao OAuth E2E — 에뮬레이터 성능 이슈로 미확인. iOS 실기기 통과 + Android 배선 테스트(`adb shell am start` deep link) 통과로 배선은 증명. 실기기 확보 시 1회 확인
-- [ ] `trailingSlash: true` WebView 라우팅 검증 — 정적 export 라우트가 WKWebView/Chrome WebView에서 404 없이 로드되는지 확인
-- [ ] production `CORS_ORIGINS` 환경변수에 `capacitor://localhost`, `https://localhost` 반영
 - [ ] Apple Sign-in (Apple Developer Program $99/년, App Store 4.8 심사 필수)
 - [ ] 푸시 알림, 생체인증(Face ID/지문), safe area/Android 백버튼/외부 링크/키보드, 강제 업데이트 메커니즘
 - [ ] 앱 아이콘·스플래시·스토어 메타데이터·개인정보처리방침
