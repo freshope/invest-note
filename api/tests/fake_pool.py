@@ -24,7 +24,11 @@ class FakeConnection:
 
     def _is_internal(self, query: str) -> bool:
         q = query.strip().upper()
-        return q.startswith("SET LOCAL") or "SET_CONFIG" in q
+        return (
+            q.startswith("SET LOCAL")
+            or "SET_CONFIG" in q
+            or "PG_ADVISORY_XACT_LOCK" in q
+        )
 
     async def execute(self, query: str, *args: Any) -> str:
         if self._is_internal(query):
@@ -43,6 +47,8 @@ class FakeConnection:
         return self._next()
 
     async def fetchval(self, query: str, *args: Any) -> Any:
+        if self._is_internal(query):
+            return None
         return self._next()
 
     @asynccontextmanager

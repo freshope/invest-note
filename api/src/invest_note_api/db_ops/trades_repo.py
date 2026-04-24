@@ -3,10 +3,24 @@ from __future__ import annotations
 
 from typing import Any
 
+from invest_note_api.domain.realized_pnl import TradeGroupKey
 from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, MARKET_TYPE_STOCK, Trade, TradeWithAccount
 
 PG_UPDATE_ZERO = "UPDATE 0"
 PG_DELETE_ZERO = "DELETE 0"
+
+
+async def acquire_trade_group_lock(conn: Any, user_id: str, key: TradeGroupKey) -> None:
+    """같은 (user, account, ticker, country) 그룹의 동시 mutation을 직렬화.
+
+    트랜잭션 종료 시 자동 해제 — Supavisor transaction mode에서도 안전.
+    session-level pg_advisory_lock은 사용 금지 (pooler에서 leak).
+    """
+    lock_key = f"{user_id}:{key.account_id}:{key.ticker or key.asset_name}:{key.country}"
+    await conn.fetchval(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        lock_key,
+    )
 
 
 def _row_to_trade(row: Any) -> Trade:
