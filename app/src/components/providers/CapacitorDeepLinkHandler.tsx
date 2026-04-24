@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { isNativePlatform } from "@/lib/platform";
 import { NATIVE_URL_SCHEME, NATIVE_CALLBACK_HOST } from "@/lib/auth/oauth-config";
+import { LOGIN_OAUTH_FAILED_PATH_WITH_SLASH } from "@/lib/auth/errors";
 
 export const OAUTH_BROWSER_FINISHED_EVENT = "oauth:browser-finished";
 
@@ -59,13 +60,13 @@ export function CapacitorDeepLinkHandler() {
               refresh_token: refreshToken,
             });
             if (error) {
-              router.replace("/login/?error=oauth_failed");
+              router.replace(LOGIN_OAUTH_FAILED_PATH_WITH_SLASH);
               return;
             }
             router.replace("/");
             return;
           } catch {
-            router.replace("/login/?error=oauth_failed");
+            router.replace(LOGIN_OAUTH_FAILED_PATH_WITH_SLASH);
             return;
           }
         }
@@ -74,19 +75,19 @@ export function CapacitorDeepLinkHandler() {
       // PKCE flow: ?code=... 로 돌아옴
       const code = url.searchParams.get("code");
       if (!code) {
-        router.replace("/login/?error=oauth_failed");
+        router.replace(LOGIN_OAUTH_FAILED_PATH_WITH_SLASH);
         return;
       }
 
       try {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) {
-          router.replace("/login/?error=oauth_failed");
+          router.replace(LOGIN_OAUTH_FAILED_PATH_WITH_SLASH);
           return;
         }
         router.replace("/");
       } catch {
-        router.replace("/login/?error=oauth_failed");
+        router.replace(LOGIN_OAUTH_FAILED_PATH_WITH_SLASH);
       }
     };
 
