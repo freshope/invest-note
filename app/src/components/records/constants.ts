@@ -1,4 +1,4 @@
-import type { StrategyType, EmotionType, ReasoningTag } from "@/types/database";
+import type { StrategyType, EmotionType, ReasoningTag, TradeResult } from "@/types/database";
 
 export const STRATEGIES: { value: StrategyType; label: string }[] = [
   { value: "SCALPING", label: "스캘핑" },
@@ -22,7 +22,6 @@ export const REASONING_TAGS: { value: ReasoningTag; label: string }[] = [
   { value: "FEELING", label: "감/직감" },
 ];
 
-// value → label 단순 lookup (TradeCard/TradeDetail/TradeMetaSellForm/TradeEditPanel 공용)
 export const STRATEGY_LABELS: Record<string, string> = Object.fromEntries(
   STRATEGIES.map((s) => [s.value, s.label]),
 );
@@ -31,8 +30,12 @@ export const EMOTION_LABELS: Record<string, string> = Object.fromEntries(
   EMOTIONS.map((e) => [e.value, e.label]),
 );
 
-// Zod enum 단일 소스 — 위 STRATEGIES/EMOTIONS/REASONING_TAGS의 value와 동기 유지 필요
-export const STRATEGY_VALUES = ["SCALPING", "SWING", "LONG_TERM", "UNKNOWN"] as const;
-export const EMOTION_VALUES = ["CONFIDENT", "ANXIOUS", "FOMO", "IMPULSIVE", "CALM"] as const;
-export const REASONING_TAG_VALUES = ["TECHNICAL", "FUNDAMENTAL", "NEWS", "FEELING"] as const;
-export const TRADE_RESULT_VALUES = ["SUCCESS", "FAIL", "BREAKEVEN"] as const;
+export const REASONING_TAG_LABELS: Record<string, string> = Object.fromEntries(
+  REASONING_TAGS.map((t) => [t.value, t.label]),
+);
+
+// satisfies로 database.ts의 타입과 동기화 보장
+export const STRATEGY_VALUES = ["SCALPING", "SWING", "LONG_TERM", "UNKNOWN"] as const satisfies readonly StrategyType[];
+export const EMOTION_VALUES = ["CONFIDENT", "ANXIOUS", "FOMO", "IMPULSIVE", "CALM"] as const satisfies readonly EmotionType[];
+export const REASONING_TAG_VALUES = ["TECHNICAL", "FUNDAMENTAL", "NEWS", "FEELING"] as const satisfies readonly ReasoningTag[];
+export const TRADE_RESULT_VALUES = ["SUCCESS", "FAIL", "BREAKEVEN"] as const satisfies readonly TradeResult[];

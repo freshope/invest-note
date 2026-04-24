@@ -24,6 +24,7 @@ import { queryKeys } from "@/lib/query-keys";
 import { VALIDATION_LIMITS } from "@/lib/constants/validation";
 import { COMMISSION_RATE, SELL_TAX_RATE } from "@/lib/constants/trading";
 import { STORAGE_KEYS } from "@/lib/constants/storage";
+import { COUNTRY_CODES } from "@/lib/constants/market";
 import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
 import { HoldingSelectInput } from "./HoldingSelectInput";
 import { CountryBadge } from "./trade-display";
@@ -41,7 +42,7 @@ const schema = z.object({
     .min(1, "종목명을 입력해주세요.")
     .max(VALIDATION_LIMITS.ASSET_NAME_MAX),
   ticker_symbol: z.string().min(1, "자동완성으로 종목을 선택해주세요."),
-  country_code: z.enum(["KR", "US", "OTHER"]),
+  country_code: z.enum(COUNTRY_CODES),
   exchange: z.string().trim().max(VALIDATION_LIMITS.EXCHANGE_MAX),
   traded_at: z.date(),
   price: z.number({ message: "올바른 가격을 입력해주세요." }).positive("올바른 가격을 입력해주세요."),

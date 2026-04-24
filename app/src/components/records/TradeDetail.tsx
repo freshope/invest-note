@@ -17,7 +17,7 @@ import { tradesApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { ChevronLeftIcon } from "lucide-react";
 import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
-import { STRATEGY_LABELS, EMOTION_LABELS } from "./constants";
+import { STRATEGY_LABELS, EMOTION_LABELS, REASONING_TAG_LABELS } from "./constants";
 
 interface TradeDetailProps {
   trade: TradeWithAccount;
@@ -29,12 +29,6 @@ interface TradeDetailProps {
 }
 
 
-const REASONING_TAG_LABELS: Record<string, string> = {
-  TECHNICAL: "기술적 분석",
-  FUNDAMENTAL: "펀더멘탈",
-  NEWS: "뉴스/이슈",
-  FEELING: "감/직감",
-};
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (

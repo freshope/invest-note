@@ -9,9 +9,7 @@ export const COUNTRY_LABEL: Record<CountryCode, string> = {
 
 export const DEFAULT_COUNTRY_CODE: CountryCode = "KR";
 
-const COUNTRY_CODE_SET = new Set<string>(COUNTRY_CODES);
-
 export function isCountryCode(value: string): value is CountryCode {
-  return COUNTRY_CODE_SET.has(value);
+  return COUNTRY_CODES.includes(value as CountryCode);
 }
 
