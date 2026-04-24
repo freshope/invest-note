@@ -2,6 +2,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 KST = ZoneInfo("Asia/Seoul")
+KST_OFFSET = "+09:00"
 MS_PER_DAY = 1000 * 60 * 60 * 24
 
 

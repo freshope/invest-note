@@ -18,6 +18,7 @@ from ..domain.trade_types import (
     TradeResult,
     TradeType,
 )
+from ..domain.trade_utils import KST_OFFSET
 
 
 def _comma_positive(v: object) -> float:
@@ -50,8 +51,8 @@ def _traded_at_transform(raw: object) -> datetime:
         raise ValueError("날짜를 선택해주세요.")
     s = raw.strip()
     # "+09:00" suffix가 없으면 KST로 간주
-    if not any(s.endswith(tz) for tz in ("+09:00", "Z", "+00:00")) and "+" not in s[10:] and "Z" not in s:
-        s = s + "+09:00"
+    if not any(s.endswith(tz) for tz in (KST_OFFSET, "Z", "+00:00")) and "+" not in s[10:] and "Z" not in s:
+        s = s + KST_OFFSET
     try:
         return datetime.fromisoformat(s).astimezone(timezone.utc)
     except ValueError:
