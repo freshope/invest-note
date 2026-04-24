@@ -214,9 +214,9 @@ class TestCreateTrade:
         trade_row = _make_trade_row()
         inserted = {"id": "new-t1", "trade_type": "BUY"}
         conn = FakeConnection(
-            _to_record(acct_row),
-            [_to_record(trade_row)],
-            _to_record(inserted),
+            _to_record(acct_row),      # account exists check
+            [_to_record(trade_row)],   # list_trades
+            _to_record(inserted),      # insert_trade RETURNING
         )
         with _patch_trades(conn):
             resp = trades_client.post("/api/trades", json=self._buy_payload())

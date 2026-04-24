@@ -139,30 +139,6 @@ async def create_trade(
         if not acct_exists:
             raise APIError("올바른 계좌를 선택해주세요.", 400)
 
-        # BUY도 lock — recalc_group_pnl이 같은 그룹 SELL들을 UPDATE하므로 BUY/SELL 모두 직렬화 필요
-        await acquire_trade_group_lock(
-            conn,
-            user_id=str(user.id),
-            account_id=data.account_id,
-            ticker_symbol=data.ticker_symbol,
-            country_code=data.country_code or DEFAULT_COUNTRY,
-        )
-
-        all_trades = await list_trades(conn, user.id)
-
-        if data.trade_type == TRADE_TYPE_SELL:
-            holding = compute_total_holding(
-                all_trades,
-                ticker=data.ticker_symbol,
-                asset_name=data.asset_name,
-                country=data.country_code or DEFAULT_COUNTRY,
-                account_id=data.account_id,
-            )
-            if holding <= 0:
-                raise APIError("보유하지 않은 종목입니다.", 400)
-            if data.quantity > holding:
-                raise APIError(f"보유 수량이 부족합니다 (현재 {holding}주).", 400)
-
         now = datetime.now(timezone.utc)
         new_trade = Trade(
             id="__new__",
@@ -183,6 +159,24 @@ async def create_trade(
             created_at=now,
             updated_at=now,
         )
+
+        # BUY도 lock — recalc_group_pnl이 같은 그룹 SELL들을 UPDATE하므로 BUY/SELL 모두 직렬화 필요
+        await acquire_trade_group_lock(conn, str(user.id), trade_to_group_key(new_trade))
+
+        all_trades = await list_trades(conn, user.id)
+
+        if data.trade_type == TRADE_TYPE_SELL:
+            holding = compute_total_holding(
+                all_trades,
+                ticker=data.ticker_symbol,
+                asset_name=data.asset_name,
+                country=data.country_code or DEFAULT_COUNTRY,
+                account_id=data.account_id,
+            )
+            if holding <= 0:
+                raise APIError("보유하지 않은 종목입니다.", 400)
+            if data.quantity > holding:
+                raise APIError(f"보유 수량이 부족합니다 (현재 {holding}주).", 400)
 
         if data.trade_type == TRADE_TYPE_SELL:
             ok, msg, _ = validate_mutation(all_trades, "insert", new_trade)
@@ -306,13 +300,7 @@ async def update_trade(
         existing = Trade(**dict(existing_row))
 
         if fields & PNL_AFFECTING_FIELDS:
-            await acquire_trade_group_lock(
-                conn,
-                user_id=str(user.id),
-                account_id=existing.account_id,
-                ticker_symbol=existing.ticker_symbol,
-                country_code=existing.country_code or DEFAULT_COUNTRY,
-            )
+            await acquire_trade_group_lock(conn, str(user.id), trade_to_group_key(existing))
             all_trades = await list_trades(conn, user.id)
             ok, msg, _ = validate_mutation(all_trades, "update", existing, patch)
             if not ok:
@@ -344,13 +332,7 @@ async def delete_trade_endpoint(
             raise APIError(ERR_TRADE_NOT_FOUND, 404)
         target = Trade(**dict(target_row))
 
-        await acquire_trade_group_lock(
-            conn,
-            user_id=str(user.id),
-            account_id=target.account_id,
-            ticker_symbol=target.ticker_symbol,
-            country_code=target.country_code or DEFAULT_COUNTRY,
-        )
+        await acquire_trade_group_lock(conn, str(user.id), trade_to_group_key(target))
 
         all_trades = await list_trades(conn, user.id)
         ok, msg, _ = validate_mutation(all_trades, "delete", target)
