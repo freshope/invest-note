@@ -2,6 +2,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 _KST = ZoneInfo("Asia/Seoul")
+KST = _KST
+MS_PER_DAY = 1000 * 60 * 60 * 24
 
 
 def to_kst(utc_dt: datetime) -> datetime:

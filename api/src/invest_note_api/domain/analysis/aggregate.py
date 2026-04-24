@@ -4,6 +4,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from invest_note_api.domain.trade_types import (
+    DEFAULT_COUNTRY,
+    RESULT_SUCCESS,
+    STRATEGY_UNKNOWN,
+    TAG_FEELING,
+    TRADE_TYPE_BUY,
+    TRADE_TYPE_SELL,
+)
+
 if TYPE_CHECKING:
     from invest_note_api.domain.trade_types import Trade
 
@@ -52,7 +61,7 @@ class AnalysisSummary:
 
 
 def _win_rate(results: list[str]) -> float:
-    return sum(1 for r in results if r == "SUCCESS") / len(results) * 100 if results else 0.0
+    return sum(1 for r in results if r == RESULT_SUCCESS) / len(results) * 100 if results else 0.0
 
 
 def compute_summary(
@@ -61,18 +70,18 @@ def compute_summary(
     holding_days_map: dict[str, int],
     all_trades: list[Trade] | None = None,
 ) -> AnalysisSummary:
-    sells = [t for t in trades if t.trade_type == "SELL"]
-    buys = [t for t in trades if t.trade_type == "BUY"]
+    sells = [t for t in trades if t.trade_type == TRADE_TYPE_SELL]
+    buys = [t for t in trades if t.trade_type == TRADE_TYPE_BUY]
 
     sells_with_result = [t for t in sells if t.result is not None]
-    win_count = sum(1 for t in sells_with_result if t.result == "SUCCESS")
+    win_count = sum(1 for t in sells_with_result if t.result == RESULT_SUCCESS)
     win_rate = (win_count / len(sells_with_result) * 100) if sells_with_result else 0.0
     total_profit_loss = sum(pnl_map.get(t.id, 0.0) for t in sells)
 
     # byStrategy
     strat_map: dict[str, dict] = {}
     for t in sells:
-        key = t.strategy_type or "UNKNOWN"
+        key = t.strategy_type or STRATEGY_UNKNOWN
         if key not in strat_map:
             strat_map[key] = {"pnls": [], "results": [], "days": []}
         s = strat_map[key]
@@ -108,7 +117,7 @@ def compute_summary(
             emotion_map[t.emotion] = {"total_count": 0, "sell_count": 0, "pnls": [], "results": []}
         e = emotion_map[t.emotion]
         e["total_count"] += 1
-        if t.trade_type == "SELL":
+        if t.trade_type == TRADE_TYPE_SELL:
             e["sell_count"] += 1
             e["pnls"].append(pnl_map.get(t.id, 0.0))
             if t.result:
@@ -132,12 +141,12 @@ def compute_summary(
 
     # byTag — 기간 밖 BUY도 포함 (allTrades 기준), 계좌별 분리
     all_buys = sorted(
-        [t for t in (all_trades or trades) if t.trade_type == "BUY"],
+        [t for t in (all_trades or trades) if t.trade_type == TRADE_TYPE_BUY],
         key=lambda t: (t.traded_at, 0),  # BUY-first tie-break (BUY=0 < SELL=1)
     )
     buys_by_key: dict[str, list[Trade]] = {}
     for t in all_buys:
-        key = f"{t.ticker_symbol or t.asset_name}:{t.country_code or 'KR'}:{t.account_id}"
+        key = f"{t.ticker_symbol or t.asset_name}:{t.country_code or DEFAULT_COUNTRY}:{t.account_id}"
         buys_by_key.setdefault(key, []).append(t)
 
     tag_map: dict[str, dict] = {}
@@ -175,7 +184,7 @@ def compute_summary(
         sum(1 for t in buys if not t.reasoning_tags) / len(buys) * 100 if buys else 0.0
     )
     feeling_rate = (
-        sum(1 for t in buys if "FEELING" in (t.reasoning_tags or [])) / len(buys) * 100 if buys else 0.0
+        sum(1 for t in buys if TAG_FEELING in (t.reasoning_tags or [])) / len(buys) * 100 if buys else 0.0
     )
     reflection_rate = (
         sum(1 for t in sells if t.reflection_note and t.reflection_note.strip()) / len(sells) * 100

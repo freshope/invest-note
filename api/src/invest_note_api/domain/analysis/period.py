@@ -4,16 +4,16 @@ from __future__ import annotations
 import calendar
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
-from zoneinfo import ZoneInfo
 
-from invest_note_api.domain.trade_utils import to_kst
+from invest_note_api.domain.trade_utils import KST, to_kst
 
 if TYPE_CHECKING:
     from invest_note_api.domain.trade_types import Trade
 
 Period = Literal["1m", "3m", "6m", "ytd", "all"]
+DEFAULT_PERIOD: Period = "all"
 
-_KST = ZoneInfo("Asia/Seoul")
+_KST = KST
 
 
 def parse_period(param: str | None) -> Period:

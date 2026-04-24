@@ -29,7 +29,18 @@ from invest_note_api.domain.holdings import (
     find_latest_buy_strategy,
 )
 from invest_note_api.domain.realized_pnl import trade_to_group_key, validate_mutation
-from invest_note_api.domain.trade_types import Trade
+from invest_note_api.domain.trade_types import (
+    DEFAULT_COUNTRY,
+    RESULT_BREAKEVEN,
+    RESULT_FAIL,
+    RESULT_SUCCESS,
+    STRATEGY_LONG_TERM,
+    STRATEGY_SCALPING,
+    STRATEGY_SWING,
+    STRATEGY_UNKNOWN,
+    TRADE_TYPE_SELL,
+    Trade,
+)
 from invest_note_api.errors import APIError, validate_body
 from invest_note_api.schemas.trade import TradeCreate, TradeUpdate
 
@@ -58,24 +69,24 @@ def _breakdown_dict(bd: SellBreakdown) -> dict:
 
 def _infer_strategy(holding_days: int) -> str:
     if holding_days <= 1:
-        return "SCALPING"
+        return STRATEGY_SCALPING
     if holding_days <= 30:
-        return "SWING"
-    return "LONG_TERM"
+        return STRATEGY_SWING
+    return STRATEGY_LONG_TERM
 
 
 def _derive_result(pnl: float) -> str:
     if pnl > 0:
-        return "SUCCESS"
+        return RESULT_SUCCESS
     if pnl < 0:
-        return "FAIL"
-    return "BREAKEVEN"
+        return RESULT_FAIL
+    return RESULT_BREAKEVEN
 
 
 @router.get("")
 async def list_trades_endpoint(
     ticker: str | None = Query(default=None),
-    country: str = Query(default="KR"),
+    country: str = Query(default=DEFAULT_COUNTRY),
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> dict:
@@ -93,7 +104,7 @@ async def list_trades_endpoint(
     if ticker:
         trades = [
             t for t in trades
-            if (t.country_code or "KR") == country
+            if (t.country_code or DEFAULT_COUNTRY) == country
             and (t.ticker_symbol == ticker or t.asset_name == ticker)
         ]
 
@@ -123,12 +134,12 @@ async def create_trade(
 
         all_trades = await list_trades(conn, user.id)
 
-        if data.trade_type == "SELL":
+        if data.trade_type == TRADE_TYPE_SELL:
             holding = compute_total_holding(
                 all_trades,
                 ticker=data.ticker_symbol,
                 asset_name=data.asset_name,
-                country=data.country_code or "KR",
+                country=data.country_code or DEFAULT_COUNTRY,
                 account_id=data.account_id,
             )
             if holding <= 0:
@@ -149,7 +160,7 @@ async def create_trade(
             quantity=data.quantity,
             total_amount=data.price * data.quantity,
             traded_at=data.traded_at,
-            country_code=data.country_code or "KR",
+            country_code=data.country_code or DEFAULT_COUNTRY,
             exchange=data.exchange or "",
             commission=data.commission,
             tax=data.tax,
@@ -157,7 +168,7 @@ async def create_trade(
             updated_at=now,
         )
 
-        if data.trade_type == "SELL":
+        if data.trade_type == TRADE_TYPE_SELL:
             ok, msg, _ = validate_mutation(all_trades, "insert", new_trade)
             if not ok:
                 raise APIError(msg, 400)
@@ -173,7 +184,7 @@ async def create_trade(
             "traded_at": data.traded_at,
             "commission": data.commission,
             "tax": data.tax,
-            "country_code": data.country_code or "KR",
+            "country_code": data.country_code or DEFAULT_COUNTRY,
             "exchange": data.exchange or "",
         })
 
@@ -199,7 +210,7 @@ async def get_trade_summary(
             raise APIError("거래를 찾을 수 없습니다.", 404)
 
         sell = Trade(**dict(sell_row))
-        if sell.trade_type != "SELL":
+        if sell.trade_type != TRADE_TYPE_SELL:
             raise APIError("매도 거래만 조회할 수 있습니다.", 400)
 
         all_trades = await list_trades(conn, user.id)
@@ -210,13 +221,13 @@ async def get_trade_summary(
     ticker = sell.ticker_symbol or sell.asset_name
     planned_strategy = find_latest_buy_strategy(
         all_trades,
-        LotKey(ticker=ticker, country=sell.country_code or "KR", account_id=sell.account_id, asset_name=sell.asset_name),
+        LotKey(ticker=ticker, country=sell.country_code or DEFAULT_COUNTRY, account_id=sell.account_id, asset_name=sell.asset_name),
     )
 
     strategy_eval = None
     if holding_days is not None:
         actual = _infer_strategy(holding_days)
-        if not planned_strategy or planned_strategy == "UNKNOWN":
+        if not planned_strategy or planned_strategy == STRATEGY_UNKNOWN:
             adherence = "UNKNOWN"
         else:
             adherence = "FOLLOWED" if actual == planned_strategy else "DEVIATED"

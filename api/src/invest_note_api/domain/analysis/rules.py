@@ -6,6 +6,14 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, TypedDict
 
 from invest_note_api.domain.analysis.concentration import HHI_HIGH, TOP1_WEIGHT_HIGH
+from invest_note_api.domain.trade_types import (
+    EMOTION_CALM,
+    EMOTION_FOMO,
+    STRATEGY_LONG_TERM,
+    STRATEGY_SCALPING,
+    STRATEGY_SWING,
+    STRATEGY_UNKNOWN,
+)
 
 if TYPE_CHECKING:
     from invest_note_api.domain.analysis.aggregate import AnalysisSummary
@@ -39,7 +47,7 @@ _RuleFn = Callable[[RuleInput], Suggestion | None]
 
 def _rule_fomo(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
-    fomo = next((e for e in summary.by_emotion if e.type == "FOMO"), None)
+    fomo = next((e for e in summary.by_emotion if e.type == EMOTION_FOMO), None)
     if not fomo or fomo.sell_count < 5 or fomo.result_count < 3 or fomo.win_rate >= 40:
         return None
     pct = _round(fomo.win_rate)
@@ -55,7 +63,7 @@ def _rule_fomo(inp: RuleInput) -> Suggestion | None:
 
 def _rule_calm(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
-    calm = next((e for e in summary.by_emotion if e.type == "CALM"), None)
+    calm = next((e for e in summary.by_emotion if e.type == EMOTION_CALM), None)
     if not calm or calm.sell_count < 5 or calm.win_rate < 60:
         return None
     pct = _round(calm.win_rate)
@@ -118,7 +126,7 @@ def _rule_no_reflection(inp: RuleInput) -> Suggestion | None:
 
 def _rule_holding_mismatch(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
-    scalping = next((s for s in summary.by_strategy if s.type == "SCALPING"), None)
+    scalping = next((s for s in summary.by_strategy if s.type == STRATEGY_SCALPING), None)
     if not scalping or scalping.count < 3 or scalping.avg_holding_days <= 7:
         return None
     days = _round(scalping.avg_holding_days)
@@ -140,7 +148,7 @@ def _rule_losing_strategy(inp: RuleInput) -> Suggestion | None:
     )
     if not worst:
         return None
-    labels = {"SCALPING": "스캘핑", "SWING": "스윙", "LONG_TERM": "장기", "UNKNOWN": "전략 미설정"}
+    labels = {STRATEGY_SCALPING: "스캘핑", STRATEGY_SWING: "스윙", STRATEGY_LONG_TERM: "장기", STRATEGY_UNKNOWN: "전략 미설정"}
     label = labels.get(worst.type, worst.type)
     pct = _round(worst.win_rate)
     return Suggestion(
