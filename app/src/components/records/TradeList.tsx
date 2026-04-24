@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { TradeCard } from "./TradeCard";
 import { TradeFormPanel } from "./TradeFormPanel";
 import { useDetailPanel } from "@/components/panels/DetailPanelProvider";
 import { CsvUploadButton } from "./CsvUploadButton";
-import { AccountFilter } from "./AccountFilter";
+import { AccountFilter } from "@/components/shared/AccountFilter";
+import { ACCOUNT_FILTER_ALL, useAccountFilter, useEnsureValidAccount } from "@/components/providers/AccountFilterProvider";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import type { Account } from "@/types/database";
 import { PlusIcon } from "lucide-react";
@@ -18,19 +19,13 @@ interface TradeListProps {
 
 export function TradeList({ trades, accounts }: TradeListProps) {
   const [formOpen, setFormOpen] = useState(false);
-  const [selectedAccountId, setSelectedAccountId] = useState("all");
+  const { selectedAccountId, setSelectedAccountId } = useAccountFilter();
   const { openTrade } = useDetailPanel();
-
-  useEffect(() => {
-    if (selectedAccountId === "all") return;
-    if (!accounts.some((a) => a.id === selectedAccountId)) {
-      setSelectedAccountId("all");
-    }
-  }, [accounts]);
+  useEnsureValidAccount(accounts);
 
   const filteredTrades = useMemo(
     () =>
-      selectedAccountId === "all"
+      selectedAccountId === ACCOUNT_FILTER_ALL
         ? trades
         : trades.filter((t) => t.account_id === selectedAccountId),
     [trades, selectedAccountId],

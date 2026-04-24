@@ -4,10 +4,6 @@ MVP 이후 구현할 작업 후보 목록.
 
 ---
 
-## 기록 탭
-
-- [ ] 계좌 필터 컨텍스트 → 종목 패널 전달 — 계좌 A 필터 상태에서 종목 클릭 시 종목 패널에 해당 계좌 거래만 표시. `openTrade`에 `contextAccountId` 추가
-
 ## 분석 탭 성능 / 유지보수
 
 - [ ] InsightSection `useMemo` 적용 — `evaluateRules()` 호출 메모이제이션 (176줄 룰 배열이 매 렌더마다 실행)

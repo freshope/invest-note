@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { DetailPanelProvider } from "@/components/panels/DetailPanelProvider";
+import { AccountFilterProvider } from "@/components/providers/AccountFilterProvider";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { FullPageSpinner } from "@/components/base/FullPageSpinner";
 
@@ -22,9 +23,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (!user) return null;
 
   return (
-    <DetailPanelProvider>
-      <main className="flex-1 pb-24">{children}</main>
-      <BottomNav />
-    </DetailPanelProvider>
+    <AccountFilterProvider>
+      <DetailPanelProvider>
+        <main className="flex-1 pb-24">{children}</main>
+        <BottomNav />
+      </DetailPanelProvider>
+    </AccountFilterProvider>
   );
 }
