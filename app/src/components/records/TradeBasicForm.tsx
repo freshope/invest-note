@@ -23,6 +23,7 @@ import { tradesApi, portfolioApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { VALIDATION_LIMITS } from "@/lib/constants/validation";
 import { COMMISSION_RATE, SELL_TAX_RATE } from "@/lib/constants/trading";
+import { STORAGE_KEYS } from "@/lib/constants/storage";
 import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
 import { HoldingSelectInput } from "./HoldingSelectInput";
 import { CountryBadge } from "./trade-display";
@@ -31,8 +32,6 @@ import type { Account, TradeType } from "@/types/database";
 import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
-
-const LAST_ACCOUNT_KEY = "invest-note:last-account-id";
 
 const schema = z.object({
   trade_type: z.enum(["BUY", "SELL"]),
@@ -120,7 +119,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
 
   // 마운트 후 localStorage에서 마지막 사용 계좌 복원
   useEffect(() => {
-    const stored = window.localStorage.getItem(LAST_ACCOUNT_KEY);
+    const stored = window.localStorage.getItem(STORAGE_KEYS.LAST_ACCOUNT_ID);
     if (stored && accounts.some((a) => a.id === stored)) {
       setValue("account_id", stored);
     }
@@ -194,7 +193,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         tax: values.tax,
         traded_at: format(values.traded_at, "yyyy-MM-dd'T'HH:mm"),
       });
-      window.localStorage.setItem(LAST_ACCOUNT_KEY, values.account_id);
+      window.localStorage.setItem(STORAGE_KEYS.LAST_ACCOUNT_ID, values.account_id);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
         queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
