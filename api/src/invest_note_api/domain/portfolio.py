@@ -11,6 +11,9 @@ from invest_note_api.domain.realized_pnl import build_pnl_map
 if TYPE_CHECKING:
     from invest_note_api.domain.trade_types import Trade
 
+NOTE_TYPE_REASON = "근거"
+NOTE_TYPE_REFLECTION = "회고"
+
 
 @dataclass
 class Account:
@@ -103,7 +106,7 @@ def build_positions(trades: list["Trade"]) -> list[Position]:
             lot["running_cost"] += trade.price * trade.quantity
             reason = (trade.buy_reason or "").strip()
             if reason:
-                lot["last_note_type"] = "근거"
+                lot["last_note_type"] = NOTE_TYPE_REASON
                 lot["last_note"] = reason
         else:
             avg_cost = trade.avg_buy_price or 0.0
@@ -113,7 +116,7 @@ def build_positions(trades: list["Trade"]) -> list[Position]:
             lot["running_qty"] = max(0.0, lot["running_qty"] - trade.quantity)
             note = (trade.reflection_note or "").strip() or (trade.sell_reason or "").strip()
             if note:
-                lot["last_note_type"] = "회고"
+                lot["last_note_type"] = NOTE_TYPE_REFLECTION
                 lot["last_note"] = note
 
     # lot → position 집계 (보유수량 > 0인 lot만)
