@@ -6,6 +6,9 @@ const kstOpts = { in: tz(KST) };
 
 export type Period = "1m" | "3m" | "6m" | "ytd" | "all";
 
+// 대시보드 진입 시 기본 기간. parsePeriod의 fallback("all")은 URL 무효값 → 전체이며 의도가 다름.
+export const DEFAULT_ANALYSIS_PERIOD: Period = "3m";
+
 export function parsePeriod(param: string | null): Period {
   if (param === "1m" || param === "3m" || param === "6m" || param === "ytd" || param === "all") {
     return param;
