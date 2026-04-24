@@ -6,6 +6,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { Input } from "@/components/base/Input";
 import { stocksApi, type StockSearchResult } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
+import { QUERY_STOCK_SEARCH_STALE_TIME_MS } from "@/lib/constants/query";
 
 export interface SelectedStock {
   name: string;
@@ -44,7 +45,7 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
     queryKey: queryKeys.stockSearch(debouncedValue),
     queryFn: () => fetchStocks(debouncedValue),
     enabled: debouncedValue.trim().length >= 1,
-    staleTime: 60_000,
+    staleTime: QUERY_STOCK_SEARCH_STALE_TIME_MS,
   });
 
   // 쿼리 키(debouncedValue) 변경 시 activeIndex 초기화 — 렌더 중 state 비교 패턴.
