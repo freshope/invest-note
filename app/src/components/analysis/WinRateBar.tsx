@@ -1,9 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-
-const WIN_THRESHOLD = 60;
-const LOSS_THRESHOLD = 40;
+import { WIN_THRESHOLD, LOSS_THRESHOLD } from "@/lib/constants/analysis";
 
 interface WinRateBarProps {
   rate: number;

@@ -1,9 +1,8 @@
 import type { Trade } from "@/types/database";
 import type { Position } from "@/lib/portfolio";
+import { HHI_HIGH, HHI_MID, TOP1_WEIGHT_HIGH } from "@/lib/constants/analysis";
 
-export const HHI_HIGH = 0.5;          // 집중 — 경고 수준
-export const HHI_MID = 0.25;          // 보통
-export const TOP1_WEIGHT_HIGH = 0.4;  // 단일 종목 비중 경고 임계치
+export { HHI_HIGH, HHI_MID, TOP1_WEIGHT_HIGH };
 
 export interface ConcentrationData {
   hhi: number;

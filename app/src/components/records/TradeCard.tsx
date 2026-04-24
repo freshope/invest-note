@@ -3,33 +3,12 @@
 import type { Trade, Account } from "@/types/database";
 import { cn } from "@/lib/utils";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
-
+import { STRATEGY_LABELS, EMOTION_LABELS, RESULT_LABELS } from "@/lib/constants/trading";
 
 interface TradeCardProps {
   trade: Trade & { account?: Pick<Account, "name" | "broker"> };
   onPress?: () => void;
 }
-
-const STRATEGY_LABELS: Record<string, string> = {
-  SCALPING: "스캘핑",
-  SWING: "스윙",
-  LONG_TERM: "장기",
-  UNKNOWN: "—",
-};
-
-const EMOTION_LABELS: Record<string, string> = {
-  CONFIDENT: "확신",
-  ANXIOUS: "불안",
-  FOMO: "FOMO",
-  IMPULSIVE: "충동",
-  CALM: "평온",
-};
-
-const RESULT_LABELS: Record<string, string> = {
-  SUCCESS: "수익",
-  FAIL: "손실",
-  BREAKEVEN: "본전",
-};
 
 export function TradeCard({ trade, onPress }: TradeCardProps) {
   const isBuy = trade.trade_type === "BUY";

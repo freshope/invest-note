@@ -2,12 +2,7 @@
 
 import type { ConcentrationData } from "@/lib/analysis/concentration";
 import { HHI_HIGH, HHI_MID } from "@/lib/analysis/concentration";
-
-const COUNTRY_LABELS: Record<string, string> = {
-  KR: "국내",
-  US: "미국",
-  OTHER: "기타",
-};
+import { COUNTRY_LABEL, isCountryCode } from "@/lib/constants/market";
 
 const MARKET_LABELS: Record<string, string> = {
   STOCK: "주식",
@@ -85,7 +80,7 @@ export function DiversificationPanel({ concentration }: DiversificationPanelProp
             <div className="space-y-2">
               <p className="text-[12px] font-semibold text-muted-foreground">국가</p>
               {byCountry.map((c) => (
-                <WeightBar key={c.code} label={COUNTRY_LABELS[c.code] ?? c.code} weight={c.weight} />
+                <WeightBar key={c.code} label={isCountryCode(c.code) ? COUNTRY_LABEL[c.code] : c.code} weight={c.weight} />
               ))}
             </div>
           )}

@@ -1,10 +1,7 @@
 import type { StrategyType } from "@/types/database";
+import { STRATEGY_THRESHOLDS } from "@/lib/constants/analysis";
 
-// 임계값 상수 — 추후 튜닝 가능
-export const STRATEGY_THRESHOLDS = {
-  SCALPING_MAX_DAYS: 1,
-  SWING_MAX_DAYS: 30,
-} as const;
+export { STRATEGY_THRESHOLDS };
 
 export type StrategyAdherence = "FOLLOWED" | "DEVIATED" | "UNKNOWN";
 

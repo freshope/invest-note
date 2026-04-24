@@ -2,8 +2,7 @@ import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 import { TZDate } from "@date-fns/tz";
 import type { Trade, Account } from "@/types/database";
-
-const KST = "Asia/Seoul";
+import { KST } from "@/lib/constants/time";
 
 export type TradeWithAccount = Trade & { account?: Pick<Account, "name" | "broker"> };
 

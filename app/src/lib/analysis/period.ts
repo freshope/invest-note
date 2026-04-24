@@ -1,14 +1,14 @@
 import { subMonths, startOfYear, startOfDay } from "date-fns";
 import { TZDate, tz } from "@date-fns/tz";
+import { KST } from "@/lib/constants/time";
+import type { Period } from "@/lib/constants/analysis";
 
-const KST = "Asia/Seoul";
+export type { Period } from "@/lib/constants/analysis";
+export { DEFAULT_ANALYSIS_PERIOD } from "@/lib/constants/analysis";
+
 const kstOpts = { in: tz(KST) };
 
-export type Period = "1m" | "3m" | "6m" | "ytd" | "all";
-
-// 대시보드 진입 시 기본 기간. parsePeriod의 fallback("all")은 URL 무효값 → 전체이며 의도가 다름.
-export const DEFAULT_ANALYSIS_PERIOD: Period = "3m";
-
+// parsePeriod의 fallback("all")은 URL 무효값 → 전체이며 DEFAULT_ANALYSIS_PERIOD와 의도가 다름.
 export function parsePeriod(param: string | null): Period {
   if (param === "1m" || param === "3m" || param === "6m" || param === "ytd" || param === "all") {
     return param;

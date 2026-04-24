@@ -12,6 +12,7 @@ import { queryKeys } from "@/lib/query-keys";
 import { StrategyEmotionFields } from "./StrategyEmotionFields";
 import { EMOTION_VALUES } from "./constants";
 import { cn } from "@/lib/utils";
+import { STRATEGY_LABELS, ADHERENCE_CONFIG } from "@/lib/constants/trading";
 
 const schema = z.object({
   emotion: z.enum(EMOTION_VALUES).nullable(),
@@ -36,19 +37,6 @@ function BreakdownRow({ label, amount, prefix }: {
     </div>
   );
 }
-
-const STRATEGY_LABELS: Record<string, string> = {
-  SCALPING: "스캘핑",
-  SWING: "스윙",
-  LONG_TERM: "장기",
-  UNKNOWN: "미분류",
-};
-
-const ADHERENCE_CONFIG = {
-  FOLLOWED: { label: "전략 준수 ✓", className: "text-green-600 bg-green-50 border-green-200" },
-  DEVIATED: { label: "전략 이탈 ✗", className: "text-orange-600 bg-orange-50 border-orange-200" },
-  UNKNOWN: { label: "분류 불가", className: "text-muted-foreground bg-muted border-border" },
-} as const;
 
 interface TradeMetaSellFormProps {
   tradeId: string;
