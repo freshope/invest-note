@@ -5,12 +5,11 @@ import math
 from collections import deque
 from typing import TYPE_CHECKING
 
-from invest_note_api.domain.trade_utils import to_kst
+from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, TRADE_TYPE_BUY
+from invest_note_api.domain.trade_utils import MS_PER_DAY, to_kst
 
 if TYPE_CHECKING:
     from invest_note_api.domain.trade_types import Trade
-
-_MS_PER_DAY = 1000 * 60 * 60 * 24
 
 
 def compute_holding_days_map(trades: list[Trade]) -> dict[str, int]:
@@ -18,18 +17,18 @@ def compute_holding_days_map(trades: list[Trade]) -> dict[str, int]:
     result: dict[str, int] = {}
     sorted_trades = sorted(
         trades,
-        key=lambda t: (t.traded_at, 0 if t.trade_type == "BUY" else 1),
+        key=lambda t: (t.traded_at, 0 if t.trade_type == TRADE_TYPE_BUY else 1),
     )
 
     queue_map: dict[str, deque] = {}
 
     for trade in sorted_trades:
-        key = f"{trade.ticker_symbol or trade.asset_name}:{trade.country_code or 'KR'}:{trade.account_id}"
+        key = f"{trade.ticker_symbol or trade.asset_name}:{trade.country_code or DEFAULT_COUNTRY}:{trade.account_id}"
         if key not in queue_map:
             queue_map[key] = deque()
         queue = queue_map[key]
 
-        if trade.trade_type == "BUY":
+        if trade.trade_type == TRADE_TYPE_BUY:
             queue.append({"qty": trade.quantity, "time_ms": int(to_kst(trade.traded_at).timestamp() * 1000)})
         else:
             remaining = trade.quantity
@@ -48,7 +47,7 @@ def compute_holding_days_map(trades: list[Trade]) -> dict[str, int]:
                     queue.popleft()
 
             if total_consumed > 0:
-                result[trade.id] = math.floor(weighted_ms / total_consumed / _MS_PER_DAY + 0.5)
+                result[trade.id] = math.floor(weighted_ms / total_consumed / MS_PER_DAY + 0.5)
             else:
                 result[trade.id] = 0
 

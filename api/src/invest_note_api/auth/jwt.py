@@ -5,6 +5,8 @@ from uuid import UUID
 import jwt
 from jwt import PyJWKClient
 
+from invest_note_api.auth.constants import AUTH_ROLE, JWT_ALGORITHMS
+
 
 @dataclass
 class AuthenticatedUser:
@@ -26,8 +28,8 @@ def decode_supabase_jwt(token: str, jwks_uri: str) -> AuthenticatedUser:
     payload = jwt.decode(
         token,
         signing_key.key,
-        algorithms=["ES256", "RS256"],
-        audience="authenticated",
+        algorithms=JWT_ALGORITHMS,
+        audience=AUTH_ROLE,
     )
     return AuthenticatedUser(
         id=UUID(payload["sub"]),

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
+from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, TRADE_TYPE_BUY, TRADE_TYPE_SELL
 from invest_note_api.domain.trade_utils import to_kst
 from invest_note_api.domain.realized_pnl import build_pnl_map
 
@@ -74,7 +75,7 @@ def build_positions(trades: list["Trade"]) -> list[Position]:
 
     for trade in sorted_trades:
         ticker = trade.ticker_symbol or trade.asset_name
-        country = trade.country_code or "KR"
+        country = trade.country_code or DEFAULT_COUNTRY
         lot_key = f"{ticker}:{country}:{trade.account_id}"
 
         if lot_key not in lot_map:
@@ -97,7 +98,7 @@ def build_positions(trades: list["Trade"]) -> list[Position]:
         if trade.exchange:
             lot["exchange"] = trade.exchange
 
-        if trade.trade_type == "BUY":
+        if trade.trade_type == TRADE_TYPE_BUY:
             lot["running_qty"] += trade.quantity
             lot["running_cost"] += trade.price * trade.quantity
             reason = (trade.buy_reason or "").strip()
@@ -210,11 +211,11 @@ def build_account_snapshots(
 
         for trade in account_trades:
             ticker = trade.ticker_symbol or trade.asset_name
-            key = f"{ticker}:{trade.country_code or 'KR'}"
+            key = f"{ticker}:{trade.country_code or DEFAULT_COUNTRY}"
             if key not in pos_map:
                 pos_map[key] = {"qty": 0.0, "cost_basis": 0.0}
             p = pos_map[key]
-            if trade.trade_type == "BUY":
+            if trade.trade_type == TRADE_TYPE_BUY:
                 p["qty"] += trade.quantity
                 p["cost_basis"] += trade.price * trade.quantity
             else:
@@ -258,12 +259,12 @@ def build_totals(
     month_trade_count = 0
 
     for trade in trades:
-        if trade.trade_type == "SELL":
+        if trade.trade_type == TRADE_TYPE_SELL:
             total_realized_pnl += pnl_map.get(trade.id, 0.0)
         kst = to_kst(trade.traded_at)
         if kst.year == this_year and kst.month == this_month:
             month_trade_count += 1
-            if trade.trade_type == "SELL":
+            if trade.trade_type == TRADE_TYPE_SELL:
                 month_realized_pnl += pnl_map.get(trade.id, 0.0)
 
     missing_quote_tickers = [p.asset_name for p in positions if p.current_price is None]

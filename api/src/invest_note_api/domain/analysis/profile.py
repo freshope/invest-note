@@ -4,6 +4,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from invest_note_api.domain.trade_types import (
+    EMOTION_ANXIOUS,
+    EMOTION_FOMO,
+    EMOTION_IMPULSIVE,
+    STRATEGY_SCALPING,
+    TAG_FEELING,
+    TRADE_TYPE_BUY,
+    TRADE_TYPE_SELL,
+)
+
 if TYPE_CHECKING:
     from invest_note_api.domain.trade_types import Trade
 
@@ -35,14 +45,14 @@ def compute_profile(
     hhi: float,
     holding_days_map: dict[str, int],
 ) -> tuple[BehaviorProfile, ProfileInputRates]:
-    sells = [t for t in trades if t.trade_type == "SELL"]
-    buys = [t for t in trades if t.trade_type == "BUY"]
+    sells = [t for t in trades if t.trade_type == TRADE_TYPE_SELL]
+    buys = [t for t in trades if t.trade_type == TRADE_TYPE_BUY]
 
     # holding_days_map은 allTrades 기준이므로 기간 내 SELL id로 필터링
     sell_ids = {t.id for t in sells}
     all_days = [v for k, v in holding_days_map.items() if k in sell_ids]
     avg_days = sum(all_days) / len(all_days) if all_days else 0.0
-    scalping = sum(1 for t in sells if t.strategy_type == "SCALPING")
+    scalping = sum(1 for t in sells if t.strategy_type == STRATEGY_SCALPING)
     scalping_ratio = scalping / len(sells) if sells else 0.0
     tempo_base = _clamp((avg_days / 60) * 100)
     tempo = _clamp(tempo_base - scalping_ratio * 10)
@@ -53,12 +63,12 @@ def compute_profile(
         diversification = _clamp((1 - hhi) * 100)
 
     emotion_tagged = [t for t in trades if t.emotion is not None]
-    unstable = sum(1 for t in emotion_tagged if t.emotion in ("FOMO", "IMPULSIVE", "ANXIOUS"))
+    unstable = sum(1 for t in emotion_tagged if t.emotion in (EMOTION_FOMO, EMOTION_IMPULSIVE, EMOTION_ANXIOUS))
     emotion_stability = (
         _clamp((1 - unstable / len(emotion_tagged)) * 100) if emotion_tagged else 50.0
     )
 
-    buys_with_feeling = sum(1 for t in buys if "FEELING" in (t.reasoning_tags or []))
+    buys_with_feeling = sum(1 for t in buys if TAG_FEELING in (t.reasoning_tags or []))
     buys_with_no_tag = sum(1 for t in buys if not t.reasoning_tags)
     poor_ratio = (buys_with_feeling + buys_with_no_tag) / len(buys) if buys else 0.0
     reasoning_quality = _clamp((1 - min(1.0, poor_ratio)) * 100)

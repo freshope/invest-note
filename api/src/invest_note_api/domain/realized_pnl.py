@@ -3,7 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from invest_note_api.domain.trade_types import Trade
+from invest_note_api.domain.trade_types import (
+    DEFAULT_COUNTRY,
+    TRADE_TYPE_BUY,
+    TRADE_TYPE_SELL,
+    Trade,
+)
 
 
 @dataclass(frozen=True)
@@ -21,21 +26,21 @@ def trade_to_group_key(trade: Trade) -> TradeGroupKey:
     return TradeGroupKey(
         ticker=trade.ticker_symbol,
         asset_name=trade.asset_name,
-        country=trade.country_code or "KR",
+        country=trade.country_code or DEFAULT_COUNTRY,
         account_id=trade.account_id,
     )
 
 
 def _group_key_str(trade: Trade) -> str:
     ticker = trade.ticker_symbol or trade.asset_name
-    country = trade.country_code or "KR"
+    country = trade.country_code or DEFAULT_COUNTRY
     return f"{ticker}:{country}:{trade.account_id}"
 
 
 def _is_same_group(trade: Trade, key: TradeGroupKey) -> bool:
     if trade.account_id != key.account_id:
         return False
-    if (trade.country_code or "KR") != key.country:
+    if (trade.country_code or DEFAULT_COUNTRY) != key.country:
         return False
     trade_ticker = trade.ticker_symbol or trade.asset_name
     target_ticker = key.ticker or key.asset_name
@@ -48,7 +53,7 @@ def sort_for_calc(trades: list[Trade]) -> list[Trade]:
         trades,
         key=lambda t: (
             t.traded_at,
-            0 if t.trade_type == "BUY" else 1,
+            0 if t.trade_type == TRADE_TYPE_BUY else 1,
             t.created_at,
         ),
     )
@@ -76,7 +81,7 @@ def compute_group_pnl(trades: list[Trade], key: TradeGroupKey) -> dict[str, Grou
     running_cost = 0.0
 
     for trade in group:
-        if trade.trade_type == "BUY":
+        if trade.trade_type == TRADE_TYPE_BUY:
             running_qty += trade.quantity
             running_cost += trade.price * trade.quantity
         else:
@@ -123,7 +128,7 @@ def validate_mutation(
     affected_sell_ids: list[str] = []
 
     for t in group:
-        if t.trade_type == "BUY":
+        if t.trade_type == TRADE_TYPE_BUY:
             running_qty += t.quantity
             running_cost += t.price * t.quantity
         else:
@@ -142,4 +147,4 @@ def validate_mutation(
 
 def build_pnl_map(trades: list[Trade]) -> dict[str, float]:
     """저장된 profit_loss 값으로 SELL id → PnL 맵 구성."""
-    return {t.id: float(t.profit_loss or 0) for t in trades if t.trade_type == "SELL"}
+    return {t.id: float(t.profit_loss or 0) for t in trades if t.trade_type == TRADE_TYPE_SELL}

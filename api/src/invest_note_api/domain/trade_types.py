@@ -14,6 +14,28 @@ StrategyType = Literal["SCALPING", "SWING", "LONG_TERM", "UNKNOWN"]
 EmotionType = Literal["CONFIDENT", "ANXIOUS", "FOMO", "IMPULSIVE", "CALM"]
 ReasoningTag = Literal["TECHNICAL", "FUNDAMENTAL", "NEWS", "FEELING"]
 TradeResult = Literal["SUCCESS", "FAIL", "BREAKEVEN"]
+CountryCode = Literal["KR", "US", "OTHER"]
+
+# 명명 상수 — 비교/기본값에 문자열 리터럴 직접 사용 방지
+TRADE_TYPE_BUY: TradeType = "BUY"
+TRADE_TYPE_SELL: TradeType = "SELL"
+MARKET_TYPE_STOCK: MarketType = "STOCK"
+MARKET_TYPE_CRYPTO: MarketType = "CRYPTO"
+MARKET_TYPE_ETC: MarketType = "ETC"
+STRATEGY_SCALPING: StrategyType = "SCALPING"
+STRATEGY_SWING: StrategyType = "SWING"
+STRATEGY_LONG_TERM: StrategyType = "LONG_TERM"
+STRATEGY_UNKNOWN: StrategyType = "UNKNOWN"
+EMOTION_FOMO: EmotionType = "FOMO"
+EMOTION_IMPULSIVE: EmotionType = "IMPULSIVE"
+EMOTION_ANXIOUS: EmotionType = "ANXIOUS"
+EMOTION_CONFIDENT: EmotionType = "CONFIDENT"
+EMOTION_CALM: EmotionType = "CALM"
+TAG_FEELING: ReasoningTag = "FEELING"
+RESULT_SUCCESS: TradeResult = "SUCCESS"
+RESULT_FAIL: TradeResult = "FAIL"
+RESULT_BREAKEVEN: TradeResult = "BREAKEVEN"
+DEFAULT_COUNTRY: CountryCode = "KR"
 
 
 class Trade(BaseModel):

@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-04-24 | BE 상수 co-location — 모놀리식 constants.py 배제
+
+- **결정:** API 백엔드 상수를 단일 `constants.py`가 아닌 각 도메인 모듈에 인접 배치. `domain/trade_types.py`(enum 단일 소스), `domain/trade_utils.py`(KST·MS_PER_DAY), `external/constants.py`(URL·User-Agent·timeout), `auth/constants.py`(JWT·GUC 상수), `errors.py`(에러 메시지) 구조.
+- **이유:** 모놀리식 파일은 상수 간 응집도 없이 크기만 커져 수정 범위 파악이 어려움. 도메인 경계 내 co-location이 변경 이유가 같은 상수를 함께 관리.
+- **트레이드오프:** `schemas/` → `domain/` 단방향 import 규칙 필수 준수. 순환 import 발생 시 추적이 어려울 수 있음.
+
+---
+
 ## 2026-04-23 | FastAPI CORS — Capacitor WebView origin 허용
 
 - **결정:** `Settings.cors_origins` 기본값과 `.env.example`에 `capacitor://localhost`(iOS), `https://localhost`(Android, 포트 없음) 추가. `allow_credentials=True`, 고정 리스트 유지.

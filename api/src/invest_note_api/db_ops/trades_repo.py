@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from invest_note_api.domain.trade_types import Trade, TradeWithAccount
+from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, MARKET_TYPE_STOCK, Trade, TradeWithAccount
 
 
 def _row_to_trade(row: Any) -> Trade:
@@ -83,14 +83,14 @@ async def insert_trade(conn: Any, user_id: str, data: dict) -> dict:
         data["account_id"],
         data["asset_name"],
         data["ticker_symbol"],
-        data.get("market_type", "STOCK"),
+        data.get("market_type", MARKET_TYPE_STOCK),
         data["trade_type"],
         data["price"],
         data["quantity"],
         data["traded_at"],
         data.get("commission", 0),
         data.get("tax", 0),
-        data.get("country_code", "KR"),
+        data.get("country_code", DEFAULT_COUNTRY),
         data.get("exchange", ""),
         data.get("strategy_type"),
         data.get("reasoning_tags", []),
