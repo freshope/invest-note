@@ -12,5 +12,3 @@ export const DEFAULT_COUNTRY_CODE: CountryCode = "KR";
 export function isCountryCode(value: string): value is CountryCode {
   return COUNTRY_CODES.includes(value as CountryCode);
 }
-
-

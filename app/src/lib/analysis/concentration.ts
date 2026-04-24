@@ -1,9 +1,5 @@
 import type { Trade } from "@/types/database";
 import type { Position } from "@/lib/portfolio";
-import { HHI_HIGH, HHI_MID, TOP1_WEIGHT_HIGH } from "@/lib/constants/analysis";
-
-export { HHI_HIGH, HHI_MID, TOP1_WEIGHT_HIGH };
-
 export interface ConcentrationData {
   hhi: number;
   top3: { asset: string; weight: number }[];

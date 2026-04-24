@@ -1,7 +1,7 @@
 import type { AnalysisSummary } from "./aggregate";
 import type { BehaviorProfile } from "./profile";
 import type { ConcentrationData } from "./concentration";
-import { HHI_HIGH, TOP1_WEIGHT_HIGH } from "./concentration";
+import { HHI_HIGH, TOP1_WEIGHT_HIGH } from "@/lib/constants/analysis";
 
 export interface Suggestion {
   id: string;

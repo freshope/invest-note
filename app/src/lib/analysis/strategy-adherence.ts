@@ -1,8 +1,6 @@
 import type { StrategyType } from "@/types/database";
 import { STRATEGY_THRESHOLDS } from "@/lib/constants/analysis";
 
-export { STRATEGY_THRESHOLDS };
-
 export type StrategyAdherence = "FOLLOWED" | "DEVIATED" | "UNKNOWN";
 
 export interface StrategyEvaluation {

@@ -1,7 +1,7 @@
 "use client";
 
 import type { ConcentrationData } from "@/lib/analysis/concentration";
-import { HHI_HIGH, HHI_MID } from "@/lib/analysis/concentration";
+import { HHI_HIGH, HHI_MID } from "@/lib/constants/analysis";
 import { COUNTRY_LABEL, isCountryCode } from "@/lib/constants/market";
 
 const MARKET_LABELS: Record<string, string> = {

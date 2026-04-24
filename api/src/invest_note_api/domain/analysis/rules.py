@@ -216,6 +216,14 @@ def _rule_high_winrate(inp: RuleInput) -> Suggestion | None:
     )
 
 
+_SEVERITY_ORDER = {SEVERITY_CRITICAL: 0, SEVERITY_WARN: 1, SEVERITY_INFO: 2}
+_STRATEGY_LABELS = {
+    STRATEGY_SCALPING: "스캘핑",
+    STRATEGY_SWING: "스윙",
+    STRATEGY_LONG_TERM: "장기",
+    STRATEGY_UNKNOWN: "전략 미설정",
+}
+
 _RULES: list[_RuleFn] = [
     _rule_fomo,
     _rule_calm,
@@ -228,14 +236,6 @@ _RULES: list[_RuleFn] = [
     _rule_result_missing,
     _rule_high_winrate,
 ]
-
-_SEVERITY_ORDER = {SEVERITY_CRITICAL: 0, SEVERITY_WARN: 1, SEVERITY_INFO: 2}
-_STRATEGY_LABELS = {
-    STRATEGY_SCALPING: "스캘핑",
-    STRATEGY_SWING: "스윙",
-    STRATEGY_LONG_TERM: "장기",
-    STRATEGY_UNKNOWN: "전략 미설정",
-}
 
 
 def evaluate_rules(inp: RuleInput) -> list[Suggestion]:

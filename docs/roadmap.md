@@ -35,7 +35,7 @@
 | 버전 | 내용 | 상태 |
 |------|------|------|
 | MVP | 수동 매매 기록, 포트폴리오 조회, 홈 대시보드, 분석 탭 | 🚧 CSV 임포트 잔여 |
-| v2.5 | FastAPI 백엔드 분리 + Capacitor 모바일앱 (iOS/Android) | 🚧 FastAPI 배포·Android 실기기 E2E·Apple Sign-in·스토어 심사 대기 |
+| v2.5 | FastAPI 백엔드 분리 + Capacitor 모바일앱 (iOS/Android) | 🚧 FastAPI 배포·Apple Sign-in·스토어 심사 대기 |
 | v2 | KIS API 자동 연동, 공식 실시간 시세 | 예정 |
 | v3 | AI 패턴 분석, 모바일 네이티브 전환 검토 (RN) | 예정 |
 
