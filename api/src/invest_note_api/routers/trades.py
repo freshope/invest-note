@@ -13,6 +13,7 @@ from invest_note_api.db import acquire_for_user, get_pool
 from invest_note_api.db_ops.pnl_sync import recalc_group_pnl
 from invest_note_api.db_ops.trades_repo import (
     PNL_AFFECTING_FIELDS,
+    acquire_trade_group_lock,
     delete_trade,
     get_trade_with_account,
     insert_trade,
@@ -137,6 +138,14 @@ async def create_trade(
         )
         if not acct_exists:
             raise APIError("올바른 계좌를 선택해주세요.", 400)
+
+        await acquire_trade_group_lock(
+            conn,
+            user_id=str(user.id),
+            account_id=data.account_id,
+            ticker_symbol=data.ticker_symbol,
+            country_code=data.country_code or DEFAULT_COUNTRY,
+        )
 
         all_trades = await list_trades(conn, user.id)
 
@@ -296,6 +305,13 @@ async def update_trade(
         existing = Trade(**dict(existing_row))
 
         if fields & PNL_AFFECTING_FIELDS:
+            await acquire_trade_group_lock(
+                conn,
+                user_id=str(user.id),
+                account_id=existing.account_id,
+                ticker_symbol=existing.ticker_symbol,
+                country_code=existing.country_code or DEFAULT_COUNTRY,
+            )
             all_trades = await list_trades(conn, user.id)
             ok, msg, _ = validate_mutation(all_trades, "update", existing, patch)
             if not ok:
@@ -319,11 +335,23 @@ async def delete_trade_endpoint(
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> Response:
     async with acquire_for_user(pool, user.id) as conn:
-        all_trades = await list_trades(conn, user.id)
-        target = next((t for t in all_trades if t.id == trade_id), None)
-        if target is None:
+        target_row = await conn.fetchrow(
+            "SELECT * FROM trades WHERE id = $1 AND user_id = $2",
+            trade_id, user.id,
+        )
+        if target_row is None:
             raise APIError(ERR_TRADE_NOT_FOUND, 404)
+        target = Trade(**dict(target_row))
 
+        await acquire_trade_group_lock(
+            conn,
+            user_id=str(user.id),
+            account_id=target.account_id,
+            ticker_symbol=target.ticker_symbol,
+            country_code=target.country_code or DEFAULT_COUNTRY,
+        )
+
+        all_trades = await list_trades(conn, user.id)
         ok, msg, _ = validate_mutation(all_trades, "delete", target)
         if not ok:
             raise APIError(msg, 400)

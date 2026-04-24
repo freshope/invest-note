@@ -1,7 +1,9 @@
 """trades 라우터 테스트 — FakePool 기반."""
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
+from typing import Any
 from unittest.mock import patch
 
 
@@ -169,6 +171,50 @@ class TestCreateTrade:
             resp = trades_client.post("/api/trades", json=payload)
         assert resp.status_code == 201
 
+    def test_create_advisory_lock_before_list_trades(self, trades_client, monkeypatch):
+        """pg_advisory_xact_lock이 list_trades(SELECT * FROM trades) 보다 먼저 실행됨을 검증."""
+        sql_calls: list[str] = []
+
+        original_execute = FakeConnection.execute
+        original_fetch = FakeConnection.fetch
+
+        async def spy_execute(self: Any, query: str, *args: Any) -> str:
+            sql_calls.append(query.strip())
+            return await original_execute(self, query, *args)
+
+        async def spy_fetch(self: Any, query: str, *args: Any) -> list:
+            sql_calls.append(query.strip())
+            return await original_fetch(self, query, *args)
+
+        monkeypatch.setattr(FakeConnection, "execute", spy_execute)
+        monkeypatch.setattr(FakeConnection, "fetch", spy_fetch)
+
+        acct_row = {"id": "a1"}
+        trade_row = _make_trade_row()
+        inserted = {"id": "new-t1", "trade_type": "BUY"}
+        conn = FakeConnection(
+            _to_record(acct_row),
+            [_to_record(trade_row)],
+            _to_record(inserted),
+        )
+        with _patch_trades(conn):
+            resp = trades_client.post("/api/trades", json=self._buy_payload())
+        assert resp.status_code == 201
+
+        lock_idx = next(
+            (i for i, q in enumerate(sql_calls) if "pg_advisory_xact_lock" in q.lower()),
+            None,
+        )
+        list_idx = next(
+            (i for i, q in enumerate(sql_calls) if "select * from trades" in q.lower()),
+            None,
+        )
+        assert lock_idx is not None, "pg_advisory_xact_lock 쿼리가 실행되지 않음"
+        assert list_idx is not None, "list_trades 쿼리가 실행되지 않음"
+        assert lock_idx < list_idx, (
+            f"lock(idx={lock_idx})이 list_trades(idx={list_idx})보다 늦게 실행됨"
+        )
+
 
 class TestGetTrade:
     def test_get_404(self, trades_client):
@@ -211,7 +257,7 @@ class TestPatchTrade:
 
 class TestDeleteTrade:
     def test_delete_404(self, trades_client):
-        conn = FakeConnection([])  # empty list → target not found
+        conn = FakeConnection(None)  # fetchrow → None → 404
         with _patch_trades(conn):
             resp = trades_client.delete("/api/trades/nonexistent")
         assert resp.status_code == 404
@@ -219,6 +265,7 @@ class TestDeleteTrade:
     def test_delete_buy_ok(self, trades_client):
         buy_row = _make_trade_row(id_="b1", trade_type="BUY", quantity=10)
         conn = FakeConnection(
+            _to_record(buy_row),    # fetchrow target
             [_to_record(buy_row)],  # list_trades
             "DELETE 1",             # delete_trade
         )
