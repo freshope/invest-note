@@ -6,6 +6,8 @@ from uuid import UUID
 import asyncpg
 from fastapi import Request
 
+from invest_note_api.auth.constants import AUTH_ROLE, DB_GUC_CLAIMS, DB_GUC_ROLE
+
 
 async def create_pool(database_url: str) -> asyncpg.Pool:
     # statement_cache_size=0 required for Supavisor transaction mode
@@ -26,8 +28,8 @@ async def acquire_for_user(pool: asyncpg.Pool, user_id: UUID) -> AsyncGenerator[
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
-                "SELECT set_config('role', 'authenticated', true),"
-                "       set_config('request.jwt.claims', $1, true)",
-                json.dumps({"sub": str(user_id), "role": "authenticated"}),
+                f"SELECT set_config('{DB_GUC_ROLE}', '{AUTH_ROLE}', true),"
+                f"       set_config('{DB_GUC_CLAIMS}', $1, true)",
+                json.dumps({"sub": str(user_id), DB_GUC_ROLE: AUTH_ROLE}),
             )
             yield conn

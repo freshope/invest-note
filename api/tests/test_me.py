@@ -3,6 +3,7 @@ import time
 import jwt
 from fastapi.testclient import TestClient
 
+from invest_note_api.auth.constants import AUTH_ROLE
 from tests.conftest import TEST_EMAIL, TEST_USER_ID, _kid, _private_key, make_jwt
 
 
@@ -21,7 +22,7 @@ def test_me_expired_token(auth_client: TestClient) -> None:
         {
             "sub": TEST_USER_ID,
             "email": TEST_EMAIL,
-            "aud": "authenticated",
+            "aud": AUTH_ROLE,
             "iat": int(time.time()) - 7200,
             "exp": int(time.time()) - 3600,
         },

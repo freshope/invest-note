@@ -11,6 +11,8 @@ from fastapi.testclient import TestClient
 from jwt import PyJWK
 from jwt.algorithms import ECAlgorithm
 
+from invest_note_api.auth.constants import AUTH_ROLE
+
 TEST_USER_ID = str(uuid4())
 
 
@@ -46,7 +48,7 @@ def make_jwt(
     payload = {
         "sub": user_id,
         "email": email,
-        "aud": "authenticated",
+        "aud": AUTH_ROLE,
         "iat": int(time.time()),
         "exp": int(time.time()) + expires_delta,
     }
