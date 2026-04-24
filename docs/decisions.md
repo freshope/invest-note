@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-04-24 | FE constants — 레이어 분리 + 중앙화 (BE co-location 미적용)
+
+- **결정:** FE 상수는 BE처럼 도메인 폴더 내 co-location이 아닌 `app/src/lib/constants/` 중앙 폴더로 관리. 단일 파일에서만 쓰이는 UI 로컬 상수(색상, 애니메이션 ms, 탭 정의 등)는 컴포넌트 파일 내 유지.
+- **이유:** FE UI는 여러 도메인 데이터를 혼합해서 보여주는 것이 본업이라 도메인 경계가 BE처럼 강하지 않음. co-location하면 어디에 둘지 애매한 상수가 생김. 현재 구조(레이어 분리 + 도메인 서브폴더)가 FE 특성에 맞는 절충안.
+- **트레이드오프:** 상수가 늘어날수록 constants 파일 관리 필요. 여러 곳에서 쓰이는 상수만 선별 이관하고 단일 파일 전용은 로컬 유지 원칙 지킬 것.
+
+---
+
 ## 2026-04-24 | BE 상수 co-location — 모놀리식 constants.py 배제
 
 - **결정:** API 백엔드 상수를 단일 `constants.py`가 아닌 각 도메인 모듈에 인접 배치. `domain/trade_types.py`(enum 단일 소스), `domain/trade_utils.py`(KST·MS_PER_DAY), `external/constants.py`(URL·User-Agent·timeout), `auth/constants.py`(JWT·GUC 상수), `errors.py`(에러 메시지) 구조.
