@@ -12,7 +12,7 @@ from invest_note_api.db_ops.trades_repo import list_trades
 from invest_note_api.domain.analysis.aggregate import compute_summary
 from invest_note_api.domain.analysis.concentration import compute_concentration
 from invest_note_api.domain.analysis.holding_period import compute_holding_days_map
-from invest_note_api.domain.analysis.period import filter_by_period, parse_period
+from invest_note_api.domain.analysis.period import DEFAULT_PERIOD, filter_by_period, parse_period
 from invest_note_api.domain.analysis.profile import compute_profile
 from invest_note_api.domain.analysis.rules import evaluate_rules
 from invest_note_api.domain.portfolio import build_positions, merge_quotes
@@ -69,7 +69,7 @@ async def _get_trades_context(period_str: str, user_id: str, pool: asyncpg.Pool)
 
 @router.get("/summary")
 async def get_analysis_summary(
-    period: str = Query(default="all"),
+    period: str = Query(default=DEFAULT_PERIOD),
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> dict:
@@ -125,7 +125,7 @@ async def get_analysis_summary(
 
 @router.get("/behavior")
 async def get_analysis_behavior(
-    period: str = Query(default="all"),
+    period: str = Query(default=DEFAULT_PERIOD),
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> dict:
@@ -196,7 +196,7 @@ async def get_analysis_behavior(
 
 @router.get("/suggestions")
 async def get_analysis_suggestions(
-    period: str = Query(default="all"),
+    period: str = Query(default=DEFAULT_PERIOD),
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> dict:
