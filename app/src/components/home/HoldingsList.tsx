@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { HoldingCard } from "./HoldingCard";
 import { useDetailPanel } from "@/components/panels/DetailPanelProvider";
-import { tradesApi } from "@/lib/api-client";
+import { tradesApi, ApiError } from "@/lib/api-client";
 import type { Position } from "@/lib/portfolio";
 
 interface HoldingsListProps {
@@ -35,14 +36,16 @@ export function HoldingsList({ positions }: HoldingsListProps) {
           allTrades: trades,
           accounts,
         });
-      } catch {
-        openStock({
-          assetName: pos.assetName,
-          ticker: pos.ticker,
-          country: pos.country,
-          allTrades: [],
-          accounts: [],
-        });
+      } catch (err) {
+        const toastId = "holdings-fetch-error";
+        if (err instanceof ApiError) {
+          const msg = err.status === 401
+            ? "다시 로그인해 주세요"
+            : "보유 종목을 불러오지 못했어요 (서버 오류)";
+          toast.error(msg, { id: toastId });
+        } else {
+          toast.error("네트워크 연결을 확인해 주세요", { id: toastId });
+        }
       } finally {
         setFetching(false);
       }

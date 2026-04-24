@@ -22,6 +22,16 @@ import { createClient } from "@/lib/supabase/client";
 // 공통 유틸
 // ============================================================
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 // NEXT_PUBLIC_API_BASE_URL: FastAPI 서버 주소. 정적 export 환경에서는 필수.
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
 
@@ -80,12 +90,15 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   });
   // 204 No Content는 본문 없음 — json() 호출 시 파싱 오류 발생
   if (res.status === 204) {
-    if (!res.ok) throw new Error(`API 오류 (${res.status})`);
+    if (!res.ok) throw new ApiError(`API 오류 (${res.status})`, res.status);
     return undefined as T;
   }
   const data = await res.json();
   if (!res.ok) {
-    throw new Error((data as { error?: string }).error ?? `API 오류 (${res.status})`);
+    throw new ApiError(
+      (data as { error?: string }).error ?? `API 오류 (${res.status})`,
+      res.status,
+    );
   }
   return data as T;
 }
