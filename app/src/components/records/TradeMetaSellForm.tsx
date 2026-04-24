@@ -10,10 +10,11 @@ import { Textarea } from "@/components/base/Textarea";
 import { tradesApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { StrategyEmotionFields } from "./StrategyEmotionFields";
+import { EMOTION_VALUES } from "./constants";
 import { cn } from "@/lib/utils";
 
 const schema = z.object({
-  emotion: z.enum(["CONFIDENT", "ANXIOUS", "FOMO", "IMPULSIVE", "CALM"]).nullable(),
+  emotion: z.enum(EMOTION_VALUES).nullable(),
   sell_reason: z.string(),
   reflection_note: z.string(),
   improvement_note: z.string(),

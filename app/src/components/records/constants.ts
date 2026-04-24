@@ -30,3 +30,9 @@ export const STRATEGY_LABELS: Record<string, string> = Object.fromEntries(
 export const EMOTION_LABELS: Record<string, string> = Object.fromEntries(
   EMOTIONS.map((e) => [e.value, e.label]),
 );
+
+// Zod enum 단일 소스 — 위 STRATEGIES/EMOTIONS/REASONING_TAGS의 value와 동기 유지 필요
+export const STRATEGY_VALUES = ["SCALPING", "SWING", "LONG_TERM", "UNKNOWN"] as const;
+export const EMOTION_VALUES = ["CONFIDENT", "ANXIOUS", "FOMO", "IMPULSIVE", "CALM"] as const;
+export const REASONING_TAG_VALUES = ["TECHNICAL", "FUNDAMENTAL", "NEWS", "FEELING"] as const;
+export const TRADE_RESULT_VALUES = ["SUCCESS", "FAIL", "BREAKEVEN"] as const;
