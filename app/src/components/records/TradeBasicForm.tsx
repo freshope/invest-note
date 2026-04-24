@@ -22,6 +22,7 @@ import { Calendar } from "@/components/base/Calendar";
 import { tradesApi, portfolioApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { VALIDATION_LIMITS } from "@/lib/constants/validation";
+import { COMMISSION_RATE, SELL_TAX_RATE } from "@/lib/constants/trading";
 import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
 import { HoldingSelectInput } from "./HoldingSelectInput";
 import { CountryBadge } from "./trade-display";
@@ -69,8 +70,8 @@ function formatInput(raw: string): string {
   return (integer ? Number(integer).toLocaleString("ko-KR") : "") + decimal;
 }
 
-function calcCommission(total: number) { return Math.round(total * 0.00015); }
-function calcTax(total: number) { return Math.round(total * 0.0018); }
+function calcCommission(total: number) { return Math.round(total * COMMISSION_RATE); }
+function calcTax(total: number) { return Math.round(total * SELL_TAX_RATE); }
 
 interface TradeBasicFormProps {
   accounts: Account[];
