@@ -139,6 +139,7 @@ async def create_trade(
         if not acct_exists:
             raise APIError("올바른 계좌를 선택해주세요.", 400)
 
+        # BUY도 lock — recalc_group_pnl이 같은 그룹 SELL들을 UPDATE하므로 BUY/SELL 모두 직렬화 필요
         await acquire_trade_group_lock(
             conn,
             user_id=str(user.id),

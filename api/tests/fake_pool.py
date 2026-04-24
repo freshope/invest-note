@@ -47,6 +47,8 @@ class FakeConnection:
         return self._next()
 
     async def fetchval(self, query: str, *args: Any) -> Any:
+        if self._is_internal(query):
+            return None
         return self._next()
 
     @asynccontextmanager

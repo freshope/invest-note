@@ -1,7 +1,6 @@
 """trades 라우터 테스트 — FakePool 기반."""
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import patch
@@ -76,6 +75,43 @@ def _to_record(d: dict):
 
 def _patch_trades(conn: FakeConnection):
     return patch("invest_note_api.routers.trades.acquire_for_user", make_fake_acquire(conn))
+
+
+def _capture_sql(monkeypatch) -> list[str]:
+    """FakeConnection의 execute/fetch/fetchval을 spy해 실행 SQL을 기록."""
+    calls: list[str] = []
+    orig_execute = FakeConnection.execute
+    orig_fetch = FakeConnection.fetch
+    orig_fetchval = FakeConnection.fetchval
+
+    async def spy_execute(self: Any, query: str, *args: Any) -> str:
+        calls.append(query.strip())
+        return await orig_execute(self, query, *args)
+
+    async def spy_fetch(self: Any, query: str, *args: Any) -> list:
+        calls.append(query.strip())
+        return await orig_fetch(self, query, *args)
+
+    async def spy_fetchval(self: Any, query: str, *args: Any) -> Any:
+        calls.append(query.strip())
+        return await orig_fetchval(self, query, *args)
+
+    monkeypatch.setattr(FakeConnection, "execute", spy_execute)
+    monkeypatch.setattr(FakeConnection, "fetch", spy_fetch)
+    monkeypatch.setattr(FakeConnection, "fetchval", spy_fetchval)
+    return calls
+
+
+def _assert_lock_before_list(sql_calls: list[str]) -> None:
+    lock_idx = next(
+        (i for i, q in enumerate(sql_calls) if "pg_advisory_xact_lock" in q.lower()), None
+    )
+    list_idx = next(
+        (i for i, q in enumerate(sql_calls) if "select * from trades" in q.lower()), None
+    )
+    assert lock_idx is not None, "pg_advisory_xact_lock 쿼리가 실행되지 않음"
+    assert list_idx is not None, "list_trades 쿼리가 실행되지 않음"
+    assert lock_idx < list_idx, f"lock(idx={lock_idx})이 list_trades(idx={list_idx})보다 늦게 실행됨"
 
 
 class TestListTrades:
@@ -172,23 +208,8 @@ class TestCreateTrade:
         assert resp.status_code == 201
 
     def test_create_advisory_lock_before_list_trades(self, trades_client, monkeypatch):
-        """pg_advisory_xact_lock이 list_trades(SELECT * FROM trades) 보다 먼저 실행됨을 검증."""
-        sql_calls: list[str] = []
-
-        original_execute = FakeConnection.execute
-        original_fetch = FakeConnection.fetch
-
-        async def spy_execute(self: Any, query: str, *args: Any) -> str:
-            sql_calls.append(query.strip())
-            return await original_execute(self, query, *args)
-
-        async def spy_fetch(self: Any, query: str, *args: Any) -> list:
-            sql_calls.append(query.strip())
-            return await original_fetch(self, query, *args)
-
-        monkeypatch.setattr(FakeConnection, "execute", spy_execute)
-        monkeypatch.setattr(FakeConnection, "fetch", spy_fetch)
-
+        """pg_advisory_xact_lock이 list_trades보다 먼저 실행됨을 검증."""
+        sql_calls = _capture_sql(monkeypatch)
         acct_row = {"id": "a1"}
         trade_row = _make_trade_row()
         inserted = {"id": "new-t1", "trade_type": "BUY"}
@@ -200,20 +221,7 @@ class TestCreateTrade:
         with _patch_trades(conn):
             resp = trades_client.post("/api/trades", json=self._buy_payload())
         assert resp.status_code == 201
-
-        lock_idx = next(
-            (i for i, q in enumerate(sql_calls) if "pg_advisory_xact_lock" in q.lower()),
-            None,
-        )
-        list_idx = next(
-            (i for i, q in enumerate(sql_calls) if "select * from trades" in q.lower()),
-            None,
-        )
-        assert lock_idx is not None, "pg_advisory_xact_lock 쿼리가 실행되지 않음"
-        assert list_idx is not None, "list_trades 쿼리가 실행되지 않음"
-        assert lock_idx < list_idx, (
-            f"lock(idx={lock_idx})이 list_trades(idx={list_idx})보다 늦게 실행됨"
-        )
+        _assert_lock_before_list(sql_calls)
 
 
 class TestGetTrade:
@@ -254,6 +262,20 @@ class TestPatchTrade:
             resp = trades_client.patch("/api/trades/nonexistent", json={"price": 75000})
         assert resp.status_code == 404
 
+    def test_patch_pnl_advisory_lock_before_list_trades(self, trades_client, monkeypatch):
+        """update_trade PnL 분기에서 lock이 list_trades보다 먼저 실행됨을 검증."""
+        sql_calls = _capture_sql(monkeypatch)
+        row = _make_trade_row()
+        conn = FakeConnection(
+            _to_record(row),   # existing fetchrow
+            [_to_record(row)], # list_trades
+            "UPDATE 1",        # patch_trade
+        )
+        with _patch_trades(conn):
+            resp = trades_client.patch("/api/trades/t1", json={"price": 75000})
+        assert resp.status_code == 204
+        _assert_lock_before_list(sql_calls)
+
 
 class TestDeleteTrade:
     def test_delete_404(self, trades_client):
@@ -272,6 +294,20 @@ class TestDeleteTrade:
         with _patch_trades(conn):
             resp = trades_client.delete("/api/trades/b1")
         assert resp.status_code == 204
+
+    def test_delete_advisory_lock_before_list_trades(self, trades_client, monkeypatch):
+        """delete_trade_endpoint에서 lock이 list_trades보다 먼저 실행됨을 검증."""
+        sql_calls = _capture_sql(monkeypatch)
+        buy_row = _make_trade_row(id_="b1", trade_type="BUY", quantity=10)
+        conn = FakeConnection(
+            _to_record(buy_row),    # fetchrow target
+            [_to_record(buy_row)],  # list_trades
+            "DELETE 1",             # delete_trade
+        )
+        with _patch_trades(conn):
+            resp = trades_client.delete("/api/trades/b1")
+        assert resp.status_code == 204
+        _assert_lock_before_list(sql_calls)
 
 
 class TestTradeSummary:
