@@ -118,7 +118,7 @@ async def fetch_quotes_by_keys(keys: list[str]) -> dict[str, QuoteResult | None]
     for key in keys:
         parts = key.split(":")
         code = parts[0][:MAX_CODE_LEN] if parts else ""
-        country = parts[1] if len(parts) > 1 else "KR"
+        country = parts[1] if len(parts) > 1 else DEFAULT_COUNTRY
         if code:
             entries.append({"code": code, "country": country, "key": key})
 

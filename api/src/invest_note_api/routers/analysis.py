@@ -13,8 +13,8 @@ from invest_note_api.domain.analysis.aggregate import compute_summary
 from invest_note_api.domain.analysis.concentration import compute_concentration
 from invest_note_api.domain.analysis.holding_period import compute_holding_days_map
 from invest_note_api.domain.analysis.period import DEFAULT_PERIOD, filter_by_period, parse_period
-from invest_note_api.domain.trade_types import TRADE_TYPE_BUY, TRADE_TYPE_SELL
 from invest_note_api.domain.analysis.profile import compute_profile
+from invest_note_api.domain.trade_types import TRADE_TYPE_BUY, TRADE_TYPE_SELL
 from invest_note_api.domain.analysis.rules import evaluate_rules
 from invest_note_api.domain.portfolio import build_positions, merge_quotes
 from invest_note_api.domain.realized_pnl import build_pnl_map
