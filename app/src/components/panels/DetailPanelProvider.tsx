@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -56,33 +57,37 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
 
   const [tradePayload, setTradePayload] = useState<TradePayload | null>(null);
   const [stockPayload, setStockPayload] = useState<StockPayload | null>(null);
-  // topType: z-order 결정용 — 마지막으로 열린 타입이 위에 렌더됨
-  const [topType, setTopType] = useState<"trade" | "stock" | null>(null);
+  // key가 바뀌면 React가 기존 Panel을 즉시 언마운트(portal 제거)하고 새로 마운트
+  const [tradeKey, setTradeKey] = useState(0);
+  const [stockKey, setStockKey] = useState(0);
+
+  // 콜백 안에서 최신 payload를 읽기 위한 ref (deps 없이 stable 콜백 유지)
+  const tradePayloadRef = useRef<TradePayload | null>(null);
+  const stockPayloadRef = useRef<StockPayload | null>(null);
+  tradePayloadRef.current = tradePayload;
+  stockPayloadRef.current = stockPayload;
 
   const openTrade = useCallback((payload: TradePayload) => {
+    if (tradePayloadRef.current !== null) {
+      // 이미 열려 있으면 key를 바꿔 기존 portal을 즉시 제거 후 새 panel slide-in
+      setTradeKey((k) => k + 1);
+    }
     setTradePayload(payload);
-    setTopType("trade");
   }, []);
 
   const openStock = useCallback((payload: StockPayload) => {
+    if (stockPayloadRef.current !== null) {
+      setStockKey((k) => k + 1);
+    }
     setStockPayload(payload);
-    setTopType("stock");
   }, []);
 
-  const closeTrade = useCallback(() => {
-    setTradePayload(null);
-    setTopType((prev) => (prev === "trade" ? null : prev));
-  }, []);
-
-  const closeStock = useCallback(() => {
-    setStockPayload(null);
-    setTopType((prev) => (prev === "stock" ? null : prev));
-  }, []);
+  const closeTrade = useCallback(() => setTradePayload(null), []);
+  const closeStock = useCallback(() => setStockPayload(null), []);
 
   const closeAll = useCallback(() => {
     setTradePayload(null);
     setStockPayload(null);
-    setTopType(null);
   }, []);
 
   // 라우트 이동 시 열린 판넬 자동 닫기
@@ -111,46 +116,29 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
   const tradeSnap = useSnapshotWhileOpen(tradePayload !== null, tradePayload);
   const stockSnap = useSnapshotWhileOpen(stockPayload !== null, stockPayload);
 
-  const tradeSlot = tradeSnap ? (
-    <TradePanel
-      key="trade-slot"
-      open={tradePayload !== null}
-      payload={tradeSnap}
-      onClose={closeTrade}
-      onMutated={handleTradeMutated}
-      onSaved={handleTradeSaved}
-      openStock={openStock}
-    />
-  ) : null;
-
-  const stockSlot = stockSnap ? (
-    <StockPanel
-      key="stock-slot"
-      open={stockPayload !== null}
-      payload={stockSnap}
-      onClose={closeStock}
-      openTrade={openTrade}
-    />
-  ) : null;
-
-  // topType이 위에 렌더되도록 순서 결정 (동일 z-[100]에서 DOM 후자가 앞에 표시됨)
-  const panels =
-    topType === "stock" ? (
-      <>
-        {tradeSlot}
-        {stockSlot}
-      </>
-    ) : (
-      <>
-        {stockSlot}
-        {tradeSlot}
-      </>
-    );
-
   return (
     <DetailPanelContext.Provider value={value}>
       {children}
-      {panels}
+      {tradeSnap && (
+        <TradePanel
+          key={tradeKey}
+          open={tradePayload !== null}
+          payload={tradeSnap}
+          onClose={closeTrade}
+          onMutated={handleTradeMutated}
+          onSaved={handleTradeSaved}
+          openStock={openStock}
+        />
+      )}
+      {stockSnap && (
+        <StockPanel
+          key={stockKey}
+          open={stockPayload !== null}
+          payload={stockSnap}
+          onClose={closeStock}
+          openTrade={openTrade}
+        />
+      )}
     </DetailPanelContext.Provider>
   );
 }
