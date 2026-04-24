@@ -3,12 +3,7 @@
 import type { ConcentrationData } from "@/lib/analysis/concentration";
 import { HHI_HIGH, HHI_MID } from "@/lib/constants/analysis";
 import { COUNTRY_LABEL, isCountryCode } from "@/lib/constants/market";
-
-const MARKET_LABELS: Record<string, string> = {
-  STOCK: "주식",
-  CRYPTO: "코인",
-  ETC: "기타",
-};
+import { MARKET_LABELS } from "@/lib/constants/trading";
 
 function WeightBar({ label, weight }: { label: string; weight: number }) {
   const pct = Math.round(weight * 100);
@@ -88,7 +83,7 @@ export function DiversificationPanel({ concentration }: DiversificationPanelProp
             <div className="space-y-2">
               <p className="text-[12px] font-semibold text-muted-foreground">자산군</p>
               {byMarket.map((m) => (
-                <WeightBar key={m.type} label={MARKET_LABELS[m.type] ?? m.type} weight={m.weight} />
+                <WeightBar key={m.type} label={MARKET_LABELS[m.type as keyof typeof MARKET_LABELS] ?? m.type} weight={m.weight} />
               ))}
             </div>
           )}
