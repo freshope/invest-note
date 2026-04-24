@@ -38,6 +38,9 @@ RESULT_BREAKEVEN: TradeResult = "BREAKEVEN"
 DEFAULT_COUNTRY: CountryCode = "KR"
 COUNTRY_US: CountryCode = "US"
 
+MAX_CODE_LEN = 20
+MAX_NAME_LEN = 50
+
 
 class Trade(BaseModel):
     id: str

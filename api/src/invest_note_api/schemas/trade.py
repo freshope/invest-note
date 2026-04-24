@@ -12,6 +12,7 @@ from pydantic import BaseModel, field_validator
 from ..domain.trade_types import (
     CountryCode,
     EmotionType,
+    MAX_NAME_LEN,
     MarketType,
     ReasoningTag,
     StrategyType,
@@ -102,8 +103,8 @@ class TradeCreate(BaseModel):
         if v is None:
             return ""
         if isinstance(v, str):
-            return v.strip()[:50]
-        return str(v)[:50]
+            return v.strip()[:MAX_NAME_LEN]
+        return str(v)[:MAX_NAME_LEN]
 
     @field_validator("traded_at", mode="before")
     @classmethod

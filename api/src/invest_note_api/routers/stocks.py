@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query
 
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
-from invest_note_api.domain.trade_types import COUNTRY_US
+from invest_note_api.domain.trade_types import COUNTRY_US, DEFAULT_COUNTRY, MAX_CODE_LEN, MAX_NAME_LEN
 from invest_note_api.external.constants import HTTP_TIMEOUT_SECONDS, NAVER_SEARCH_URL, USER_AGENT, YAHOO_SEARCH_URL
 from invest_note_api.external.quotes import fetch_quotes_by_keys
 
@@ -84,9 +84,9 @@ async def _search_kr(q: str) -> list:
             if not _CODE_RE.match(code):
                 continue
             results.append({
-                "code": code[:20],
-                "name": name[:50],
-                "market": "KR",
+                "code": code[:MAX_CODE_LEN],
+                "name": name[:MAX_NAME_LEN],
+                "market": DEFAULT_COUNTRY,
                 "exchange": type_code or "",
             })
         return results
@@ -125,7 +125,7 @@ async def _search_us(q: str) -> list:
             if exchange not in _EXCHANGE_MAP:
                 continue
             symbol = item.get("symbol", "")
-            name = (item.get("shortname") or item.get("longname") or symbol)[:50]
+            name = (item.get("shortname") or item.get("longname") or symbol)[:MAX_NAME_LEN]
             results.append({
                 "code": symbol,
                 "name": name,

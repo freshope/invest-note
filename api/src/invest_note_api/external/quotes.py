@@ -12,7 +12,7 @@ from typing import TypedDict
 import httpx
 from cachetools import TTLCache
 
-from invest_note_api.domain.trade_types import COUNTRY_US, DEFAULT_COUNTRY
+from invest_note_api.domain.trade_types import COUNTRY_US, DEFAULT_COUNTRY, MAX_CODE_LEN
 from invest_note_api.external.constants import (
     CURRENCY_KRW,
     CURRENCY_USD,
@@ -117,7 +117,7 @@ async def fetch_quotes_by_keys(keys: list[str]) -> dict[str, QuoteResult | None]
     entries = []
     for key in keys:
         parts = key.split(":")
-        code = parts[0][:20] if parts else ""
+        code = parts[0][:MAX_CODE_LEN] if parts else ""
         country = parts[1] if len(parts) > 1 else "KR"
         if code:
             entries.append({"code": code, "country": country, "key": key})
