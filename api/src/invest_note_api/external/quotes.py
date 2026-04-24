@@ -14,6 +14,8 @@ from cachetools import TTLCache
 
 from invest_note_api.domain.trade_types import COUNTRY_US, DEFAULT_COUNTRY
 from invest_note_api.external.constants import (
+    CURRENCY_KRW,
+    CURRENCY_USD,
     HTTP_TIMEOUT_SECONDS,
     NAVER_BASIC_URL,
     NAVER_REALTIME_URL,
@@ -47,7 +49,7 @@ async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult |
             )
             price = float(raw) if raw else 0.0
             if price > 0:
-                return {"price": price, "currency": "KRW", "as_of": datetime.now(timezone.utc).isoformat()}
+                return {"price": price, "currency": CURRENCY_KRW, "as_of": datetime.now(timezone.utc).isoformat()}
     except Exception:
         pass
 
@@ -64,7 +66,7 @@ async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult |
             )
             price = float(raw) if raw else 0.0
             if price > 0:
-                return {"price": price, "currency": "KRW", "as_of": datetime.now(timezone.utc).isoformat()}
+                return {"price": price, "currency": CURRENCY_KRW, "as_of": datetime.now(timezone.utc).isoformat()}
     except Exception:
         pass
 
@@ -86,7 +88,7 @@ async def _fetch_us_price(client: httpx.AsyncClient, symbol: str) -> QuoteResult
         if price > 0:
             return {
                 "price": price,
-                "currency": meta.get("currency", "USD"),
+                "currency": meta.get("currency", CURRENCY_USD),
                 "as_of": datetime.now(timezone.utc).isoformat(),
             }
     except Exception:
