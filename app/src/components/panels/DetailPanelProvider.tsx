@@ -13,7 +13,6 @@ import { usePathname } from "next/navigation";
 import {
   FullScreenPanel,
   FullScreenPanelContent,
-  PANEL_ANIMATION_MS,
   useSnapshotWhileOpen,
 } from "@/components/base/FullScreenPanel";
 import { TradeDetail } from "@/components/records/TradeDetail";
@@ -37,12 +36,9 @@ export type StockPayload = {
   accounts: Account[];
 };
 
-type Mode = "trade" | "stock" | null;
-
 interface DetailPanelContextValue {
   openTrade: (payload: TradePayload) => void;
   openStock: (payload: StockPayload) => void;
-  close: () => void;
 }
 
 const DetailPanelContext = createContext<DetailPanelContextValue | null>(null);
@@ -58,40 +54,48 @@ export function useDetailPanel(): DetailPanelContextValue {
 export function DetailPanelProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
 
-  const [mode, setMode] = useState<Mode>(null);
   const [tradePayload, setTradePayload] = useState<TradePayload | null>(null);
   const [stockPayload, setStockPayload] = useState<StockPayload | null>(null);
+  // topType: z-order 결정용 — 마지막으로 열린 타입이 위에 렌더됨
+  const [topType, setTopType] = useState<"trade" | "stock" | null>(null);
 
   const openTrade = useCallback((payload: TradePayload) => {
     setTradePayload(payload);
-    setMode("trade");
+    setTopType("trade");
   }, []);
 
   const openStock = useCallback((payload: StockPayload) => {
     setStockPayload(payload);
-    setMode("stock");
+    setTopType("stock");
   }, []);
 
-  const close = useCallback(() => {
-    setMode(null);
-    // 슬라이드 아웃 애니메이션 완료 후 payload 정리 — 닫힌 패널의 useMemo 재계산 방지
-    setTimeout(() => {
-      setTradePayload(null);
-      setStockPayload(null);
-    }, PANEL_ANIMATION_MS + 50);
+  const closeTrade = useCallback(() => {
+    setTradePayload(null);
+    setTopType((prev) => (prev === "trade" ? null : prev));
   }, []);
 
-  // 라우트 이동 시 열린 패널 자동 닫기
+  const closeStock = useCallback(() => {
+    setStockPayload(null);
+    setTopType((prev) => (prev === "stock" ? null : prev));
+  }, []);
+
+  const closeAll = useCallback(() => {
+    setTradePayload(null);
+    setStockPayload(null);
+    setTopType(null);
+  }, []);
+
+  // 라우트 이동 시 열린 판넬 자동 닫기
   const pathname = usePathname();
   useEffect(() => {
-    close();
-  }, [pathname, close]);
+    closeAll();
+  }, [pathname, closeAll]);
 
   const handleTradeMutated = useCallback(() => {
-    setMode(null);
+    closeTrade();
     queryClient.invalidateQueries({ queryKey: queryKeys.portfolio });
     queryClient.invalidateQueries({ queryKey: queryKeys.trades });
-  }, [queryClient]);
+  }, [closeTrade, queryClient]);
 
   const handleTradeSaved = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: queryKeys.portfolio });
@@ -99,37 +103,54 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
   }, [queryClient]);
 
   const value = useMemo<DetailPanelContextValue>(
-    () => ({ openTrade, openStock, close }),
-    [openTrade, openStock, close],
+    () => ({ openTrade, openStock }),
+    [openTrade, openStock],
   );
 
-  // close 애니메이션 동안에도 직전 payload로 렌더되도록 스냅샷 유지
-  const tradeOpen = mode === "trade";
-  const stockOpen = mode === "stock";
-  const tradeSnap = useSnapshotWhileOpen(tradeOpen, tradePayload);
-  const stockSnap = useSnapshotWhileOpen(stockOpen, stockPayload);
+  // 슬라이드 아웃 중에도 직전 payload로 렌더되도록 스냅샷 유지
+  const tradeSnap = useSnapshotWhileOpen(tradePayload !== null, tradePayload);
+  const stockSnap = useSnapshotWhileOpen(stockPayload !== null, stockPayload);
+
+  const tradeSlot = tradeSnap ? (
+    <TradePanel
+      key="trade-slot"
+      open={tradePayload !== null}
+      payload={tradeSnap}
+      onClose={closeTrade}
+      onMutated={handleTradeMutated}
+      onSaved={handleTradeSaved}
+      openStock={openStock}
+    />
+  ) : null;
+
+  const stockSlot = stockSnap ? (
+    <StockPanel
+      key="stock-slot"
+      open={stockPayload !== null}
+      payload={stockSnap}
+      onClose={closeStock}
+      openTrade={openTrade}
+    />
+  ) : null;
+
+  // topType이 위에 렌더되도록 순서 결정 (동일 z-[100]에서 DOM 후자가 앞에 표시됨)
+  const panels =
+    topType === "stock" ? (
+      <>
+        {tradeSlot}
+        {stockSlot}
+      </>
+    ) : (
+      <>
+        {stockSlot}
+        {tradeSlot}
+      </>
+    );
 
   return (
     <DetailPanelContext.Provider value={value}>
       {children}
-      {tradeSnap && (
-        <TradePanel
-          open={tradeOpen}
-          payload={tradeSnap}
-          onClose={close}
-          onMutated={handleTradeMutated}
-          onSaved={handleTradeSaved}
-          openStock={openStock}
-        />
-      )}
-      {stockSnap && (
-        <StockPanel
-          open={stockOpen}
-          payload={stockSnap}
-          onClose={close}
-          openTrade={openTrade}
-        />
-      )}
+      {panels}
     </DetailPanelContext.Provider>
   );
 }
