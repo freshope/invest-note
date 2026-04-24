@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
+from invest_note_api.domain.trade_types import COUNTRY_US
 from invest_note_api.external.constants import HTTP_TIMEOUT_SECONDS, NAVER_SEARCH_URL, USER_AGENT, YAHOO_SEARCH_URL
 from invest_note_api.external.quotes import fetch_quotes_by_keys
 
@@ -128,7 +129,7 @@ async def _search_us(q: str) -> list:
             results.append({
                 "code": symbol,
                 "name": name,
-                "market": "US",
+                "market": COUNTRY_US,
                 "exchange": _EXCHANGE_MAP.get(exchange, exchange),
             })
         return results

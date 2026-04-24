@@ -12,6 +12,7 @@ from typing import TypedDict
 import httpx
 from cachetools import TTLCache
 
+from invest_note_api.domain.trade_types import COUNTRY_US, DEFAULT_COUNTRY
 from invest_note_api.external.constants import (
     HTTP_TIMEOUT_SECONDS,
     NAVER_BASIC_URL,
@@ -125,11 +126,11 @@ async def fetch_quotes_by_keys(keys: list[str]) -> dict[str, QuoteResult | None]
     async with httpx.AsyncClient() as client:
         tasks = []
         for e in entries:
-            if e["country"] == "KR":
-                cache_key = f"KR:{e['code']}"
+            if e["country"] == DEFAULT_COUNTRY:
+                cache_key = f"{DEFAULT_COUNTRY}:{e['code']}"
                 tasks.append(_get_cached(cache_key, lambda c=client, code=e["code"]: _fetch_kr_price(c, code)))
-            elif e["country"] == "US":
-                cache_key = f"US:{e['code']}"
+            elif e["country"] == COUNTRY_US:
+                cache_key = f"{COUNTRY_US}:{e['code']}"
                 tasks.append(_get_cached(cache_key, lambda c=client, sym=e["code"]: _fetch_us_price(c, sym)))
             else:
                 tasks.append(_null())

@@ -36,6 +36,7 @@ RESULT_SUCCESS: TradeResult = "SUCCESS"
 RESULT_FAIL: TradeResult = "FAIL"
 RESULT_BREAKEVEN: TradeResult = "BREAKEVEN"
 DEFAULT_COUNTRY: CountryCode = "KR"
+COUNTRY_US: CountryCode = "US"
 
 
 class Trade(BaseModel):
