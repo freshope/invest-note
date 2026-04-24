@@ -64,7 +64,7 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
   const [tradeKey, setTradeKey] = useState(0);
   const [stockKey, setStockKey] = useState(0);
 
-  // 콜백 안에서 최신 payload를 읽기 위한 ref (deps 없이 stable 콜백 유지)
+  // stable 콜백에서 최신 payload를 읽기 위한 ref
   const tradePayloadRef = useRef<TradePayload | null>(null);
   const stockPayloadRef = useRef<StockPayload | null>(null);
   tradePayloadRef.current = tradePayload;
@@ -74,7 +74,6 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
   const tradeCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stockCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 언마운트 시 대기 중인 타이머 정리
   useEffect(() => {
     return () => {
       if (tradeCloseTimer.current !== null) clearTimeout(tradeCloseTimer.current);
@@ -88,8 +87,8 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
       clearTimeout(tradeCloseTimer.current);
       tradeCloseTimer.current = null;
     }
+    // 이미 열려 있으면 portal을 즉시 제거 후 새 panel로 slide-in
     if (tradePayloadRef.current !== null) {
-      // 이미 열려 있으면 key를 바꿔 기존 portal을 즉시 제거 후 새 panel slide-in
       setTradeKey((k) => k + 1);
     }
     setTradePayload(payload);
@@ -109,8 +108,9 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const closeTrade = useCallback(() => {
+    // 기존 타이머가 있으면 먼저 취소 (중복 호출 방어)
+    if (tradeCloseTimer.current !== null) clearTimeout(tradeCloseTimer.current);
     setTradeOpen(false);
-    // 슬라이드 아웃 완료 후 payload를 비워 Panel을 React 트리에서 제거
     tradeCloseTimer.current = setTimeout(() => {
       tradeCloseTimer.current = null;
       setTradePayload(null);
@@ -118,6 +118,7 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const closeStock = useCallback(() => {
+    if (stockCloseTimer.current !== null) clearTimeout(stockCloseTimer.current);
     setStockOpen(false);
     stockCloseTimer.current = setTimeout(() => {
       stockCloseTimer.current = null;
@@ -126,25 +127,9 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const closeAll = useCallback(() => {
-    if (tradeCloseTimer.current !== null) {
-      clearTimeout(tradeCloseTimer.current);
-      tradeCloseTimer.current = null;
-    }
-    if (stockCloseTimer.current !== null) {
-      clearTimeout(stockCloseTimer.current);
-      stockCloseTimer.current = null;
-    }
-    setTradeOpen(false);
-    setStockOpen(false);
-    tradeCloseTimer.current = setTimeout(() => {
-      tradeCloseTimer.current = null;
-      setTradePayload(null);
-    }, PANEL_ANIMATION_MS + 50);
-    stockCloseTimer.current = setTimeout(() => {
-      stockCloseTimer.current = null;
-      setStockPayload(null);
-    }, PANEL_ANIMATION_MS + 50);
-  }, []);
+    closeTrade();
+    closeStock();
+  }, [closeTrade, closeStock]);
 
   // 라우트 이동 시 열린 판넬 자동 닫기
   const pathname = usePathname();
