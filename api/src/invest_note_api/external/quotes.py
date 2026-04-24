@@ -13,7 +13,7 @@ import httpx
 from cachetools import TTLCache
 
 from invest_note_api.external.constants import (
-    HTTP_TIMEOUT,
+    HTTP_TIMEOUT_SECONDS,
     NAVER_BASIC_URL,
     NAVER_REALTIME_URL,
     QUOTE_CACHE_MAXSIZE,
@@ -37,7 +37,7 @@ class QuoteResult(TypedDict):
 async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult | None:
     try:
         url = NAVER_REALTIME_URL.format(code=code)
-        res = await client.get(url, headers=_HEADERS, timeout=HTTP_TIMEOUT)
+        res = await client.get(url, headers=_HEADERS, timeout=HTTP_TIMEOUT_SECONDS)
         if res.status_code == 200:
             data = res.json()
             item = (data.get("datas") or [{}])[0] if data.get("datas") else data.get("data") or data
@@ -53,7 +53,7 @@ async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult |
     # 백업: stock basic API
     try:
         url = NAVER_BASIC_URL.format(code=code)
-        res = await client.get(url, headers=_HEADERS, timeout=HTTP_TIMEOUT)
+        res = await client.get(url, headers=_HEADERS, timeout=HTTP_TIMEOUT_SECONDS)
         if res.status_code == 200:
             data = res.json()
             raw = (
@@ -73,7 +73,7 @@ async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult |
 async def _fetch_us_price(client: httpx.AsyncClient, symbol: str) -> QuoteResult | None:
     try:
         url = YAHOO_CHART_URL.format(symbol=symbol)
-        res = await client.get(url, headers=_HEADERS, timeout=HTTP_TIMEOUT)
+        res = await client.get(url, headers=_HEADERS, timeout=HTTP_TIMEOUT_SECONDS)
         if res.status_code != 200:
             return None
         data = res.json()

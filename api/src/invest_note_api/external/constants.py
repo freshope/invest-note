@@ -1,8 +1,6 @@
 """외부 HTTP 통신 공통 상수."""
-import httpx
 
 USER_AGENT = "Mozilla/5.0"
-HTTP_TIMEOUT = httpx.Timeout(5.0)
 HTTP_TIMEOUT_SECONDS = 5.0
 
 QUOTE_CACHE_MAXSIZE = 512

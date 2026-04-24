@@ -13,8 +13,6 @@ if TYPE_CHECKING:
 Period = Literal["1m", "3m", "6m", "ytd", "all"]
 DEFAULT_PERIOD: Period = "all"
 
-_KST = KST
-
 
 def parse_period(param: str | None) -> Period:
     if param in ("1m", "3m", "6m", "ytd", "all"):
@@ -31,7 +29,7 @@ def _sub_months(dt: datetime, n: int) -> datetime:
 
 
 def _period_to_range(period: Period) -> tuple[datetime | None, datetime]:
-    now = datetime.now(_KST)
+    now = datetime.now(KST)
     if period == "all":
         return None, now
     if period == "ytd":

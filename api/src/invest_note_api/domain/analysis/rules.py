@@ -148,8 +148,7 @@ def _rule_losing_strategy(inp: RuleInput) -> Suggestion | None:
     )
     if not worst:
         return None
-    labels = {STRATEGY_SCALPING: "스캘핑", STRATEGY_SWING: "스윙", STRATEGY_LONG_TERM: "장기", STRATEGY_UNKNOWN: "전략 미설정"}
-    label = labels.get(worst.type, worst.type)
+    label = _STRATEGY_LABELS.get(worst.type, worst.type)
     pct = _round(worst.win_rate)
     return Suggestion(
         id="losing_strategy",
@@ -220,6 +219,12 @@ _RULES: list[_RuleFn] = [
 ]
 
 _SEVERITY_ORDER = {"critical": 0, "warn": 1, "info": 2}
+_STRATEGY_LABELS = {
+    STRATEGY_SCALPING: "스캘핑",
+    STRATEGY_SWING: "스윙",
+    STRATEGY_LONG_TERM: "장기",
+    STRATEGY_UNKNOWN: "전략 미설정",
+}
 
 
 def evaluate_rules(inp: RuleInput) -> list[Suggestion]:
