@@ -6,17 +6,18 @@ commaPositive / commaNonNegative → field_validator(mode="before")로 재현.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
-TradeType = Literal["BUY", "SELL"]
-MarketType = Literal["STOCK", "CRYPTO", "ETC"]
-StrategyType = Literal["SCALPING", "SWING", "LONG_TERM", "UNKNOWN"]
-EmotionType = Literal["CONFIDENT", "ANXIOUS", "FOMO", "IMPULSIVE", "CALM"]
-ReasoningTag = Literal["TECHNICAL", "FUNDAMENTAL", "NEWS", "FEELING"]
-TradeResult = Literal["SUCCESS", "FAIL", "BREAKEVEN"]
-CountryCode = Literal["KR", "US", "OTHER"]
+from ..domain.trade_types import (
+    CountryCode,
+    EmotionType,
+    MarketType,
+    ReasoningTag,
+    StrategyType,
+    TradeResult,
+    TradeType,
+)
 
 
 def _comma_positive(v: object) -> float:

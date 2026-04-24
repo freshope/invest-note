@@ -14,6 +14,7 @@ StrategyType = Literal["SCALPING", "SWING", "LONG_TERM", "UNKNOWN"]
 EmotionType = Literal["CONFIDENT", "ANXIOUS", "FOMO", "IMPULSIVE", "CALM"]
 ReasoningTag = Literal["TECHNICAL", "FUNDAMENTAL", "NEWS", "FEELING"]
 TradeResult = Literal["SUCCESS", "FAIL", "BREAKEVEN"]
+CountryCode = Literal["KR", "US", "OTHER"]
 
 
 class Trade(BaseModel):
