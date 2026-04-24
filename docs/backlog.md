@@ -7,7 +7,6 @@ MVP 이후 구현할 작업 후보 목록.
 ## 기록 탭
 
 - [ ] 계좌 필터 컨텍스트 → 종목 패널 전달 — 계좌 A 필터 상태에서 종목 클릭 시 종목 패널에 해당 계좌 거래만 표시. `openTrade`에 `contextAccountId` 추가
-- [ ] 종목/거래 상세 패널 스택 중첩 누적 — `StockDetailPanel` ↔ `TradeDetailPanel` 상호 dynamic import로 같은 종목/거래가 반복 push됨. 1순위: 부모 스택에 이미 있으면 그 단계까지 pop. 2순위: 헤더 깊이 인디케이터 + "모두 닫기". 3순위: URL/history 연동
 
 ## 분석 탭 성능 / 유지보수
 
@@ -21,7 +20,6 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## UX / 기타
 
-- [ ] PeriodFilterTabs compact 모드 터치 타겟 `min-h-[44px]`
 - [ ] HoldingsList fetch 에러 시 토스트 연동 — 네트워크 실패/401/500 시 빈 패널 대신 토스트 + 패널 미오픈
 
 ## 거래 손익 정합성

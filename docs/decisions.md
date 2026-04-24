@@ -130,7 +130,15 @@
 
 ---
 
-## 2026-04-19 | 거래·종목 상세 패널 상태 — Context SSOT
+## 2026-04-24 | 거래·종목 상세 패널 — 2-슬롯 + open/payload 분리 구조 (mode 제거)
+
+- **결정:** `mode` 단일 상태 제거. `tradePayload`/`stockPayload`(콘텐츠) + `tradeOpen`/`stockOpen`(애니메이션) 분리. 동일 타입 재오픈 시 `key` 증가로 portal remount → z-order 재정렬.
+- **이유:** `mode` SSOT는 두 타입이 동시에 열릴 수 없어 Stock → Trade 이동 시 Stock이 닫혀 뒤로가기가 1단계. 2-슬롯 구조에서는 각 타입이 독립적으로 open/close되어 최대 2번 뒤로가기로 원래 페이지 복귀 가능.
+- **트레이드오프:** `createPortal`의 DOM 추가 순서가 z-order를 결정하므로 동일 타입 재오픈 시 key remount 필수. `open=false` 후 `PANEL_ANIMATION_MS+50ms` 타이머로 payload null 처리해 슬라이드 아웃 중 콘텐츠 유지.
+
+---
+
+## 2026-04-19 | 거래·종목 상세 패널 상태 — Context SSOT (2026-04-24에 2-슬롯으로 대체)
 
 - **결정:** `DetailPanelProvider`(app/layout)에서 단일 `mode: "trade" | "stock" | null` 관리. 호출자는 `openTrade()`/`openStock()`만 호출.
 - **이유:** `mode` 단일 상태로 동시 오픈이 구조적으로 불가능 — 런타임 가드 없이 mutual-exclusive 보장. 무한 중첩 문제 해결.
