@@ -14,7 +14,7 @@ import { usePathname } from "next/navigation";
 import {
   FullScreenPanel,
   FullScreenPanelContent,
-  useSnapshotWhileOpen,
+  PANEL_ANIMATION_MS,
 } from "@/components/base/FullScreenPanel";
 import { TradeDetail } from "@/components/records/TradeDetail";
 import { StockDetail } from "@/components/stocks/StockDetail";
@@ -55,7 +55,10 @@ export function useDetailPanel(): DetailPanelContextValue {
 export function DetailPanelProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
 
+  // open과 payload를 분리해 슬라이드 아웃 중에도 payload가 살아있도록 함
+  const [tradeOpen, setTradeOpen] = useState(false);
   const [tradePayload, setTradePayload] = useState<TradePayload | null>(null);
+  const [stockOpen, setStockOpen] = useState(false);
   const [stockPayload, setStockPayload] = useState<StockPayload | null>(null);
   // key가 바뀌면 React가 기존 Panel을 즉시 언마운트(portal 제거)하고 새로 마운트
   const [tradeKey, setTradeKey] = useState(0);
@@ -67,27 +70,80 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
   tradePayloadRef.current = tradePayload;
   stockPayloadRef.current = stockPayload;
 
+  // 슬라이드 아웃 후 payload를 정리하는 타이머 ref
+  const tradeCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stockCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 언마운트 시 대기 중인 타이머 정리
+  useEffect(() => {
+    return () => {
+      if (tradeCloseTimer.current !== null) clearTimeout(tradeCloseTimer.current);
+      if (stockCloseTimer.current !== null) clearTimeout(stockCloseTimer.current);
+    };
+  }, []);
+
   const openTrade = useCallback((payload: TradePayload) => {
+    // 닫히는 중이면 payload 정리 타이머를 취소해 현재 payload를 유지
+    if (tradeCloseTimer.current !== null) {
+      clearTimeout(tradeCloseTimer.current);
+      tradeCloseTimer.current = null;
+    }
     if (tradePayloadRef.current !== null) {
       // 이미 열려 있으면 key를 바꿔 기존 portal을 즉시 제거 후 새 panel slide-in
       setTradeKey((k) => k + 1);
     }
     setTradePayload(payload);
+    setTradeOpen(true);
   }, []);
 
   const openStock = useCallback((payload: StockPayload) => {
+    if (stockCloseTimer.current !== null) {
+      clearTimeout(stockCloseTimer.current);
+      stockCloseTimer.current = null;
+    }
     if (stockPayloadRef.current !== null) {
       setStockKey((k) => k + 1);
     }
     setStockPayload(payload);
+    setStockOpen(true);
   }, []);
 
-  const closeTrade = useCallback(() => setTradePayload(null), []);
-  const closeStock = useCallback(() => setStockPayload(null), []);
+  const closeTrade = useCallback(() => {
+    setTradeOpen(false);
+    // 슬라이드 아웃 완료 후 payload를 비워 Panel을 React 트리에서 제거
+    tradeCloseTimer.current = setTimeout(() => {
+      tradeCloseTimer.current = null;
+      setTradePayload(null);
+    }, PANEL_ANIMATION_MS + 50);
+  }, []);
+
+  const closeStock = useCallback(() => {
+    setStockOpen(false);
+    stockCloseTimer.current = setTimeout(() => {
+      stockCloseTimer.current = null;
+      setStockPayload(null);
+    }, PANEL_ANIMATION_MS + 50);
+  }, []);
 
   const closeAll = useCallback(() => {
-    setTradePayload(null);
-    setStockPayload(null);
+    if (tradeCloseTimer.current !== null) {
+      clearTimeout(tradeCloseTimer.current);
+      tradeCloseTimer.current = null;
+    }
+    if (stockCloseTimer.current !== null) {
+      clearTimeout(stockCloseTimer.current);
+      stockCloseTimer.current = null;
+    }
+    setTradeOpen(false);
+    setStockOpen(false);
+    tradeCloseTimer.current = setTimeout(() => {
+      tradeCloseTimer.current = null;
+      setTradePayload(null);
+    }, PANEL_ANIMATION_MS + 50);
+    stockCloseTimer.current = setTimeout(() => {
+      stockCloseTimer.current = null;
+      setStockPayload(null);
+    }, PANEL_ANIMATION_MS + 50);
   }, []);
 
   // 라우트 이동 시 열린 판넬 자동 닫기
@@ -112,29 +168,25 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
     [openTrade, openStock],
   );
 
-  // 슬라이드 아웃 중에도 직전 payload로 렌더되도록 스냅샷 유지
-  const tradeSnap = useSnapshotWhileOpen(tradePayload !== null, tradePayload);
-  const stockSnap = useSnapshotWhileOpen(stockPayload !== null, stockPayload);
-
   return (
     <DetailPanelContext.Provider value={value}>
       {children}
-      {tradeSnap && (
+      {tradePayload !== null && (
         <TradePanel
           key={`trade-${tradeKey}`}
-          open={tradePayload !== null}
-          payload={tradeSnap}
+          open={tradeOpen}
+          payload={tradePayload}
           onClose={closeTrade}
           onMutated={handleTradeMutated}
           onSaved={handleTradeSaved}
           openStock={openStock}
         />
       )}
-      {stockSnap && (
+      {stockPayload !== null && (
         <StockPanel
           key={`stock-${stockKey}`}
-          open={stockPayload !== null}
-          payload={stockSnap}
+          open={stockOpen}
+          payload={stockPayload}
           onClose={closeStock}
           openTrade={openTrade}
         />
@@ -155,16 +207,20 @@ interface TradePanelProps {
 function TradePanel({ open, payload, onClose, onMutated, onSaved, openStock }: TradePanelProps) {
   const { trade, accounts, allTrades } = payload;
 
-  const handleStockPress = trade.ticker_symbol
-    ? () =>
-        openStock({
-          assetName: trade.asset_name,
-          ticker: trade.ticker_symbol!,
-          country: trade.country_code ?? "KR",
-          allTrades,
-          accounts,
-        })
-    : undefined;
+  const handleStockPress = useMemo(
+    () =>
+      trade.ticker_symbol
+        ? () =>
+            openStock({
+              assetName: trade.asset_name,
+              ticker: trade.ticker_symbol!,
+              country: trade.country_code ?? "KR",
+              allTrades,
+              accounts,
+            })
+        : undefined,
+    [trade.ticker_symbol, trade.asset_name, trade.country_code, allTrades, accounts, openStock],
+  );
 
   return (
     <FullScreenPanel open={open} onOpenChange={onClose}>
