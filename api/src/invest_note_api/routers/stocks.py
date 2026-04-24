@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
+from invest_note_api.external.constants import HTTP_TIMEOUT_SECONDS, NAVER_SEARCH_URL, USER_AGENT, YAHOO_SEARCH_URL
 from invest_note_api.external.quotes import fetch_quotes_by_keys
 
 router = APIRouter(prefix="/api/stocks")
@@ -16,7 +17,7 @@ _HAS_KOREAN = re.compile(r"[\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F]")
 _IS_KR_CODE = re.compile(r"^\d{6}$")
 _CODE_RE = re.compile(r"^[A-Z0-9]{4,9}$", re.IGNORECASE)
 
-_HEADERS = {"User-Agent": "Mozilla/5.0"}
+_HEADERS = {"User-Agent": USER_AGENT}
 _EXCHANGE_MAP = {
     "NMS": "NASDAQ", "NGM": "NASDAQ", "NCM": "NASDAQ",
     "NYQ": "NYSE", "NYS": "NYSE",
@@ -59,10 +60,10 @@ async def _search_kr(q: str) -> list:
     try:
         async with httpx.AsyncClient() as client:
             res = await client.get(
-                "https://ac.stock.naver.com/ac",
+                NAVER_SEARCH_URL,
                 params={"q": q, "target": "stock"},
                 headers=_HEADERS,
-                timeout=5.0,
+                timeout=HTTP_TIMEOUT_SECONDS,
             )
         if res.status_code != 200:
             return []
@@ -102,10 +103,10 @@ async def _search_us(q: str) -> list:
         }
         async with httpx.AsyncClient() as client:
             res = await client.get(
-                "https://query2.finance.yahoo.com/v1/finance/search",
+                YAHOO_SEARCH_URL,
                 params=params,
                 headers=_HEADERS,
-                timeout=5.0,
+                timeout=HTTP_TIMEOUT_SECONDS,
             )
         if res.status_code != 200:
             return []
