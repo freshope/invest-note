@@ -5,6 +5,9 @@ from typing import Any
 
 from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, MARKET_TYPE_STOCK, Trade, TradeWithAccount
 
+PG_UPDATE_ZERO = "UPDATE 0"
+PG_DELETE_ZERO = "DELETE 0"
+
 
 def _row_to_trade(row: Any) -> Trade:
     return Trade(**dict(row))
@@ -127,7 +130,7 @@ async def patch_trade(conn: Any, trade_id: str, user_id: str, patch: dict) -> bo
         user_id,
         *values,
     )
-    return result != "UPDATE 0"
+    return result != PG_UPDATE_ZERO
 
 
 async def delete_trade(conn: Any, trade_id: str, user_id: str) -> bool:
@@ -136,4 +139,4 @@ async def delete_trade(conn: Any, trade_id: str, user_id: str) -> bool:
         trade_id,
         user_id,
     )
-    return result != "DELETE 0"
+    return result != PG_DELETE_ZERO

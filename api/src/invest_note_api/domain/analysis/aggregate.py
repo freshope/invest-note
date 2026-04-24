@@ -151,7 +151,7 @@ def compute_summary(
 
     tag_map: dict[str, dict] = {}
     for sell in sells:
-        key = f"{sell.ticker_symbol or sell.asset_name}:{sell.country_code or 'KR'}:{sell.account_id}"
+        key = f"{sell.ticker_symbol or sell.asset_name}:{sell.country_code or DEFAULT_COUNTRY}:{sell.account_id}"
         buys_for_key = buys_by_key.get(key, [])
         prev_buys = [b for b in buys_for_key if b.traded_at <= sell.traded_at]
         tags = prev_buys[-1].reasoning_tags if prev_buys else []

@@ -7,13 +7,13 @@ from fastapi import APIRouter, Depends, Response
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.db import acquire_for_user, get_pool
+from invest_note_api.db_ops.trades_repo import PG_DELETE_ZERO
 from invest_note_api.errors import ERR_ACCOUNT_NOT_FOUND, APIError, validate_body
 from invest_note_api.schemas.account import AccountCreate, AccountUpdate
 
 router = APIRouter(prefix="/api/accounts")
 
 _UPDATABLE_COLS = frozenset({"name", "broker", "cash_balance"})
-_DELETE_ZERO = "DELETE 0"
 
 
 def _row_to_dict(row: asyncpg.Record) -> dict:
@@ -114,7 +114,7 @@ async def delete_account(
 
         result = await conn.execute("DELETE FROM accounts WHERE id = $1", account_id)
 
-    if result == _DELETE_ZERO:
+    if result == PG_DELETE_ZERO:
         raise APIError(ERR_ACCOUNT_NOT_FOUND, 404)
     return Response(status_code=204)
 

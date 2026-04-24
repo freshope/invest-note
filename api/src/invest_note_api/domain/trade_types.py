@@ -36,6 +36,10 @@ RESULT_SUCCESS: TradeResult = "SUCCESS"
 RESULT_FAIL: TradeResult = "FAIL"
 RESULT_BREAKEVEN: TradeResult = "BREAKEVEN"
 DEFAULT_COUNTRY: CountryCode = "KR"
+COUNTRY_US: CountryCode = "US"
+
+MAX_CODE_LEN = 20
+MAX_NAME_LEN = 50
 
 
 class Trade(BaseModel):
@@ -66,7 +70,7 @@ class Trade(BaseModel):
     profit_loss: float | None = None
     avg_buy_price: float | None = None
 
-    country_code: str = "KR"
+    country_code: str = DEFAULT_COUNTRY
     exchange: str = ""
 
     commission: float = 0.0

@@ -12,7 +12,10 @@ from typing import TypedDict
 import httpx
 from cachetools import TTLCache
 
+from invest_note_api.domain.trade_types import COUNTRY_US, DEFAULT_COUNTRY, MAX_CODE_LEN
 from invest_note_api.external.constants import (
+    CURRENCY_KRW,
+    CURRENCY_USD,
     HTTP_TIMEOUT_SECONDS,
     NAVER_BASIC_URL,
     NAVER_REALTIME_URL,
@@ -46,7 +49,7 @@ async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult |
             )
             price = float(raw) if raw else 0.0
             if price > 0:
-                return {"price": price, "currency": "KRW", "as_of": datetime.now(timezone.utc).isoformat()}
+                return {"price": price, "currency": CURRENCY_KRW, "as_of": datetime.now(timezone.utc).isoformat()}
     except Exception:
         pass
 
@@ -63,7 +66,7 @@ async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult |
             )
             price = float(raw) if raw else 0.0
             if price > 0:
-                return {"price": price, "currency": "KRW", "as_of": datetime.now(timezone.utc).isoformat()}
+                return {"price": price, "currency": CURRENCY_KRW, "as_of": datetime.now(timezone.utc).isoformat()}
     except Exception:
         pass
 
@@ -85,7 +88,7 @@ async def _fetch_us_price(client: httpx.AsyncClient, symbol: str) -> QuoteResult
         if price > 0:
             return {
                 "price": price,
-                "currency": meta.get("currency", "USD"),
+                "currency": meta.get("currency", CURRENCY_USD),
                 "as_of": datetime.now(timezone.utc).isoformat(),
             }
     except Exception:
@@ -114,8 +117,8 @@ async def fetch_quotes_by_keys(keys: list[str]) -> dict[str, QuoteResult | None]
     entries = []
     for key in keys:
         parts = key.split(":")
-        code = parts[0][:20] if parts else ""
-        country = parts[1] if len(parts) > 1 else "KR"
+        code = parts[0][:MAX_CODE_LEN] if parts else ""
+        country = parts[1] if len(parts) > 1 else DEFAULT_COUNTRY
         if code:
             entries.append({"code": code, "country": country, "key": key})
 
@@ -125,11 +128,11 @@ async def fetch_quotes_by_keys(keys: list[str]) -> dict[str, QuoteResult | None]
     async with httpx.AsyncClient() as client:
         tasks = []
         for e in entries:
-            if e["country"] == "KR":
-                cache_key = f"KR:{e['code']}"
+            if e["country"] == DEFAULT_COUNTRY:
+                cache_key = f"{DEFAULT_COUNTRY}:{e['code']}"
                 tasks.append(_get_cached(cache_key, lambda c=client, code=e["code"]: _fetch_kr_price(c, code)))
-            elif e["country"] == "US":
-                cache_key = f"US:{e['code']}"
+            elif e["country"] == COUNTRY_US:
+                cache_key = f"{COUNTRY_US}:{e['code']}"
                 tasks.append(_get_cached(cache_key, lambda c=client, sym=e["code"]: _fetch_us_price(c, sym)))
             else:
                 tasks.append(_null())

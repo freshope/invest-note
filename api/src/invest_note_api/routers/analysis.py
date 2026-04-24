@@ -14,6 +14,7 @@ from invest_note_api.domain.analysis.concentration import compute_concentration
 from invest_note_api.domain.analysis.holding_period import compute_holding_days_map
 from invest_note_api.domain.analysis.period import DEFAULT_PERIOD, filter_by_period, parse_period
 from invest_note_api.domain.analysis.profile import compute_profile
+from invest_note_api.domain.trade_types import TRADE_TYPE_BUY, TRADE_TYPE_SELL
 from invest_note_api.domain.analysis.rules import evaluate_rules
 from invest_note_api.domain.portfolio import build_positions, merge_quotes
 from invest_note_api.domain.realized_pnl import build_pnl_map
@@ -143,7 +144,7 @@ async def get_analysis_behavior(
     all_holding_days_map = compute_holding_days_map(all_trades)
     profile, input_rates = compute_profile(trades, concentration.hhi, all_holding_days_map)
 
-    period_sell_ids = {t.id for t in trades if t.trade_type == "SELL"}
+    period_sell_ids = {t.id for t in trades if t.trade_type == TRADE_TYPE_SELL}
     holding_dist: dict[str, int] = {}
     for tid, days in all_holding_days_map.items():
         if tid not in period_sell_ids:
@@ -158,7 +159,7 @@ async def get_analysis_behavior(
 
     size_dist: dict[str, int] = {}
     for t in trades:
-        if t.trade_type == "BUY":
+        if t.trade_type == TRADE_TYPE_BUY:
             b = _size_bucket(t.total_amount)
             size_dist[b] = size_dist.get(b, 0) + 1
     position_size_dist = [
