@@ -41,7 +41,7 @@ from invest_note_api.domain.trade_types import (
     TRADE_TYPE_SELL,
     Trade,
 )
-from invest_note_api.errors import APIError, validate_body
+from invest_note_api.errors import ERR_TRADE_NOT_FOUND, APIError, validate_body
 from invest_note_api.schemas.trade import TradeCreate, TradeUpdate
 
 router = APIRouter(prefix="/api/trades")
@@ -207,7 +207,7 @@ async def get_trade_summary(
             trade_id, user.id,
         )
         if not sell_row:
-            raise APIError("거래를 찾을 수 없습니다.", 404)
+            raise APIError(ERR_TRADE_NOT_FOUND, 404)
 
         sell = Trade(**dict(sell_row))
         if sell.trade_type != TRADE_TYPE_SELL:
@@ -285,7 +285,7 @@ async def update_trade(
             trade_id, user.id,
         )
         if not existing_row:
-            raise APIError("거래를 찾을 수 없습니다.", 404)
+            raise APIError(ERR_TRADE_NOT_FOUND, 404)
 
         existing = Trade(**dict(existing_row))
 
@@ -316,7 +316,7 @@ async def delete_trade_endpoint(
         all_trades = await list_trades(conn, user.id)
         target = next((t for t in all_trades if t.id == trade_id), None)
         if target is None:
-            raise APIError("거래를 찾을 수 없습니다.", 404)
+            raise APIError(ERR_TRADE_NOT_FOUND, 404)
 
         ok, msg, _ = validate_mutation(all_trades, "delete", target)
         if not ok:
