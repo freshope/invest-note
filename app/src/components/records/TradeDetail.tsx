@@ -17,6 +17,7 @@ import { tradesApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { ChevronLeftIcon } from "lucide-react";
 import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
+import { STRATEGY_LABELS, EMOTION_LABELS } from "./constants";
 
 interface TradeDetailProps {
   trade: TradeWithAccount;
@@ -27,20 +28,6 @@ interface TradeDetailProps {
   onStockPress?: () => void;
 }
 
-const STRATEGY_LABELS: Record<string, string> = {
-  SCALPING: "스캘핑",
-  SWING: "스윙",
-  LONG_TERM: "장기",
-  UNKNOWN: "없음",
-};
-
-const EMOTION_LABELS: Record<string, string> = {
-  CONFIDENT: "확신 😊",
-  ANXIOUS: "불안 😰",
-  FOMO: "FOMO 😤",
-  IMPULSIVE: "충동 ⚡",
-  CALM: "평온 😌",
-};
 
 const REASONING_TAG_LABELS: Record<string, string> = {
   TECHNICAL: "기술적 분석",

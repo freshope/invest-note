@@ -21,3 +21,12 @@ export const REASONING_TAGS: { value: ReasoningTag; label: string }[] = [
   { value: "NEWS", label: "뉴스/이슈" },
   { value: "FEELING", label: "감/직감" },
 ];
+
+// value → label 단순 lookup (TradeCard/TradeDetail/TradeMetaSellForm/TradeEditPanel 공용)
+export const STRATEGY_LABELS: Record<string, string> = Object.fromEntries(
+  STRATEGIES.map((s) => [s.value, s.label]),
+);
+
+export const EMOTION_LABELS: Record<string, string> = Object.fromEntries(
+  EMOTIONS.map((e) => [e.value, e.label]),
+);
