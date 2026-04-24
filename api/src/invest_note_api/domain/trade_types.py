@@ -66,7 +66,7 @@ class Trade(BaseModel):
     profit_loss: float | None = None
     avg_buy_price: float | None = None
 
-    country_code: str = "KR"
+    country_code: str = DEFAULT_COUNTRY
     exchange: str = ""
 
     commission: float = 0.0
