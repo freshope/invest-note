@@ -19,10 +19,15 @@ import { queryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 import { BROKERS } from "@/lib/brokers";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
+import { VALIDATION_LIMITS } from "@/lib/constants/validation";
 import type { Account } from "@/types/database";
 
 const schema = z.object({
-  name: z.string().trim().min(1, "계좌명을 입력해주세요.").max(50),
+  name: z
+    .string()
+    .trim()
+    .min(1, "계좌명을 입력해주세요.")
+    .max(VALIDATION_LIMITS.ACCOUNT_NAME_MAX),
   broker: z.string().nullable(),
   cash_display: z.string(),
 });
@@ -107,7 +112,7 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
                 <Input
                   id="name"
                   placeholder="예: 키움증권 위탁계좌"
-                  maxLength={50}
+                  maxLength={VALIDATION_LIMITS.ACCOUNT_NAME_MAX}
                   {...register("name")}
                 />
                 {errors.name && (

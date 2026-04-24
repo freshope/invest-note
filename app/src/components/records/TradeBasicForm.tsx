@@ -21,6 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/base/Popov
 import { Calendar } from "@/components/base/Calendar";
 import { tradesApi, portfolioApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
+import { VALIDATION_LIMITS } from "@/lib/constants/validation";
 import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
 import { HoldingSelectInput } from "./HoldingSelectInput";
 import { CountryBadge } from "./trade-display";
@@ -35,10 +36,13 @@ const LAST_ACCOUNT_KEY = "invest-note:last-account-id";
 const schema = z.object({
   trade_type: z.enum(["BUY", "SELL"]),
   account_id: z.string().min(1, "계좌를 선택해주세요."),
-  asset_name: z.string().min(1, "종목명을 입력해주세요.").max(100),
+  asset_name: z
+    .string()
+    .min(1, "종목명을 입력해주세요.")
+    .max(VALIDATION_LIMITS.ASSET_NAME_MAX),
   ticker_symbol: z.string().min(1, "자동완성으로 종목을 선택해주세요."),
   country_code: z.enum(["KR", "US", "OTHER"]),
-  exchange: z.string().trim().max(50),
+  exchange: z.string().trim().max(VALIDATION_LIMITS.EXCHANGE_MAX),
   traded_at: z.date(),
   price: z.number({ message: "올바른 가격을 입력해주세요." }).positive("올바른 가격을 입력해주세요."),
   quantity: z.number({ message: "올바른 수량을 입력해주세요." }).positive("올바른 수량을 입력해주세요."),
