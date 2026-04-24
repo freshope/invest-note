@@ -25,6 +25,33 @@ import { createClient } from "@/lib/supabase/client";
 // NEXT_PUBLIC_API_BASE_URL: FastAPI 서버 주소. 정적 export 환경에서는 필수.
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
 
+// FastAPI 라우트 매핑 — 인라인 경로 문자열 사용 금지, 반드시 이 객체 경유.
+const ROUTES = {
+  accounts: {
+    base: "/api/accounts",
+    byId: (id: string) => `/api/accounts/${id}`,
+    tradeCount: (id: string) => `/api/accounts/${id}/trade-count`,
+  },
+  trades: {
+    base: "/api/trades",
+    byId: (id: string) => `/api/trades/${id}`,
+    summary: (id: string) => `/api/trades/${id}/summary`,
+  },
+  portfolio: {
+    summary: "/api/portfolio/summary",
+    holding: "/api/portfolio/holding",
+  },
+  stocks: {
+    search: "/api/stocks/search",
+    quote: "/api/stocks/quote",
+  },
+  analysis: {
+    summary: "/api/analysis/summary",
+    behavior: "/api/analysis/behavior",
+    suggestions: "/api/analysis/suggestions",
+  },
+} as const;
+
 // 지연 초기화 싱글턴 — SSR import 시 createBrowserClient 실행을 피하기 위해
 // 첫 실제 호출(클라이언트 측) 시점까지 초기화를 미룬다.
 let _supabase: ReturnType<typeof createClient> | undefined;
@@ -74,25 +101,25 @@ export interface AccountInput {
 }
 
 export const accountsApi = {
-  list: () => apiFetch<Account[]>("/api/accounts"),
+  list: () => apiFetch<Account[]>(ROUTES.accounts.base),
 
   create: (input: AccountInput) =>
-    apiFetch<Account>("/api/accounts", {
+    apiFetch<Account>(ROUTES.accounts.base, {
       method: "POST",
       body: JSON.stringify(input),
     }),
 
   update: (id: string, input: AccountInput) =>
-    apiFetch<Account>(`/api/accounts/${id}`, {
+    apiFetch<Account>(ROUTES.accounts.byId(id), {
       method: "PATCH",
       body: JSON.stringify(input),
     }),
 
   delete: (id: string) =>
-    apiFetch<void>(`/api/accounts/${id}`, { method: "DELETE" }),
+    apiFetch<void>(ROUTES.accounts.byId(id), { method: "DELETE" }),
 
   tradeCount: (id: string) =>
-    apiFetch<{ count: number }>(`/api/accounts/${id}/trade-count`),
+    apiFetch<{ count: number }>(ROUTES.accounts.tradeCount(id)),
 };
 
 // ============================================================
@@ -150,27 +177,27 @@ export const tradesApi = {
           )
         )
       : "";
-    return apiFetch<TradesListResponse>(`/api/trades${query}`);
+    return apiFetch<TradesListResponse>(`${ROUTES.trades.base}${query}`);
   },
 
-  get: (id: string) => apiFetch<TradeWithAccount>(`/api/trades/${id}`),
+  get: (id: string) => apiFetch<TradeWithAccount>(ROUTES.trades.byId(id)),
 
   create: (input: TradeCreateInput) =>
-    apiFetch<{ id: string; trade_type: TradeType }>("/api/trades", {
+    apiFetch<{ id: string; trade_type: TradeType }>(ROUTES.trades.base, {
       method: "POST",
       body: JSON.stringify(input),
     }),
 
   update: (id: string, patch: TradePatchInput) =>
-    apiFetch<void>(`/api/trades/${id}`, {
+    apiFetch<void>(ROUTES.trades.byId(id), {
       method: "PATCH",
       body: JSON.stringify(patch),
     }),
 
   delete: (id: string) =>
-    apiFetch<void>(`/api/trades/${id}`, { method: "DELETE" }),
+    apiFetch<void>(ROUTES.trades.byId(id), { method: "DELETE" }),
 
-  summary: (id: string) => apiFetch<TradeSummary>(`/api/trades/${id}/summary`),
+  summary: (id: string) => apiFetch<TradeSummary>(ROUTES.trades.summary(id)),
 };
 
 // ============================================================
@@ -198,7 +225,7 @@ export interface PortfolioHoldingResponse {
 }
 
 export const portfolioApi = {
-  summary: () => apiFetch<PortfolioSummaryResponse>("/api/portfolio/summary"),
+  summary: () => apiFetch<PortfolioSummaryResponse>(ROUTES.portfolio.summary),
 
   holding: (params: PortfolioHoldingParams) => {
     const entries: Record<string, string> = {
@@ -208,7 +235,7 @@ export const portfolioApi = {
     };
     if (params.ticker) entries.ticker = params.ticker;
     return apiFetch<PortfolioHoldingResponse>(
-      `/api/portfolio/holding?${new URLSearchParams(entries)}`
+      `${ROUTES.portfolio.holding}?${new URLSearchParams(entries)}`
     );
   },
 };
@@ -227,11 +254,11 @@ export interface StockSearchResult {
 
 export const stocksApi = {
   search: (q: string) =>
-    apiFetch<StockSearchResult[]>(`/api/stocks/search?q=${encodeURIComponent(q)}`),
+    apiFetch<StockSearchResult[]>(`${ROUTES.stocks.search}?q=${encodeURIComponent(q)}`),
 
   quote: (symbols: string) =>
     apiFetch<Record<string, { price: number; currency: string; as_of: string }>>(
-      `/api/stocks/quote?symbols=${encodeURIComponent(symbols)}`
+      `${ROUTES.stocks.quote}?symbols=${encodeURIComponent(symbols)}`
     ),
 };
 
@@ -255,11 +282,11 @@ export interface SuggestionsData {
 
 export const analysisApi = {
   summary: (period: Period) =>
-    apiFetch<AnalysisSummary>(`/api/analysis/summary?period=${period}`),
+    apiFetch<AnalysisSummary>(`${ROUTES.analysis.summary}?period=${period}`),
 
   behavior: (period: Period) =>
-    apiFetch<BehaviorData>(`/api/analysis/behavior?period=${period}`),
+    apiFetch<BehaviorData>(`${ROUTES.analysis.behavior}?period=${period}`),
 
   suggestions: (period: Period) =>
-    apiFetch<SuggestionsData>(`/api/analysis/suggestions?period=${period}`),
+    apiFetch<SuggestionsData>(`${ROUTES.analysis.suggestions}?period=${period}`),
 };

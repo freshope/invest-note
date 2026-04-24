@@ -14,7 +14,7 @@ import { ReviewQualityPanel } from "./ReviewQualityPanel";
 import { DrilldownHistograms } from "./DrilldownHistograms";
 import { SuggestionList } from "./SuggestionList";
 import { AnalysisEmptyState } from "./AnalysisEmptyState";
-import type { Period } from "@/lib/analysis/period";
+import { DEFAULT_ANALYSIS_PERIOD, type Period } from "@/lib/analysis/period";
 import type { AnalysisSummary } from "@/lib/analysis/aggregate";
 import type { SuggestionsData } from "@/hooks/useAnalysisData";
 import { evaluateRules } from "@/lib/analysis/rules";
@@ -48,7 +48,7 @@ function InsightSection({
 }
 
 export function AnalysisDashboard() {
-  const [period, setPeriod] = useState<Period>("3m");
+  const [period, setPeriod] = useState<Period>(DEFAULT_ANALYSIS_PERIOD);
   const { summary, behavior, suggestionsData, loading, error } = useAnalysisData(period);
 
   const isEmpty = summary && summary.totalTrades === 0;

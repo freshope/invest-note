@@ -6,6 +6,8 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { Input } from "@/components/base/Input";
 import { stocksApi, type StockSearchResult } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
+import { QUERY_STOCK_SEARCH_STALE_TIME_MS } from "@/lib/constants/query";
+import { COUNTRY_LABEL } from "@/lib/constants/market";
 
 export interface SelectedStock {
   name: string;
@@ -22,9 +24,9 @@ interface StockSearchInputProps {
 }
 
 const MARKET_BADGE: Record<string, { label: string; className: string }> = {
-  KR: { label: "국내", className: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
-  US: { label: "해외", className: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300" },
-  OTHER: { label: "기타", className: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
+  KR: { label: COUNTRY_LABEL.KR, className: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
+  US: { label: COUNTRY_LABEL.US, className: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300" },
+  OTHER: { label: COUNTRY_LABEL.OTHER, className: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
 };
 
 async function fetchStocks(query: string): Promise<StockSearchResult[]> {
@@ -44,7 +46,7 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
     queryKey: queryKeys.stockSearch(debouncedValue),
     queryFn: () => fetchStocks(debouncedValue),
     enabled: debouncedValue.trim().length >= 1,
-    staleTime: 60_000,
+    staleTime: QUERY_STOCK_SEARCH_STALE_TIME_MS,
   });
 
   // 쿼리 키(debouncedValue) 변경 시 activeIndex 초기화 — 렌더 중 state 비교 패턴.

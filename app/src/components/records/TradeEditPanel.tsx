@@ -18,7 +18,15 @@ import { Label } from "@/components/base/Label";
 import { Textarea } from "@/components/base/Textarea";
 import { tradesApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
-import { STRATEGIES, EMOTIONS, REASONING_TAGS } from "./constants";
+import {
+  STRATEGIES,
+  EMOTIONS,
+  REASONING_TAGS,
+  STRATEGY_VALUES,
+  EMOTION_VALUES,
+  REASONING_TAG_VALUES,
+  TRADE_RESULT_VALUES,
+} from "./constants";
 import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
 import { cn } from "@/lib/utils";
 import type { Trade, Account, TradeResult, ReasoningTag } from "@/types/database";
@@ -76,10 +84,10 @@ const schema = z.object({
   quantity_display: z.string(),
   commission_display: z.string(),
   tax_display: z.string(),
-  strategy_type: z.enum(["SCALPING", "SWING", "LONG_TERM", "UNKNOWN"]).nullable(),
-  emotion: z.enum(["CONFIDENT", "ANXIOUS", "FOMO", "IMPULSIVE", "CALM"]).nullable(),
-  reasoning_tags: z.array(z.enum(["TECHNICAL", "FUNDAMENTAL", "NEWS", "FEELING"])),
-  result: z.enum(["SUCCESS", "FAIL", "BREAKEVEN"]).nullable(),
+  strategy_type: z.enum(STRATEGY_VALUES).nullable(),
+  emotion: z.enum(EMOTION_VALUES).nullable(),
+  reasoning_tags: z.array(z.enum(REASONING_TAG_VALUES)),
+  result: z.enum(TRADE_RESULT_VALUES).nullable(),
   buy_reason: z.string(),
   sell_reason: z.string(),
   reflection_note: z.string(),

@@ -9,13 +9,18 @@ import { Label } from "@/components/base/Label";
 import { Textarea } from "@/components/base/Textarea";
 import { tradesApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
-import { REASONING_TAGS } from "./constants";
+import {
+  REASONING_TAGS,
+  STRATEGY_VALUES,
+  EMOTION_VALUES,
+  REASONING_TAG_VALUES,
+} from "./constants";
 import { StrategyEmotionFields } from "./StrategyEmotionFields";
 
 const schema = z.object({
-  strategy_type: z.enum(["SCALPING", "SWING", "LONG_TERM", "UNKNOWN"]).nullable(),
-  emotion: z.enum(["CONFIDENT", "ANXIOUS", "FOMO", "IMPULSIVE", "CALM"]).nullable(),
-  reasoning_tags: z.array(z.enum(["TECHNICAL", "FUNDAMENTAL", "NEWS", "FEELING"])),
+  strategy_type: z.enum(STRATEGY_VALUES).nullable(),
+  emotion: z.enum(EMOTION_VALUES).nullable(),
+  reasoning_tags: z.array(z.enum(REASONING_TAG_VALUES)),
   buy_reason: z.string(),
 });
 

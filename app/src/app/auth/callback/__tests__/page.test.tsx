@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, act, cleanup } from "@testing-library/react";
 import AuthCallbackPage from "../page";
+import { LOGIN_OAUTH_FAILED_PATH } from "@/lib/auth/errors";
 
 // ─── 의존성 모킹 ─────────────────────────────────────────────────────────────
 const mockReplace = vi.fn();
@@ -50,6 +51,6 @@ describe("AuthCallbackPage", () => {
     await act(async () => {
       render(<AuthCallbackPage />);
     });
-    expect(mockReplace).toHaveBeenCalledWith("/login?error=oauth_failed");
+    expect(mockReplace).toHaveBeenCalledWith(LOGIN_OAUTH_FAILED_PATH);
   });
 });
