@@ -44,4 +44,16 @@ describe("AppearanceSection", () => {
     });
     expect(document.documentElement.classList.contains("dark")).toBe(true);
   });
+
+  it("같은 버튼 재클릭 시 테마가 변경되지 않는다", async () => {
+    await act(async () => renderWithTheme());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "라이트" }));
+    });
+    expect(localStorage.getItem("theme")).toBe("light");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "라이트" }));
+    });
+    expect(localStorage.getItem("theme")).toBe("light");
+  });
 });

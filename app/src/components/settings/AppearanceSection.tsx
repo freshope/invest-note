@@ -19,11 +19,15 @@ export function AppearanceSection() {
     setMounted(true);
   }, []);
 
+  if (!mounted) {
+    return <div className="rounded-2xl bg-muted/60 p-5 h-[76px]" />;
+  }
+
   return (
     <div className="rounded-2xl bg-muted/60 p-5 space-y-3">
       <p className="text-[14px] font-medium">테마</p>
       <ToggleGroup
-        value={mounted ? [theme ?? "system"] : ["system"]}
+        value={[theme ?? "system"]}
         onValueChange={(values) => {
           if (values.length > 0) setTheme(values[0]);
         }}

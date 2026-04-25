@@ -9,7 +9,7 @@ if (typeof window !== "undefined") {
       removeListener: () => {},
       addEventListener: () => {},
       removeEventListener: () => {},
-      dispatchEvent: () => false,
+      dispatchEvent: () => true,
     }),
   });
 }
