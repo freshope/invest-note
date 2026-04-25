@@ -13,6 +13,10 @@ from invest_note_api.routers import accounts, health, me
 from invest_note_api.routers import trades, portfolio, stocks, analysis
 
 
+async def lock_not_available_handler(request: Request, exc: LockNotAvailableError) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"error": ERR_LOCK_BUSY})
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     if settings is None:
         settings = get_settings()
@@ -37,12 +41,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    async def lock_not_available_handler(request: Request, exc: LockNotAvailableError) -> JSONResponse:
-        return JSONResponse(
-            status_code=409,
-            content={"error": ERR_LOCK_BUSY},
-        )
 
     application.add_exception_handler(APIError, api_error_handler)
     application.add_exception_handler(RequestValidationError, validation_error_handler)
