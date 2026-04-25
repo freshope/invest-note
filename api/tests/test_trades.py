@@ -78,11 +78,12 @@ def _patch_trades(conn: FakeConnection):
 
 
 def _capture_sql(monkeypatch) -> list[str]:
-    """FakeConnection의 execute/fetch/fetchval을 spy해 실행 SQL을 기록."""
+    """FakeConnection의 모든 DB 메서드를 spy해 실행 SQL을 기록."""
     calls: list[str] = []
     orig_execute = FakeConnection.execute
     orig_fetch = FakeConnection.fetch
     orig_fetchval = FakeConnection.fetchval
+    orig_fetchrow = FakeConnection.fetchrow
 
     async def spy_execute(self: Any, query: str, *args: Any) -> str:
         calls.append(query.strip())
@@ -96,9 +97,14 @@ def _capture_sql(monkeypatch) -> list[str]:
         calls.append(query.strip())
         return await orig_fetchval(self, query, *args)
 
+    async def spy_fetchrow(self: Any, query: str, *args: Any) -> Any:
+        calls.append(query.strip())
+        return await orig_fetchrow(self, query, *args)
+
     monkeypatch.setattr(FakeConnection, "execute", spy_execute)
     monkeypatch.setattr(FakeConnection, "fetch", spy_fetch)
     monkeypatch.setattr(FakeConnection, "fetchval", spy_fetchval)
+    monkeypatch.setattr(FakeConnection, "fetchrow", spy_fetchrow)
     return calls
 
 
@@ -107,7 +113,7 @@ def _assert_lock_before_list(sql_calls: list[str]) -> None:
         (i for i, q in enumerate(sql_calls) if "pg_advisory_xact_lock" in q.lower()), None
     )
     list_idx = next(
-        (i for i, q in enumerate(sql_calls) if "select * from trades" in q.lower()), None
+        (i for i, q in enumerate(sql_calls) if "from trades" in q.lower() and "where user_id" in q.lower()), None
     )
     assert lock_idx is not None, "pg_advisory_xact_lock 쿼리가 실행되지 않음"
     assert list_idx is not None, "list_trades 쿼리가 실행되지 않음"
@@ -208,7 +214,7 @@ class TestCreateTrade:
         assert resp.status_code == 201
 
     def test_create_advisory_lock_before_list_trades(self, trades_client, monkeypatch):
-        """pg_advisory_xact_lock이 list_trades보다 먼저 실행됨을 검증."""
+        """BUY 생성 경로: pg_advisory_xact_lock이 list_trades보다 먼저 실행됨을 검증."""
         sql_calls = _capture_sql(monkeypatch)
         acct_row = {"id": "a1"}
         trade_row = _make_trade_row()
@@ -220,6 +226,24 @@ class TestCreateTrade:
         )
         with _patch_trades(conn):
             resp = trades_client.post("/api/trades", json=self._buy_payload())
+        assert resp.status_code == 201
+        _assert_lock_before_list(sql_calls)
+
+    def test_create_sell_advisory_lock_before_list_trades(self, trades_client, monkeypatch):
+        """SELL 생성 경로: pg_advisory_xact_lock이 list_trades보다 먼저 실행됨을 검증."""
+        sql_calls = _capture_sql(monkeypatch)
+        acct_row = {"id": "a1"}
+        buy_row = _make_trade_row(id_="b1", trade_type="BUY", quantity=10,
+                                  traded_at=_dt("2024-01-01T09:00:00+09:00"))
+        inserted = {"id": "new-s1", "trade_type": "SELL"}
+        conn = FakeConnection(
+            _to_record(acct_row),      # account exists check
+            [_to_record(buy_row)],     # list_trades
+            _to_record(inserted),      # insert_trade RETURNING
+        )
+        payload = {**self._buy_payload(), "trade_type": "SELL"}
+        with _patch_trades(conn):
+            resp = trades_client.post("/api/trades", json=payload)
         assert resp.status_code == 201
         _assert_lock_before_list(sql_calls)
 
@@ -308,6 +332,24 @@ class TestDeleteTrade:
             resp = trades_client.delete("/api/trades/b1")
         assert resp.status_code == 204
         _assert_lock_before_list(sql_calls)
+
+    def test_delete_oversell_validation_400(self, trades_client):
+        """BUY 삭제 시 기존 SELL이 언더솔드되면 400을 반환해야 함."""
+        buy_row = _make_trade_row(
+            id_="b1", trade_type="BUY", quantity=10,
+            traded_at=_dt("2024-01-01T09:00:00+09:00"),
+        )
+        sell_row = _make_trade_row(
+            id_="s1", trade_type="SELL", quantity=8,
+            traded_at=_dt("2024-02-01T09:00:00+09:00"),
+        )
+        conn = FakeConnection(
+            _to_record(buy_row),                        # fetchrow target
+            [_to_record(buy_row), _to_record(sell_row)],  # list_trades
+        )
+        with _patch_trades(conn):
+            resp = trades_client.delete("/api/trades/b1")
+        assert resp.status_code == 400
 
 
 class TestTradeSummary:

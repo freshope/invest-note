@@ -95,7 +95,10 @@ class TradeCreate(BaseModel):
     def _trim_ticker(cls, v: object) -> str:
         if not isinstance(v, str) or not v.strip():
             raise ValueError("종목코드를 입력해주세요.")
-        return v.strip()
+        stripped = v.strip()
+        if ":" in stripped:
+            raise ValueError("종목코드에 ':'를 포함할 수 없습니다.")
+        return stripped
 
     @field_validator("exchange", mode="before")
     @classmethod

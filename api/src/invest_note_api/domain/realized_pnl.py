@@ -31,12 +31,6 @@ def trade_to_group_key(trade: Trade) -> TradeGroupKey:
     )
 
 
-def _group_key_str(trade: Trade) -> str:
-    ticker = trade.ticker_symbol or trade.asset_name
-    country = trade.country_code or DEFAULT_COUNTRY
-    return f"{ticker}:{country}:{trade.account_id}"
-
-
 def _is_same_group(trade: Trade, key: TradeGroupKey) -> bool:
     if trade.account_id != key.account_id:
         return False

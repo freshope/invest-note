@@ -312,6 +312,8 @@ async def update_trade(
             key = trade_to_group_key(existing)
             await recalc_group_pnl(conn, fresh_trades, key)
         else:
+            # non-PnL 필드: recalc 불필요, lock 불필요.
+            # PNL_AFFECTING_FIELDS에 없는 필드 추가 시 이 분기를 재검토할 것.
             await patch_trade(conn, trade_id, user.id, patch)
 
     return Response(status_code=204)
