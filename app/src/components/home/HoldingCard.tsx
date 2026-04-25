@@ -72,10 +72,9 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
           <p className="text-[10px] text-muted-foreground mb-0.5">현재가</p>
           <p
             className={cn(
-              "text-[13px] font-semibold tabular-nums",
+              "text-[13px] font-semibold tabular-nums text-foreground",
               priceChangePct !== null && priceChangePct > 0 && "text-[var(--rise)]",
               priceChangePct !== null && priceChangePct < 0 && "text-[var(--fall)]",
-              (priceChangePct === null || priceChangePct === 0) && "text-foreground",
             )}
           >
             {currentPrice !== null ? `${fmt(currentPrice)}` : "-"}
