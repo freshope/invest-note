@@ -17,6 +17,7 @@ async def acquire_trade_group_lock(conn: Any, user_id: str, key: TradeGroupKey) 
     session-level pg_advisory_lock은 사용 금지 (pooler에서 leak).
     """
     lock_key = f"{user_id}:{key.account_id}:{key.ticker or key.asset_name}:{key.country}"
+    await conn.execute("SET LOCAL lock_timeout = '2s'")
     await conn.fetchval(
         "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
         lock_key,

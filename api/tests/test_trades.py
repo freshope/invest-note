@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import patch
 
+import asyncpg
+
 
 from tests.conftest import TEST_USER_ID
 from tests.fake_pool import FakeConnection, make_fake_acquire
@@ -120,6 +122,18 @@ def _assert_lock_before_list(sql_calls: list[str]) -> None:
     assert lock_idx < list_idx, f"lock(idx={lock_idx})이 list_trades(idx={list_idx})보다 늦게 실행됨"
 
 
+def _assert_lock_timeout_before_lock(sql_calls: list[str]) -> None:
+    timeout_idx = next(
+        (i for i, q in enumerate(sql_calls) if "lock_timeout" in q.lower()), None
+    )
+    lock_idx = next(
+        (i for i, q in enumerate(sql_calls) if "pg_advisory_xact_lock" in q.lower()), None
+    )
+    assert timeout_idx is not None, "SET LOCAL lock_timeout 쿼리가 실행되지 않음"
+    assert lock_idx is not None, "pg_advisory_xact_lock 쿼리가 실행되지 않음"
+    assert timeout_idx < lock_idx, f"lock_timeout(idx={timeout_idx})이 advisory lock(idx={lock_idx})보다 늦게 실행됨"
+
+
 class TestListTrades:
     def test_list_returns_200(self, trades_client):
         trade_row = _make_trade_row()
@@ -228,6 +242,7 @@ class TestCreateTrade:
             resp = trades_client.post("/api/trades", json=self._buy_payload())
         assert resp.status_code == 201
         _assert_lock_before_list(sql_calls)
+        _assert_lock_timeout_before_lock(sql_calls)
 
     def test_create_sell_advisory_lock_before_list_trades(self, trades_client, monkeypatch):
         """SELL 생성 경로: pg_advisory_xact_lock이 list_trades보다 먼저 실행됨을 검증."""
@@ -246,6 +261,24 @@ class TestCreateTrade:
             resp = trades_client.post("/api/trades", json=payload)
         assert resp.status_code == 201
         _assert_lock_before_list(sql_calls)
+        _assert_lock_timeout_before_lock(sql_calls)
+
+    def test_create_lock_timeout_returns_409(self, trades_client, monkeypatch):
+        """advisory lock 획득 실패(LockNotAvailableError) 시 409를 반환해야 함."""
+        acct_row = {"id": "a1"}
+        conn = FakeConnection(_to_record(acct_row))
+        orig_fetchval = FakeConnection.fetchval
+
+        async def spy_fetchval(self: Any, query: str, *args: Any) -> Any:
+            if "pg_advisory_xact_lock" in query.lower():
+                raise asyncpg.exceptions.LockNotAvailableError
+            return await orig_fetchval(self, query, *args)
+
+        monkeypatch.setattr(FakeConnection, "fetchval", spy_fetchval)
+        with _patch_trades(conn):
+            resp = trades_client.post("/api/trades", json=self._buy_payload())
+        assert resp.status_code == 409
+        assert "충돌" in resp.json()["error"]
 
 
 class TestGetTrade:

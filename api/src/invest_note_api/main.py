@@ -1,8 +1,10 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from asyncpg.exceptions import LockNotAvailableError
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import create_pool
@@ -36,8 +38,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
+    async def lock_not_available_handler(request: Request, exc: LockNotAvailableError) -> JSONResponse:
+        return JSONResponse(
+            status_code=409,
+            content={"error": "처리 중 다른 요청과 충돌이 발생했습니다. 잠시 후 다시 시도해주세요."},
+        )
+
     application.add_exception_handler(APIError, api_error_handler)
     application.add_exception_handler(RequestValidationError, validation_error_handler)
+    application.add_exception_handler(LockNotAvailableError, lock_not_available_handler)
 
     application.include_router(health.router)
     application.include_router(me.router)
