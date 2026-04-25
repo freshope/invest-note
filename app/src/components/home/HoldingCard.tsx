@@ -18,13 +18,16 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
     currentPrice,
     evaluation,
     unrealizedPnL,
-    realizedPnL,
-    lastNoteType,
     lastNote,
   } = position;
 
   const pnlPos = (unrealizedPnL ?? 0) > 0;
   const pnlNeg = (unrealizedPnL ?? 0) < 0;
+
+  const priceChangePct =
+    currentPrice !== null && avgBuyPrice > 0
+      ? Math.round(((currentPrice - avgBuyPrice) / avgBuyPrice) * 10000) / 100
+      : null;
 
   return (
     <button
@@ -67,9 +70,28 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
       <div className="grid grid-cols-3 gap-2 text-center">
         <div>
           <p className="text-[10px] text-muted-foreground mb-0.5">현재가</p>
-          <p className="text-[13px] font-semibold tabular-nums text-foreground">
+          <p
+            className={cn(
+              "text-[13px] font-semibold tabular-nums text-foreground",
+              priceChangePct !== null && priceChangePct > 0 && "text-[var(--rise)]",
+              priceChangePct !== null && priceChangePct < 0 && "text-[var(--fall)]",
+            )}
+          >
             {currentPrice !== null ? `${fmt(currentPrice)}` : "-"}
           </p>
+          {priceChangePct !== null && (
+            <p
+              className={cn(
+                "text-[11px] font-semibold tabular-nums",
+                priceChangePct > 0 && "text-[var(--rise)]",
+                priceChangePct < 0 && "text-[var(--fall)]",
+                priceChangePct === 0 && "text-muted-foreground",
+              )}
+            >
+              {priceChangePct > 0 ? "+" : ""}
+              {priceChangePct.toFixed(2)}%
+            </p>
+          )}
         </div>
         <div>
           <p className="text-[10px] text-muted-foreground mb-0.5">매수단가</p>
@@ -85,35 +107,11 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
         </div>
       </div>
 
-      {/* 확정손익 배지 */}
-      {realizedPnL !== 0 && (
-        <div className="flex items-center gap-1.5">
-          <span className="text-[10px] font-semibold text-muted-foreground">확정손익</span>
-          <span
-            className={cn(
-              "text-[12px] font-bold tabular-nums",
-              realizedPnL > 0 && "text-[var(--rise)]",
-              realizedPnL < 0 && "text-[var(--fall)]",
-            )}
-          >
-            {realizedPnL > 0 ? "+" : ""}
-            {fmt(realizedPnL)}원
-          </span>
-        </div>
-      )}
-
-      {/* 근거/회고 스니펫 */}
-      {lastNote && lastNoteType && (
+      {/* 매수 근거 스니펫 */}
+      {lastNote && (
         <div className="flex items-start gap-1.5 pt-1 border-t border-border/50">
-          <span
-            className={cn(
-              "shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md mt-0.5",
-              lastNoteType === "근거"
-                ? "bg-brand/10 text-[var(--brand)]"
-                : "bg-muted text-muted-foreground",
-            )}
-          >
-            {lastNoteType}
+          <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md mt-0.5 bg-brand/10 text-[var(--brand)]">
+            매수 근거
           </span>
           <p className="text-[12px] text-muted-foreground leading-relaxed line-clamp-2">
             {lastNote}
