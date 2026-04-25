@@ -27,6 +27,7 @@ import { COUNTRY_CODES } from "@/lib/constants/market";
 import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
 import { HoldingSelectInput } from "./HoldingSelectInput";
 import { CountryBadge } from "./trade-display";
+import { fmtNumberInput, formatNumberInput, parseNumberInput } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Account, TradeType } from "@/types/database";
 import { CalendarIcon } from "lucide-react";
@@ -51,23 +52,6 @@ const schema = z.object({
 });
 
 type FormValues = z.infer<typeof schema>;
-
-function fmtNum(n: number): string {
-  return n > 0 ? n.toLocaleString("ko-KR") : "";
-}
-
-function parseNum(s: string): number {
-  return Number(s.replace(/,/g, "")) || 0;
-}
-
-function formatInput(raw: string): string {
-  const cleaned = raw.replace(/[^0-9.]/g, "");
-  const parts = cleaned.split(".");
-  const integer = parts[0] || "";
-  const decimal = parts.length > 1 ? "." + parts[1] : "";
-  if (!integer && !decimal) return "";
-  return (integer ? Number(integer).toLocaleString("ko-KR") : "") + decimal;
-}
 
 function calcCommission(total: number) { return Math.round(total * COMMISSION_RATE); }
 function calcTax(total: number) { return Math.round(total * SELL_TAX_RATE); }
@@ -378,8 +362,8 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 type="text"
                 inputMode="numeric"
                 placeholder="0"
-                value={fmtNum(field.value)}
-                onChange={(e) => field.onChange(parseNum(formatInput(e.target.value)))}
+                value={fmtNumberInput(field.value)}
+                onChange={(e) => field.onChange(parseNumberInput(formatNumberInput(e.target.value)))}
               />
             )}
           />
@@ -408,8 +392,8 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 type="text"
                 inputMode="decimal"
                 placeholder="0"
-                value={fmtNum(field.value)}
-                onChange={(e) => field.onChange(parseNum(formatInput(e.target.value)))}
+                value={fmtNumberInput(field.value)}
+                onChange={(e) => field.onChange(parseNumberInput(formatNumberInput(e.target.value)))}
               />
             )}
           />
@@ -447,8 +431,8 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 type="text"
                 inputMode="numeric"
                 placeholder="0"
-                value={fmtNum(field.value)}
-                onChange={(e) => field.onChange(parseNum(formatInput(e.target.value)))}
+                value={fmtNumberInput(field.value)}
+                onChange={(e) => field.onChange(parseNumberInput(formatNumberInput(e.target.value)))}
               />
             )}
           />
@@ -467,8 +451,8 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                   type="text"
                   inputMode="numeric"
                   placeholder="0"
-                  value={fmtNum(field.value)}
-                  onChange={(e) => field.onChange(parseNum(formatInput(e.target.value)))}
+                  value={fmtNumberInput(field.value)}
+                  onChange={(e) => field.onChange(parseNumberInput(formatNumberInput(e.target.value)))}
                 />
               )}
             />

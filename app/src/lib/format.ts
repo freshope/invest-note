@@ -8,3 +8,23 @@ export function fmtCompact(n: number): string {
   if (n >= 10_000) return `${Math.round(n / 10_000)}만`;
   return n.toLocaleString("ko-KR");
 }
+
+/** Form number input display: returns comma-formatted string for positive numbers, "" otherwise */
+export function fmtNumberInput(n: number | null | undefined): string {
+  return n != null && n > 0 ? n.toLocaleString("ko-KR") : "";
+}
+
+/** Strips non-numeric characters (except decimal point) and re-formats with thousand separators */
+export function formatNumberInput(raw: string): string {
+  const cleaned = raw.replace(/[^0-9.]/g, "");
+  const parts = cleaned.split(".");
+  const integer = parts[0] || "";
+  const decimal = parts.length > 1 ? "." + parts[1] : "";
+  if (!integer && !decimal) return "";
+  return (integer ? Number(integer).toLocaleString("ko-KR") : "") + decimal;
+}
+
+/** Parses a comma-formatted string to a number (0 if empty/invalid) */
+export function parseNumberInput(s: string): number {
+  return Number(s.replace(/,/g, "")) || 0;
+}

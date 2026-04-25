@@ -28,6 +28,7 @@ import {
   TRADE_RESULT_VALUES,
 } from "./constants";
 import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
+import { fmtNumberInput, formatNumberInput, parseNumberInput } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Trade, Account, ReasoningTag } from "@/types/database";
 import { format } from "date-fns";
@@ -43,29 +44,11 @@ function BreakdownRow({ label, amount, prefix }: { label: string; amount: number
   );
 }
 
-function fmtNum(n: number | null | undefined): string {
-  if (n == null || n === 0) return "";
-  return n.toLocaleString("ko-KR");
-}
-
-function formatInput(raw: string): string {
-  const cleaned = raw.replace(/[^0-9.]/g, "");
-  const parts = cleaned.split(".");
-  const integer = parts[0] || "";
-  const decimal = parts.length > 1 ? "." + parts[1] : "";
-  if (!integer && !decimal) return "";
-  return (integer ? Number(integer).toLocaleString("ko-KR") : "") + decimal;
-}
-
-function parseRaw(s: string): number {
-  return Number(s.replace(/,/g, "")) || 0;
-}
-
 const schema = z.object({
-  price_display: z.string(),
-  quantity_display: z.string(),
-  commission_display: z.string(),
-  tax_display: z.string(),
+  price: z.number({ message: "올바른 가격을 입력해주세요." }).positive("올바른 가격을 입력해주세요."),
+  quantity: z.number({ message: "올바른 수량을 입력해주세요." }).positive("올바른 수량을 입력해주세요."),
+  commission: z.number().min(0),
+  tax: z.number().min(0),
   strategy_type: z.enum(STRATEGY_VALUES).nullable(),
   emotion: z.enum(EMOTION_VALUES).nullable(),
   reasoning_tags: z.array(z.enum(REASONING_TAG_VALUES)),
@@ -102,10 +85,10 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      price_display: fmtNum(trade.price),
-      quantity_display: fmtNum(trade.quantity),
-      commission_display: fmtNum(trade.commission),
-      tax_display: fmtNum(trade.tax),
+      price: trade.price ?? 0,
+      quantity: trade.quantity ?? 0,
+      commission: trade.commission ?? 0,
+      tax: trade.tax ?? 0,
       strategy_type: trade.strategy_type ?? null,
       emotion: trade.emotion ?? null,
       reasoning_tags: (trade.reasoning_tags ?? []) as ReasoningTag[],
@@ -133,10 +116,10 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
     if (initializedRef.current) return;
     initializedRef.current = true;
     reset({
-      price_display: fmtNum(trade.price),
-      quantity_display: fmtNum(trade.quantity),
-      commission_display: fmtNum(trade.commission),
-      tax_display: fmtNum(trade.tax),
+      price: trade.price ?? 0,
+      quantity: trade.quantity ?? 0,
+      commission: trade.commission ?? 0,
+      tax: trade.tax ?? 0,
       strategy_type: trade.strategy_type ?? null,
       emotion: trade.emotion ?? null,
       reasoning_tags: (trade.reasoning_tags ?? []) as ReasoningTag[],
@@ -148,9 +131,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
     });
   }, [open, trade, reset]);
 
-  const { reasoning_tags: tags, result, price_display: priceDisplay, quantity_display: quantityDisplay } = watch();
-  const livePrice = parseRaw(priceDisplay);
-  const liveQty = parseRaw(quantityDisplay);
+  const { reasoning_tags: tags, result, price: livePrice, quantity: liveQty } = watch();
   const liveTotal = livePrice * liveQty;
   const acc = accounts.find((a) => a.id === trade.account_id);
 
@@ -164,10 +145,10 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
       await tradesApi.update(trade.id, {
         trade_type: trade.trade_type,
         market_type: trade.market_type,
-        price: parseRaw(values.price_display),
-        quantity: parseRaw(values.quantity_display),
-        commission: parseRaw(values.commission_display),
-        tax: parseRaw(values.tax_display),
+        price: values.price,
+        quantity: values.quantity,
+        commission: values.commission,
+        tax: values.tax,
         strategy_type: isSell ? (summary?.strategyEvaluation?.planned ?? null) : values.strategy_type,
         emotion: values.emotion,
         reasoning_tags: values.reasoning_tags,
@@ -260,11 +241,11 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                 <Label>가격 (원) <span className="text-destructive">*</span></Label>
                 <Controller
                   control={control}
-                  name="price_display"
+                  name="price"
                   render={({ field }) => (
                     <Input type="text" inputMode="numeric" placeholder="0"
-                      value={field.value}
-                      onChange={(e) => field.onChange(formatInput(e.target.value))}
+                      value={fmtNumberInput(field.value)}
+                      onChange={(e) => field.onChange(parseNumberInput(formatNumberInput(e.target.value)))}
                     />
                   )}
                 />
@@ -275,11 +256,11 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                 <Label>수량 <span className="text-destructive">*</span></Label>
                 <Controller
                   control={control}
-                  name="quantity_display"
+                  name="quantity"
                   render={({ field }) => (
                     <Input type="text" inputMode="decimal" placeholder="0"
-                      value={field.value}
-                      onChange={(e) => field.onChange(formatInput(e.target.value))}
+                      value={fmtNumberInput(field.value)}
+                      onChange={(e) => field.onChange(parseNumberInput(formatNumberInput(e.target.value)))}
                     />
                   )}
                 />
@@ -290,11 +271,11 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                 <Label>수수료 (원)</Label>
                 <Controller
                   control={control}
-                  name="commission_display"
+                  name="commission"
                   render={({ field }) => (
                     <Input type="text" inputMode="numeric" placeholder="0"
-                      value={field.value}
-                      onChange={(e) => field.onChange(formatInput(e.target.value))}
+                      value={fmtNumberInput(field.value)}
+                      onChange={(e) => field.onChange(parseNumberInput(formatNumberInput(e.target.value)))}
                     />
                   )}
                 />
@@ -306,11 +287,11 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                   <Label>제세금 (원)</Label>
                   <Controller
                     control={control}
-                    name="tax_display"
+                    name="tax"
                     render={({ field }) => (
                       <Input type="text" inputMode="numeric" placeholder="0"
-                        value={field.value}
-                        onChange={(e) => field.onChange(formatInput(e.target.value))}
+                        value={fmtNumberInput(field.value)}
+                        onChange={(e) => field.onChange(parseNumberInput(formatNumberInput(e.target.value)))}
                       />
                     )}
                   />
