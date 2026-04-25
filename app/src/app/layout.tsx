@@ -3,7 +3,8 @@ import localFont from "next/font/local";
 import { AuthProvider } from "@/components/providers/AuthProvider";
 import { CapacitorDeepLinkHandler } from "@/components/providers/CapacitorDeepLinkHandler";
 import { QueryProvider } from "@/components/providers/QueryProvider";
-import { Toaster } from "sonner";
+import { ThemeProvider } from "@/components/providers/ThemeProvider";
+import { ThemedToaster } from "@/components/providers/ThemedToaster";
 import "./globals.css";
 
 const pretendard = localFont({
@@ -32,13 +33,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko" className={`${pretendard.variable} h-full antialiased`}>
+    <html lang="ko" className={`${pretendard.variable} h-full antialiased`} suppressHydrationWarning>
       <body className="min-h-full flex flex-col">
-        <AuthProvider>
-          <CapacitorDeepLinkHandler />
-          <QueryProvider>{children}</QueryProvider>
-        </AuthProvider>
-        <Toaster position="top-center" richColors />
+        <ThemeProvider>
+          <AuthProvider>
+            <CapacitorDeepLinkHandler />
+            <QueryProvider>{children}</QueryProvider>
+          </AuthProvider>
+          <ThemedToaster />
+        </ThemeProvider>
       </body>
     </html>
   );

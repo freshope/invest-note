@@ -44,6 +44,7 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] Apple Sign-in (Apple Developer Program $99/년, App Store 4.8 심사 필수)
 - [ ] 푸시 알림, 생체인증(Face ID/지문), safe area/Android 백버튼/외부 링크/키보드, 강제 업데이트 메커니즘
 - [ ] 앱 아이콘·스플래시·스토어 메타데이터·개인정보처리방침
+- [ ] iOS 상태바 색 동기화 — @capacitor/status-bar 도입 후 다크/라이트 전환 시 status bar style 동기화
 
 ## v2 — KIS API 연동
 
@@ -51,7 +52,7 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## v2 — UX
 
-- [ ] 다크 모드
+- [x] 다크 모드 (feature/theme-toggle, 2026-04-25)
 - [ ] 홈 위젯 커스터마이징
 
 ## v3 — AI 분석
