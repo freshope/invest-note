@@ -2,6 +2,7 @@
 
 import { useTheme } from "next-themes";
 import { Toaster } from "sonner";
+import { DEFAULT_THEME, type Theme } from "@/lib/constants/theme";
 
 export function ThemedToaster() {
   const { resolvedTheme } = useTheme();
@@ -9,7 +10,7 @@ export function ThemedToaster() {
     <Toaster
       position="top-center"
       richColors
-      theme={(resolvedTheme ?? "system") as "light" | "dark" | "system"}
+      theme={(resolvedTheme ?? DEFAULT_THEME) as Theme}
     />
   );
 }

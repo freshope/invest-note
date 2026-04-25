@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { Monitor, Sun, Moon } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/base/ToggleGroup";
+import { DEFAULT_THEME } from "@/lib/constants/theme";
 
 const THEME_OPTIONS = [
   { value: "system", label: "시스템", icon: Monitor },
@@ -27,7 +28,7 @@ export function AppearanceSection() {
     <div className="rounded-2xl bg-muted/60 p-5 space-y-3">
       <p className="text-[14px] font-medium">테마</p>
       <ToggleGroup
-        value={[theme ?? "system"]}
+        value={[theme ?? DEFAULT_THEME]}
         onValueChange={(values) => {
           if (values.length > 0) setTheme(values[0]);
         }}
