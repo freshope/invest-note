@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import create_pool
-from invest_note_api.errors import APIError, api_error_handler, validation_error_handler
+from invest_note_api.errors import APIError, ERR_LOCK_BUSY, api_error_handler, validation_error_handler
 from invest_note_api.routers import accounts, health, me
 from invest_note_api.routers import trades, portfolio, stocks, analysis
 
@@ -41,7 +41,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lock_not_available_handler(request: Request, exc: LockNotAvailableError) -> JSONResponse:
         return JSONResponse(
             status_code=409,
-            content={"error": "처리 중 다른 요청과 충돌이 발생했습니다. 잠시 후 다시 시도해주세요."},
+            content={"error": ERR_LOCK_BUSY},
         )
 
     application.add_exception_handler(APIError, api_error_handler)

@@ -15,6 +15,7 @@ async def acquire_trade_group_lock(conn: Any, user_id: str, key: TradeGroupKey) 
 
     트랜잭션 종료 시 자동 해제 — Supavisor transaction mode에서도 안전.
     session-level pg_advisory_lock은 사용 금지 (pooler에서 leak).
+    lock_timeout = 2s 적용 — 초과 시 LockNotAvailableError (55P03) 발생.
     """
     lock_key = f"{user_id}:{key.account_id}:{key.ticker or key.asset_name}:{key.country}"
     await conn.execute("SET LOCAL lock_timeout = '2s'")

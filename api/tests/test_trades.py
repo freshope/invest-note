@@ -7,7 +7,6 @@ from unittest.mock import patch
 
 import asyncpg
 
-
 from tests.conftest import TEST_USER_ID
 from tests.fake_pool import FakeConnection, make_fake_acquire
 
@@ -332,6 +331,7 @@ class TestPatchTrade:
             resp = trades_client.patch("/api/trades/t1", json={"price": 75000})
         assert resp.status_code == 204
         _assert_lock_before_list(sql_calls)
+        _assert_lock_timeout_before_lock(sql_calls)
 
 
 class TestDeleteTrade:
@@ -365,6 +365,7 @@ class TestDeleteTrade:
             resp = trades_client.delete("/api/trades/b1")
         assert resp.status_code == 204
         _assert_lock_before_list(sql_calls)
+        _assert_lock_timeout_before_lock(sql_calls)
 
     def test_delete_oversell_validation_400(self, trades_client):
         """BUY 삭제 시 기존 SELL이 언더솔드되면 400을 반환해야 함."""
