@@ -28,7 +28,7 @@ import {
   TRADE_RESULT_VALUES,
 } from "./constants";
 import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
-import { fmtNumberInput, formatNumberInput, parseNumberInput } from "@/lib/format";
+import { fmtNumberInput, parseNumberInput } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Trade, Account, ReasoningTag } from "@/types/database";
 import { format } from "date-fns";
@@ -45,8 +45,8 @@ function BreakdownRow({ label, amount, prefix }: { label: string; amount: number
 }
 
 const schema = z.object({
-  price: z.number({ message: "올바른 가격을 입력해주세요." }).positive("올바른 가격을 입력해주세요."),
-  quantity: z.number({ message: "올바른 수량을 입력해주세요." }).positive("올바른 수량을 입력해주세요."),
+  price: z.number().positive("올바른 가격을 입력해주세요."),
+  quantity: z.number().positive("올바른 수량을 입력해주세요."),
   commission: z.number().min(0),
   tax: z.number().min(0),
   strategy_type: z.enum(STRATEGY_VALUES).nullable(),
@@ -60,6 +60,23 @@ const schema = z.object({
 });
 
 type FormValues = z.infer<typeof schema>;
+
+function buildFormValues(trade: Trade): FormValues {
+  return {
+    price: trade.price,
+    quantity: trade.quantity,
+    commission: trade.commission,
+    tax: trade.tax,
+    strategy_type: trade.strategy_type ?? null,
+    emotion: trade.emotion ?? null,
+    reasoning_tags: (trade.reasoning_tags ?? []) as ReasoningTag[],
+    result: trade.result ?? null,
+    buy_reason: trade.buy_reason ?? "",
+    sell_reason: trade.sell_reason ?? "",
+    reflection_note: trade.reflection_note ?? "",
+    improvement_note: trade.improvement_note ?? "",
+  };
+}
 
 interface TradeEditPanelProps {
   open: boolean;
@@ -84,20 +101,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
     formState: { isSubmitting, errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: {
-      price: trade.price ?? 0,
-      quantity: trade.quantity ?? 0,
-      commission: trade.commission ?? 0,
-      tax: trade.tax ?? 0,
-      strategy_type: trade.strategy_type ?? null,
-      emotion: trade.emotion ?? null,
-      reasoning_tags: (trade.reasoning_tags ?? []) as ReasoningTag[],
-      result: trade.result ?? null,
-      buy_reason: trade.buy_reason ?? "",
-      sell_reason: trade.sell_reason ?? "",
-      reflection_note: trade.reflection_note ?? "",
-      improvement_note: trade.improvement_note ?? "",
-    },
+    defaultValues: buildFormValues(trade),
   });
 
   const { data: summary, isPending: summaryLoading } = useQuery({
@@ -115,20 +119,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
     }
     if (initializedRef.current) return;
     initializedRef.current = true;
-    reset({
-      price: trade.price ?? 0,
-      quantity: trade.quantity ?? 0,
-      commission: trade.commission ?? 0,
-      tax: trade.tax ?? 0,
-      strategy_type: trade.strategy_type ?? null,
-      emotion: trade.emotion ?? null,
-      reasoning_tags: (trade.reasoning_tags ?? []) as ReasoningTag[],
-      result: trade.result ?? null,
-      buy_reason: trade.buy_reason ?? "",
-      sell_reason: trade.sell_reason ?? "",
-      reflection_note: trade.reflection_note ?? "",
-      improvement_note: trade.improvement_note ?? "",
-    });
+    reset(buildFormValues(trade));
   }, [open, trade, reset]);
 
   const { reasoning_tags: tags, result, price: livePrice, quantity: liveQty } = watch();
@@ -245,7 +236,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                   render={({ field }) => (
                     <Input type="text" inputMode="numeric" placeholder="0"
                       value={fmtNumberInput(field.value)}
-                      onChange={(e) => field.onChange(parseNumberInput(formatNumberInput(e.target.value)))}
+                      onChange={(e) => field.onChange(parseNumberInput(e.target.value))}
                     />
                   )}
                 />
@@ -260,7 +251,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                   render={({ field }) => (
                     <Input type="text" inputMode="decimal" placeholder="0"
                       value={fmtNumberInput(field.value)}
-                      onChange={(e) => field.onChange(parseNumberInput(formatNumberInput(e.target.value)))}
+                      onChange={(e) => field.onChange(parseNumberInput(e.target.value))}
                     />
                   )}
                 />
@@ -275,7 +266,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                   render={({ field }) => (
                     <Input type="text" inputMode="numeric" placeholder="0"
                       value={fmtNumberInput(field.value)}
-                      onChange={(e) => field.onChange(parseNumberInput(formatNumberInput(e.target.value)))}
+                      onChange={(e) => field.onChange(parseNumberInput(e.target.value))}
                     />
                   )}
                 />
@@ -291,7 +282,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                     render={({ field }) => (
                       <Input type="text" inputMode="numeric" placeholder="0"
                         value={fmtNumberInput(field.value)}
-                        onChange={(e) => field.onChange(parseNumberInput(formatNumberInput(e.target.value)))}
+                        onChange={(e) => field.onChange(parseNumberInput(e.target.value))}
                       />
                     )}
                   />

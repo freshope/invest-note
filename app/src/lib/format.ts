@@ -24,7 +24,7 @@ export function formatNumberInput(raw: string): string {
   return (integer ? Number(integer).toLocaleString("ko-KR") : "") + decimal;
 }
 
-/** Parses a comma-formatted string to a number (0 if empty/invalid) */
+/** Parses a user input string to a number — strips all non-numeric chars except decimal point */
 export function parseNumberInput(s: string): number {
-  return Number(s.replace(/,/g, "")) || 0;
+  return Number(s.replace(/[^0-9.]/g, "")) || 0;
 }
