@@ -13,12 +13,10 @@ export interface Position {
   holdingQuantity: number;      // sum(buy.qty) - sum(sell.qty)
   avgBuyPrice: number;          // WAC: sum(buy.price*qty) / sum(buy.qty)
   costBasis: number;            // avgBuyPrice * holdingQuantity
-  realizedPnL: number;          // 매도 실현손익 합계 (profit_loss 입력값 우선, 없으면 WAC fallback)
   currentPrice: number | null;
   evaluation: number | null;    // currentPrice * holdingQuantity
   unrealizedPnL: number | null; // evaluation - costBasis
-  lastNoteType: "근거" | "회고" | null;
-  lastNote: string | null;
+  lastNote: string | null;      // 가장 최근 BUY 거래의 buy_reason
   lastTradedAt: string;
   accountIds: string[];
 }
@@ -52,9 +50,7 @@ export function buildPositions(trades: Trade[]): Position[] {
     exchange: string;
     runningQty: number;
     runningCost: number;
-    realizedPnL: number;
     lastTradedAt: string;
-    lastNoteType: "근거" | "회고" | null;
     lastNote: string | null;
   }>();
 
@@ -77,9 +73,7 @@ export function buildPositions(trades: Trade[]): Position[] {
         exchange: trade.exchange,
         runningQty: 0,
         runningCost: 0,
-        realizedPnL: 0,
         lastTradedAt: trade.traded_at,
-        lastNoteType: null,
         lastNote: null,
       });
     }
@@ -93,15 +87,12 @@ export function buildPositions(trades: Trade[]): Position[] {
       lot.runningQty += trade.quantity;
       lot.runningCost += trade.price * trade.quantity;
       const reason = trade.buy_reason?.trim();
-      if (reason) { lot.lastNoteType = "근거"; lot.lastNote = reason; }
+      if (reason) lot.lastNote = reason;
     } else {
       const avgCost = Number(trade.avg_buy_price ?? 0);
       const matchedQty = Math.min(trade.quantity, lot.runningQty);
-      lot.realizedPnL += Number(trade.profit_loss ?? 0);
       lot.runningCost = Math.max(0, lot.runningCost - avgCost * matchedQty);
       lot.runningQty = Math.max(0, lot.runningQty - trade.quantity);
-      const note = trade.reflection_note?.trim() || trade.sell_reason?.trim();
-      if (note) { lot.lastNoteType = "회고"; lot.lastNote = note; }
     }
   }
 
@@ -113,10 +104,8 @@ export function buildPositions(trades: Trade[]): Position[] {
     exchange: string;
     runningQty: number;
     runningCost: number;
-    realizedPnL: number;
     lastTradedAt: string;
     accountIds: Set<string>;
-    lastNoteType: "근거" | "회고" | null;
     lastNote: string | null;
   }>();
 
@@ -131,21 +120,18 @@ export function buildPositions(trades: Trade[]): Position[] {
         exchange: lot.exchange,
         runningQty: 0,
         runningCost: 0,
-        realizedPnL: 0,
         lastTradedAt: lot.lastTradedAt,
         accountIds: new Set(),
-        lastNoteType: null,
         lastNote: null,
       });
     }
     const pos = posMap.get(displayKey)!;
     pos.runningQty += lot.runningQty;
     pos.runningCost += lot.runningCost;
-    pos.realizedPnL += lot.realizedPnL;
     if (lot.lastTradedAt > pos.lastTradedAt) pos.lastTradedAt = lot.lastTradedAt;
     if (lot.exchange) pos.exchange = lot.exchange;
     pos.accountIds.add(lot.accountId);
-    if (lot.lastNoteType) { pos.lastNoteType = lot.lastNoteType; pos.lastNote = lot.lastNote; }
+    if (lot.lastNote) pos.lastNote = lot.lastNote;
   }
 
   const positions: Position[] = [];
@@ -162,11 +148,9 @@ export function buildPositions(trades: Trade[]): Position[] {
       holdingQuantity,
       avgBuyPrice,
       costBasis: pos.runningCost,
-      realizedPnL: pos.realizedPnL,
       currentPrice: null,
       evaluation: null,
       unrealizedPnL: null,
-      lastNoteType: pos.lastNoteType,
       lastNote: pos.lastNote,
       lastTradedAt: pos.lastTradedAt,
       accountIds: Array.from(pos.accountIds),
