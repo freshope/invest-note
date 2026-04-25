@@ -3,10 +3,11 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
 import { ThemeProvider } from "next-themes";
 import { AppearanceSection } from "../AppearanceSection";
+import { DEFAULT_THEME, THEME_ATTRIBUTE } from "@/lib/constants/theme";
 
 function renderWithTheme() {
   return render(
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+    <ThemeProvider attribute={THEME_ATTRIBUTE} defaultTheme={DEFAULT_THEME} enableSystem disableTransitionOnChange>
       <AppearanceSection />
     </ThemeProvider>
   );
