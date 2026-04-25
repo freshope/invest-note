@@ -9,7 +9,7 @@ export function ThemedToaster() {
     <Toaster
       position="top-center"
       richColors
-      theme={(resolvedTheme as "light" | "dark" | "system") ?? "system"}
+      theme={(resolvedTheme ?? "system") as "light" | "dark" | "system"}
     />
   );
 }

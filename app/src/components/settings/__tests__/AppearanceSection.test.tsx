@@ -12,6 +12,10 @@ function renderWithTheme() {
   );
 }
 
+async function setup() {
+  await act(async () => renderWithTheme());
+}
+
 describe("AppearanceSection", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -23,14 +27,14 @@ describe("AppearanceSection", () => {
   });
 
   it("시스템/라이트/다크 버튼을 렌더한다", async () => {
-    await act(async () => renderWithTheme());
+    await setup();
     expect(screen.getByRole("button", { name: "시스템" })).toBeDefined();
     expect(screen.getByRole("button", { name: "라이트" })).toBeDefined();
     expect(screen.getByRole("button", { name: "다크" })).toBeDefined();
   });
 
   it("라이트 클릭 시 localStorage에 light가 저장된다", async () => {
-    await act(async () => renderWithTheme());
+    await setup();
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "라이트" }));
     });
@@ -38,7 +42,7 @@ describe("AppearanceSection", () => {
   });
 
   it("다크 클릭 시 html에 dark 클래스가 추가된다", async () => {
-    await act(async () => renderWithTheme());
+    await setup();
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "다크" }));
     });
@@ -46,7 +50,7 @@ describe("AppearanceSection", () => {
   });
 
   it("같은 버튼 재클릭 시 테마가 변경되지 않는다", async () => {
-    await act(async () => renderWithTheme());
+    await setup();
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "라이트" }));
     });

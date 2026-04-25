@@ -20,7 +20,7 @@ export function AppearanceSection() {
   }, []);
 
   if (!mounted) {
-    return <div className="rounded-2xl bg-muted/60 p-5 h-[76px]" />;
+    return <div className="rounded-2xl bg-muted/60 p-5 h-28" />;
   }
 
   return (
