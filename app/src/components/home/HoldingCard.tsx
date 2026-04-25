@@ -26,7 +26,7 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
 
   const priceChangePct =
     currentPrice !== null && avgBuyPrice > 0
-      ? ((currentPrice - avgBuyPrice) / avgBuyPrice) * 100
+      ? Math.round(((currentPrice - avgBuyPrice) / avgBuyPrice) * 10000) / 100
       : null;
 
   return (
