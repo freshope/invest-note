@@ -13,6 +13,15 @@
 
 ---
 
+## 2026-04-25 | advisory lock timeout — SET LOCAL 2s + 전역 handler
+
+- **맥락:** `feature/toctou-advisory-lock`에서 `pg_advisory_xact_lock` 도입 시 lock_timeout을 설정하지 않아, 운영에서 동일 그룹 동시 mutation이 몰리면 뒤 요청이 무한 대기하며 워커를 점유할 위험이 있었음 (트레이드오프 항목으로 명시됨).
+- **결정:** `acquire_trade_group_lock` 내부에 advisory lock 직전 `SET LOCAL lock_timeout = '2s'` 실행. `LockNotAvailableError`(sqlstate 55P03) 발생 시 `main.py` 전역 exception handler에서 `409 Conflict` + 한국어 안내 메시지로 변환.
+- **이유:** `SET LOCAL`은 트랜잭션 종료 시 자동 reset되므로 별도 RESET 불필요. 2s는 운영 hang 방어용 보수적 값 (일반 INSERT/UPDATE는 훨씬 빠름). 전역 handler 선택으로 `db_ops`가 `errors.APIError`를 import하지 않아 의존 방향 유지.
+- **트레이드오프:** 같은 트랜잭션 내 INSERT/UPDATE row-lock 대기에도 2s 상한이 적용됨 (현재 코드베이스에서는 무해). 2s 값은 휴리스틱 — 운영 모니터링 후 조정 필요. 클라이언트(invest-note-ux)의 재시도 정책은 별도 처리 필요.
+
+---
+
 ## 2026-04-24 | FE constants — 레이어 분리 + 중앙화 (BE co-location 미적용)
 
 - **결정:** FE 상수는 BE처럼 도메인 폴더 내 co-location이 아닌 `app/src/lib/constants/` 중앙 폴더로 관리. 단일 파일에서만 쓰이는 UI 로컬 상수(색상, 애니메이션 ms, 탭 정의 등)는 컴포넌트 파일 내 유지.

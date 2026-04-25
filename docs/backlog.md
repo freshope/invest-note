@@ -17,7 +17,7 @@ MVP 이후 구현할 작업 후보 목록.
 ## 거래 손익 정합성
 
 - [x] TOCTOU race → pg_advisory_xact_lock 원자화 완료 (feature/toctou-advisory-lock, 2026-04-24)
-- [ ] advisory lock timeout — `acquire_trade_group_lock` 내부에 `SET LOCAL lock_timeout = '2s'` 추가, 운영 hang 방어
+- [x] advisory lock timeout — `acquire_trade_group_lock` 내부에 `SET LOCAL lock_timeout = '2s'` 추가, 운영 hang 방어 (feature/advisory-lock-timeout, 2026-04-25)
 - [ ] 동시성 통합 테스트 — testcontainers-python + asyncpg + asyncio.gather 기반 실 Postgres race 재현 (현재 FakeConnection만으로는 실제 race 미검증)
 
 ## 데이터 정확성
