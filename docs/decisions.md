@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-04-25 | asyncpg UUID→str 타입 경계 — 라우터 입력 경계에서 변환
+
+**맥락:** asyncpg는 PostgreSQL UUID 컬럼을 `uuid.UUID` 객체로 반환. Pydantic 모델(`Trade`)은 `_uuid_to_str` validator로 자동 str 변환되지만, 일반 dataclass(`Account`)는 type hint를 강제하지 않아 `account.id`가 UUID 객체로 남음. `build_account_snapshots`에서 `by_account.get(account.id)`가 str 키와 타입 불일치 → 항상 빈 배열 반환 → `stock_evaluation = 0`.
+**결정:** 라우터 입력 경계 `_account_from_row`에서 UUID 필드를 str로 변환. 도메인 함수 `build_account_snapshots`에도 `str(account.id)` 방어 처리 유지.
+**이유:** 타입 강제가 없는 dataclass는 입력 경계에서 정규화해야 런타임 타입 불일치를 막을 수 있음. 도메인의 `str()` 호출은 라우터 외 경로(테스트, 직접 호출)에서 UUID가 들어올 경우의 안전망.
+**트레이드오프:** asyncpg를 사용하는 다른 dataclass 변환 함수에도 동일 패턴 적용 필요. Pydantic 모델로 전환하면 validator로 중앙화 가능하나 현재는 도메인 모델을 경량 dataclass로 유지.
+
+---
+
 ## 2026-04-24 | TOCTOU race — pg_advisory_xact_lock 선택
 
 - **맥락:** trades 라우터의 `list_trades → validate → write` 흐름에서 동시 SELL 요청이 같은 보유량 스냅샷을 읽고 둘 다 validate를 통과해 음수 보유량이 발생 가능. `FOR UPDATE`를 걸 행이 없고(보유량은 trades 집계로 유도), `SERIALIZABLE` 격리는 retry loop가 필요해 라우터 구조 변경 비용이 큼.

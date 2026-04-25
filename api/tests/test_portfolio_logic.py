@@ -1,5 +1,6 @@
 """순수 함수 단위 테스트 — domain/portfolio.py"""
 from datetime import datetime, timezone
+from uuid import UUID
 
 import pytest
 
@@ -172,6 +173,16 @@ class TestBuildAccountSnapshots:
         snapshots = build_account_snapshots([account], [buy], {})
         assert snapshots[0].stock_evaluation == 0.0
         assert snapshots[0].total_value == 1000000.0
+
+    def test_snapshot_uuid_account_id(self):
+        """UUID account.id should match str trade.account_id (asyncpg returns UUID objects)."""
+        uid = UUID("00000000-0000-0000-0000-000000000001")
+        account = make_account(id=uid, cash_balance=500000.0)
+        buy = make_trade(id="b1", account_id=str(uid), quantity=10, price=70000)
+        quotes: QuoteMap = {"005930:KR": {"price": 75000.0, "currency": "KRW", "as_of": ""}}
+        snapshots = build_account_snapshots([account], [buy], quotes)
+        assert snapshots[0].stock_evaluation == 750000.0
+        assert snapshots[0].total_value == 1250000.0
 
 
 class TestBuildTotals:

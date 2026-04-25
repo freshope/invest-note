@@ -24,6 +24,9 @@ router = APIRouter(prefix="/api/portfolio")
 
 def _account_from_row(row) -> Account:
     d = dict(row)
+    for field in ("id", "user_id"):
+        if field in d and d[field] is not None:
+            d[field] = str(d[field])
     if "cash_balance" in d and d["cash_balance"] is not None:
         d["cash_balance"] = float(d["cash_balance"])
     return Account(**d)
