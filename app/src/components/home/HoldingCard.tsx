@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fmt } from "@/lib/format";
 import type { Position } from "@/lib/portfolio";
@@ -9,6 +11,9 @@ interface HoldingCardProps {
 }
 
 export function HoldingCard({ position, onPress }: HoldingCardProps) {
+  const [expanded, setExpanded] = useState(false);
+  const [pressing, setPressing] = useState(false);
+
   const {
     assetName,
     ticker,
@@ -21,6 +26,9 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
     lastNote,
   } = position;
 
+  const hasMultipleLines = lastNote?.includes("\n") ?? false;
+  const firstLine = lastNote?.split("\n")[0] ?? "";
+
   const pnlPos = (unrealizedPnL ?? 0) > 0;
   const pnlNeg = (unrealizedPnL ?? 0) < 0;
 
@@ -30,10 +38,24 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
       : null;
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onPress}
-      className="w-full text-left rounded-2xl bg-muted/60 p-4 space-y-3 active:scale-[0.98] transition-transform"
+      onPointerDown={() => setPressing(true)}
+      onPointerUp={() => setPressing(false)}
+      onPointerLeave={() => setPressing(false)}
+      onPointerCancel={() => setPressing(false)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onPress?.();
+        }
+      }}
+      className={cn(
+        "w-full text-left rounded-2xl bg-muted/60 p-4 space-y-3 transition-transform cursor-pointer",
+        pressing && "scale-[0.98]",
+      )}
     >
       {/* 헤더 */}
       <div className="flex items-start justify-between gap-2">
@@ -109,15 +131,40 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
 
       {/* 매수 근거 스니펫 */}
       {lastNote && (
-        <div className="flex items-start gap-1.5 pt-1 border-t border-border/50">
-          <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md mt-0.5 bg-brand/10 text-[var(--brand)]">
+        <div
+          className={cn(
+            "flex gap-1.5 pt-2 border-t border-border/50",
+            expanded ? "items-start" : "items-center",
+            hasMultipleLines && "cursor-pointer",
+          )}
+          onPointerDown={(e) => { if (hasMultipleLines) e.stopPropagation(); }}
+          onClick={(e) => {
+            if (!hasMultipleLines) return;
+            e.stopPropagation();
+            setExpanded((prev) => !prev);
+          }}
+        >
+          <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-brand/10 text-[var(--brand)]">
             매수 근거
           </span>
-          <p className="text-[12px] text-muted-foreground leading-relaxed line-clamp-2">
-            {lastNote}
+          <p
+            className={cn(
+              "flex-1 text-[12px] text-muted-foreground leading-relaxed",
+              expanded ? "whitespace-pre-line" : "line-clamp-1",
+            )}
+          >
+            {expanded ? lastNote : firstLine}
           </p>
+          {hasMultipleLines && (
+            <span
+              aria-hidden
+              className="shrink-0 text-muted-foreground/60 p-0.5"
+            >
+              {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </span>
+          )}
         </div>
       )}
-    </button>
+    </div>
   );
 }
