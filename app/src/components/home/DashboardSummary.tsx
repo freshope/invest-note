@@ -1,22 +1,24 @@
 import { cn } from "@/lib/utils";
-import { fmt } from "@/lib/format";
+import { fmt, fmtCompact } from "@/lib/format";
 import type { DashboardTotals } from "@/lib/portfolio";
 
 function PnLText({ value, className }: { value: number; className?: string }) {
   const pos = value > 0;
   const neg = value < 0;
+  const abs = Math.abs(value);
+  const sign = pos ? "+" : neg ? "-" : "";
+  const amount = abs >= 10_000_000 ? fmtCompact(abs) : fmt(abs);
   return (
     <span
       className={cn(
-        "tabular-nums",
+        "tabular-nums whitespace-nowrap",
         pos && "text-[var(--rise)]",
         neg && "text-[var(--fall)]",
         !pos && !neg && "text-foreground",
         className,
       )}
     >
-      {pos ? "+" : ""}
-      {fmt(value)}원
+      {sign}{amount}원
     </span>
   );
 }
