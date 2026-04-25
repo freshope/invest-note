@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/base/Tabs";
 import { fmtCompact } from "@/lib/format";
 import type { Position, AccountSnapshot } from "@/lib/portfolio";
@@ -20,6 +20,7 @@ const CHART_COLORS = [
 interface DonutEntry {
   name: string;
   value: number;
+  color?: string;
 }
 
 interface AllocationDonutProps {
@@ -39,7 +40,7 @@ function AllocationDonut({ data, total, label }: AllocationDonutProps) {
 
   return (
     <div className="space-y-4">
-      <div className="relative h-44">
+      <div className="relative h-44 [&_*:focus]:outline-none">
         <ResponsiveContainer width="100%" height={176}>
           <PieChart>
             <Pie
@@ -53,13 +54,9 @@ function AllocationDonut({ data, total, label }: AllocationDonutProps) {
               strokeWidth={0}
             >
               {data.map((entry, i) => (
-                <Cell key={entry.name} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                <Cell key={entry.name} fill={entry.color ?? CHART_COLORS[i % CHART_COLORS.length]} />
               ))}
             </Pie>
-            <Tooltip
-              formatter={(value) => [`${Number(value).toLocaleString("ko-KR")}원`, ""]}
-              contentStyle={{ fontSize: 12, borderRadius: 8 }}
-            />
           </PieChart>
         </ResponsiveContainer>
         {/* 중앙 텍스트 */}
@@ -77,7 +74,7 @@ function AllocationDonut({ data, total, label }: AllocationDonutProps) {
             <div key={entry.name} className="flex items-center gap-1.5 min-w-0">
               <span
                 className="w-2.5 h-2.5 rounded-full shrink-0"
-                style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
+                style={{ backgroundColor: entry.color ?? CHART_COLORS[i % CHART_COLORS.length] }}
               />
               <span className="text-[12px] text-foreground truncate flex-1">{entry.name}</span>
               <span className="text-[12px] tabular-nums text-muted-foreground shrink-0">{pct}%</span>
@@ -97,7 +94,8 @@ interface AllocationTabsProps {
 export function AllocationTabs({ positions, snapshots }: AllocationTabsProps) {
   const posData = useMemo<DonutEntry[]>(() => {
     const withEval = positions.filter((p) => (p.evaluation ?? 0) > 0);
-    if (withEval.length === 0) return [];
+    const cashTotal = snapshots.reduce((s, x) => s + x.cashBalance, 0);
+    if (withEval.length === 0 && cashTotal === 0) return [];
     const sorted = [...withEval].sort((a, b) => (b.evaluation ?? 0) - (a.evaluation ?? 0));
     const top = sorted.slice(0, 7);
     const rest = sorted.slice(7);
@@ -105,8 +103,11 @@ export function AllocationTabs({ positions, snapshots }: AllocationTabsProps) {
     if (rest.length > 0) {
       out.push({ name: "기타", value: rest.reduce((s, p) => s + (p.evaluation ?? 0), 0) });
     }
+    if (cashTotal > 0) {
+      out.push({ name: "예수금", value: cashTotal, color: "var(--muted-foreground)" });
+    }
     return out;
-  }, [positions]);
+  }, [positions, snapshots]);
 
   const posTotal = useMemo(() => posData.reduce((s, d) => s + d.value, 0), [posData]);
 
@@ -128,7 +129,7 @@ export function AllocationTabs({ positions, snapshots }: AllocationTabsProps) {
             <TabsTrigger value="account">계좌별</TabsTrigger>
           </TabsList>
           <TabsContent value="stock">
-            <AllocationDonut data={posData} total={posTotal} label="주식 평가" />
+            <AllocationDonut data={posData} total={posTotal} label="총자산" />
           </TabsContent>
           <TabsContent value="account">
             <AllocationDonut data={snapData} total={snapTotal} label="계좌 총액" />

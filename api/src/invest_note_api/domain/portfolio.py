@@ -209,7 +209,7 @@ def build_account_snapshots(
 
     snapshots = []
     for account in accounts:
-        account_trades = by_account.get(account.id, [])
+        account_trades = by_account.get(str(account.id), [])
         pos_map: dict[str, dict] = {}
 
         for trade in account_trades:
