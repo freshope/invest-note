@@ -6,7 +6,9 @@ from typing import Any
 from unittest.mock import patch
 
 import asyncpg
+import pytest
 
+from invest_note_api.schemas.trade import TradeCreate
 from tests.conftest import TEST_USER_ID
 from tests.fake_pool import FakeConnection, make_fake_acquire
 
@@ -197,6 +199,20 @@ class TestCreateTrade:
     def test_invalid_body_400(self, trades_client):
         resp = trades_client.post("/api/trades", json={"trade_type": "BUY"})
         assert resp.status_code == 400
+
+    def test_create_future_trade_400(self, trades_client):
+        payload = {**self._buy_payload(), "traded_at": "2999-01-10T09:00:00"}
+        resp = trades_client.post("/api/trades", json=payload)
+        assert resp.status_code == 400
+        assert "미래" in resp.json()["error"]
+
+    def test_create_future_datetime_rejected_by_schema(self):
+        payload = {
+            **self._buy_payload(),
+            "traded_at": datetime(2999, 1, 10, 0, 0, tzinfo=timezone.utc),
+        }
+        with pytest.raises(ValueError, match="미래"):
+            TradeCreate.model_validate(payload)
 
     def test_sell_no_holding_400(self, trades_client):
         acct_row = {"id": "a1"}

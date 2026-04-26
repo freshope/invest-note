@@ -34,6 +34,8 @@ import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 
+const FUTURE_TRADE_MESSAGE = "미래 날짜의 거래는 등록할 수 없습니다.";
+
 const schema = z.object({
   trade_type: z.enum(["BUY", "SELL"]),
   account_id: z.string().min(1, "계좌를 선택해주세요."),
@@ -44,7 +46,7 @@ const schema = z.object({
   ticker_symbol: z.string().min(1, "자동완성으로 종목을 선택해주세요."),
   country_code: z.enum(COUNTRY_CODES),
   exchange: z.string().trim().max(VALIDATION_LIMITS.EXCHANGE_MAX),
-  traded_at: z.date(),
+  traded_at: z.date().refine((date) => date.getTime() <= Date.now(), FUTURE_TRADE_MESSAGE),
   price: z.number().positive("올바른 가격을 입력해주세요."),
   quantity: z.number().positive("올바른 수량을 입력해주세요."),
   commission: z.number().min(0),
@@ -257,6 +259,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                     mode="single"
                     selected={field.value}
                     defaultMonth={field.value}
+                    disabled={{ after: new Date() }}
                     onSelect={(d) => { if (d) { field.onChange(d); setCalOpen(false); } }}
                     initialFocus
                     className="[--cell-size:--spacing(10)]"
