@@ -26,7 +26,7 @@ function NavIcon({
 export function NavHomeIcon(props: NavIconProps) {
   return (
     <NavIcon {...props}>
-      <g transform="translate(1.2 1.2) scale(.9)">
+      <g transform="translate(1.8 1.8) scale(.85)">
         <path
           fill="currentColor"
           fillRule="evenodd"
