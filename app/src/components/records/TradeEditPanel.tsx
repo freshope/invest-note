@@ -15,8 +15,8 @@ import { Button } from "@/components/base/Button";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
-import { Textarea } from "@/components/base/Textarea";
 import { tradesApi } from "@/lib/api-client";
+import { VALIDATION_LIMITS } from "@/lib/constants/validation";
 import { queryKeys } from "@/lib/query-keys";
 import {
   STRATEGIES,
@@ -34,6 +34,7 @@ import type { Trade, Account, ReasoningTag } from "@/types/database";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 import { STRATEGY_LABELS, ADHERENCE_CONFIG } from "@/lib/constants/trading";
+import { TradeFreeTextField } from "./TradeFreeTextField";
 
 function BreakdownRow({ label, amount, prefix }: { label: string; amount: number; prefix?: "+" | "-" }) {
   return (
@@ -53,10 +54,10 @@ const schema = z.object({
   emotion: z.enum(EMOTION_VALUES).nullable(),
   reasoning_tags: z.array(z.enum(REASONING_TAG_VALUES)),
   result: z.enum(TRADE_RESULT_VALUES).nullable(),
-  buy_reason: z.string(),
-  sell_reason: z.string(),
-  reflection_note: z.string(),
-  improvement_note: z.string(),
+  buy_reason: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, "5000자 이내로 입력해주세요."),
+  sell_reason: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, "5000자 이내로 입력해주세요."),
+  reflection_note: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, "5000자 이내로 입력해주세요."),
+  improvement_note: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, "5000자 이내로 입력해주세요."),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -122,7 +123,15 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
     reset(buildFormValues(trade));
   }, [open, trade, reset]);
 
-  const { reasoning_tags: tags, result, price: livePrice, quantity: liveQty } = watch();
+  const {
+    reasoning_tags: tags,
+    price: livePrice,
+    quantity: liveQty,
+    buy_reason: buyReason,
+    sell_reason: sellReason,
+    reflection_note: reflectionNote,
+    improvement_note: improvementNote,
+  } = watch();
   const liveTotal = livePrice * liveQty;
   const acc = accounts.find((a) => a.id === trade.account_id);
 
@@ -439,33 +448,57 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
 
                 {/* 매수 근거 */}
                 {!isSell && (
-                  <div className="space-y-1.5 mb-5">
-                    <Label>매수 근거</Label>
-                    <Textarea {...register("buy_reason")} placeholder="매수한 근거를 간단히 적어주세요" rows={3} />
+                  <div className="mb-5">
+                    <TradeFreeTextField
+                      id="edit_buy_reason"
+                      label="매수 근거"
+                      valueLength={(buyReason ?? "").length}
+                      {...register("buy_reason")}
+                      placeholder="매수한 근거를 간단히 적어주세요"
+                      rows={3}
+                    />
                   </div>
                 )}
 
                 {/* 매도 이유 */}
                 {isSell && (
-                  <div className="space-y-1.5 mb-5">
-                    <Label>매도 이유</Label>
-                    <Textarea {...register("sell_reason")} placeholder="왜 매도했나요?" rows={2} />
+                  <div className="mb-5">
+                    <TradeFreeTextField
+                      id="edit_sell_reason"
+                      label="매도 이유"
+                      valueLength={(sellReason ?? "").length}
+                      {...register("sell_reason")}
+                      placeholder="왜 매도했나요?"
+                      rows={2}
+                    />
                   </div>
                 )}
 
                 {/* 잘한 점 (매도) */}
                 {isSell && (
-                  <div className="space-y-1.5 mb-5">
-                    <Label>잘한 점 / 배운 점</Label>
-                    <Textarea {...register("reflection_note")} placeholder="이번 거래에서 잘한 점이나 배운 것을 기록해보세요" rows={3} />
+                  <div className="mb-5">
+                    <TradeFreeTextField
+                      id="edit_reflection_note"
+                      label="잘한 점 / 배운 점"
+                      valueLength={(reflectionNote ?? "").length}
+                      {...register("reflection_note")}
+                      placeholder="이번 거래에서 잘한 점이나 배운 것을 기록해보세요"
+                      rows={3}
+                    />
                   </div>
                 )}
 
                 {/* 개선할 점 (매도) */}
                 {isSell && (
-                  <div className="space-y-1.5 mb-5">
-                    <Label>개선할 점 / 다음에는</Label>
-                    <Textarea {...register("improvement_note")} placeholder="다음 거래에서 개선하고 싶은 점을 적어주세요" rows={3} />
+                  <div className="mb-5">
+                    <TradeFreeTextField
+                      id="edit_improvement_note"
+                      label="개선할 점 / 다음에는"
+                      valueLength={(improvementNote ?? "").length}
+                      {...register("improvement_note")}
+                      placeholder="다음 거래에서 개선하고 싶은 점을 적어주세요"
+                      rows={3}
+                    />
                   </div>
                 )}
               </div>

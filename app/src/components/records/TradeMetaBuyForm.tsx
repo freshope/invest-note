@@ -6,8 +6,8 @@ import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/base/Button";
 import { Label } from "@/components/base/Label";
-import { Textarea } from "@/components/base/Textarea";
 import { tradesApi } from "@/lib/api-client";
+import { VALIDATION_LIMITS } from "@/lib/constants/validation";
 import { queryKeys } from "@/lib/query-keys";
 import {
   REASONING_TAGS,
@@ -16,12 +16,13 @@ import {
   REASONING_TAG_VALUES,
 } from "./constants";
 import { StrategyEmotionFields } from "./StrategyEmotionFields";
+import { TradeFreeTextField } from "./TradeFreeTextField";
 
 const schema = z.object({
   strategy_type: z.enum(STRATEGY_VALUES).nullable(),
   emotion: z.enum(EMOTION_VALUES).nullable(),
   reasoning_tags: z.array(z.enum(REASONING_TAG_VALUES)),
-  buy_reason: z.string(),
+  buy_reason: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, "5000자 이내로 입력해주세요."),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -51,6 +52,7 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
   });
 
   const tags = useWatch({ control, name: "reasoning_tags" });
+  const buyReason = useWatch({ control, name: "buy_reason" }) ?? "";
 
   function toggleTag(tag: FormValues["reasoning_tags"][number]) {
     const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
@@ -132,18 +134,15 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
           </div>
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="buy_reason">
-            매수 근거{" "}
-            <span className="text-[12px] font-normal text-muted-foreground">(선택)</span>
-          </Label>
-          <Textarea
-            id="buy_reason"
-            {...register("buy_reason")}
-            placeholder="매수한 근거를 간단히 적어주세요"
-            rows={3}
-          />
-        </div>
+        <TradeFreeTextField
+          id="buy_reason"
+          label="매수 근거"
+          optional
+          valueLength={buyReason.length}
+          {...register("buy_reason")}
+          placeholder="매수한 근거를 간단히 적어주세요"
+          rows={3}
+        />
 
         {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
       </div>
