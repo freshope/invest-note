@@ -21,6 +21,8 @@ from ..domain.trade_types import (
 )
 from ..domain.trade_utils import KST_OFFSET
 
+TRADE_FREE_TEXT_MAX_LEN = 5000
+
 
 def _comma_positive(v: object) -> float:
     """쉼표 포함 문자열/숫자 → 양수 float."""
@@ -143,6 +145,13 @@ class TradeUpdate(BaseModel):
     result: TradeResult | None = None
     reflection_note: str | None = None
     improvement_note: str | None = None
+
+    @field_validator("buy_reason", "sell_reason", "reflection_note", "improvement_note")
+    @classmethod
+    def _free_text_max_len(cls, v: str | None) -> str | None:
+        if v is not None and len(v) > TRADE_FREE_TEXT_MAX_LEN:
+            raise ValueError(f"자유 텍스트는 {TRADE_FREE_TEXT_MAX_LEN}자 이내여야 합니다.")
+        return v
 
     @field_validator("price", "quantity", mode="before")
     @classmethod

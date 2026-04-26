@@ -8,7 +8,7 @@ from unittest.mock import patch
 import asyncpg
 import pytest
 
-from invest_note_api.schemas.trade import TradeCreate
+from invest_note_api.schemas.trade import TRADE_FREE_TEXT_MAX_LEN, TradeCreate
 from tests.conftest import TEST_USER_ID
 from tests.fake_pool import FakeConnection, make_fake_acquire
 
@@ -327,6 +327,27 @@ class TestPatchTrade:
         with _patch_trades(conn):
             resp = trades_client.patch("/api/trades/t1", json={"buy_reason": "테스트"})
         assert resp.status_code == 204
+
+    def test_patch_free_text_5000_chars_ok(self, trades_client):
+        row = _make_trade_row()
+        conn = FakeConnection(
+            _to_record(row),  # existing trade
+            "UPDATE 1",       # patch_trade
+        )
+        with _patch_trades(conn):
+            resp = trades_client.patch(
+                "/api/trades/t1",
+                json={"buy_reason": "가" * TRADE_FREE_TEXT_MAX_LEN},
+            )
+        assert resp.status_code == 204
+
+    def test_patch_free_text_5001_chars_400(self, trades_client):
+        resp = trades_client.patch(
+            "/api/trades/t1",
+            json={"buy_reason": "가" * (TRADE_FREE_TEXT_MAX_LEN + 1)},
+        )
+        assert resp.status_code == 400
+        assert "5000" in resp.json()["error"]
 
     def test_patch_not_found_404(self, trades_client):
         conn = FakeConnection(None)  # fetchrow returns None

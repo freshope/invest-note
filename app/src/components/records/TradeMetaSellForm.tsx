@@ -5,20 +5,20 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/base/Button";
-import { Label } from "@/components/base/Label";
-import { Textarea } from "@/components/base/Textarea";
 import { tradesApi } from "@/lib/api-client";
+import { VALIDATION_LIMITS } from "@/lib/constants/validation";
 import { queryKeys } from "@/lib/query-keys";
 import { StrategyEmotionFields } from "./StrategyEmotionFields";
 import { EMOTION_VALUES } from "./constants";
 import { cn } from "@/lib/utils";
 import { STRATEGY_LABELS, ADHERENCE_CONFIG } from "@/lib/constants/trading";
+import { TradeFreeTextField } from "./TradeFreeTextField";
 
 const schema = z.object({
   emotion: z.enum(EMOTION_VALUES).nullable(),
-  sell_reason: z.string(),
-  reflection_note: z.string(),
-  improvement_note: z.string(),
+  sell_reason: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, "5000자 이내로 입력해주세요."),
+  reflection_note: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, "5000자 이내로 입력해주세요."),
+  improvement_note: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, "5000자 이내로 입력해주세요."),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -53,8 +53,9 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
 
   const {
     control,
-    register,
     handleSubmit,
+    register,
+    watch,
     setError,
     formState: { isSubmitting, errors },
   } = useForm<FormValues>({
@@ -66,6 +67,12 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
       improvement_note: "",
     },
   });
+
+  const {
+    sell_reason: sellReason,
+    reflection_note: reflectionNote,
+    improvement_note: improvementNote,
+  } = watch();
 
   async function onSubmit(values: FormValues) {
     try {
@@ -184,35 +191,32 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
           )}
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="sell_reason">매도 이유</Label>
-          <Textarea
-            id="sell_reason"
-            {...register("sell_reason")}
-            placeholder="왜 매도했나요?"
-            rows={2}
-          />
-        </div>
+        <TradeFreeTextField
+          id="sell_reason"
+          label="매도 이유"
+          valueLength={(sellReason ?? "").length}
+          {...register("sell_reason")}
+          placeholder="왜 매도했나요?"
+          rows={2}
+        />
 
-        <div className="space-y-1.5">
-          <Label htmlFor="reflection_note">잘한 점 / 배운 점</Label>
-          <Textarea
-            id="reflection_note"
-            {...register("reflection_note")}
-            placeholder="이번 거래에서 잘한 점이나 배운 것을 기록해보세요"
-            rows={3}
-          />
-        </div>
+        <TradeFreeTextField
+          id="reflection_note"
+          label="잘한 점 / 배운 점"
+          valueLength={(reflectionNote ?? "").length}
+          {...register("reflection_note")}
+          placeholder="이번 거래에서 잘한 점이나 배운 것을 기록해보세요"
+          rows={3}
+        />
 
-        <div className="space-y-1.5">
-          <Label htmlFor="improvement_note">개선할 점 / 다음에는</Label>
-          <Textarea
-            id="improvement_note"
-            {...register("improvement_note")}
-            placeholder="다음 거래에서 개선하고 싶은 점을 적어주세요"
-            rows={3}
-          />
-        </div>
+        <TradeFreeTextField
+          id="improvement_note"
+          label="개선할 점 / 다음에는"
+          valueLength={(improvementNote ?? "").length}
+          {...register("improvement_note")}
+          placeholder="다음 거래에서 개선하고 싶은 점을 적어주세요"
+          rows={3}
+        />
 
         <Controller
           control={control}

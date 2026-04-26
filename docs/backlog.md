@@ -32,7 +32,7 @@ MVP 이후 구현할 작업 후보 목록.
 - [x] fmtCompact 억 범위 콤마 — 1,000억 이상에서 `(n / 100_000_000).toFixed(1)` 결과에 콤마 없음 ("1000.0억"). 만 범위와 동일하게 `toLocaleString` 적용 필요
 - [x] TradeEditPanel 스키마 일관성 — `price_display: z.string()` → `z.number().positive()` 기반으로 `TradeBasicForm`과 통일 (feature/trade-edit-schema-alignment, 2026-04-25)
 - [x] StrategyEmotionFields Controller 중첩 — strategy/emotion 이중 Controller → sibling Controller 배치 완료 (feature/fix-strategy-emotion-controller-nesting, 2026-04-26)
-- [ ] 자유 텍스트 필드 길이 제한 — buy_reason, sell_reason, reflection_note, improvement_note 5000자 제한 (FastAPI validation + DB CHECK)
+- [x] 자유 텍스트 필드 길이 제한 — buy_reason, sell_reason, reflection_note, improvement_note 5000자 제한 (FastAPI validation + DB CHECK, feature-free-text-length-limit, 2026-04-26)
 
 ## MVP 잔여 — CSV 임포트
 
