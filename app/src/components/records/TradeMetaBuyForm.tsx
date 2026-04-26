@@ -1,6 +1,6 @@
 "use client";
 
-import { useForm, Controller } from "react-hook-form";
+import { useForm, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
@@ -38,7 +38,6 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
     register,
     handleSubmit,
     setValue,
-    watch,
     setError,
     formState: { isSubmitting, errors },
   } = useForm<FormValues>({
@@ -51,7 +50,7 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
     },
   });
 
-  const tags = watch("reasoning_tags");
+  const tags = useWatch({ control, name: "reasoning_tags" });
 
   function toggleTag(tag: FormValues["reasoning_tags"][number]) {
     const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
@@ -81,24 +80,34 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">
       <div className="flex-1 px-5 pt-2 pb-4 space-y-6">
-        <Controller
-          control={control}
-          name="strategy_type"
-          render={({ field: stratField }) => (
-            <Controller
-              control={control}
-              name="emotion"
-              render={({ field: emoField }) => (
-                <StrategyEmotionFields
-                  strategy={stratField.value ?? ""}
-                  emotion={emoField.value ?? ""}
-                  onStrategyChange={(v) => stratField.onChange(v || null)}
-                  onEmotionChange={(v) => emoField.onChange(v || null)}
-                />
-              )}
-            />
-          )}
-        />
+        <div className="space-y-6">
+          <Controller
+            control={control}
+            name="strategy_type"
+            render={({ field }) => (
+              <StrategyEmotionFields
+                strategy={field.value ?? ""}
+                emotion=""
+                onStrategyChange={(v) => field.onChange(v || null)}
+                onEmotionChange={() => {}}
+                hideEmotion
+              />
+            )}
+          />
+          <Controller
+            control={control}
+            name="emotion"
+            render={({ field }) => (
+              <StrategyEmotionFields
+                strategy=""
+                emotion={field.value ?? ""}
+                onStrategyChange={() => {}}
+                onEmotionChange={(v) => field.onChange(v || null)}
+                hideStrategy
+              />
+            )}
+          />
+        </div>
 
         <div className="space-y-2">
           <Label>
