@@ -47,17 +47,21 @@ def _comma_non_negative(v: object) -> float:
 def _traded_at_transform(raw: object) -> datetime:
     """KST 날짜/시간 문자열 → UTC datetime."""
     if isinstance(raw, datetime):
-        return raw.astimezone(timezone.utc)
-    if not isinstance(raw, str) or not raw.strip():
+        traded_at = raw.astimezone(timezone.utc)
+    elif not isinstance(raw, str) or not raw.strip():
         raise ValueError("날짜를 선택해주세요.")
-    s = raw.strip()
-    # "+09:00" suffix가 없으면 KST로 간주
-    if not any(s.endswith(tz) for tz in (KST_OFFSET, "Z", "+00:00")) and "+" not in s[10:] and "Z" not in s:
-        s = s + KST_OFFSET
-    try:
-        return datetime.fromisoformat(s).astimezone(timezone.utc)
-    except ValueError:
-        raise ValueError("traded_at: 올바른 날짜/시간 형식이 아닙니다")
+    else:
+        s = raw.strip()
+        # "+09:00" suffix가 없으면 KST로 간주
+        if not any(s.endswith(tz) for tz in (KST_OFFSET, "Z", "+00:00")) and "+" not in s[10:] and "Z" not in s:
+            s = s + KST_OFFSET
+        try:
+            traded_at = datetime.fromisoformat(s).astimezone(timezone.utc)
+        except ValueError:
+            raise ValueError("traded_at: 올바른 날짜/시간 형식이 아닙니다")
+    if traded_at > datetime.now(timezone.utc):
+        raise ValueError("미래 날짜의 거래는 등록할 수 없습니다.")
+    return traded_at
 
 
 class TradeCreate(BaseModel):

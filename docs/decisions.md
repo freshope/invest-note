@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-04-26 | 미래 거래 등록 차단 — 입력 경계에서 거절, 분석 필터 상한 유지
+
+- **맥락:** 분석 기간 필터는 "all"에서도 `now` 이후 거래를 제외한다. 사용자가 미래 거래를 등록할 수 있으면 기록에는 보이지만 분석에는 빠지는 상태가 생겨 혼란이 발생할 수 있음.
+- **결정:** 신규 거래 등록에서 미래 `traded_at`을 차단한다. 프론트는 캘린더와 zod 검증으로 사전 차단하고, FastAPI `TradeCreate` 스키마는 문자열/`datetime` 입력을 UTC로 정규화한 뒤 서버 현재 시각보다 미래면 400으로 거절한다. 분석 필터의 `now` 상한은 기존/외부 유입 데이터 방어용으로 유지한다.
+- **트레이드오프:** 미래 예약 거래/계획 거래는 MVP 범위에서 지원하지 않는다. 향후 CSV 임포트나 계획 거래 기능이 생기면 별도 데이터 타입 또는 명시적인 import 정책이 필요하다.
+
+---
+
 ## 2026-04-25 | asyncpg UUID→str 타입 경계 — 라우터 입력 경계에서 변환
 
 **맥락:** asyncpg는 PostgreSQL UUID 컬럼을 `uuid.UUID` 객체로 반환. Pydantic 모델(`Trade`)은 `_uuid_to_str` validator로 자동 str 변환되지만, 일반 dataclass(`Account`)는 type hint를 강제하지 않아 `account.id`가 UUID 객체로 남음. `build_account_snapshots`에서 `by_account.get(account.id)`가 str 키와 타입 불일치 → 항상 빈 배열 반환 → `stock_evaluation = 0`.
