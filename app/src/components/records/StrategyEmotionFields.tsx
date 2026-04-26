@@ -10,6 +10,7 @@ interface StrategyEmotionFieldsProps {
   onStrategyChange: (value: StrategyType | "") => void;
   onEmotionChange: (value: EmotionType | "") => void;
   hideStrategy?: boolean;
+  hideEmotion?: boolean;
 }
 
 export function StrategyEmotionFields({
@@ -18,6 +19,7 @@ export function StrategyEmotionFields({
   onStrategyChange,
   onEmotionChange,
   hideStrategy = false,
+  hideEmotion = false,
 }: StrategyEmotionFieldsProps) {
   return (
     <>
@@ -43,25 +45,27 @@ export function StrategyEmotionFields({
         </div>
       )}
 
-      <div className="space-y-2">
-        <Label>감정</Label>
-        <div className="grid grid-cols-3 gap-2">
-          {EMOTIONS.map((e) => (
-            <button
-              key={e.value}
-              type="button"
-              onClick={() => onEmotionChange(emotion === e.value ? "" : e.value)}
-              className={`rounded-xl border py-2.5 text-[13px] font-semibold transition-colors ${
-                emotion === e.value
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "border-border bg-muted/50 text-muted-foreground"
-              }`}
-            >
-              {e.label}
-            </button>
-          ))}
+      {!hideEmotion && (
+        <div className="space-y-2">
+          <Label>감정</Label>
+          <div className="grid grid-cols-3 gap-2">
+            {EMOTIONS.map((e) => (
+              <button
+                key={e.value}
+                type="button"
+                onClick={() => onEmotionChange(emotion === e.value ? "" : e.value)}
+                className={`rounded-xl border py-2.5 text-[13px] font-semibold transition-colors ${
+                  emotion === e.value
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "border-border bg-muted/50 text-muted-foreground"
+                }`}
+              >
+                {e.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </>
   );
 }
