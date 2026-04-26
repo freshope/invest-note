@@ -2,14 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, FileText, BarChart2, Settings2 } from "lucide-react";
+import {
+  NavAnalysisIcon,
+  NavHomeIcon,
+  NavRecordsIcon,
+  NavSettingsIcon,
+} from "@/components/base/NavIcons";
 import { cn } from "@/lib/utils";
 
 const tabs = [
-  { href: "/", icon: Home, label: "홈" },
-  { href: "/records", icon: FileText, label: "기록" },
-  { href: "/analysis", icon: BarChart2, label: "분석" },
-  { href: "/settings", icon: Settings2, label: "설정" },
+  { href: "/", icon: NavHomeIcon, label: "홈" },
+  { href: "/records", icon: NavRecordsIcon, label: "기록" },
+  { href: "/analysis", icon: NavAnalysisIcon, label: "분석" },
+  { href: "/settings", icon: NavSettingsIcon, label: "설정" },
 ] as const;
 
 export function BottomNav() {
@@ -33,7 +38,7 @@ export function BottomNav() {
                 isActive ? "text-foreground" : "text-muted-foreground/70"
               )}
             >
-              <Icon size={24} strokeWidth={isActive ? 2.5 : 1.8} />
+              <Icon size={24} />
               <span className={cn(
                 "text-[10px] tracking-tight",
                 isActive ? "font-bold" : "font-medium"
