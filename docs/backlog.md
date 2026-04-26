@@ -25,7 +25,7 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] USD/KRW 혼합 합산 — `portfolio.ts` US 종목 평가액을 환율 적용 없이 KRW와 합산해 총평가액·미실현손익 왜곡. USD→KRW 환율 적용 필요
 - [ ] HHI 크로스-통화 왜곡 — `concentration.py` 가 USD 포지션 평가액을 환율 변환 없이 합산. USD→KRW 변환 후 비중 계산
 - [x] 자동완성 후 종목명 수정 시 stale ticker 저장 — `TradeBasicForm.tsx` 자동완성 후 asset_name 수동 수정하면 이전 ticker_symbol/country_code 유지. 수동 수정 감지 시 ticker 필드 초기화
-- [ ] 미래 거래 묵시 필터링 명시화 — 신규 등록은 미래 거래를 차단하지만, 기존/외부 유입 데이터 기준으로 `period.py filter_by_period` 가 "all" 기간에도 `to_ts = now`로 미래 거래를 제외하는 정책 문서화 필요
+- [x] 미래 거래 묵시 필터링 명시화 — 신규 등록은 미래 거래를 차단하지만, 기존/외부 유입 데이터 기준으로 `period.py filter_by_period` 가 "all" 기간에도 `to_ts = now`로 미래 거래를 제외하는 정책 문서화 완료 (`docs/decisions.md`, 2026-04-26)
 
 ## 코드 품질
 
