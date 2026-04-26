@@ -6,6 +6,11 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 <!-- END:nextjs-agent-rules -->
 
+# 프로젝트 구조
+
+- `api`: backend (FastAPI)
+- `app`: frontend (Next.js + Capacitor)
+
 # shadcn/ui 규칙
 
 - 설치한 shadcn 컴포넌트를 직접 사용하지 않는다.
