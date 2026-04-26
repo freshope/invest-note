@@ -266,9 +266,13 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                     const acc = accounts.find((a) => a.id === field.value);
                     if (!acc) return <span className="text-muted-foreground">계좌를 선택하세요</span>;
                     return (
-                      <span className="inline-flex items-center gap-1.5">
-                        {acc.broker && <BrokerLogo broker={acc.broker} size={16} />}
-                        {acc.name}
+                      <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+                        {acc.broker && (
+                          <span className="shrink-0">
+                            <BrokerLogo broker={acc.broker} size={16} />
+                          </span>
+                        )}
+                        <span className="min-w-0 truncate">{acc.name}</span>
                       </span>
                     );
                   })()}
@@ -276,9 +280,13 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 <SelectContent>
                   {accounts.map((acc) => (
                     <SelectItem key={acc.id} value={acc.id}>
-                      <span className="inline-flex items-center gap-1.5">
-                        {acc.broker && <BrokerLogo broker={acc.broker} size={16} />}
-                        {acc.name}
+                      <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+                        {acc.broker && (
+                          <span className="shrink-0">
+                            <BrokerLogo broker={acc.broker} size={16} />
+                          </span>
+                        )}
+                        <span className="min-w-0 truncate">{acc.name}</span>
                       </span>
                     </SelectItem>
                   ))}
