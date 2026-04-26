@@ -9,27 +9,19 @@ import type { SelectedStock } from "./StockSearchInput";
 interface HoldingSelectInputProps {
   accountId: string;
   value: string;
+  onChange: (value: string) => void;
   onSelect: (stock: SelectedStock) => void;
   onSelectComplete?: () => void;
 }
 
-export function HoldingSelectInput({ accountId, value, onSelect, onSelectComplete }: HoldingSelectInputProps) {
+export function HoldingSelectInput({ accountId, value, onChange, onSelect, onSelectComplete }: HoldingSelectInputProps) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState(value || "");
-  const valueRef = useRef(value);
   const containerRef = useRef<HTMLDivElement>(null);
   const { data, loading } = usePortfolioSummary();
-
-  // 외부 value 변경 시 query 동기화 (form reset 등)
-  useEffect(() => {
-    valueRef.current = value;
-    setQuery(value || "");
-  }, [value]);
 
   const handleClickOutside = useCallback((e: MouseEvent) => {
     if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
       setOpen(false);
-      setQuery(valueRef.current || "");
     }
   }, []);
 
@@ -45,7 +37,7 @@ export function HoldingSelectInput({ accountId, value, onSelect, onSelectComplet
     [data?.positions, accountId],
   );
 
-  const trimmed = query.trim();
+  const trimmed = value.trim();
   const lowerTrimmed = trimmed.toLowerCase();
   const filtered = trimmed
     ? allPositions.filter((p) => p.assetName.includes(trimmed) || p.ticker.toLowerCase().includes(lowerTrimmed))
@@ -54,7 +46,6 @@ export function HoldingSelectInput({ accountId, value, onSelect, onSelectComplet
   const handleSelect = (pos: typeof allPositions[number]) => {
     const market = pos.country === "KR" ? "KR" : pos.country === "US" ? "US" : "OTHER";
     onSelect({ name: pos.assetName, code: pos.ticker, market, exchange: pos.exchange });
-    setQuery(pos.assetName);
     setOpen(false);
     onSelectComplete?.();
   };
@@ -72,10 +63,10 @@ export function HoldingSelectInput({ accountId, value, onSelect, onSelectComplet
       <Input
         type="text"
         placeholder={placeholder}
-        value={query}
+        value={value}
         disabled={!accountId || loading || allPositions.length === 0}
         onChange={(e) => {
-          setQuery(e.target.value);
+          onChange(e.target.value);
           setOpen(true);
         }}
         onFocus={() => { if (accountId && !loading && allPositions.length > 0) setOpen(true); }}

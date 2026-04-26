@@ -99,7 +99,22 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
   ];
   const [calOpen, setCalOpen] = useState(false);
   const priceInputRef = useRef<HTMLInputElement>(null);
+  const selectedAssetNameRef = useRef("");
   const handleFocusPrice = useCallback(() => priceInputRef.current?.focus(), []);
+
+  const clearStockSelection = useCallback(() => {
+    selectedAssetNameRef.current = "";
+    setValue("ticker_symbol", "");
+    setValue("country_code", "OTHER");
+    setValue("exchange", "");
+  }, [setValue]);
+
+  const handleAssetNameChange = useCallback((value: string, onChange: (value: string) => void) => {
+    onChange(value);
+    if (value !== selectedAssetNameRef.current) {
+      clearStockSelection();
+    }
+  }, [clearStockSelection]);
 
   // 마운트 후 localStorage에서 마지막 사용 계좌 복원
   useEffect(() => {
@@ -202,8 +217,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
               onValueChange={(v) => {
                 if (v && v !== field.value) {
                   setValue("asset_name", "");
-                  setValue("ticker_symbol", "");
-                  setValue("exchange", "");
+                  clearStockSelection();
                   field.onChange(v);
                 }
               }}
@@ -304,6 +318,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
             name="asset_name"
             render={({ field }) => {
               const handleStockSelect = (stock: SelectedStock) => {
+                selectedAssetNameRef.current = stock.name;
                 field.onChange(stock.name);
                 setValue("ticker_symbol", stock.code);
                 setValue("country_code", stock.market);
@@ -315,6 +330,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                   <HoldingSelectInput
                     accountId={accountId}
                     value={field.value}
+                    onChange={(v) => handleAssetNameChange(v, field.onChange)}
                     onSelect={handleStockSelect}
                     onSelectComplete={handleFocusPrice}
                   />
@@ -324,10 +340,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
               return (
                 <StockSearchInput
                   value={field.value}
-                  onChange={(v) => {
-                    field.onChange(v);
-                    if (!v) { setValue("ticker_symbol", ""); setValue("country_code", "OTHER"); setValue("exchange", ""); }
-                  }}
+                  onChange={(v) => handleAssetNameChange(v, field.onChange)}
                   onSelect={handleStockSelect}
                   onSelectComplete={handleFocusPrice}
                 />
