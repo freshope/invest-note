@@ -34,16 +34,6 @@ import type { Trade, Account, ReasoningTag } from "@/types/database";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 import { TradeFreeTextField } from "./TradeFreeTextField";
-import { TradeHoldingSection } from "./TradeHoldingSection";
-
-function BreakdownRow({ label, amount, prefix }: { label: string; amount: number; prefix?: "+" | "-" }) {
-  return (
-    <div className="flex justify-between items-center">
-      <span className="text-[11px] text-muted-foreground">{label}</span>
-      <span className="text-[12px] tabular-nums text-foreground">{prefix ?? ""}{amount.toLocaleString("ko-KR")}원</span>
-    </div>
-  );
-}
 
 const schema = z.object({
   price: z.number().positive("올바른 가격을 입력해주세요."),
@@ -101,7 +91,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
     defaultValues: buildFormValues(trade),
   });
 
-  const { data: summary, isPending: summaryLoading } = useQuery({
+  const { data: summary } = useQuery({
     queryKey: queryKeys.tradeSummary(trade.id),
     queryFn: () => tradesApi.summary(trade.id),
     enabled: isSell && open,
@@ -292,76 +282,8 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
 
               <div className="border-t border-border pt-4 mt-2">
                 <p className="text-[13px] font-semibold text-muted-foreground mb-4">
-                  {isSell ? "매도 이유 / 결과" : "근거 / 감정"}
+                  {isSell ? "매도 이유" : "근거 / 감정"}
                 </p>
-
-                {/* 자동 계산 요약 카드 (매도) */}
-                {isSell && (
-                  <div className="rounded-2xl bg-muted/60 p-4 space-y-3 mb-5">
-                    <p className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wide">거래 결과 (자동 계산)</p>
-                    {summaryLoading ? (
-                      <p className="text-[13px] text-muted-foreground">계산 중...</p>
-                    ) : (
-                      <>
-                        <div className="flex items-center justify-between">
-                          <span className={cn(
-                            "inline-flex items-center rounded-full px-2.5 py-0.5 text-[12px] font-bold border",
-                            summary?.result === "SUCCESS" && "bg-[var(--rise)]/10 text-[var(--rise)] border-[var(--rise)]/30",
-                            summary?.result === "FAIL" && "bg-[var(--fall)]/10 text-[var(--fall)] border-[var(--fall)]/30",
-                            summary?.result === "BREAKEVEN" && "bg-muted text-foreground border-border",
-                            !summary?.result && "bg-muted text-muted-foreground border-border",
-                          )}>
-                            {summary?.result === "SUCCESS" ? "수익 ✅" : summary?.result === "FAIL" ? "손실 ❌" : summary?.result === "BREAKEVEN" ? "본전 ➖" : "–"}
-                          </span>
-                          {summary?.pnl != null && (
-                            <span className={cn(
-                              "text-[16px] font-bold tabular-nums",
-                              summary.pnl > 0 && "text-[var(--rise)]",
-                              summary.pnl < 0 && "text-[var(--fall)]",
-                            )}>
-                              {summary.pnl >= 0 ? "+" : ""}{summary.pnl.toLocaleString("ko-KR")}원
-                            </span>
-                          )}
-                        </div>
-                        {summary?.breakdown && !summary.breakdown.isManualInput && (
-                          <div className="rounded-lg bg-background border border-border/60 px-3 py-2.5 space-y-1.5">
-                            <BreakdownRow
-                              label={`매도금액 (${summary.breakdown.sellPrice.toLocaleString("ko-KR")}원 × ${summary.breakdown.quantity}주)`}
-                              amount={summary.breakdown.sellAmount}
-                              prefix="+"
-                            />
-                            <BreakdownRow
-                              label={`매수비용 (평단 ${Math.round(summary.breakdown.avgCostPrice).toLocaleString("ko-KR")}원 × ${summary.breakdown.quantity}주)`}
-                              amount={summary.breakdown.costBasis}
-                              prefix="-"
-                            />
-                            {summary.breakdown.commission > 0 && <BreakdownRow label="수수료" amount={summary.breakdown.commission} prefix="-" />}
-                            {summary.breakdown.tax > 0 && <BreakdownRow label="세금" amount={summary.breakdown.tax} prefix="-" />}
-                            <div className="border-t border-border/60 pt-1.5 flex justify-between items-center">
-                              <span className="text-[12px] font-semibold text-foreground">실현손익</span>
-                              <span className={cn(
-                                "text-[13px] font-bold tabular-nums",
-                                summary.pnl != null && summary.pnl > 0 && "text-[var(--rise)]",
-                                summary.pnl != null && summary.pnl < 0 && "text-[var(--fall)]",
-                              )}>
-                                {summary.pnl != null ? `${summary.pnl >= 0 ? "+" : ""}${summary.pnl.toLocaleString("ko-KR")}원` : "–"}
-                              </span>
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {isSell && (
-                  <TradeHoldingSection
-                    className="mb-5"
-                    tradedAt={trade.traded_at}
-                    holdingDays={summary?.holdingDays ?? null}
-                    strategyEvaluation={summary?.strategyEvaluation ?? null}
-                  />
-                )}
 
                 {/* 전략 (매수만) */}
                 {!isSell && (

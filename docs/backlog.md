@@ -4,10 +4,6 @@ MVP 이후 구현할 작업 후보 목록.
 
 ---
 
-## UI 코드 정리
-
-- [ ] `BreakdownRow` 컴포넌트 추출 — `TradeMetaSellForm.tsx`와 `TradeEditPanel.tsx`에 동일 컴포넌트가 중복 정의됨. `trade-display.tsx` 또는 별도 파일로 이동.
-
 ## 분석 탭 성능 / 유지보수
 
 - [ ] InsightSection `useMemo` 적용 — `evaluateRules()` 호출 메모이제이션 (176줄 룰 배열이 매 렌더마다 실행)

@@ -18,7 +18,7 @@ import { queryKeys } from "@/lib/query-keys";
 import { ChevronLeftIcon } from "lucide-react";
 import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
 import { STRATEGY_LABELS, EMOTION_LABELS, REASONING_TAG_LABELS } from "./constants";
-import { TradeHoldingSection } from "./TradeHoldingSection";
+import { TradeStrategyResultSection } from "./TradeStrategyResultSection";
 
 interface TradeDetailProps {
   trade: TradeWithAccount;
@@ -241,9 +241,9 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
           </div>
         )}
 
-        {/* 보유 정보 (매도) */}
+        {/* 전략 결과 (매도) */}
         {!isBuy && (
-          <TradeHoldingSection
+          <TradeStrategyResultSection
             tradedAt={trade.traded_at}
             holdingDays={summary?.holdingDays ?? null}
             strategyEvaluation={summary?.strategyEvaluation ?? null}
@@ -251,9 +251,9 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
         )}
 
         {/* 근거 / 감정 */}
-        {(trade.strategy_type || trade.emotion || (trade.reasoning_tags && trade.reasoning_tags.length > 0) || trade.buy_reason) && (
+        {((isBuy && trade.strategy_type) || trade.emotion || trade.reasoning_tags?.length || trade.buy_reason) && (
           <div className="rounded-2xl bg-muted/60 px-4 py-1">
-            {trade.strategy_type && (
+            {isBuy && trade.strategy_type && (
               <InfoRow label="전략">{STRATEGY_LABELS[trade.strategy_type] ?? trade.strategy_type}</InfoRow>
             )}
             {trade.emotion && (

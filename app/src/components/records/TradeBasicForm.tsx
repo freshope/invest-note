@@ -60,7 +60,7 @@ function calcTax(total: number) { return Math.round(total * SELL_TAX_RATE); }
 
 interface TradeBasicFormProps {
   accounts: Account[];
-  onTradeCreated: (tradeId: string, tradeType: TradeType, tradedAt: string) => void;
+  onTradeCreated: (tradeId: string, tradeType: TradeType) => void;
 }
 
 export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps) {
@@ -199,7 +199,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
         queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
       ]);
-      onTradeCreated(result.id, result.trade_type, values.traded_at.toISOString());
+      onTradeCreated(result.id, result.trade_type);
     } catch (err) {
       setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
     }
@@ -359,7 +359,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
           render={({ field }) => (
             <div className="space-y-1.5">
               <Label>종목코드 <span className="text-[12px] font-normal text-muted-foreground">(자동입력)</span></Label>
-              <div className="flex h-12 items-center gap-2 rounded-xl bg-muted/50 px-4 text-[15px] text-foreground">
+              <div className="flex h-12 items-center gap-2 rounded-xl bg-muted px-4 text-[15px] text-foreground">
                 {field.value ? (
                   <>
                     <span className="font-mono font-medium">{field.value}</span>
@@ -438,7 +438,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         {/* 총액 */}
         <div className="space-y-1.5">
           <Label>총액 (자동계산)</Label>
-          <div className="flex h-12 items-center rounded-xl bg-muted/50 px-4 text-[15px] font-semibold text-foreground">
+          <div className="flex h-12 items-center rounded-xl bg-muted px-4 text-[15px] font-semibold text-foreground">
             {totalDisplay !== "-" ? `${totalDisplay} 원` : "-"}
           </div>
         </div>
