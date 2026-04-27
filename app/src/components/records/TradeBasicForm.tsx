@@ -60,7 +60,7 @@ function calcTax(total: number) { return Math.round(total * SELL_TAX_RATE); }
 
 interface TradeBasicFormProps {
   accounts: Account[];
-  onTradeCreated: (tradeId: string, tradeType: TradeType) => void;
+  onTradeCreated: (tradeId: string, tradeType: TradeType, tradedAt: string) => void;
 }
 
 export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps) {
@@ -199,7 +199,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
         queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
       ]);
-      onTradeCreated(result.id, result.trade_type);
+      onTradeCreated(result.id, result.trade_type, values.traded_at.toISOString());
     } catch (err) {
       setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
     }
@@ -358,7 +358,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
           name="ticker_symbol"
           render={({ field }) => (
             <div className="space-y-1.5">
-              <Label>종목코드</Label>
+              <Label>종목코드 <span className="text-[12px] font-normal text-muted-foreground">(자동입력)</span></Label>
               <div className="flex h-12 items-center gap-2 rounded-xl bg-muted/50 px-4 text-[15px] text-foreground">
                 {field.value ? (
                   <>

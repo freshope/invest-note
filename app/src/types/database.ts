@@ -48,10 +48,8 @@ export interface Trade {
   // 감정
   emotion: EmotionType | null;
 
-  // 회고
+  // 결과
   result: TradeResult | null;
-  reflection_note: string | null;
-  improvement_note: string | null;
 
   // 손익 (SELL 전용 — 서버 계산 저장값)
   profit_loss: number | null;

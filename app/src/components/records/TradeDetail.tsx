@@ -18,6 +18,7 @@ import { queryKeys } from "@/lib/query-keys";
 import { ChevronLeftIcon } from "lucide-react";
 import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
 import { STRATEGY_LABELS, EMOTION_LABELS, REASONING_TAG_LABELS } from "./constants";
+import { TradeHoldingSection } from "./TradeHoldingSection";
 
 interface TradeDetailProps {
   trade: TradeWithAccount;
@@ -237,12 +238,16 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
                 </div>
               </div>
             )}
-            {summary?.holdingDays != null && (
-              <div className="text-[12px] text-muted-foreground">
-                보유 {summary.holdingDays}일
-              </div>
-            )}
           </div>
+        )}
+
+        {/* 보유 정보 (매도) */}
+        {!isBuy && (
+          <TradeHoldingSection
+            tradedAt={trade.traded_at}
+            holdingDays={summary?.holdingDays ?? null}
+            strategyEvaluation={summary?.strategyEvaluation ?? null}
+          />
         )}
 
         {/* 근거 / 감정 */}
@@ -274,27 +279,11 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
           </div>
         )}
 
-        {/* 회고 (매도) */}
-        {!isBuy && (trade.sell_reason || trade.reflection_note || trade.improvement_note) && (
-          <div className="rounded-2xl bg-muted/60 px-4 py-3 space-y-4">
-            {trade.sell_reason && (
-              <div className="space-y-1">
-                <span className="text-[13px] text-muted-foreground">매도 이유</span>
-                <p className="text-[14px] text-foreground whitespace-pre-wrap">{trade.sell_reason}</p>
-              </div>
-            )}
-            {trade.reflection_note && (
-              <div className="space-y-1">
-                <span className="text-[13px] text-muted-foreground">잘한 점 / 배운 점</span>
-                <p className="text-[14px] text-foreground whitespace-pre-wrap">{trade.reflection_note}</p>
-              </div>
-            )}
-            {trade.improvement_note && (
-              <div className="space-y-1">
-                <span className="text-[13px] text-muted-foreground">개선할 점</span>
-                <p className="text-[14px] text-foreground whitespace-pre-wrap">{trade.improvement_note}</p>
-              </div>
-            )}
+        {/* 매도 이유 */}
+        {!isBuy && trade.sell_reason && (
+          <div className="rounded-2xl bg-muted/60 px-4 py-3 space-y-1">
+            <span className="text-[13px] text-muted-foreground">매도 이유</span>
+            <p className="text-[14px] text-foreground whitespace-pre-wrap">{trade.sell_reason}</p>
           </div>
         )}
       </div>

@@ -24,8 +24,8 @@ describe("TradeFreeTextField", () => {
   it("90% 이상이면 카운터를 경고색으로 표시한다", () => {
     render(
       <TradeFreeTextField
-        id="reflection_note"
-        label="잘한 점 / 배운 점"
+        id="sell_reason"
+        label="매도 이유"
         valueLength={4500}
       />,
     );

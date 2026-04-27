@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from invest_note_api.domain.trade_types import Trade
 
 NOTE_TYPE_REASON = "근거"
-NOTE_TYPE_REFLECTION = "회고"
+NOTE_TYPE_SELL = "매도이유"
 
 
 @dataclass
@@ -114,9 +114,9 @@ def build_positions(trades: list["Trade"]) -> list[Position]:
             lot["realized_pnl"] += trade.profit_loss or 0.0
             lot["running_cost"] = max(0.0, lot["running_cost"] - avg_cost * matched_qty)
             lot["running_qty"] = max(0.0, lot["running_qty"] - trade.quantity)
-            note = (trade.reflection_note or "").strip() or (trade.sell_reason or "").strip()
+            note = (trade.sell_reason or "").strip()
             if note:
-                lot["last_note_type"] = NOTE_TYPE_REFLECTION
+                lot["last_note_type"] = NOTE_TYPE_SELL
                 lot["last_note"] = note
 
     # lot → position 집계 (보유수량 > 0인 lot만)

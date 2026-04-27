@@ -51,7 +51,7 @@ async def get_holding(
                    country_code, account_id, traded_at,
                    id, user_id, market_type, total_amount,
                    strategy_type, reasoning_tags, buy_reason, sell_reason,
-                   emotion, result, reflection_note, improvement_note,
+                   emotion, result,
                    profit_loss, avg_buy_price, exchange, commission, tax,
                    created_at, updated_at
             FROM trades

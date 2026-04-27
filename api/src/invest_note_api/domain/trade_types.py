@@ -64,8 +64,6 @@ class Trade(BaseModel):
     emotion: EmotionType | None = None
 
     result: TradeResult | None = None
-    reflection_note: str | None = None
-    improvement_note: str | None = None
 
     profit_loss: float | None = None
     avg_buy_price: float | None = None

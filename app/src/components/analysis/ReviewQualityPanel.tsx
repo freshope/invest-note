@@ -52,9 +52,9 @@ export function ReviewQualityPanel({
   return (
     <div className="space-y-3">
       <QualityBar
-        label="매도 회고 작성"
+        label="매도 이유 작성"
         rate={reflectionRate}
-        description="매도 후 reflection 입력률"
+        description="매도 후 이유 작성률"
       />
       <QualityBar
         label="거래 결과 입력"

@@ -21,8 +21,6 @@ function makeSell(overrides: Partial<Trade> = {}): Trade {
     sell_reason: null,
     emotion: null,
     result: null,
-    reflection_note: null,
-    improvement_note: null,
     profit_loss: null,
     avg_buy_price: null,
     holding_days: null,

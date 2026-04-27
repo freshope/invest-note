@@ -88,13 +88,13 @@ async def insert_trade(conn: Any, user_id: str, data: dict) -> dict:
             trade_type, price, quantity, traded_at, commission, tax,
             country_code, exchange,
             strategy_type, reasoning_tags, buy_reason, sell_reason,
-            emotion, result, reflection_note, improvement_note
+            emotion, result
         ) VALUES (
             $1, $2, $3, $4, $5,
             $6, $7, $8, $9, $10, $11,
             $12, $13,
             $14, $15, $16, $17,
-            $18, $19, $20, $21
+            $18, $19
         )
         RETURNING id, trade_type
         """,
@@ -117,8 +117,6 @@ async def insert_trade(conn: Any, user_id: str, data: dict) -> dict:
         data.get("sell_reason"),
         data.get("emotion"),
         data.get("result"),
-        data.get("reflection_note"),
-        data.get("improvement_note"),
     )
     return dict(row)
 
@@ -126,7 +124,7 @@ async def insert_trade(conn: Any, user_id: str, data: dict) -> dict:
 _PATCH_ALLOWED = {
     "market_type", "price", "quantity", "commission", "tax",
     "strategy_type", "emotion", "reasoning_tags",
-    "buy_reason", "sell_reason", "result", "reflection_note", "improvement_note",
+    "buy_reason", "sell_reason", "result",
 }
 
 PNL_AFFECTING_FIELDS = {"price", "quantity", "commission", "tax", "strategy_type"}

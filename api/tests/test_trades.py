@@ -53,8 +53,6 @@ def _make_trade_row(
         "sell_reason": None,
         "emotion": None,
         "result": None,
-        "reflection_note": None,
-        "improvement_note": None,
         "profit_loss": profit_loss,
         "avg_buy_price": avg_buy_price,
         "holding_days": holding_days,

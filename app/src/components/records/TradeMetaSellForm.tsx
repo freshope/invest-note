@@ -11,14 +11,12 @@ import { queryKeys } from "@/lib/query-keys";
 import { StrategyEmotionFields } from "./StrategyEmotionFields";
 import { EMOTION_VALUES } from "./constants";
 import { cn } from "@/lib/utils";
-import { STRATEGY_LABELS, ADHERENCE_CONFIG } from "@/lib/constants/trading";
 import { TradeFreeTextField } from "./TradeFreeTextField";
+import { TradeHoldingSection } from "./TradeHoldingSection";
 
 const schema = z.object({
   emotion: z.enum(EMOTION_VALUES).nullable(),
   sell_reason: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, TRADE_FREE_TEXT_ERROR),
-  reflection_note: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, TRADE_FREE_TEXT_ERROR),
-  improvement_note: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, TRADE_FREE_TEXT_ERROR),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -40,10 +38,11 @@ function BreakdownRow({ label, amount, prefix }: {
 
 interface TradeMetaSellFormProps {
   tradeId: string;
+  tradedAt: string;
   onDone: () => void;
 }
 
-export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
+export function TradeMetaSellForm({ tradeId, tradedAt, onDone }: TradeMetaSellFormProps) {
   const queryClient = useQueryClient();
 
   const { data: summary, isPending: summaryLoading } = useQuery({
@@ -62,22 +61,16 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
     defaultValues: {
       emotion: null,
       sell_reason: "",
-      reflection_note: "",
-      improvement_note: "",
     },
   });
 
   const sellReason = useWatch({ control, name: "sell_reason" }) ?? "";
-  const reflectionNote = useWatch({ control, name: "reflection_note" }) ?? "";
-  const improvementNote = useWatch({ control, name: "improvement_note" }) ?? "";
 
   async function onSubmit(values: FormValues) {
     try {
       await tradesApi.update(tradeId, {
         emotion: values.emotion,
         sell_reason: values.sell_reason.trim() || null,
-        reflection_note: values.reflection_note.trim() || null,
-        improvement_note: values.improvement_note.trim() || null,
         result: summary?.result ?? null,
         strategy_type: summary?.strategyEvaluation?.planned ?? null,
       });
@@ -94,14 +87,12 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
   const errorMessage = errors.root?.message ?? Object.values(errors)[0]?.message;
   const pnl = summary?.pnl;
   const result = summary?.result;
-  const holdingDays = summary?.holdingDays;
-  const stratEval = summary?.strategyEvaluation;
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">
       <div className="flex-1 px-5 pt-2 pb-4 space-y-6">
 
-        {/* 자동 계산 요약 카드 */}
+        {/* 거래 결과 (자동 계산) */}
         <div className="rounded-2xl bg-muted/60 p-4 space-y-3">
           <p className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wide">거래 결과 (자동 계산)</p>
 
@@ -165,28 +156,16 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
               {summary?.breakdown?.isManualInput && (
                 <p className="text-[11px] text-muted-foreground">직접 입력한 손익 금액을 사용합니다.</p>
               )}
-
-              {/* 보유 기간 + 전략 평가 */}
-              {holdingDays != null && (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[12px] text-muted-foreground">
-                    보유 {holdingDays}일
-                    {stratEval && ` · ${STRATEGY_LABELS[stratEval.actual] ?? stratEval.actual}`}
-                  </span>
-                  {stratEval && stratEval.adherence !== "UNKNOWN" && (
-                    <span className={cn(
-                      "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold border",
-                      ADHERENCE_CONFIG[stratEval.adherence].className,
-                    )}>
-                      {stratEval.planned && `계획: ${STRATEGY_LABELS[stratEval.planned] ?? stratEval.planned} · `}
-                      {ADHERENCE_CONFIG[stratEval.adherence].label}
-                    </span>
-                  )}
-                </div>
-              )}
             </>
           )}
         </div>
+
+        {/* 보유 정보 */}
+        <TradeHoldingSection
+          tradedAt={tradedAt}
+          holdingDays={summary?.holdingDays ?? null}
+          strategyEvaluation={summary?.strategyEvaluation ?? null}
+        />
 
         <TradeFreeTextField
           id="sell_reason"
@@ -195,24 +174,6 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
           {...register("sell_reason")}
           placeholder="왜 매도했나요?"
           rows={2}
-        />
-
-        <TradeFreeTextField
-          id="reflection_note"
-          label="잘한 점 / 배운 점"
-          valueLength={reflectionNote.length}
-          {...register("reflection_note")}
-          placeholder="이번 거래에서 잘한 점이나 배운 것을 기록해보세요"
-          rows={3}
-        />
-
-        <TradeFreeTextField
-          id="improvement_note"
-          label="개선할 점 / 다음에는"
-          valueLength={improvementNote.length}
-          {...register("improvement_note")}
-          placeholder="다음 거래에서 개선하고 싶은 점을 적어주세요"
-          rows={3}
         />
 
         <Controller

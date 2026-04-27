@@ -151,10 +151,8 @@ class TradeUpdate(BaseModel):
     buy_reason: str | None = None
     sell_reason: str | None = None
     result: TradeResult | None = None
-    reflection_note: str | None = None
-    improvement_note: str | None = None
 
-    @field_validator("buy_reason", "sell_reason", "reflection_note", "improvement_note")
+    @field_validator("buy_reason", "sell_reason")
     @classmethod
     def _free_text_max_len(cls, v: str | None) -> str | None:
         if v is not None and len(v) > TRADE_FREE_TEXT_MAX_LEN:

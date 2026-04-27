@@ -22,16 +22,16 @@ type Step = "basic" | "meta";
 
 const TITLES: Record<Step, Record<TradeType, string>> = {
   basic: { BUY: "거래 등록", SELL: "거래 등록" },
-  meta: { BUY: "근거 입력", SELL: "회고 입력" },
+  meta: { BUY: "근거 입력", SELL: "매도 정보 입력" },
 };
 
 export function TradeFormPanel({ open, onOpenChange, accounts }: TradeFormPanelProps) {
   const [step, setStep] = useState<Step>("basic");
   const [tradeId, setTradeId] = useState<string>("");
   const [tradeType, setTradeType] = useState<TradeType>("BUY");
+  const [tradedAt, setTradedAt] = useState<string>("");
 
   // 패널이 열릴 때 항상 리셋 — 빠른 재오픈 시 이전 step/tradeId가 남지 않도록.
-  // React 18에서는 effect 내 setState가 자동 배칭되어 추가 렌더 없이 처리됨.
   useEffect(() => {
     if (open) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -49,10 +49,11 @@ export function TradeFormPanel({ open, onOpenChange, accounts }: TradeFormPanelP
   const openRef = useRef(open);
   useEffect(() => { openRef.current = open; }, [open]);
 
-  const handleTradeCreated = useCallback((id: string, type: TradeType) => {
+  const handleTradeCreated = useCallback((id: string, type: TradeType, at: string) => {
     if (!openRef.current) return;
     setTradeId(id);
     setTradeType(type);
+    setTradedAt(at);
     setStep("meta");
   }, []);
 
@@ -78,6 +79,7 @@ export function TradeFormPanel({ open, onOpenChange, accounts }: TradeFormPanelP
           {step === "meta" && tradeType === "SELL" && (
             <TradeMetaSellForm
               tradeId={tradeId}
+              tradedAt={tradedAt}
               onDone={handleClose}
             />
           )}

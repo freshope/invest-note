@@ -162,8 +162,6 @@ export interface TradeMetaInput {
   sell_reason?: string | null;
   result?: TradeResult | null;
   profit_loss?: number | null;
-  reflection_note?: string | null;
-  improvement_note?: string | null;
 }
 
 export type TradePatchInput = Partial<TradeCreateInput & TradeMetaInput>;

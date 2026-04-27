@@ -34,8 +34,6 @@ def make_trade(**kwargs) -> Trade:
         sell_reason=None,
         emotion=None,
         result=None,
-        reflection_note=None,
-        improvement_note=None,
         profit_loss=None,
         avg_buy_price=None,
         holding_days=None,
@@ -241,7 +239,7 @@ class TestComputeSummary:
     def test_meta_rates(self):
         buy_no_tag = make_trade(id="b1", trade_type="BUY", reasoning_tags=[])
         buy_feeling = make_trade(id="b2", trade_type="BUY", reasoning_tags=["FEELING"])
-        sell_with_reflection = make_trade(id="s1", trade_type="SELL", reflection_note="good", result="SUCCESS")
+        sell_with_reflection = make_trade(id="s1", trade_type="SELL", sell_reason="good", result="SUCCESS")
         sell_no_result = make_trade(id="s2", trade_type="SELL")
         s = compute_summary([buy_no_tag, buy_feeling, sell_with_reflection, sell_no_result], {"s1": 100.0}, {})
         assert s.missing_tag_rate == 50.0
