@@ -8,7 +8,7 @@ import { STRATEGY_LABELS, ADHERENCE_CONFIG } from "@/lib/constants/trading";
 import type { ReactNode } from "react";
 import type { StrategyEvaluation } from "@/lib/analysis/strategy-adherence";
 
-interface TradeHoldingSectionProps {
+interface TradeStrategyResultSectionProps {
   tradedAt: string;
   holdingDays: number | null;
   strategyEvaluation?: StrategyEvaluation | null;
@@ -24,19 +24,19 @@ function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-export const TradeHoldingSection = memo(function TradeHoldingSection({
+export const TradeStrategyResultSection = memo(function TradeStrategyResultSection({
   tradedAt,
   holdingDays,
   strategyEvaluation,
   className,
-}: TradeHoldingSectionProps) {
+}: TradeStrategyResultSectionProps) {
   const sellDate = new Date(tradedAt);
   const avgBuyDate = holdingDays != null ? subDays(sellDate, holdingDays) : null;
 
   return (
     <div className={cn("rounded-2xl bg-muted/60 p-4 space-y-3", className)}>
       <p className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wide">
-        보유 정보 (자동 계산)
+        전략 결과 (자동 계산)
       </p>
 
       {holdingDays == null ? (

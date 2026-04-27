@@ -29,7 +29,6 @@ export function TradeFormPanel({ open, onOpenChange, accounts }: TradeFormPanelP
   const [step, setStep] = useState<Step>("basic");
   const [tradeId, setTradeId] = useState<string>("");
   const [tradeType, setTradeType] = useState<TradeType>("BUY");
-  const [tradedAt, setTradedAt] = useState<string>("");
 
   // 패널이 열릴 때 항상 리셋 — 빠른 재오픈 시 이전 step/tradeId가 남지 않도록.
   useEffect(() => {
@@ -49,11 +48,10 @@ export function TradeFormPanel({ open, onOpenChange, accounts }: TradeFormPanelP
   const openRef = useRef(open);
   useEffect(() => { openRef.current = open; }, [open]);
 
-  const handleTradeCreated = useCallback((id: string, type: TradeType, at: string) => {
+  const handleTradeCreated = useCallback((id: string, type: TradeType) => {
     if (!openRef.current) return;
     setTradeId(id);
     setTradeType(type);
-    setTradedAt(at);
     setStep("meta");
   }, []);
 
@@ -79,7 +77,6 @@ export function TradeFormPanel({ open, onOpenChange, accounts }: TradeFormPanelP
           {step === "meta" && tradeType === "SELL" && (
             <TradeMetaSellForm
               tradeId={tradeId}
-              tradedAt={tradedAt}
               onDone={handleClose}
             />
           )}
