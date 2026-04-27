@@ -7,7 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/base/Button";
 import { Label } from "@/components/base/Label";
 import { tradesApi } from "@/lib/api-client";
-import { VALIDATION_LIMITS } from "@/lib/constants/validation";
+import { VALIDATION_LIMITS, TRADE_FREE_TEXT_ERROR } from "@/lib/constants/validation";
 import { queryKeys } from "@/lib/query-keys";
 import {
   REASONING_TAGS,
@@ -22,7 +22,7 @@ const schema = z.object({
   strategy_type: z.enum(STRATEGY_VALUES).nullable(),
   emotion: z.enum(EMOTION_VALUES).nullable(),
   reasoning_tags: z.array(z.enum(REASONING_TAG_VALUES)),
-  buy_reason: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, "5000자 이내로 입력해주세요."),
+  buy_reason: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, TRADE_FREE_TEXT_ERROR),
 });
 
 type FormValues = z.infer<typeof schema>;

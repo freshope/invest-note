@@ -5,3 +5,5 @@ export const VALIDATION_LIMITS = {
   EXCHANGE_MAX: 50,
   TRADE_FREE_TEXT_MAX: 5000,
 } as const;
+
+export const TRADE_FREE_TEXT_ERROR = `${VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX}자 이내로 입력해주세요.`;

@@ -16,7 +16,7 @@ import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
 import { tradesApi } from "@/lib/api-client";
-import { VALIDATION_LIMITS } from "@/lib/constants/validation";
+import { VALIDATION_LIMITS, TRADE_FREE_TEXT_ERROR } from "@/lib/constants/validation";
 import { queryKeys } from "@/lib/query-keys";
 import {
   STRATEGIES,
@@ -54,10 +54,10 @@ const schema = z.object({
   emotion: z.enum(EMOTION_VALUES).nullable(),
   reasoning_tags: z.array(z.enum(REASONING_TAG_VALUES)),
   result: z.enum(TRADE_RESULT_VALUES).nullable(),
-  buy_reason: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, "5000자 이내로 입력해주세요."),
-  sell_reason: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, "5000자 이내로 입력해주세요."),
-  reflection_note: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, "5000자 이내로 입력해주세요."),
-  improvement_note: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, "5000자 이내로 입력해주세요."),
+  buy_reason: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, TRADE_FREE_TEXT_ERROR),
+  sell_reason: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, TRADE_FREE_TEXT_ERROR),
+  reflection_note: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, TRADE_FREE_TEXT_ERROR),
+  improvement_note: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, TRADE_FREE_TEXT_ERROR),
 });
 
 type FormValues = z.infer<typeof schema>;
