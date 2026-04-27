@@ -74,10 +74,10 @@ def compute_profile(
     poor_ratio = (buys_with_feeling + buys_with_no_tag) / len(buys) if buys else 0.0
     reasoning_quality = _clamp((1 - min(1.0, poor_ratio)) * 100)
 
-    with_reflection = sum(
-        1 for t in sells if t.reflection_note and t.reflection_note.strip()
+    with_sell_reason = sum(
+        1 for t in sells if t.sell_reason and t.sell_reason.strip()
     )
-    review_habit = _clamp((with_reflection / len(sells)) * 100) if sells else 0.0
+    review_habit = _clamp((with_sell_reason / len(sells)) * 100) if sells else 0.0
 
     sells_with_holding = len(all_days)
     input_rates = ProfileInputRates(
@@ -85,7 +85,7 @@ def compute_profile(
         emotion=len(emotion_tagged) / len(trades) * 100 if trades else 0.0,
         reasoning_tag=(len(buys) - buys_with_no_tag) / len(buys) * 100 if buys else 0.0,
         result=sum(1 for t in sells if t.result is not None) / len(sells) * 100 if sells else 0.0,
-        reflection=with_reflection / len(sells) * 100 if sells else 0.0,
+        reflection=with_sell_reason / len(sells) * 100 if sells else 0.0,
     )
 
     profile = BehaviorProfile(

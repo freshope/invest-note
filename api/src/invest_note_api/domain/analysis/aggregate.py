@@ -236,7 +236,7 @@ def compute_summary(
         sum(1 for t in buys if TAG_FEELING in (t.reasoning_tags or [])) / len(buys) * 100 if buys else 0.0
     )
     reflection_rate = (
-        sum(1 for t in sells if t.reflection_note and t.reflection_note.strip()) / len(sells) * 100
+        sum(1 for t in sells if t.sell_reason and t.sell_reason.strip()) / len(sells) * 100
         if sells else 0.0
     )
     result_input_rate = len(sells_with_result) / len(sells) * 100 if sells else 0.0

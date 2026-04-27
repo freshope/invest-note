@@ -28,8 +28,6 @@ function makeTrade(overrides: Partial<Trade> & { id: string; trade_type: Trade["
     sell_reason: null,
     emotion: null,
     result: null,
-    reflection_note: null,
-    improvement_note: null,
     profit_loss: null,
     avg_buy_price: null,
     holding_days: null,
@@ -369,11 +367,11 @@ describe("computeSummary", () => {
     expect(s.feelingRate).toBeCloseTo(50); // 4건 중 2건
   });
 
-  it("reflectionRate: reflection_note 작성 비율", () => {
+  it("reflectionRate: sell_reason 작성 비율", () => {
     const trades: Trade[] = [
-      makeTrade({ id: "s1", trade_type: "SELL", reflection_note: "좋은 타이밍", traded_at: "2024-02-01T09:00:00+09:00" }),
-      makeTrade({ id: "s2", trade_type: "SELL", reflection_note: null,          traded_at: "2024-02-02T09:00:00+09:00" }),
-      makeTrade({ id: "s3", trade_type: "SELL", reflection_note: "  ",          traded_at: "2024-02-03T09:00:00+09:00" }), // 공백만 → 미작성
+      makeTrade({ id: "s1", trade_type: "SELL", sell_reason: "목표가 도달", traded_at: "2024-02-01T09:00:00+09:00" }),
+      makeTrade({ id: "s2", trade_type: "SELL", sell_reason: null,         traded_at: "2024-02-02T09:00:00+09:00" }),
+      makeTrade({ id: "s3", trade_type: "SELL", sell_reason: "  ",         traded_at: "2024-02-03T09:00:00+09:00" }), // 공백만 → 미작성
     ];
     const s = computeSummary(trades, emptyMaps.pnlMap, emptyMaps.holdingDaysMap);
     expect(s.reflectionRate).toBeCloseTo(33.33, 1);
@@ -857,10 +855,10 @@ describe("computeProfile", () => {
     expect(profile.reasoningQuality).toBe(0);
   });
 
-  it("SELL에 reflection_note 있으면 reviewHabit 100", () => {
+  it("SELL에 sell_reason 있으면 reviewHabit 100", () => {
     const trades = [
       makeTrade({ id: "b1", trade_type: "BUY" }),
-      makeTrade({ id: "s1", trade_type: "SELL", reflection_note: "잘했다" }),
+      makeTrade({ id: "s1", trade_type: "SELL", sell_reason: "목표가 도달" }),
     ];
     const { profile } = computeProfile(trades, 0, new Map());
     expect(profile.reviewHabit).toBe(100);

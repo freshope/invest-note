@@ -33,8 +33,6 @@ def _make_trade_row(**kwargs) -> dict:
         "sell_reason": None,
         "emotion": None,
         "result": None,
-        "reflection_note": None,
-        "improvement_note": None,
         "profit_loss": None,
         "avg_buy_price": None,
         "holding_days": None,

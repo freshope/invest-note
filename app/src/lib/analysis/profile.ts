@@ -13,7 +13,7 @@ export interface ProfileInputRates {
   emotion: number;       // 전체 거래 중 emotion 입력 비율
   reasoningTag: number;  // BUY 중 태그 입력 비율
   result: number;        // SELL 중 result 입력 비율
-  reflection: number;    // SELL 중 reflection_note 작성 비율
+  reflection: number;    // SELL 중 sell_reason 작성 비율
 }
 
 function clamp(v: number): number {
@@ -60,11 +60,11 @@ export function computeProfile(
   const poorRatio = buys.length > 0 ? (buysWithFeeling + buysWithNoTag) / buys.length : 0;
   const reasoningQuality = clamp((1 - Math.min(1, poorRatio)) * 100);
 
-  // --- 복기 습관 ---
-  const withReflection = sells.filter(
-    (t) => t.reflection_note != null && t.reflection_note.trim() !== "",
+  // --- 복기 습관 (매도 이유 작성 비율) ---
+  const withSellReason = sells.filter(
+    (t) => t.sell_reason != null && t.sell_reason.trim() !== "",
   ).length;
-  const reviewHabit = sells.length > 0 ? clamp((withReflection / sells.length) * 100) : 0;
+  const reviewHabit = sells.length > 0 ? clamp((withSellReason / sells.length) * 100) : 0;
 
   // --- 입력률 ---
   // allDays는 이미 기간 내 SELL로 필터링됐으므로 allDays.length = 보유일 계산 가능한 SELL 수
@@ -78,7 +78,7 @@ export function computeProfile(
       sells.length > 0
         ? (sells.filter((t) => t.result != null).length / sells.length) * 100
         : 0,
-    reflection: sells.length > 0 ? (withReflection / sells.length) * 100 : 0,
+    reflection: sells.length > 0 ? (withSellReason / sells.length) * 100 : 0,
   };
 
   return {

@@ -229,7 +229,7 @@ export function computeSummary(
       : 0;
   const reflectionRate =
     sells.length > 0
-      ? (sells.filter((t) => t.reflection_note != null && t.reflection_note.trim() !== "")
+      ? (sells.filter((t) => t.sell_reason != null && t.sell_reason.trim() !== "")
           .length /
           sells.length) *
         100

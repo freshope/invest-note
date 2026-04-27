@@ -33,8 +33,8 @@ import { cn } from "@/lib/utils";
 import type { Trade, Account, ReasoningTag } from "@/types/database";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
-import { STRATEGY_LABELS, ADHERENCE_CONFIG } from "@/lib/constants/trading";
 import { TradeFreeTextField } from "./TradeFreeTextField";
+import { TradeHoldingSection } from "./TradeHoldingSection";
 
 function BreakdownRow({ label, amount, prefix }: { label: string; amount: number; prefix?: "+" | "-" }) {
   return (
@@ -56,8 +56,6 @@ const schema = z.object({
   result: z.enum(TRADE_RESULT_VALUES).nullable(),
   buy_reason: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, TRADE_FREE_TEXT_ERROR),
   sell_reason: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, TRADE_FREE_TEXT_ERROR),
-  reflection_note: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, TRADE_FREE_TEXT_ERROR),
-  improvement_note: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, TRADE_FREE_TEXT_ERROR),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -74,8 +72,6 @@ function buildFormValues(trade: Trade): FormValues {
     result: trade.result ?? null,
     buy_reason: trade.buy_reason ?? "",
     sell_reason: trade.sell_reason ?? "",
-    reflection_note: trade.reflection_note ?? "",
-    improvement_note: trade.improvement_note ?? "",
   };
 }
 
@@ -129,8 +125,6 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
     quantity: liveQty,
     buy_reason: buyReason,
     sell_reason: sellReason,
-    reflection_note: reflectionNote,
-    improvement_note: improvementNote,
   } = watch();
   const liveTotal = livePrice * liveQty;
   const acc = accounts.find((a) => a.id === trade.account_id);
@@ -155,8 +149,6 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
         result: isSell ? (summary?.result ?? null) : values.result,
         buy_reason: values.buy_reason.trim() || null,
         sell_reason: values.sell_reason.trim() || null,
-        reflection_note: values.reflection_note.trim() || null,
-        improvement_note: values.improvement_note.trim() || null,
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.trade(trade.id) }),
@@ -357,25 +349,19 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                             </div>
                           </div>
                         )}
-                        {summary?.holdingDays != null && (
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[12px] text-muted-foreground">
-                              보유 {summary.holdingDays}일
-                              {summary.strategyEvaluation && ` · ${STRATEGY_LABELS[summary.strategyEvaluation.actual] ?? summary.strategyEvaluation.actual}`}
-                            </span>
-                            {summary.strategyEvaluation && summary.strategyEvaluation.adherence !== "UNKNOWN" && (
-                              <span className={cn(
-                                "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold border",
-                                ADHERENCE_CONFIG[summary.strategyEvaluation.adherence].className,
-                              )}>
-                                {summary.strategyEvaluation.planned && `계획: ${STRATEGY_LABELS[summary.strategyEvaluation.planned] ?? summary.strategyEvaluation.planned} · `}
-                                {ADHERENCE_CONFIG[summary.strategyEvaluation.adherence].label}
-                              </span>
-                            )}
-                          </div>
-                        )}
                       </>
                     )}
+                  </div>
+                )}
+
+                {/* 보유 정보 (매도) */}
+                {isSell && (
+                  <div className="mb-5">
+                    <TradeHoldingSection
+                      tradedAt={trade.traded_at}
+                      holdingDays={summary?.holdingDays ?? null}
+                      strategyEvaluation={summary?.strategyEvaluation ?? null}
+                    />
                   </div>
                 )}
 
@@ -474,33 +460,6 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                   </div>
                 )}
 
-                {/* 잘한 점 (매도) */}
-                {isSell && (
-                  <div className="mb-5">
-                    <TradeFreeTextField
-                      id="edit_reflection_note"
-                      label="잘한 점 / 배운 점"
-                      valueLength={(reflectionNote ?? "").length}
-                      {...register("reflection_note")}
-                      placeholder="이번 거래에서 잘한 점이나 배운 것을 기록해보세요"
-                      rows={3}
-                    />
-                  </div>
-                )}
-
-                {/* 개선할 점 (매도) */}
-                {isSell && (
-                  <div className="mb-5">
-                    <TradeFreeTextField
-                      id="edit_improvement_note"
-                      label="개선할 점 / 다음에는"
-                      valueLength={(improvementNote ?? "").length}
-                      {...register("improvement_note")}
-                      placeholder="다음 거래에서 개선하고 싶은 점을 적어주세요"
-                      rows={3}
-                    />
-                  </div>
-                )}
               </div>
 
               {firstError && <p className="text-sm text-destructive">{firstError}</p>}

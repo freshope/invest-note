@@ -19,8 +19,6 @@ function makeTrade(overrides: Partial<Trade> & { id: string; trade_type: Trade["
     sell_reason: null,
     emotion: null,
     result: null,
-    reflection_note: null,
-    improvement_note: null,
     profit_loss: null,
     avg_buy_price: null,
     holding_days: null,
