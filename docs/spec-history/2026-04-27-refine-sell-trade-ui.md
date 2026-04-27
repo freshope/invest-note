@@ -1,3 +1,5 @@
+> 완료: 2026-04-27
+
 # Spec: 매도 거래 UI 개선 (보유 정보 섹션 강화 + 회고 필드 정리 + 자동입력 라벨)
 
 ## 배경 / 문제
@@ -60,28 +62,28 @@ ALTER TABLE trades
 
 ## 구현 체크리스트
 
-- [ ] 1. 백엔드: `trade_types.py`에서 두 필드 제거
-- [ ] 2. 백엔드: `trades_repo.py`의 `_PATCH_ALLOWED`/INSERT 정리
-- [ ] 3. 백엔드: `routers/portfolio.py` SELECT 컬럼 정리
-- [ ] 4. 백엔드: `domain/portfolio.py` `last_note` fallback 단순화
-- [ ] 5. 백엔드: `schemas/trade.py` `TradeUpdate`/`_free_text_max_len` 정리
-- [ ] 6. 백엔드: `domain/analysis/profile.py` `sell_reason` 기반 재정의
-- [ ] 7. 백엔드: `domain/analysis/aggregate.py` `reflectionRate` 입력 교체
-- [ ] 8. 백엔드: pytest fixture/assertion 정리
-- [ ] 9. DB: 마이그레이션 012 작성
-- [ ] 10. 프론트엔드 타입: `types/database.ts`, `lib/api-client.ts` 두 필드 제거
-- [ ] 11. 프론트엔드 분석: `lib/analysis/profile.ts`, `lib/analysis/aggregate.ts` 입력 교체
-- [ ] 12. 프론트엔드 분석 테스트 갱신
-- [ ] 13. UI: `TradeHoldingSection.tsx` 신규 작성
-- [ ] 14. UI: `TradeMetaSellForm.tsx` 적용
-- [ ] 15. UI: `TradeEditPanel.tsx` 적용
-- [ ] 16. UI: `TradeDetail.tsx` 적용
-- [ ] 17. UI: `TradeBasicForm.tsx` 종목코드 라벨 "(자동입력)" 추가
-- [ ] 18. UI 테스트: `TradeFreeTextField.test.tsx` 라벨 교체
-- [ ] 19. grep 0 매칭 확인: `reflection_note|improvement_note|잘한 점|개선할 점`
-- [ ] 20. 검증: `pnpm tsc --noEmit && pnpm test`
-- [ ] 21. 검증: `poetry run pytest -q`
-- [ ] 22. 수동 확인: 매수 등록, 매도 등록 → meta, 거래 상세(매도), 거래 수정(매도)
+- [x] 1. 백엔드: `trade_types.py`에서 두 필드 제거
+- [x] 2. 백엔드: `trades_repo.py`의 `_PATCH_ALLOWED`/INSERT 정리
+- [x] 3. 백엔드: `routers/portfolio.py` SELECT 컬럼 정리
+- [x] 4. 백엔드: `domain/portfolio.py` `last_note` fallback 단순화
+- [x] 5. 백엔드: `schemas/trade.py` `TradeUpdate`/`_free_text_max_len` 정리
+- [x] 6. 백엔드: `domain/analysis/profile.py` `sell_reason` 기반 재정의
+- [x] 7. 백엔드: `domain/analysis/aggregate.py` `reflectionRate` 입력 교체
+- [x] 8. 백엔드: pytest fixture/assertion 정리
+- [x] 9. DB: 마이그레이션 012 작성
+- [x] 10. 프론트엔드 타입: `types/database.ts`, `lib/api-client.ts` 두 필드 제거
+- [x] 11. 프론트엔드 분석: `lib/analysis/profile.ts`, `lib/analysis/aggregate.ts` 입력 교체
+- [x] 12. 프론트엔드 분석 테스트 갱신
+- [x] 13. UI: `TradeHoldingSection.tsx` 신규 작성
+- [x] 14. UI: `TradeMetaSellForm.tsx` 적용
+- [x] 15. UI: `TradeEditPanel.tsx` 적용
+- [x] 16. UI: `TradeDetail.tsx` 적용
+- [x] 17. UI: `TradeBasicForm.tsx` 종목코드 라벨 "(자동입력)" 추가
+- [x] 18. UI 테스트: `TradeFreeTextField.test.tsx` 라벨 교체
+- [x] 19. grep 0 매칭 확인: `reflection_note|improvement_note|잘한 점|개선할 점`
+- [x] 20. 검증: `pnpm tsc --noEmit && pnpm test`
+- [x] 21. 검증: `poetry run pytest -q`
+- [x] 22. 수동 확인: 매수 등록, 매도 등록 → meta, 거래 상세(매도), 거래 수정(매도)
 
 ## 우려사항 / 리스크
 
