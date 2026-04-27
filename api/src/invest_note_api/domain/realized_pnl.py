@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Literal
 
 from invest_note_api.domain.trade_types import (
     DEFAULT_COUNTRY,
+    STRATEGY_UNKNOWN,
     TRADE_TYPE_BUY,
     TRADE_TYPE_SELL,
+    StrategyType,
     Trade,
 )
+from invest_note_api.domain.trade_utils import MS_PER_DAY, to_kst
 
 
 @dataclass(frozen=True)
@@ -62,8 +66,26 @@ def _sell_pnl(trade: Trade, avg_cost: float, cost_qty: float | None = None) -> f
 class GroupPnLEntry:
     profit_loss: float
     avg_buy_price: float
+    holding_days: int | None
+    strategy_type: StrategyType | None
     matched_qty: float
     running_qty_after: float
+
+
+def _strategy_from_consumed(consumed: list[tuple[StrategyType | None, float, int]]) -> StrategyType | None:
+    if not consumed:
+        return None
+
+    by_strategy: dict[str, dict] = {}
+    for strategy, qty, order in consumed:
+        key = strategy or STRATEGY_UNKNOWN
+        if key not in by_strategy:
+            by_strategy[key] = {"qty": 0.0, "order": order}
+        by_strategy[key]["qty"] += qty
+        by_strategy[key]["order"] = min(by_strategy[key]["order"], order)
+
+    selected = sorted(by_strategy.items(), key=lambda item: (-item[1]["qty"], item[1]["order"]))[0][0]
+    return selected  # type: ignore[return-value]
 
 
 def compute_group_pnl(trades: list[Trade], key: TradeGroupKey) -> dict[str, GroupPnLEntry]:
@@ -73,17 +95,48 @@ def compute_group_pnl(trades: list[Trade], key: TradeGroupKey) -> dict[str, Grou
     result: dict[str, GroupPnLEntry] = {}
     running_qty = 0.0
     running_cost = 0.0
+    fifo_lots: list[dict] = []
+    buy_order = 0
 
     for trade in group:
         if trade.trade_type == TRADE_TYPE_BUY:
             running_qty += trade.quantity
             running_cost += trade.price * trade.quantity
+            fifo_lots.append({
+                "qty": trade.quantity,
+                "time_ms": int(to_kst(trade.traded_at).timestamp() * 1000),
+                "strategy": trade.strategy_type,
+                "order": buy_order,
+            })
+            buy_order += 1
         else:
             avg_cost = running_cost / running_qty if running_qty > 0 else 0.0
             matched_qty = min(trade.quantity, running_qty)
+            remaining = trade.quantity
+            sell_time_ms = int(to_kst(trade.traded_at).timestamp() * 1000)
+            weighted_ms = 0.0
+            total_consumed = 0.0
+            consumed: list[tuple[StrategyType | None, float, int]] = []
+            while remaining > 0 and fifo_lots:
+                slot = fifo_lots[0]
+                consume = min(slot["qty"], remaining)
+                weighted_ms += (sell_time_ms - slot["time_ms"]) * consume
+                total_consumed += consume
+                consumed.append((slot["strategy"], consume, slot["order"]))
+                slot["qty"] -= consume
+                remaining -= consume
+                if slot["qty"] <= 0:
+                    fifo_lots.pop(0)
+            holding_days = (
+                math.floor(weighted_ms / total_consumed / MS_PER_DAY + 0.5)
+                if total_consumed > 0
+                else None
+            )
             result[trade.id] = GroupPnLEntry(
                 profit_loss=_sell_pnl(trade, avg_cost, matched_qty),
                 avg_buy_price=avg_cost,
+                holding_days=holding_days,
+                strategy_type=_strategy_from_consumed(consumed),
                 matched_qty=matched_qty,
                 running_qty_after=max(0.0, running_qty - trade.quantity),
             )

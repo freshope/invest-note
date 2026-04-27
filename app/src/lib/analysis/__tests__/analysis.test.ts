@@ -32,6 +32,7 @@ function makeTrade(overrides: Partial<Trade> & { id: string; trade_type: Trade["
     improvement_note: null,
     profit_loss: null,
     avg_buy_price: null,
+    holding_days: null,
     country_code: "KR",
     exchange: "",
     commission: 0,
@@ -103,43 +104,40 @@ describe("computeRealizedPnL", () => {
 // ── computeHoldingDays ──────────────────────────────────────
 
 describe("computeHoldingDays", () => {
-  it("단순 매수 → 매도 보유일 계산", () => {
+  it("SELL에 저장된 보유일을 반환", () => {
     const trades: Trade[] = [
       makeTrade({ id: "b1", trade_type: "BUY", quantity: 10, traded_at: "2024-01-01T09:00:00+09:00" }),
-      makeTrade({ id: "s1", trade_type: "SELL", quantity: 10, traded_at: "2024-01-11T09:00:00+09:00" }),
+      makeTrade({ id: "s1", trade_type: "SELL", quantity: 10, holding_days: 10, traded_at: "2024-01-11T09:00:00+09:00" }),
     ];
     const map = computeHoldingDays(trades);
-    expect(map.get("s1")).toBe(10); // 10일 보유
+    expect(map.get("s1")).toBe(10);
   });
 
-  it("부분 매도 FIFO 가중평균 보유일", () => {
+  it("저장값이 없는 SELL은 포함하지 않음", () => {
     const trades: Trade[] = [
       makeTrade({ id: "b1", trade_type: "BUY", quantity: 5, traded_at: "2024-01-01T09:00:00+09:00" }),
       makeTrade({ id: "b2", trade_type: "BUY", quantity: 5, traded_at: "2024-01-11T09:00:00+09:00" }),
       makeTrade({ id: "s1", trade_type: "SELL", quantity: 10, traded_at: "2024-01-21T09:00:00+09:00" }),
     ];
     const map = computeHoldingDays(trades);
-    // b1: 20일 * 5주, b2: 10일 * 5주 → 가중평균 = (20*5 + 10*5) / 10 = 15일
-    expect(map.get("s1")).toBe(15);
+    expect(map.has("s1")).toBe(false);
   });
 
-  it("매수 없이 매도 시 0일 반환", () => {
+  it("매수 없이 매도해도 저장값이 없으면 포함하지 않음", () => {
     const trades: Trade[] = [
       makeTrade({ id: "s1", trade_type: "SELL", quantity: 5 }),
     ];
     const map = computeHoldingDays(trades);
-    expect(map.get("s1")).toBe(0);
+    expect(map.has("s1")).toBe(false);
   });
 
-  it("기간 이전 매수를 포함한 FIFO (allTrades 주입 패턴)", () => {
-    // 2023년 매수, 2024년 매도 — allTrades로 불러야 올바른 보유일 계산
+  it("기간 이전 매수 여부와 관계없이 저장된 SELL 보유일만 사용", () => {
     const trades: Trade[] = [
       makeTrade({ id: "b1", trade_type: "BUY", quantity: 10, traded_at: "2023-06-01T09:00:00+09:00" }),
-      makeTrade({ id: "s1", trade_type: "SELL", quantity: 10, traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "s1", trade_type: "SELL", quantity: 10, holding_days: 214, traded_at: "2024-01-01T09:00:00+09:00" }),
     ];
     const map = computeHoldingDays(trades);
-    // 약 214일 (2023-06-01 → 2024-01-01)
-    expect(map.get("s1")).toBeGreaterThan(200);
+    expect(map.get("s1")).toBe(214);
   });
 });
 
@@ -180,48 +178,41 @@ describe("computeConcentration", () => {
   });
 });
 
-// ── computeHoldingDays — FIFO multi-sell ─────────────────
+// ── computeHoldingDays — stored multi-sell ─────────────────
 
-describe("computeHoldingDays — FIFO 연속 매도", () => {
-  it("분할 매도: 각 매도가 FIFO 순서로 정확한 보유일 계산", () => {
-    // b1(5주, 1/1) → b2(5주, 1/11) → s1(5주, 1/21) → s2(5주, 1/21)
-    // s1: b1 5주 소비 → (21-1)=20일
-    // s2: b2 5주 소비 → (21-11)=10일
+describe("computeHoldingDays — 저장된 연속 매도", () => {
+  it("분할 매도: 각 SELL의 저장 보유일을 그대로 반환", () => {
     const trades: Trade[] = [
       makeTrade({ id: "b1", trade_type: "BUY",  quantity: 5, traded_at: "2024-01-01T09:00:00+09:00" }),
       makeTrade({ id: "b2", trade_type: "BUY",  quantity: 5, traded_at: "2024-01-11T09:00:00+09:00" }),
-      makeTrade({ id: "s1", trade_type: "SELL", quantity: 5, traded_at: "2024-01-21T09:00:00+09:00" }),
-      makeTrade({ id: "s2", trade_type: "SELL", quantity: 5, traded_at: "2024-01-21T09:00:00+09:00" }),
+      makeTrade({ id: "s1", trade_type: "SELL", quantity: 5, holding_days: 20, traded_at: "2024-01-21T09:00:00+09:00" }),
+      makeTrade({ id: "s2", trade_type: "SELL", quantity: 5, holding_days: 10, traded_at: "2024-01-21T09:00:00+09:00" }),
     ];
     const map = computeHoldingDays(trades);
-    expect(map.get("s1")).toBe(20); // b1 lot 소비
-    expect(map.get("s2")).toBe(10); // b2 lot 소비
+    expect(map.get("s1")).toBe(20);
+    expect(map.get("s2")).toBe(10);
   });
 
-  it("매도 수량이 첫 lot을 가로질러 두 lot 소비", () => {
-    // b1(3주, 1/1) → b2(7주, 1/11) → s1(10주, 1/21)
-    // s1: b1 3주(20일) + b2 7주(10일) → 가중평균 = (3*20 + 7*10)/10 = (60+70)/10 = 13일
+  it("저장된 가중평균 보유일을 그대로 반환", () => {
     const trades: Trade[] = [
       makeTrade({ id: "b1", trade_type: "BUY",  quantity: 3, traded_at: "2024-01-01T09:00:00+09:00" }),
       makeTrade({ id: "b2", trade_type: "BUY",  quantity: 7, traded_at: "2024-01-11T09:00:00+09:00" }),
-      makeTrade({ id: "s1", trade_type: "SELL", quantity: 10, traded_at: "2024-01-21T09:00:00+09:00" }),
+      makeTrade({ id: "s1", trade_type: "SELL", quantity: 10, holding_days: 13, traded_at: "2024-01-21T09:00:00+09:00" }),
     ];
     const map = computeHoldingDays(trades);
     expect(map.get("s1")).toBe(13);
   });
 
-  it("큐 소진 후 추가 매수 → 재적립 후 매도", () => {
-    // b1(5주) → s1(5주) → b2(5주) → s2(5주)
-    // s1은 b1만 소비, s2는 b2만 소비
+  it("저장값이 있는 SELL만 결과에 포함", () => {
     const trades: Trade[] = [
       makeTrade({ id: "b1", trade_type: "BUY",  quantity: 5, traded_at: "2024-01-01T09:00:00+09:00" }),
-      makeTrade({ id: "s1", trade_type: "SELL", quantity: 5, traded_at: "2024-01-11T09:00:00+09:00" }),
+      makeTrade({ id: "s1", trade_type: "SELL", quantity: 5, holding_days: 10, traded_at: "2024-01-11T09:00:00+09:00" }),
       makeTrade({ id: "b2", trade_type: "BUY",  quantity: 5, traded_at: "2024-02-01T09:00:00+09:00" }),
       makeTrade({ id: "s2", trade_type: "SELL", quantity: 5, traded_at: "2024-02-11T09:00:00+09:00" }),
     ];
     const map = computeHoldingDays(trades);
     expect(map.get("s1")).toBe(10);
-    expect(map.get("s2")).toBe(10);
+    expect(map.has("s2")).toBe(false);
   });
 });
 
@@ -298,6 +289,65 @@ describe("computeSummary", () => {
     expect(s.byTag).toHaveLength(0);
   });
 
+  it("byStrategy와 strategyAdherence는 SELL 계획 전략과 보유일 기준으로 계산", () => {
+    const buy = makeTrade({
+      id: "b1",
+      trade_type: "BUY",
+      strategy_type: "LONG_TERM",
+      traded_at: "2024-01-01T09:00:00+09:00",
+    });
+    const sell = makeTrade({
+      id: "s1",
+      trade_type: "SELL",
+      strategy_type: "LONG_TERM",
+      result: "SUCCESS",
+      traded_at: "2024-01-02T09:00:00+09:00",
+    });
+    const s = computeSummary([buy, sell], new Map([["s1", 10000]]), new Map([["s1", 1]]));
+    expect(s.byStrategy[0].type).toBe("LONG_TERM");
+    expect(s.strategyAdherenceRate).toBe(0);
+    expect(s.byStrategyAdherence[0].type).toBe("DEVIATED");
+    expect(s.byStrategyAdherence[0].winRate).toBe(100);
+  });
+
+  it("holding_days가 없어도 byStrategy는 SELL 전략 버킷을 유지", () => {
+    const sell = makeTrade({
+      id: "s1",
+      trade_type: "SELL",
+      strategy_type: "SWING",
+      result: "SUCCESS",
+      traded_at: "2024-01-02T09:00:00+09:00",
+    });
+    const s = computeSummary([sell], new Map([["s1", 10000]]), emptyMaps.holdingDaysMap);
+    expect(s.byStrategy[0].type).toBe("SWING");
+    expect(s.byStrategy[0].avgHoldingDays).toBe(0);
+    expect(s.strategyAdherenceRate).toBe(0);
+  });
+
+  it("strategyAdherence는 SELL에 저장된 전략과 보유일을 사용", () => {
+    const buy = makeTrade({
+      id: "b1",
+      trade_type: "BUY",
+      ticker_symbol: "",
+      strategy_type: "SWING",
+      traded_at: "2024-01-01T09:00:00+09:00",
+    });
+    const sell = makeTrade({
+      id: "s1",
+      trade_type: "SELL",
+      ticker_symbol: "005930",
+      strategy_type: "SWING",
+      holding_days: 9,
+      result: "SUCCESS",
+      traded_at: "2024-01-10T09:00:00+09:00",
+    });
+    const s = computeSummary([buy, sell], new Map([["s1", 10000]]), emptyMaps.holdingDaysMap);
+    expect(s.byStrategy[0].type).toBe("SWING");
+    expect(s.byStrategy[0].avgHoldingDays).toBe(9);
+    expect(s.strategyAdherenceRate).toBe(100);
+    expect(s.byStrategyAdherence[0].type).toBe("FOLLOWED");
+  });
+
   it("missingTagRate: 태그 없는 BUY 비율", () => {
     const trades: Trade[] = [
       makeTrade({ id: "b1", trade_type: "BUY", reasoning_tags: [] }),
@@ -349,6 +399,8 @@ describe("evaluateRules", () => {
       feelingRate: 0,
       reflectionRate: 50,
       resultInputRate: 80,
+      strategyAdherenceRate: 0,
+      byStrategyAdherence: [],
       ...overrides,
     };
   }
@@ -652,13 +704,15 @@ describe("sortForCalc", () => {
 describe("computeGroupPnL", () => {
   it("단순 매수 → 매도 그룹 계산", () => {
     const trades: Trade[] = [
-      makeTrade({ id: "b1", trade_type: "BUY",  price: 70000, quantity: 10, traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "b1", trade_type: "BUY",  price: 70000, quantity: 10, strategy_type: "LONG_TERM", traded_at: "2024-01-01T09:00:00+09:00" }),
       makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 10, traded_at: "2024-02-01T09:00:00+09:00" }),
     ];
     const key = { ticker: "005930", assetName: "삼성전자", country: "KR", accountId: "a1" };
     const result = computeGroupPnL(trades, key);
     expect(result.get("s1")?.profit_loss).toBe(100000);
     expect(result.get("s1")?.avg_buy_price).toBe(70000);
+    expect(result.get("s1")?.holding_days).toBe(31);
+    expect(result.get("s1")?.strategy_type).toBe("LONG_TERM");
     expect(result.get("s1")?.matched_qty).toBe(10);
     expect(result.get("s1")?.running_qty_after).toBe(0);
   });
@@ -673,6 +727,17 @@ describe("computeGroupPnL", () => {
     const result = computeGroupPnL(trades, key);
     // WAC = (60000*10 + 80000*10) / 20 = 70000
     expect(result.get("s1")?.avg_buy_price).toBe(70000);
+  });
+
+  it("전략은 소비된 BUY lot 중 수량이 가장 큰 전략을 반환", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY", price: 60000, quantity: 4, strategy_type: "SCALPING", traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "b2", trade_type: "BUY", price: 80000, quantity: 6, strategy_type: "SWING", traded_at: "2024-01-02T09:00:00+09:00" }),
+      makeTrade({ id: "s1", trade_type: "SELL", price: 90000, quantity: 10, traded_at: "2024-02-01T09:00:00+09:00" }),
+    ];
+    const key = { ticker: "005930", assetName: "삼성전자", country: "KR", accountId: "a1" };
+    const result = computeGroupPnL(trades, key);
+    expect(result.get("s1")?.strategy_type).toBe("SWING");
   });
 
   it("다른 그룹 거래는 계산에 포함하지 않음", () => {

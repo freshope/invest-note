@@ -19,6 +19,7 @@ def _make_trade_row(
     traded_at=None,
     profit_loss=None,
     avg_buy_price=None,
+    holding_days=None,
     strategy_type=None,
     emotion=None,
     result=None,
@@ -50,6 +51,7 @@ def _make_trade_row(
         "improvement_note": None,
         "profit_loss": profit_loss,
         "avg_buy_price": avg_buy_price,
+        "holding_days": holding_days,
         "country_code": country_code,
         "exchange": "",
         "commission": 0.0,
@@ -74,7 +76,7 @@ class TestAnalysisSummary:
         assert data["byStrategy"] == []
 
     def test_buy_and_sell(self, trades_client):
-        buy = _make_trade_row(id_="b1", trade_type="BUY", price=70000.0, quantity=10.0)
+        buy = _make_trade_row(id_="b1", trade_type="BUY", price=70000.0, quantity=10.0, strategy_type="SWING")
         sell = _make_trade_row(
             id_="s1",
             trade_type="SELL",
@@ -97,6 +99,8 @@ class TestAnalysisSummary:
         assert data["totalProfitLoss"] == pytest.approx(50000.0, rel=1e-6)
         assert len(data["byStrategy"]) == 1
         assert data["byStrategy"][0]["type"] == "SWING"
+        assert data["strategyAdherenceRate"] == 100.0
+        assert data["byStrategyAdherence"][0]["type"] == "FOLLOWED"
 
     def test_period_filter(self, trades_client):
         old_buy = _make_trade_row(id_="b1", traded_at=_dt("2024-01-01T09:00:00+09:00"))
@@ -202,7 +206,7 @@ class TestAnalysisSuggestions:
 
     def test_losing_strategy_appears(self, trades_client):
         trades = [
-            _make_trade_row(id_=f"b{i}", trade_type="BUY")
+            _make_trade_row(id_=f"b{i}", trade_type="BUY", strategy_type="SCALPING")
             for i in range(6)
         ] + [
             _make_trade_row(
@@ -223,7 +227,7 @@ class TestAnalysisSuggestions:
 
     def test_severity_order(self, trades_client):
         trades = [
-            _make_trade_row(id_=f"b{i}", trade_type="BUY")
+            _make_trade_row(id_=f"b{i}", trade_type="BUY", strategy_type="SCALPING")
             for i in range(6)
         ] + [
             _make_trade_row(

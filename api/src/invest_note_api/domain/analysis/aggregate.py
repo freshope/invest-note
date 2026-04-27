@@ -12,6 +12,7 @@ from invest_note_api.domain.trade_types import (
     TRADE_TYPE_BUY,
     TRADE_TYPE_SELL,
 )
+from invest_note_api.domain.analysis.strategy_adherence import build_strategy_evaluations
 
 if TYPE_CHECKING:
     from invest_note_api.domain.trade_types import Trade
@@ -46,6 +47,15 @@ class TagStats:
 
 
 @dataclass
+class StrategyAdherenceStats:
+    type: str
+    count: int
+    result_count: int
+    win_rate: float
+    avg_pnl: float
+
+
+@dataclass
 class AnalysisSummary:
     total_trades: int
     sell_trades: int
@@ -58,6 +68,8 @@ class AnalysisSummary:
     feeling_rate: float = 0.0
     reflection_rate: float = 0.0
     result_input_rate: float = 0.0
+    strategy_adherence_rate: float = 0.0
+    by_strategy_adherence: list[StrategyAdherenceStats] = field(default_factory=list)
 
 
 def _win_rate(results: list[str]) -> float:
@@ -78,17 +90,20 @@ def compute_summary(
     win_rate = (win_count / len(sells_with_result) * 100) if sells_with_result else 0.0
     total_profit_loss = sum(pnl_map.get(t.id, 0.0) for t in sells)
 
-    # byStrategy
+    strategy_evals = build_strategy_evaluations(all_trades or trades, holding_days_map)
+
+    # byStrategy — SELL에 저장된 계획 전략 기준
     strat_map: dict[str, dict] = {}
     for t in sells:
-        key = t.strategy_type or STRATEGY_UNKNOWN
+        evaluation = strategy_evals.get(t.id)
+        key = (evaluation.planned if evaluation else t.strategy_type) or STRATEGY_UNKNOWN
         if key not in strat_map:
             strat_map[key] = {"pnls": [], "results": [], "days": []}
         s = strat_map[key]
         s["pnls"].append(pnl_map.get(t.id, 0.0))
         if t.result:
             s["results"].append(t.result)
-        hd = holding_days_map.get(t.id)
+        hd = evaluation.holding_days if evaluation else holding_days_map.get(t.id)
         if hd is not None:
             s["days"].append(hd)
 
@@ -107,6 +122,40 @@ def compute_summary(
         key=lambda x: x.count,
         reverse=True,
     )
+
+    adherence_map: dict[str, dict] = {}
+    for t in sells:
+        evaluation = strategy_evals.get(t.id)
+        key = evaluation.adherence if evaluation else "UNKNOWN"
+        if key not in adherence_map:
+            adherence_map[key] = {"pnls": [], "results": []}
+        a = adherence_map[key]
+        a["pnls"].append(pnl_map.get(t.id, 0.0))
+        if t.result:
+            a["results"].append(t.result)
+
+    adherence_order = {"FOLLOWED": 0, "DEVIATED": 1, "UNKNOWN": 2}
+    by_strategy_adherence = sorted(
+        [
+            StrategyAdherenceStats(
+                type=k,
+                count=len(a["pnls"]),
+                result_count=len(a["results"]),
+                win_rate=_win_rate(a["results"]),
+                avg_pnl=sum(a["pnls"]) / len(a["pnls"]) if a["pnls"] else 0.0,
+            )
+            for k, a in adherence_map.items()
+        ],
+        key=lambda x: adherence_order.get(x.type, 99),
+    )
+    period_sell_ids = {t.id for t in sells}
+    judged = [
+        e
+        for sell_id, e in strategy_evals.items()
+        if sell_id in period_sell_ids and e is not None and e.adherence != "UNKNOWN"
+    ]
+    followed = sum(1 for e in judged if e.adherence == "FOLLOWED")
+    strategy_adherence_rate = followed / len(judged) * 100 if judged else 0.0
 
     # byEmotion
     emotion_map: dict[str, dict] = {}
@@ -204,4 +253,6 @@ def compute_summary(
         feeling_rate=feeling_rate,
         reflection_rate=reflection_rate,
         result_input_rate=result_input_rate,
+        strategy_adherence_rate=strategy_adherence_rate,
+        by_strategy_adherence=by_strategy_adherence,
     )

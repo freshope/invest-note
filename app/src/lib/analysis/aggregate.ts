@@ -1,5 +1,10 @@
 import type { Trade, ReasoningTag } from "@/types/database";
 import type { Period } from "./period";
+import {
+  evaluateStrategyAdherence,
+  type StrategyAdherence,
+  type StrategyEvaluation,
+} from "./strategy-adherence";
 
 export interface StrategyStats {
   type: string;
@@ -26,6 +31,14 @@ export interface TagStats {
   avgPnL: number;
 }
 
+export interface StrategyAdherenceStats {
+  type: StrategyAdherence;
+  count: number;
+  resultCount: number;
+  winRate: number;
+  avgPnL: number;
+}
+
 export interface AnalysisSummary {
   period?: Period;
   totalTrades: number;
@@ -39,9 +52,21 @@ export interface AnalysisSummary {
   feelingRate: number;
   reflectionRate: number;
   resultInputRate: number;
+  strategyAdherenceRate: number;
+  byStrategyAdherence: StrategyAdherenceStats[];
 }
 
-// pnlMap, holdingDaysMap: allTrades 기준으로 WAC/FIFO 정확도 보장
+function evaluateStrategyForSell(
+  sell: Trade,
+  holdingDays: number | undefined,
+): StrategyEvaluation | null {
+  const effectiveHoldingDays = sell.holding_days ?? holdingDays;
+  if (effectiveHoldingDays == null) return null;
+
+  return evaluateStrategyAdherence(sell.strategy_type, effectiveHoldingDays);
+}
+
+// pnlMap, holdingDaysMap: allTrades 기준으로 저장/백필된 계산값 제공
 // allTrades: byTag 태그 귀속 시 기간 이전 BUY 포함을 위해 필요 (없으면 trades 내 BUY만 사용)
 export function computeSummary(
   trades: Trade[],
@@ -60,16 +85,21 @@ export function computeSummary(
   const winRate = sellsWithResult.length > 0 ? (winCount / sellsWithResult.length) * 100 : 0;
 
   const totalProfitLoss = sells.reduce((sum, t) => sum + (pnlMap.get(t.id) ?? 0), 0);
+  const strategyEvaluations = new Map<string, StrategyEvaluation | null>();
+  for (const sell of sells) {
+    strategyEvaluations.set(sell.id, evaluateStrategyForSell(sell, holdingDaysMap.get(sell.id)));
+  }
 
-  // --- byStrategy ---
+  // --- byStrategy — SELL에 저장된 계획 전략 기준 ---
   const stratMap = new Map<string, { pnls: number[]; results: string[]; days: number[] }>();
   for (const t of sells) {
-    const key = t.strategy_type ?? "UNKNOWN";
+    const evaluation = strategyEvaluations.get(t.id);
+    const key = evaluation?.planned ?? t.strategy_type ?? "UNKNOWN";
     if (!stratMap.has(key)) stratMap.set(key, { pnls: [], results: [], days: [] });
     const s = stratMap.get(key)!;
     s.pnls.push(pnlMap.get(t.id) ?? 0);
     if (t.result) s.results.push(t.result);
-    const hd = holdingDaysMap.get(t.id);
+    const hd = evaluation?.holdingDays ?? holdingDaysMap.get(t.id);
     if (hd != null) s.days.push(hd);
   }
 
@@ -87,6 +117,31 @@ export function computeSummary(
         s.days.length > 0 ? s.days.reduce((a, b) => a + b, 0) / s.days.length : 0,
     }))
     .sort((a, b) => b.count - a.count);
+
+  const adherenceMap = new Map<StrategyAdherenceStats["type"], { pnls: number[]; results: string[] }>();
+  for (const t of sells) {
+    const key = strategyEvaluations.get(t.id)?.adherence ?? "UNKNOWN";
+    if (!adherenceMap.has(key)) adherenceMap.set(key, { pnls: [], results: [] });
+    const a = adherenceMap.get(key)!;
+    a.pnls.push(pnlMap.get(t.id) ?? 0);
+    if (t.result) a.results.push(t.result);
+  }
+  const adherenceOrder: Record<StrategyAdherenceStats["type"], number> = { FOLLOWED: 0, DEVIATED: 1, UNKNOWN: 2 };
+  const byStrategyAdherence: StrategyAdherenceStats[] = Array.from(adherenceMap.entries())
+    .map(([type, a]) => ({
+      type,
+      count: a.pnls.length,
+      resultCount: a.results.length,
+      winRate:
+        a.results.length > 0
+          ? (a.results.filter((r) => r === "SUCCESS").length / a.results.length) * 100
+          : 0,
+      avgPnL: a.pnls.length > 0 ? a.pnls.reduce((x, y) => x + y, 0) / a.pnls.length : 0,
+    }))
+    .sort((a, b) => adherenceOrder[a.type] - adherenceOrder[b.type]);
+  const judged = Array.from(strategyEvaluations.values()).filter((e) => e && e.adherence !== "UNKNOWN");
+  const strategyAdherenceRate =
+    judged.length > 0 ? (judged.filter((e) => e?.adherence === "FOLLOWED").length / judged.length) * 100 : 0;
 
   // --- byEmotion ---
   // count: BUY+SELL 전체 감정 노출 빈도
@@ -194,5 +249,7 @@ export function computeSummary(
     feelingRate,
     reflectionRate,
     resultInputRate,
+    strategyAdherenceRate,
+    byStrategyAdherence,
   };
 }

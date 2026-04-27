@@ -7,6 +7,7 @@ import { SummaryCards } from "./SummaryCards";
 import { InsightHighlights } from "./InsightHighlights";
 import { EmotionBreakdown } from "./EmotionBreakdown";
 import { StrategyBreakdown } from "./StrategyBreakdown";
+import { StrategyAdherencePanel } from "./StrategyAdherencePanel";
 import { ReasoningBreakdown } from "./ReasoningBreakdown";
 import { BehaviorRadar } from "./BehaviorRadar";
 import { DiversificationPanel } from "./DiversificationPanel";
@@ -111,8 +112,17 @@ export function AnalysisDashboard() {
 
             {/* 섹션 5: 전략별 성과 */}
             {summary.byStrategy.length > 0 && (
-              <SectionCard title="전략별 성과">
+              <SectionCard title="계획 전략별 성과">
                 <StrategyBreakdown data={summary.byStrategy} />
+              </SectionCard>
+            )}
+
+            {(summary.byStrategyAdherence.length > 0 || summary.strategyAdherenceRate > 0) && (
+              <SectionCard title="전략 준수 분석">
+                <StrategyAdherencePanel
+                  rate={summary.strategyAdherenceRate}
+                  data={summary.byStrategyAdherence}
+                />
               </SectionCard>
             )}
 
