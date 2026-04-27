@@ -1,4 +1,4 @@
-import type { Trade } from "@/types/database";
+import type { StrategyType, Trade } from "@/types/database";
 
 export type TradeGroupKey = {
   ticker: string | null;
@@ -17,6 +17,8 @@ export type Mutation =
 export type GroupPnLEntry = {
   profit_loss: number;
   avg_buy_price: number;
+  holding_days: number | null;
+  strategy_type: StrategyType | null;
   matched_qty: number;
   running_qty_after: number;
 };
@@ -62,6 +64,26 @@ export function sellPnL(trade: Trade, avgCost: number, costQty?: number): number
   return trade.price * qty - avgCost * qty - trade.commission - trade.tax;
 }
 
+function strategyFromConsumed(
+  consumed: { strategy: StrategyType | null; qty: number; order: number }[],
+): StrategyType | null {
+  if (consumed.length === 0) return null;
+
+  const byStrategy = new Map<StrategyType, { qty: number; order: number }>();
+  for (const item of consumed) {
+    const key = item.strategy ?? "UNKNOWN";
+    const current = byStrategy.get(key) ?? { qty: 0, order: item.order };
+    current.qty += item.qty;
+    current.order = Math.min(current.order, item.order);
+    byStrategy.set(key, current);
+  }
+
+  return Array.from(byStrategy.entries()).sort((a, b) => {
+    const qtyDiff = b[1].qty - a[1].qty;
+    return qtyDiff !== 0 ? qtyDiff : a[1].order - b[1].order;
+  })[0][0];
+}
+
 export function computeGroupPnL(
   trades: Trade[],
   key: TradeGroupKey,
@@ -72,17 +94,45 @@ export function computeGroupPnL(
 
   let runningQty = 0;
   let runningCost = 0;
+  const fifoLots: { qty: number; timeMs: number; strategy: StrategyType | null; order: number }[] = [];
+  let buyOrder = 0;
 
   for (const trade of group) {
     if (trade.trade_type === "BUY") {
       runningQty += trade.quantity;
       runningCost += trade.price * trade.quantity;
+      fifoLots.push({
+        qty: trade.quantity,
+        timeMs: new Date(trade.traded_at).getTime(),
+        strategy: trade.strategy_type,
+        order: buyOrder,
+      });
+      buyOrder += 1;
     } else {
       const avgCost = runningQty > 0 ? runningCost / runningQty : 0;
       const matchedQty = Math.min(trade.quantity, runningQty);
+      let remaining = trade.quantity;
+      const sellTime = new Date(trade.traded_at).getTime();
+      let weightedMs = 0;
+      let totalConsumed = 0;
+      const consumed: { strategy: StrategyType | null; qty: number; order: number }[] = [];
+      while (remaining > 0 && fifoLots.length > 0) {
+        const slot = fifoLots[0];
+        const consume = Math.min(slot.qty, remaining);
+        weightedMs += (sellTime - slot.timeMs) * consume;
+        totalConsumed += consume;
+        consumed.push({ strategy: slot.strategy, qty: consume, order: slot.order });
+        slot.qty -= consume;
+        remaining -= consume;
+        if (slot.qty <= 0) fifoLots.shift();
+      }
+      const holdingDays =
+        totalConsumed > 0 ? Math.floor(weightedMs / totalConsumed / (1000 * 60 * 60 * 24) + 0.5) : null;
       result.set(trade.id, {
         profit_loss: sellPnL(trade, avgCost, matchedQty),
         avg_buy_price: avgCost,
+        holding_days: holdingDays,
+        strategy_type: strategyFromConsumed(consumed),
         matched_qty: matchedQty,
         running_qty_after: Math.max(0, runningQty - trade.quantity),
       });

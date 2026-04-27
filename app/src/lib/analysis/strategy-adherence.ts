@@ -10,7 +10,7 @@ export interface StrategyEvaluation {
   adherence: StrategyAdherence;
 }
 
-// FIFO 가중평균 보유일수 → 실제 전략 역산
+// 저장된 보유일수 → 실제 전략 역산
 export function inferActualStrategy(holdingDays: number): StrategyType {
   if (holdingDays <= STRATEGY_THRESHOLDS.SCALPING_MAX_DAYS) return "SCALPING";
   if (holdingDays <= STRATEGY_THRESHOLDS.SWING_MAX_DAYS) return "SWING";

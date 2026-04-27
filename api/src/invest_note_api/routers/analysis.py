@@ -117,6 +117,17 @@ async def get_analysis_summary(
             }
             for t in summary.by_tag
         ],
+        "strategyAdherenceRate": summary.strategy_adherence_rate,
+        "byStrategyAdherence": [
+            {
+                "type": s.type,
+                "count": s.count,
+                "resultCount": s.result_count,
+                "winRate": s.win_rate,
+                "avgPnL": s.avg_pnl,
+            }
+            for s in summary.by_strategy_adherence
+        ],
         "missingTagRate": summary.missing_tag_rate,
         "feelingRate": summary.feeling_rate,
         "reflectionRate": summary.reflection_rate,

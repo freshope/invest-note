@@ -40,6 +40,7 @@ def make_trade(**kwargs) -> Trade:
         improvement_note=None,
         profit_loss=None,
         avg_buy_price=None,
+        holding_days=None,
         country_code="KR",
         exchange="",
         commission=0.0,
@@ -72,12 +73,21 @@ class TestComputeGroupPnL:
 
     def test_simple_buy_sell(self):
         trades = [
-            make_trade(id="b1", trade_type="BUY", price=70000, quantity=10, traded_at=_dt("2024-01-01T09:00:00+09:00")),
+            make_trade(
+                id="b1",
+                trade_type="BUY",
+                price=70000,
+                quantity=10,
+                strategy_type="LONG_TERM",
+                traded_at=_dt("2024-01-01T09:00:00+09:00"),
+            ),
             make_trade(id="s1", trade_type="SELL", price=80000, quantity=10, traded_at=_dt("2024-02-01T09:00:00+09:00")),
         ]
         result = compute_group_pnl(trades, self._key())
         assert pytest.approx(result["s1"].profit_loss) == 100000.0
         assert pytest.approx(result["s1"].avg_buy_price) == 70000.0
+        assert result["s1"].holding_days == 31
+        assert result["s1"].strategy_type == "LONG_TERM"
 
     def test_partial_sell(self):
         trades = [
@@ -88,6 +98,31 @@ class TestComputeGroupPnL:
         result = compute_group_pnl(trades, self._key())
         assert pytest.approx(result["s1"].profit_loss) == 50000.0
         assert pytest.approx(result["s2"].profit_loss) == 100000.0
+        assert result["s1"].holding_days == 31
+        assert result["s2"].holding_days == 60
+
+    def test_strategy_type_uses_largest_consumed_buy_lot(self):
+        trades = [
+            make_trade(
+                id="b1",
+                trade_type="BUY",
+                price=60000,
+                quantity=4,
+                strategy_type="SCALPING",
+                traded_at=_dt("2024-01-01T09:00:00+09:00"),
+            ),
+            make_trade(
+                id="b2",
+                trade_type="BUY",
+                price=80000,
+                quantity=6,
+                strategy_type="SWING",
+                traded_at=_dt("2024-01-02T09:00:00+09:00"),
+            ),
+            make_trade(id="s1", trade_type="SELL", price=90000, quantity=10, traded_at=_dt("2024-02-01T09:00:00+09:00")),
+        ]
+        result = compute_group_pnl(trades, self._key())
+        assert result["s1"].strategy_type == "SWING"
 
     def test_commission_and_tax_deducted(self):
         trades = [

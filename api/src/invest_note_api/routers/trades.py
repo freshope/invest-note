@@ -22,23 +22,17 @@ from invest_note_api.db_ops.trades_repo import (
     patch_trade,
 )
 from invest_note_api.domain.holdings import (
-    LotKey,
     SellBreakdown,
     compute_flexible_breakdown,
-    compute_flexible_holding_days,
     compute_total_holding,
-    find_latest_buy_strategy,
 )
+from invest_note_api.domain.analysis.strategy_adherence import evaluate_strategy_for_sell
 from invest_note_api.domain.realized_pnl import trade_to_group_key, validate_mutation
 from invest_note_api.domain.trade_types import (
     DEFAULT_COUNTRY,
     RESULT_BREAKEVEN,
     RESULT_FAIL,
     RESULT_SUCCESS,
-    STRATEGY_LONG_TERM,
-    STRATEGY_SCALPING,
-    STRATEGY_SWING,
-    STRATEGY_UNKNOWN,
     TRADE_TYPE_SELL,
     Trade,
 )
@@ -72,14 +66,6 @@ def _breakdown_dict(bd: SellBreakdown) -> dict:
         "pnl": bd.pnl,
         "isManualInput": bd.is_manual_input,
     }
-
-
-def _infer_strategy(holding_days: int) -> str:
-    if holding_days <= 1:
-        return STRATEGY_SCALPING
-    if holding_days <= 30:
-        return STRATEGY_SWING
-    return STRATEGY_LONG_TERM
 
 
 def _derive_result(pnl: float) -> str:
@@ -226,26 +212,15 @@ async def get_trade_summary(
         all_trades = await list_trades(conn, user.id)
 
     breakdown = compute_flexible_breakdown(sell)
-    holding_days = compute_flexible_holding_days(sell, all_trades)
-
-    ticker = sell.ticker_symbol or sell.asset_name
-    planned_strategy = find_latest_buy_strategy(
-        all_trades,
-        LotKey(ticker=ticker, country=sell.country_code or DEFAULT_COUNTRY, account_id=sell.account_id, asset_name=sell.asset_name),
-    )
-
+    evaluation = evaluate_strategy_for_sell(sell, all_trades, None)
+    holding_days = sell.holding_days
     strategy_eval = None
-    if holding_days is not None:
-        actual = _infer_strategy(holding_days)
-        if not planned_strategy or planned_strategy == STRATEGY_UNKNOWN:
-            adherence = "UNKNOWN"
-        else:
-            adherence = "FOLLOWED" if actual == planned_strategy else "DEVIATED"
+    if evaluation is not None:
         strategy_eval = {
-            "planned": planned_strategy,
-            "actual": actual,
-            "holdingDays": holding_days,
-            "adherence": adherence,
+            "planned": evaluation.planned,
+            "actual": evaluation.actual,
+            "holdingDays": evaluation.holding_days,
+            "adherence": evaluation.adherence,
         }
 
     return {
@@ -312,7 +287,7 @@ async def update_trade(
             key = trade_to_group_key(existing)
             await recalc_group_pnl(conn, fresh_trades, key)
         else:
-            # non-PnL 필드: recalc 불필요, lock 불필요.
+            # 파생 SELL 값에 영향을 주지 않는 메타 필드는 lock/recalc 없이 수정.
             # PNL_AFFECTING_FIELDS에 없는 필드 추가 시 이 분기를 재검토할 것.
             await patch_trade(conn, trade_id, user.id, patch)
 

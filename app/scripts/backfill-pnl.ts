@@ -1,5 +1,5 @@
 /**
- * 기존 SELL 거래 중 profit_loss 또는 avg_buy_price가 null인 항목을 WAC 계산값으로 백필
+ * 기존 SELL 거래 중 profit_loss, avg_buy_price, holding_days, strategy_type이 null인 항목을 계산값으로 백필
  * 배포 전 1회 실행: pnpm tsx scripts/backfill-pnl.ts
  */
 
@@ -36,7 +36,9 @@ async function main() {
 
   const trades = (allTrades ?? []) as Trade[];
   const sellsWithNull = trades.filter(
-    (t) => t.trade_type === "SELL" && (t.profit_loss == null || t.avg_buy_price == null)
+    (t) =>
+      t.trade_type === "SELL" &&
+      (t.profit_loss == null || t.avg_buy_price == null || t.holding_days == null || t.strategy_type == null)
   );
   console.log(`📊 전체 거래: ${trades.length}개, 백필 대상 SELL: ${sellsWithNull.length}개`);
 
@@ -55,11 +57,19 @@ async function main() {
       .values(),
   ];
 
-  const pnlEntryMap = new Map<string, { profit_loss: number; avg_buy_price: number }>();
+  const pnlEntryMap = new Map<
+    string,
+    { profit_loss: number; avg_buy_price: number; holding_days: number | null; strategy_type: Trade["strategy_type"] }
+  >();
   for (const gKey of uniqueGroupKeys) {
     const groupPnL = computeGroupPnL(trades, gKey);
     for (const [id, entry] of groupPnL.entries()) {
-      pnlEntryMap.set(id, { profit_loss: entry.profit_loss, avg_buy_price: entry.avg_buy_price });
+      pnlEntryMap.set(id, {
+        profit_loss: entry.profit_loss,
+        avg_buy_price: entry.avg_buy_price,
+        holding_days: entry.holding_days,
+        strategy_type: entry.strategy_type,
+      });
     }
   }
 
@@ -74,9 +84,16 @@ async function main() {
       continue;
     }
 
-    const patch: Record<string, number> = {};
+    const patch: Partial<Pick<Trade, "profit_loss" | "avg_buy_price" | "holding_days" | "strategy_type">> = {};
     if (sell.profit_loss == null) patch.profit_loss = entry.profit_loss;
     if (sell.avg_buy_price == null) patch.avg_buy_price = entry.avg_buy_price;
+    if (sell.holding_days == null && entry.holding_days != null) patch.holding_days = entry.holding_days;
+    if (sell.strategy_type == null && entry.strategy_type != null) patch.strategy_type = entry.strategy_type;
+
+    if (Object.keys(patch).length === 0) {
+      skipped++;
+      continue;
+    }
 
     const { error: updateError } = await supabase
       .from("trades")

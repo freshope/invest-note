@@ -38,6 +38,7 @@ def make_trade(**kwargs) -> Trade:
         improvement_note=None,
         profit_loss=None,
         avg_buy_price=None,
+        holding_days=None,
         country_code="KR",
         exchange="",
         commission=0.0,
@@ -96,7 +97,13 @@ class TestFilterByPeriod:
 class TestComputeHoldingDaysMap:
     def test_basic_single_sell(self):
         buy = make_trade(id="b1", trade_type="BUY", quantity=10.0, traded_at=_dt("2026-01-01T09:00:00+09:00"))
-        sell = make_trade(id="s1", trade_type="SELL", quantity=10.0, traded_at=_dt("2026-01-11T09:00:00+09:00"))
+        sell = make_trade(
+            id="s1",
+            trade_type="SELL",
+            quantity=10.0,
+            holding_days=10,
+            traded_at=_dt("2026-01-11T09:00:00+09:00"),
+        )
         result = compute_holding_days_map([buy, sell])
         assert result["s1"] == 10
 
@@ -106,7 +113,7 @@ class TestComputeHoldingDaysMap:
     def test_no_buy_before_sell(self):
         sell = make_trade(id="s1", trade_type="SELL", quantity=5.0)
         result = compute_holding_days_map([sell])
-        assert result["s1"] == 0
+        assert result == {}
 
     def test_only_buys(self):
         buy = make_trade(id="b1", trade_type="BUY")
@@ -135,12 +142,92 @@ class TestComputeSummary:
         assert s.total_profit_loss == 50.0
 
     def test_by_strategy(self):
-        buy = make_trade(id="b1", trade_type="BUY")
-        sell = make_trade(id="s1", trade_type="SELL", strategy_type="SWING", result="SUCCESS")
-        s = compute_summary([buy, sell], {"s1": 200.0}, {})
+        buy = make_trade(id="b1", trade_type="BUY", strategy_type="SWING", traded_at=_dt("2026-01-01T09:00:00+09:00"))
+        sell = make_trade(id="s1", trade_type="SELL", strategy_type="SWING", result="SUCCESS", traded_at=_dt("2026-01-10T09:00:00+09:00"))
+        s = compute_summary([buy, sell], {"s1": 200.0}, {"s1": 9})
         assert len(s.by_strategy) == 1
         assert s.by_strategy[0].type == "SWING"
         assert s.by_strategy[0].win_rate == 100.0
+        assert s.strategy_adherence_rate == 100.0
+
+    def test_strategy_adherence_deviated(self):
+        buy = make_trade(id="b1", trade_type="BUY", strategy_type="LONG_TERM", traded_at=_dt("2026-01-01T09:00:00+09:00"))
+        sell = make_trade(id="s1", trade_type="SELL", strategy_type="LONG_TERM", result="SUCCESS", traded_at=_dt("2026-01-02T09:00:00+09:00"))
+        s = compute_summary([buy, sell], {"s1": 200.0}, {"s1": 1})
+        assert s.by_strategy[0].type == "LONG_TERM"
+        assert s.strategy_adherence_rate == 0.0
+        deviated = next(a for a in s.by_strategy_adherence if a.type == "DEVIATED")
+        assert deviated.count == 1
+        assert deviated.win_rate == 100.0
+
+    def test_by_strategy_uses_sell_strategy_without_holding_days(self):
+        sell = make_trade(id="s1", trade_type="SELL", strategy_type="SWING", result="SUCCESS")
+        s = compute_summary([sell], {"s1": 200.0}, {})
+        assert s.by_strategy[0].type == "SWING"
+        assert s.by_strategy[0].avg_holding_days == 0.0
+        assert s.strategy_adherence_rate == 0.0
+
+    def test_by_strategy_uses_sell_strategy(self):
+        b1 = make_trade(id="b1", trade_type="BUY", strategy_type="SCALPING", quantity=4, traded_at=_dt("2026-01-01T09:00:00+09:00"))
+        b2 = make_trade(id="b2", trade_type="BUY", strategy_type="SWING", quantity=6, traded_at=_dt("2026-01-02T09:00:00+09:00"))
+        sell = make_trade(id="s1", trade_type="SELL", strategy_type="LONG_TERM", quantity=10, result="SUCCESS", traded_at=_dt("2026-01-10T09:00:00+09:00"))
+        s = compute_summary([b1, b2, sell], {"s1": 200.0}, {"s1": 8})
+        assert s.by_strategy[0].type == "LONG_TERM"
+
+    def test_strategy_adherence_uses_stored_holding_days(self):
+        buy = make_trade(
+            id="b1",
+            trade_type="BUY",
+            ticker_symbol="",
+            strategy_type="SWING",
+            traded_at=_dt("2026-01-01T09:00:00+09:00"),
+        )
+        sell = make_trade(
+            id="s1",
+            trade_type="SELL",
+            ticker_symbol="005930",
+            strategy_type="SWING",
+            result="SUCCESS",
+            holding_days=9,
+            traded_at=_dt("2026-01-10T09:00:00+09:00"),
+        )
+        s = compute_summary([buy, sell], {"s1": 200.0}, {})
+        assert s.by_strategy[0].type == "SWING"
+        assert s.by_strategy[0].avg_holding_days == 9
+        assert s.strategy_adherence_rate == 100.0
+
+    def test_strategy_adherence_rate_uses_period_sells_only(self):
+        old_buy = make_trade(
+            id="b-old",
+            trade_type="BUY",
+            strategy_type="LONG_TERM",
+            traded_at=_dt("2025-01-01T09:00:00+09:00"),
+        )
+        old_sell = make_trade(
+            id="s-old",
+            trade_type="SELL",
+            strategy_type="LONG_TERM",
+            traded_at=_dt("2025-01-02T09:00:00+09:00"),
+        )
+        recent_buy = make_trade(
+            id="b-recent",
+            trade_type="BUY",
+            strategy_type="SCALPING",
+            traded_at=_dt("2026-01-01T09:00:00+09:00"),
+        )
+        recent_sell = make_trade(
+            id="s-recent",
+            trade_type="SELL",
+            strategy_type="SCALPING",
+            traded_at=_dt("2026-01-01T10:00:00+09:00"),
+        )
+        s = compute_summary(
+            [recent_buy, recent_sell],
+            {"s-old": -100.0, "s-recent": 100.0},
+            {"s-old": 1, "s-recent": 0},
+            [old_buy, old_sell, recent_buy, recent_sell],
+        )
+        assert s.strategy_adherence_rate == 100.0
 
     def test_by_emotion(self):
         trade1 = make_trade(id="t1", trade_type="BUY", emotion="FOMO")

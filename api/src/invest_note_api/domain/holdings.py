@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -170,7 +171,7 @@ def compute_flexible_holding_days(sell: "Trade", all_trades: list["Trade"]) -> i
                 remaining -= consume
 
             if total_consumed > 0:
-                return round(weighted_ms / total_consumed / MS_PER_DAY)
+                return math.floor(weighted_ms / total_consumed / MS_PER_DAY + 0.5)
             return None
 
         if not _is_flexible_match(trade, target_country, target_ticker, target_asset, target_account_id):

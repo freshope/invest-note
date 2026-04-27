@@ -129,7 +129,7 @@ _PATCH_ALLOWED = {
     "buy_reason", "sell_reason", "result", "reflection_note", "improvement_note",
 }
 
-PNL_AFFECTING_FIELDS = {"price", "quantity", "commission", "tax"}
+PNL_AFFECTING_FIELDS = {"price", "quantity", "commission", "tax", "strategy_type"}
 
 
 async def patch_trade(conn: Any, trade_id: str, user_id: str, patch: dict) -> bool:

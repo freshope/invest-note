@@ -28,8 +28,11 @@ def _make_trade_row(
     traded_at=None,
     profit_loss=None,
     avg_buy_price=None,
+    holding_days=None,
+    strategy_type=None,
     country_code="KR",
     exchange="",
+    created_at=None,
 ) -> dict:
     now = _dt("2024-01-10T09:00:00+09:00")
     return {
@@ -44,7 +47,7 @@ def _make_trade_row(
         "quantity": quantity,
         "total_amount": price * quantity,
         "traded_at": traded_at or now,
-        "strategy_type": None,
+        "strategy_type": strategy_type,
         "reasoning_tags": [],
         "buy_reason": None,
         "sell_reason": None,
@@ -54,11 +57,12 @@ def _make_trade_row(
         "improvement_note": None,
         "profit_loss": profit_loss,
         "avg_buy_price": avg_buy_price,
+        "holding_days": holding_days,
         "country_code": country_code,
         "exchange": exchange,
         "commission": 0.0,
         "tax": 0.0,
-        "created_at": _dt("2024-01-01T00:00:00Z"),
+        "created_at": created_at or _dt("2024-01-01T00:00:00Z"),
         "updated_at": _dt("2024-01-01T00:00:00Z"),
         "account_name": None,
         "account_broker": None,
@@ -86,6 +90,7 @@ def _capture_sql(monkeypatch) -> list[str]:
     """FakeConnection의 모든 DB 메서드를 spy해 실행 SQL을 기록."""
     calls: list[str] = []
     orig_execute = FakeConnection.execute
+    orig_executemany = FakeConnection.executemany
     orig_fetch = FakeConnection.fetch
     orig_fetchval = FakeConnection.fetchval
     orig_fetchrow = FakeConnection.fetchrow
@@ -93,6 +98,10 @@ def _capture_sql(monkeypatch) -> list[str]:
     async def spy_execute(self: Any, query: str, *args: Any) -> str:
         calls.append(query.strip())
         return await orig_execute(self, query, *args)
+
+    async def spy_executemany(self: Any, query: str, args: Any) -> None:
+        calls.append(query.strip())
+        return await orig_executemany(self, query, args)
 
     async def spy_fetch(self: Any, query: str, *args: Any) -> list:
         calls.append(query.strip())
@@ -107,6 +116,7 @@ def _capture_sql(monkeypatch) -> list[str]:
         return await orig_fetchrow(self, query, *args)
 
     monkeypatch.setattr(FakeConnection, "execute", spy_execute)
+    monkeypatch.setattr(FakeConnection, "executemany", spy_executemany)
     monkeypatch.setattr(FakeConnection, "fetch", spy_fetch)
     monkeypatch.setattr(FakeConnection, "fetchval", spy_fetchval)
     monkeypatch.setattr(FakeConnection, "fetchrow", spy_fetchrow)
@@ -416,6 +426,37 @@ class TestPatchTrade:
         _assert_lock_before_list(sql_calls)
         _assert_lock_timeout_before_lock(sql_calls)
 
+    def test_patch_buy_strategy_recalculates_matched_sell_strategy(self, trades_client, monkeypatch):
+        """BUY 전략 수정은 이미 매칭된 SELL의 파생 strategy_type 재계산을 트리거해야 함."""
+        sql_calls = _capture_sql(monkeypatch)
+        buy_row = _make_trade_row(
+            id_="b1",
+            trade_type="BUY",
+            quantity=10,
+            strategy_type="SCALPING",
+            traded_at=_dt("2024-01-01T09:00:00+09:00"),
+        )
+        sell_row = _make_trade_row(
+            id_="s1",
+            trade_type="SELL",
+            quantity=10,
+            strategy_type="SCALPING",
+            traded_at=_dt("2024-02-01T09:00:00+09:00"),
+        )
+        conn = FakeConnection(
+            _to_record(buy_row),                         # existing fetchrow
+            [_to_record(buy_row), _to_record(sell_row)], # list_trades
+            "UPDATE 1",                                 # patch_trade
+        )
+        with _patch_trades(conn):
+            resp = trades_client.patch("/api/trades/b1", json={"strategy_type": "LONG_TERM"})
+        assert resp.status_code == 204
+        _assert_lock_before_list(sql_calls)
+        assert any(
+            "strategy_type = $4" in q and "UPDATE trades SET profit_loss" in q
+            for q in sql_calls
+        )
+
 
 class TestDeleteTrade:
     def test_delete_404(self, trades_client):
@@ -482,9 +523,12 @@ class TestTradeSummary:
 
     def test_summary_sell_200(self, trades_client):
         buy_row = _make_trade_row(id_="b1", trade_type="BUY", price=70000, quantity=10,
+                                  strategy_type="LONG_TERM",
                                   traded_at=_dt("2024-01-01T09:00:00+09:00"))
         sell_row = _make_trade_row(id_="s1", trade_type="SELL", price=80000, quantity=10,
                                    avg_buy_price=70000.0, profit_loss=100000.0,
+                                   holding_days=31,
+                                   strategy_type="LONG_TERM",
                                    traded_at=_dt("2024-02-01T09:00:00+09:00"))
 
         conn = FakeConnection(
@@ -498,6 +542,44 @@ class TestTradeSummary:
         assert "pnl" in body
         assert "breakdown" in body
         assert body["pnl"] == 100000.0
+        assert body["strategyEvaluation"]["planned"] == "LONG_TERM"
+        assert body["strategyEvaluation"]["actual"] == "LONG_TERM"
+        assert body["strategyEvaluation"]["adherence"] == "FOLLOWED"
+
+    def test_summary_holding_days_matches_strategy_evaluation_for_same_timestamp(self, trades_client):
+        ts = _dt("2024-01-01T09:00:00+09:00")
+        buy_row = _make_trade_row(
+            id_="b1",
+            trade_type="BUY",
+            price=70000,
+            quantity=10,
+            strategy_type="SCALPING",
+            traded_at=ts,
+            created_at=_dt("2024-01-01T00:00:00Z"),
+        )
+        sell_row = _make_trade_row(
+            id_="s1",
+            trade_type="SELL",
+            price=70000,
+            quantity=10,
+            avg_buy_price=70000.0,
+            profit_loss=0.0,
+            holding_days=0,
+            strategy_type="SCALPING",
+            traded_at=ts,
+            created_at=_dt("2024-01-01T00:00:01Z"),
+        )
+
+        conn = FakeConnection(
+            _to_record(sell_row),
+            [_to_record(sell_row), _to_record(buy_row)],
+        )
+        with _patch_trades(conn):
+            resp = trades_client.get("/api/trades/s1/summary")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["holdingDays"] == 0
+        assert body["strategyEvaluation"]["holdingDays"] == 0
 
     def test_summary_404(self, trades_client):
         conn = FakeConnection(None)

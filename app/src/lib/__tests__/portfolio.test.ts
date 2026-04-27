@@ -23,6 +23,7 @@ function makeTrade(overrides: Partial<Trade> & { id: string; trade_type: Trade["
     improvement_note: null,
     profit_loss: null,
     avg_buy_price: null,
+    holding_days: null,
     country_code: "KR",
     exchange: "",
     commission: 0,

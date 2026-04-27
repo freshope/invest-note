@@ -37,6 +37,7 @@ def _make_trade_row(**kwargs) -> dict:
         "improvement_note": None,
         "profit_loss": None,
         "avg_buy_price": None,
+        "holding_days": None,
         "country_code": "KR",
         "exchange": "",
         "commission": 0.0,

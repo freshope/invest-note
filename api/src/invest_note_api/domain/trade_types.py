@@ -69,6 +69,7 @@ class Trade(BaseModel):
 
     profit_loss: float | None = None
     avg_buy_price: float | None = None
+    holding_days: int | None = None
 
     country_code: str = DEFAULT_COUNTRY
     exchange: str = ""
@@ -100,6 +101,15 @@ class Trade(BaseModel):
             return None
         if isinstance(v, Decimal):
             return float(v)
+        return v  # type: ignore[return-value]
+
+    @field_validator("holding_days", mode="before")
+    @classmethod
+    def _decimal_to_int_optional(cls, v: object) -> int | None:
+        if v is None:
+            return None
+        if isinstance(v, Decimal):
+            return int(v)
         return v  # type: ignore[return-value]
 
     model_config = {"from_attributes": True}
