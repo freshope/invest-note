@@ -28,6 +28,8 @@ def _make_trade_row(
     traded_at=None,
     profit_loss=None,
     avg_buy_price=None,
+    country_code="KR",
+    exchange="",
 ) -> dict:
     now = _dt("2024-01-10T09:00:00+09:00")
     return {
@@ -52,8 +54,8 @@ def _make_trade_row(
         "improvement_note": None,
         "profit_loss": profit_loss,
         "avg_buy_price": avg_buy_price,
-        "country_code": "KR",
-        "exchange": "",
+        "country_code": country_code,
+        "exchange": exchange,
         "commission": 0.0,
         "tax": 0.0,
         "created_at": _dt("2024-01-01T00:00:00Z"),
@@ -213,6 +215,50 @@ class TestCreateTrade:
         }
         with pytest.raises(ValueError, match="미래"):
             TradeCreate.model_validate(payload)
+
+    def test_create_foreign_buy_400_in_mvp(self, trades_client):
+        payload = {
+            **self._buy_payload(),
+            "asset_name": "Apple",
+            "ticker_symbol": "AAPL",
+            "country_code": "US",
+            "exchange": "NASDAQ",
+        }
+        resp = trades_client.post("/api/trades", json=payload)
+        assert resp.status_code == 400
+        assert "해외 주식 신규 매수" in resp.json()["error"]
+
+    def test_create_foreign_sell_allowed_for_existing_holding(self, trades_client):
+        acct_row = {"id": "a1"}
+        buy_row = _make_trade_row(
+            id_="b-us",
+            trade_type="BUY",
+            ticker="AAPL",
+            asset_name="Apple",
+            quantity=10,
+            country_code="US",
+            exchange="NASDAQ",
+            traded_at=_dt("2024-01-01T09:00:00+09:00"),
+        )
+        inserted = {"id": "new-us-sell", "trade_type": "SELL"}
+
+        conn = FakeConnection(
+            _to_record(acct_row),
+            [_to_record(buy_row)],
+            _to_record(inserted),
+        )
+        payload = {
+            **self._buy_payload(),
+            "trade_type": "SELL",
+            "asset_name": "Apple",
+            "ticker_symbol": "AAPL",
+            "country_code": "US",
+            "exchange": "NASDAQ",
+        }
+        with _patch_trades(conn):
+            resp = trades_client.post("/api/trades", json=payload)
+        assert resp.status_code == 201
+        assert resp.json()["id"] == "new-us-sell"
 
     def test_sell_no_holding_400(self, trades_client):
         acct_row = {"id": "a1"}

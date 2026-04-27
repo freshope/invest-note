@@ -19,7 +19,7 @@
 | 스타일링 | Tailwind CSS |
 | 백엔드 | FastAPI (Python) — Supabase JWKS(ES256) 인증 + asyncpg + RLS |
 | DB/Auth | Supabase (PostgreSQL + Auth + RLS) |
-| 시세 | 네이버 금융(KR), Yahoo Finance(US) — 비공식 지연 시세 |
+| 시세 | 네이버 금융(KR) — 비공식 지연 시세 |
 | 배포 | Vercel (웹), Render → Railway (API, 예정) |
 | 모바일 | Capacitor (iOS/Android), 향후 React Native 검토 |
 
@@ -34,15 +34,16 @@
 
 | 버전 | 내용 | 상태 |
 |------|------|------|
-| MVP | 수동 매매 기록, 포트폴리오 조회, 홈 대시보드, 분석 탭 | 🚧 CSV 임포트 잔여 |
+| MVP | 국내 주식 수동 매매 기록, 포트폴리오 조회, 홈 대시보드, 분석 탭 | 🚧 CSV 임포트 잔여 |
 | v2.5 | FastAPI 백엔드 분리 + Capacitor 모바일앱 (iOS/Android) | 🚧 FastAPI 배포·Apple Sign-in·스토어 심사 대기 |
-| v2 | KIS API 자동 연동, 공식 실시간 시세 | 예정 |
+| v2 | 해외 주식 지원, KIS API 자동 연동, 공식 실시간 시세 | 예정 |
 | v3 | AI 패턴 분석, 모바일 네이티브 전환 검토 (RN) | 예정 |
 
 ## MVP 제외 항목 (v2+)
 
 - 증권사 API 자동 연동
 - 실시간 시세 (현재: 지연 시세 비공식 API)
+- 해외 주식 지원 (Yahoo Finance, USD/KRW 환율, 크로스 통화 분석 정합성 포함)
 - AI 분석
 - 푸시 알림 (v2.5 모바일앱에서)
 - 세금 계산 자동화

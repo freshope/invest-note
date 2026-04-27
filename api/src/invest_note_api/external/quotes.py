@@ -1,4 +1,4 @@
-"""시세 fetch — Naver Finance (KR) + Yahoo Finance v8 (US).
+"""시세 fetch — Naver Finance (KR).
 
 캐싱: TTLCache(maxsize=512, ttl=60) + asyncio.Lock으로 symbol:country 키별 60초 in-memory 캐시.
 Next.js `fetch(..., { next: { revalidate: 60 } })` 동작과 등가.
@@ -12,17 +12,15 @@ from typing import TypedDict
 import httpx
 from cachetools import TTLCache
 
-from invest_note_api.domain.trade_types import COUNTRY_US, DEFAULT_COUNTRY, MAX_CODE_LEN
+from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, MAX_CODE_LEN
 from invest_note_api.external.constants import (
     CURRENCY_KRW,
-    CURRENCY_USD,
     HTTP_TIMEOUT_SECONDS,
     NAVER_BASIC_URL,
     NAVER_REALTIME_URL,
     QUOTE_CACHE_MAXSIZE,
     QUOTE_CACHE_TTL,
     USER_AGENT,
-    YAHOO_CHART_URL,
 )
 
 _HEADERS = {"User-Agent": USER_AGENT}
@@ -73,29 +71,6 @@ async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult |
     return None
 
 
-async def _fetch_us_price(client: httpx.AsyncClient, symbol: str) -> QuoteResult | None:
-    try:
-        url = YAHOO_CHART_URL.format(symbol=symbol)
-        res = await client.get(url, headers=_HEADERS, timeout=HTTP_TIMEOUT_SECONDS)
-        if res.status_code != 200:
-            return None
-        data = res.json()
-        results = data.get("chart", {}).get("result") or []
-        if not results:
-            return None
-        meta = results[0].get("meta", {})
-        price = float(meta.get("regularMarketPrice") or 0)
-        if price > 0:
-            return {
-                "price": price,
-                "currency": meta.get("currency", CURRENCY_USD),
-                "as_of": datetime.now(timezone.utc).isoformat(),
-            }
-    except Exception:
-        pass
-    return None
-
-
 async def _get_cached(key: str, fetch_fn) -> dict | None:
     async with _cache_lock:
         if key in _cache:
@@ -110,7 +85,7 @@ async def _get_cached(key: str, fetch_fn) -> dict | None:
 
 
 async def fetch_quotes_by_keys(keys: list[str]) -> dict[str, QuoteResult | None]:
-    """keys 형식: "종목코드:국가" (예: "005930:KR", "AAPL:US")"""
+    """keys 형식: "종목코드:국가" (예: "005930:KR"). KR 외 국가는 MVP에서 null."""
     if not keys:
         return {}
 
@@ -122,25 +97,20 @@ async def fetch_quotes_by_keys(keys: list[str]) -> dict[str, QuoteResult | None]
         if code:
             entries.append({"code": code, "country": country, "key": key})
 
-    async def _null() -> None:
-        return None
-
     async with httpx.AsyncClient() as client:
-        tasks = []
-        for e in entries:
-            if e["country"] == DEFAULT_COUNTRY:
-                cache_key = f"{DEFAULT_COUNTRY}:{e['code']}"
-                tasks.append(_get_cached(cache_key, lambda c=client, code=e["code"]: _fetch_kr_price(c, code)))
-            elif e["country"] == COUNTRY_US:
-                cache_key = f"{COUNTRY_US}:{e['code']}"
-                tasks.append(_get_cached(cache_key, lambda c=client, sym=e["code"]: _fetch_us_price(c, sym)))
-            else:
-                tasks.append(_null())
+        kr_entries = [e for e in entries if e["country"] == DEFAULT_COUNTRY]
+        tasks = [
+            _get_cached(
+                f"{DEFAULT_COUNTRY}:{e['code']}",
+                lambda c=client, code=e["code"]: _fetch_kr_price(c, code),
+            )
+            for e in kr_entries
+        ]
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    out: dict[str, QuoteResult | None] = {}
-    for e, result in zip(entries, results):
+    out: dict[str, QuoteResult | None] = {e["key"]: None for e in entries}
+    for e, result in zip(kr_entries, results):
         if isinstance(result, Exception):
             out[e["key"]] = None
         else:
