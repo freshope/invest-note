@@ -22,7 +22,7 @@ type Step = "basic" | "meta";
 
 const TITLES: Record<Step, Record<TradeType, string>> = {
   basic: { BUY: "거래 등록", SELL: "거래 등록" },
-  meta: { BUY: "근거 입력", SELL: "회고 입력" },
+  meta: { BUY: "근거 입력", SELL: "매도 정보 입력" },
 };
 
 export function TradeFormPanel({ open, onOpenChange, accounts }: TradeFormPanelProps) {

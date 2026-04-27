@@ -292,7 +292,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
 
               <div className="border-t border-border pt-4 mt-2">
                 <p className="text-[13px] font-semibold text-muted-foreground mb-4">
-                  {isSell ? "회고 / 결과" : "근거 / 감정"}
+                  {isSell ? "매도 이유 / 결과" : "근거 / 감정"}
                 </p>
 
                 {/* 자동 계산 요약 카드 (매도) */}

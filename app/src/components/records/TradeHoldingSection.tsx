@@ -4,6 +4,7 @@ import { format, subDays } from "date-fns";
 import { ko } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { STRATEGY_LABELS, ADHERENCE_CONFIG } from "@/lib/constants/trading";
+import type { ReactNode } from "react";
 import type { StrategyEvaluation } from "@/lib/analysis/strategy-adherence";
 
 interface TradeHoldingSectionProps {
@@ -12,7 +13,7 @@ interface TradeHoldingSectionProps {
   strategyEvaluation?: StrategyEvaluation | null;
 }
 
-function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex justify-between items-center">
       <span className="text-[11px] text-muted-foreground">{label}</span>

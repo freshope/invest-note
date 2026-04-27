@@ -199,7 +199,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
         queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
       ]);
-      onTradeCreated(result.id, result.trade_type, format(values.traded_at, "yyyy-MM-dd'T'HH:mm"));
+      onTradeCreated(result.id, result.trade_type, values.traded_at.toISOString());
     } catch (err) {
       setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
     }
