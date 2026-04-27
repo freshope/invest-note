@@ -354,15 +354,13 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                   </div>
                 )}
 
-                {/* 보유 정보 (매도) */}
                 {isSell && (
-                  <div className="mb-5">
-                    <TradeHoldingSection
-                      tradedAt={trade.traded_at}
-                      holdingDays={summary?.holdingDays ?? null}
-                      strategyEvaluation={summary?.strategyEvaluation ?? null}
-                    />
-                  </div>
+                  <TradeHoldingSection
+                    className="mb-5"
+                    tradedAt={trade.traded_at}
+                    holdingDays={summary?.holdingDays ?? null}
+                    strategyEvaluation={summary?.strategyEvaluation ?? null}
+                  />
                 )}
 
                 {/* 전략 (매수만) */}

@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { format, subDays } from "date-fns";
 import { ko } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -11,6 +12,7 @@ interface TradeHoldingSectionProps {
   tradedAt: string;
   holdingDays: number | null;
   strategyEvaluation?: StrategyEvaluation | null;
+  className?: string;
 }
 
 function InfoRow({ label, value }: { label: string; value: ReactNode }) {
@@ -22,12 +24,17 @@ function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-export function TradeHoldingSection({ tradedAt, holdingDays, strategyEvaluation }: TradeHoldingSectionProps) {
+export const TradeHoldingSection = memo(function TradeHoldingSection({
+  tradedAt,
+  holdingDays,
+  strategyEvaluation,
+  className,
+}: TradeHoldingSectionProps) {
   const sellDate = new Date(tradedAt);
   const avgBuyDate = holdingDays != null ? subDays(sellDate, holdingDays) : null;
 
   return (
-    <div className="rounded-2xl bg-muted/60 p-4 space-y-3">
+    <div className={cn("rounded-2xl bg-muted/60 p-4 space-y-3", className)}>
       <p className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wide">
         보유 정보 (자동 계산)
       </p>
@@ -36,7 +43,6 @@ export function TradeHoldingSection({ tradedAt, holdingDays, strategyEvaluation 
         <p className="text-[12px] text-muted-foreground">보유일 계산 중…</p>
       ) : (
         <>
-          {/* 헤더: 보유일 + 전략 준수도 뱃지 */}
           <div className="flex items-center justify-between">
             <span className="text-[16px] font-bold tabular-nums">
               보유 {holdingDays}일
@@ -51,7 +57,6 @@ export function TradeHoldingSection({ tradedAt, holdingDays, strategyEvaluation 
             )}
           </div>
 
-          {/* 상세 정보 박스 */}
           <div className="rounded-lg bg-background border border-border/60 px-3 py-2.5 space-y-1.5">
             <InfoRow
               label="매도일"
@@ -84,4 +89,4 @@ export function TradeHoldingSection({ tradedAt, holdingDays, strategyEvaluation 
       )}
     </div>
   );
-}
+});
