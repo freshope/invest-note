@@ -45,36 +45,7 @@ export async function fetchKRPrice(code: string): Promise<QuoteResult | null> {
   return null;
 }
 
-// Yahoo Finance v7 batch API가 차단됨 → v8 chart API로 개별 조회
-async function fetchUSPrice(symbol: string): Promise<QuoteResult | null> {
-  try {
-    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0" },
-      next: { revalidate: 60 },
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const meta = data?.chart?.result?.[0]?.meta;
-    const price = Number(meta?.regularMarketPrice);
-    if (price > 0) {
-      return { price, currency: meta?.currency ?? "USD", asOf: new Date().toISOString() };
-    }
-  } catch {
-    // ignore
-  }
-  return null;
-}
-
-export async function fetchUSPrices(
-  symbols: string[],
-): Promise<Record<string, QuoteResult | null>> {
-  if (symbols.length === 0) return {};
-  const results = await Promise.all(symbols.map((s) => fetchUSPrice(s)));
-  return Object.fromEntries(symbols.map((s, i) => [s, results[i]]));
-}
-
-/** `keys` 형식: "종목코드:국가" (예: "005930:KR", "AAPL:US") */
+/** `keys` 형식: "종목코드:국가" (예: "005930:KR"). KR 외 국가는 MVP에서 null. */
 export async function fetchQuotesByKeys(keys: string[]): Promise<QuoteMap> {
   if (keys.length === 0) return {};
 
@@ -84,22 +55,14 @@ export async function fetchQuotesByKeys(keys: string[]): Promise<QuoteMap> {
   }).filter((e) => e.code.length > 0);
 
   const krEntries = entries.filter((e) => e.country === "KR");
-  const usEntries = entries.filter((e) => e.country === "US");
-
-  const [krResults, usBatch] = await Promise.all([
-    Promise.all(krEntries.map((e) => fetchKRPrice(e.code))),
-    fetchUSPrices(usEntries.map((e) => e.code)),
-  ]);
+  const krResults = await Promise.all(krEntries.map((e) => fetchKRPrice(e.code)));
 
   const out: QuoteMap = {};
   krEntries.forEach((e, i) => {
     out[e.key] = krResults[i];
   });
-  usEntries.forEach((e) => {
-    out[e.key] = usBatch[e.code] ?? null;
-  });
   entries
-    .filter((e) => e.country !== "KR" && e.country !== "US")
+    .filter((e) => e.country !== "KR")
     .forEach((e) => {
       out[e.key] = null;
     });

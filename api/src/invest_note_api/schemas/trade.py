@@ -7,15 +7,17 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from ..domain.trade_types import (
     CountryCode,
+    DEFAULT_COUNTRY,
     EmotionType,
     MAX_NAME_LEN,
     MarketType,
     ReasoningTag,
     StrategyType,
+    TRADE_TYPE_BUY,
     TradeResult,
     TradeType,
 )
@@ -129,6 +131,12 @@ class TradeCreate(BaseModel):
     @classmethod
     def _non_negative(cls, v: object) -> float:
         return _comma_non_negative(v)
+
+    @model_validator(mode="after")
+    def _mvp_foreign_buy_blocked(self) -> "TradeCreate":
+        if self.trade_type == TRADE_TYPE_BUY and self.country_code != DEFAULT_COUNTRY:
+            raise ValueError("MVP에서는 해외 주식 신규 매수를 등록할 수 없습니다.")
+        return self
 
 
 class TradeUpdate(BaseModel):

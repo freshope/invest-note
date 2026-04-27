@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useDebounce } from "@/hooks/useDebounce";
 import { Input } from "@/components/base/Input";
@@ -23,10 +23,9 @@ interface StockSearchInputProps {
   onChange: (value: string) => void;
 }
 
-const MARKET_BADGE: Record<string, { label: string; className: string }> = {
-  KR: { label: COUNTRY_LABEL.KR, className: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
-  US: { label: COUNTRY_LABEL.US, className: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300" },
-  OTHER: { label: COUNTRY_LABEL.OTHER, className: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
+const KR_MARKET_BADGE = {
+  label: COUNTRY_LABEL.KR,
+  className: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
 };
 
 async function fetchStocks(query: string): Promise<StockSearchResult[]> {
@@ -48,6 +47,10 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
     enabled: debouncedValue.trim().length >= 1,
     staleTime: QUERY_STOCK_SEARCH_STALE_TIME_MS,
   });
+  const krSuggestions = useMemo(
+    () => suggestions.filter((stock) => stock.market === "KR"),
+    [suggestions],
+  );
 
   // 쿼리 키(debouncedValue) 변경 시 activeIndex 초기화 — 렌더 중 state 비교 패턴.
   // suggestions 참조 비교는 useQuery 구조분해 기본값 `= []`가 매 렌더 새 배열을 만들어 무한 루프 유발.
@@ -61,7 +64,7 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
   const open = !hidden
     && value.trim().length > 0
     && value !== lastSelected
-    && suggestions.length > 0;
+    && krSuggestions.length > 0;
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setLastSelected("");
@@ -81,19 +84,19 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
     if (!open) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActiveIndex((i) => Math.min(i + 1, suggestions.length - 1));
+      setActiveIndex((i) => Math.min(i + 1, krSuggestions.length - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActiveIndex((i) => Math.max(i - 1, -1));
     } else if (e.key === "Enter") {
-      if (activeIndex >= 0 && suggestions[activeIndex]) {
+      if (activeIndex >= 0 && krSuggestions[activeIndex]) {
         e.preventDefault();
-        handleSelect(suggestions[activeIndex]);
+        handleSelect(krSuggestions[activeIndex]);
       }
     } else if (e.key === "Escape") {
       setHidden(true);
     }
-  }, [open, suggestions, activeIndex, handleSelect]);
+  }, [open, krSuggestions, activeIndex, handleSelect]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -109,11 +112,11 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
     <div ref={containerRef} className="relative">
       <Input
         type="text"
-        placeholder="예: 삼성전자, AAPL, 005930"
+        placeholder="예: 삼성전자, 005930"
         value={value}
         onChange={handleInputChange}
         onKeyDown={handleKeyDown}
-        onFocus={() => { if (suggestions.length > 0) setHidden(false); }}
+        onFocus={() => { if (krSuggestions.length > 0) setHidden(false); }}
         autoComplete="off"
         autoCorrect="off"
       />
@@ -122,27 +125,24 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" />
         </div>
       )}
-      {open && suggestions.length > 0 && (
+      {open && krSuggestions.length > 0 && (
         <ul className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 max-h-[280px] overflow-y-auto rounded-xl bg-popover shadow-md ring-1 ring-foreground/10">
-          {suggestions.map((stock, i) => {
-            const badge = MARKET_BADGE[stock.market];
-            return (
-              <li
-                key={`${stock.market}-${stock.code}`}
-                onMouseDown={(e) => { e.preventDefault(); handleSelect(stock); }}
-                className={`flex items-center gap-3 px-4 py-3 text-[15px] cursor-default transition-colors ${
-                  i === activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"
-                }`}
-              >
-                <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold ${badge.className}`}>
-                  {badge.label}
-                </span>
-                <span className="flex-1 font-medium truncate">{stock.name}</span>
-                <span className="shrink-0 text-[12px] text-muted-foreground font-mono">{stock.code}</span>
-                <span className="shrink-0 text-[11px] text-muted-foreground">{stock.exchange}</span>
-              </li>
-            );
-          })}
+          {krSuggestions.map((stock, i) => (
+            <li
+              key={`${stock.market}-${stock.code}`}
+              onMouseDown={(e) => { e.preventDefault(); handleSelect(stock); }}
+              className={`flex items-center gap-3 px-4 py-3 text-[15px] cursor-default transition-colors ${
+                i === activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"
+              }`}
+            >
+              <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold ${KR_MARKET_BADGE.className}`}>
+                {KR_MARKET_BADGE.label}
+              </span>
+              <span className="flex-1 font-medium truncate">{stock.name}</span>
+              <span className="shrink-0 text-[12px] text-muted-foreground font-mono">{stock.code}</span>
+              <span className="shrink-0 text-[11px] text-muted-foreground">{stock.exchange}</span>
+            </li>
+          ))}
         </ul>
       )}
     </div>
