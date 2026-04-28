@@ -31,5 +31,5 @@ export const STRATEGY_THRESHOLDS = {
 } as const;
 
 // 승률 임계치 (%)
-export const WIN_THRESHOLD = 60;
+export const WIN_THRESHOLD = 65;
 export const LOSS_THRESHOLD = 40;

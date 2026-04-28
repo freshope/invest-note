@@ -1,7 +1,7 @@
 import type { AnalysisSummary } from "./aggregate";
 import type { BehaviorProfile } from "./profile";
 import type { ConcentrationData } from "./concentration";
-import { HHI_HIGH, TOP1_WEIGHT_HIGH } from "@/lib/constants/analysis";
+import { HHI_HIGH, LOSS_THRESHOLD, TOP1_WEIGHT_HIGH, WIN_THRESHOLD } from "@/lib/constants/analysis";
 
 export interface Suggestion {
   id: string;
@@ -24,7 +24,7 @@ const rules: RuleFn[] = [
   // FOMO 승률 낮음 — count(SELL 건수) 기준
   ({ summary }) => {
     const fomo = summary.byEmotion.find((e) => e.type === "FOMO");
-    if (!fomo || fomo.count < 5 || fomo.resultCount < 3 || fomo.winRate >= 40) return null;
+    if (!fomo || fomo.count < 5 || fomo.resultCount < 3 || fomo.winRate >= LOSS_THRESHOLD) return null;
     return {
       id: "emotion_fomo_low_winrate",
       severity: "warn",
@@ -38,7 +38,7 @@ const rules: RuleFn[] = [
   // 평온할 때 성과 우수 — count(SELL 건수) 기준
   ({ summary }) => {
     const calm = summary.byEmotion.find((e) => e.type === "CALM");
-    if (!calm || calm.count < 5 || calm.winRate < 60) return null;
+    if (!calm || calm.count < 5 || calm.winRate < WIN_THRESHOLD) return null;
     return {
       id: "emotion_calm_high_winrate",
       severity: "info",
@@ -152,7 +152,7 @@ const rules: RuleFn[] = [
 
   // 승률 우수 — 현재 패턴 유지 권장
   ({ summary }) => {
-    if (summary.winRate < 65 || summary.sellTrades < 5 || summary.resultInputRate < 50) return null;
+    if (summary.winRate < WIN_THRESHOLD || summary.sellTrades < 5 || summary.resultInputRate < 50) return null;
     return {
       id: "high_winrate",
       severity: "info",

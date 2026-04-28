@@ -208,7 +208,7 @@ def _rule_result_missing(inp: RuleInput) -> Suggestion | None:
 
 def _rule_high_winrate(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
-    if summary.win_rate < 65 or summary.sell_trades < 5 or summary.result_input_rate < 50:
+    if summary.win_rate < WIN_THRESHOLD or summary.sell_trades < 5 or summary.result_input_rate < 50:
         return None
     pct = _round(summary.win_rate)
     return Suggestion(
