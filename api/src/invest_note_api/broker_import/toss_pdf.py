@@ -147,9 +147,9 @@ class TossPdfParser(BrokerStatementParser):
             result.add_error(row_no, "종목명 없음")
             return None
 
-        quantity = _parse_number(qty_raw)
-        amount = _parse_number(amount_raw)
-        tax = _parse_number(tax_raw) + _parse_number(sec_tax_raw)
+        quantity = parse_number(qty_raw)
+        amount = parse_number(amount_raw)
+        tax = parse_number(tax_raw) + parse_number(sec_tax_raw)
 
         if quantity <= 0:
             result.add_error(row_no, f"수량({quantity})이 0 이하")

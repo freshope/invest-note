@@ -360,6 +360,15 @@ async def import_preview(
     filename = file.filename or ""
     file_bytes = await file.read()
 
+    _MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+    if len(file_bytes) > _MAX_UPLOAD_BYTES:
+        raise APIError("파일 크기가 너무 큽니다 (최대 20 MB).", 413)
+
+    allowed_extensions = {".xlsx", ".xls", ".pdf"}
+    ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in allowed_extensions:
+        raise APIError("지원하지 않는 파일 형식입니다 (xlsx, xls, pdf만 허용).", 415)
+
     detected_key = broker_key or detect_broker(filename, file_bytes)
     if not detected_key or detected_key not in PARSERS:
         raise APIError("증권사를 자동으로 감지하지 못했습니다. broker_key를 명시해주세요.", 400)
