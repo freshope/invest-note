@@ -18,9 +18,24 @@ export const STRATEGY_LABELS: Record<string, string> = {
 };
 
 export const ADHERENCE_CONFIG = {
-  FOLLOWED: { label: "전략 준수 ✓", className: "text-green-600 bg-green-50 border-green-200" },
-  DEVIATED: { label: "전략 이탈 ✗", className: "text-orange-600 bg-orange-50 border-orange-200" },
-  UNKNOWN: { label: "분류 불가", className: "text-muted-foreground bg-muted border-border" },
+  FOLLOWED: {
+    label: "전략 준수 ✓",
+    textClassName: "text-green-600",
+    bgClassName: "bg-green-50 border-green-200",
+    barClassName: "bg-green-500",
+  },
+  DEVIATED: {
+    label: "전략 이탈 ✗",
+    textClassName: "text-orange-600",
+    bgClassName: "bg-orange-50 border-orange-200",
+    barClassName: "bg-orange-500",
+  },
+  UNKNOWN: {
+    label: "분류 불가",
+    textClassName: "text-muted-foreground",
+    bgClassName: "bg-muted border-border",
+    barClassName: "bg-muted-foreground/40",
+  },
 } as const;
 
 export const EMOTION_LABELS: Record<string, string> = {
