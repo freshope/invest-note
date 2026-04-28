@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-04-28 | 일괄 등록 종목명 매칭을 Naver API 단일화 + stocks 마스터 제거
+
+- **맥락:** 거래명세서 일괄 등록의 종목명→ticker 매칭이 `stocks` 마스터 exact match에 묶여 세 부류 케이스가 실패했음. ① 약칭 미일치(거래명세서 "현대차" vs KIND 마스터 "현대자동차") ② 마스터 누락(KIND 시드 `corpgeneral/corpList.do`는 일반 상장사만 포함 → ETF/ETN/우선주/리츠 제외, "TIGER 미국S&P500" 등 미존재) ③ 변형/공백/대소문자 차이 일체 미허용. 보강 시도로 KIND 외 데이터 소스(KRX OTP, pykrx, FinanceDataReader, KIS) 모두 약칭 매핑은 제공하지 않으며, KRX OTP는 동일 날짜 i18n spec(`docs/spec-history/2026-04-28-stocks-master-i18n.md`)에서 인증 막힘으로 KIND로 우회한 이력. 한편 `routers/stocks.py`의 `/api/stocks/search`는 이미 Naver 자동완성 API(`ac.stock.naver.com/ac`)를 사용 중이며 약칭/부분일치/ETF를 모두 자연스럽게 처리.
+- **결정:** ① 일괄 등록 ticker 매칭을 `ticker_hints → Naver 검색 API → None` 단일 경로로 단순화. `external/naver_search.py`로 `_search_kr` 추출 + `find_first_kr_match(q)` helper 추가(우선순위: 정확일치 > 자동완성 1순위, 가드: 입력 길이 ≥ 2). `broker_import/ticker_resolver.py`에서 stocks_repo 의존을 제거하고 미해결 이름들은 `asyncio.gather`로 병렬 조회. ② `public.stocks` 테이블, `db_ops/stocks_repo.py`, `scripts/seed_stocks.py`를 모두 제거(마이그레이션 016_drop_stocks.sql 추가). 014/015는 역사 보존. ③ `routers/trades.py:420` 미해결 사유 메시지와 `PreviewStep.tsx` 안내 문구를 새 흐름에 맞춰 갱신.
+- **이유:** 마스터를 자체 시드로 유지하는 비용(KIND 의존, ETF 별도 소스 필요, 약칭은 어떤 공식 소스도 미제공)이 매칭 품질 대비 과도. Naver 자동완성 API는 동일 의존성을 이미 도입(검색 자동완성)했으므로 추가 외부 위험 없이 약칭/ETF/변형 표기를 일거에 해결. trades 테이블이 stocks를 FK로 참조하지 않아(`001_initial_schema.sql:30`) 거래 데이터에는 무영향이고, 시세 조회/검색은 외부 API 사용으로 마스터와 무관 — 제거 안전성 확인됨.
+- **트레이드오프:** Naver API 단일 의존(다운/응답 형식 변경 시 일괄 등록 전체 영향) — 다만 5초 timeout + try/except로 hang 방지, 검색 라우터와 동일 의존이라 추가 위험 없음. 부분 일치 오매칭 가능(예: "삼성"이 "삼성전자"로 자동 매칭) — 입력 길이 ≥ 2 가드와 정확일치 우선 정책으로 1차 완화, 보수적 운영 후 필요시 사용자 수동 매칭 UI 도입(이번 spec 범위 외). 미매칭 종목 N건당 N회 외부 호출 — `asyncio.gather` 병렬화로 완화. 마스터 재도입은 향후 ETF/약칭 데이터 소스가 확보될 때 재검토(`docs/backlog.md` 기록).
+
+---
+
 ## 2026-04-28 | 분석 임계값 SOT 통합 — BE rules.py 매직 넘버 흡수 + FE 중복 판정 코드 제거 (후속)
 
 - **맥락:** 같은 날 통합한 BE `thresholds.py` SOT는 7개 상수만 담고 있었지만, `rules.py` 9개 규칙 함수 안에 도메인 판정 임계값(`feeling_rate < 40`, `reflection_rate >= 30`, `win_rate < 30`, `missing_tag_rate < 30`, `result_input_rate >= 50`, `avg_holding_days <= 7`)과 최소 샘플 가드(`count < 5/3`, `total_trades < 5`, `sell_trades < 3/5`)가 매직 넘버로 박혀 있어 SOT 외부에서 침묵하게 변경 가능. FE 쪽에서는 `SummaryCards.tsx`가 `60`/`40`을 하드코드해 같은 날 `WIN_THRESHOLD`가 60→65로 바뀐 변경을 따라가지 못했음(승률 63%면 초록인데 BE의 "좋은 승률" 규칙은 안 발동). 또 `lib/analysis/aggregate.ts:computeSummary`, `lib/analysis/rules.ts:evaluateRules`, `lib/analysis/strategy-adherence.ts`의 함수들이 production에서는 호출되지 않고 테스트에서만 살아 있어 임계값 import의존성을 만들고 있었음.

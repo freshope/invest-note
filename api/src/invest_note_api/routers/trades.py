@@ -382,9 +382,9 @@ async def import_preview(
     asset_names = {t.asset_name for t in parse_result.trades}
     ticker_hints = {t.asset_name: t.ticker_hint for t in parse_result.trades if t.ticker_hint}
 
-    async with acquire_for_user(pool, user.id) as conn:
-        ticker_map = await resolve_tickers(conn, asset_names, ticker_hints, country_code=DEFAULT_COUNTRY)
+    ticker_map = await resolve_tickers(asset_names, ticker_hints)
 
+    async with acquire_for_user(pool, user.id) as conn:
         # 기존 거래에서 시그니처 셋 구성 (중복 판단용 — 날짜 범위는 파싱 결과 기간으로 한정)
         all_trades = await list_trades(conn, user.id)
 
@@ -418,7 +418,7 @@ async def import_preview(
             unresolved_ticker_count += 1
             parse_errors.append(ImportError(
                 row_no=pt.source_row_no,
-                reason=f"ticker 미해결: {pt.asset_name} — 주식 마스터에 없음",
+                reason=f"ticker 미해결: {pt.asset_name} — 종목명에서 코드를 찾지 못함",
             ))
             continue
 
