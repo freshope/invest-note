@@ -27,6 +27,7 @@ import {
   REASONING_TAG_VALUES,
   TRADE_RESULT_VALUES,
 } from "./constants";
+import { AutoEmotionField, AutoReasoningTagsField } from "./AutoMetaField";
 import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
 import { fmtNumberInput, parseNumberInput } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -134,8 +135,8 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
         commission: values.commission,
         tax: values.tax,
         strategy_type: isSell ? (summary?.strategyEvaluation?.planned ?? null) : values.strategy_type,
-        emotion: values.emotion,
-        reasoning_tags: values.reasoning_tags,
+        // SELL의 emotion / reasoning_tags는 백엔드가 직전 BUY로부터 자동 산출 — 패치 미포함.
+        ...(isSell ? {} : { emotion: values.emotion, reasoning_tags: values.reasoning_tags }),
         result: isSell ? (summary?.result ?? null) : values.result,
         buy_reason: values.buy_reason.trim() || null,
         sell_reason: values.sell_reason.trim() || null,
@@ -311,30 +312,40 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                 )}
 
                 {/* 감정 */}
-                <div className="space-y-2 mb-5">
-                  <Label>감정</Label>
-                  <Controller
-                    control={control}
-                    name="emotion"
-                    render={({ field }) => (
-                      <div className="grid grid-cols-3 gap-2">
-                        {EMOTIONS.map((e) => (
-                          <button key={e.value} type="button"
-                            onClick={() => field.onChange(field.value === e.value ? null : e.value)}
-                            className={`rounded-xl border py-2.5 text-[13px] font-semibold transition-colors ${
-                              field.value === e.value
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "border-border bg-muted/50 text-muted-foreground"
-                            }`}
-                          >{e.label}</button>
-                        ))}
-                      </div>
-                    )}
-                  />
-                </div>
+                {isSell ? (
+                  <div className="mb-5">
+                    <AutoEmotionField emotion={trade.emotion} />
+                  </div>
+                ) : (
+                  <div className="space-y-2 mb-5">
+                    <Label>감정</Label>
+                    <Controller
+                      control={control}
+                      name="emotion"
+                      render={({ field }) => (
+                        <div className="grid grid-cols-3 gap-2">
+                          {EMOTIONS.map((e) => (
+                            <button key={e.value} type="button"
+                              onClick={() => field.onChange(field.value === e.value ? null : e.value)}
+                              className={`rounded-xl border py-2.5 text-[13px] font-semibold transition-colors ${
+                                field.value === e.value
+                                  ? "bg-primary text-primary-foreground border-primary"
+                                  : "border-border bg-muted/50 text-muted-foreground"
+                              }`}
+                            >{e.label}</button>
+                          ))}
+                        </div>
+                      )}
+                    />
+                  </div>
+                )}
 
-                {/* 분석 태그 (매수) */}
-                {!isSell && (
+                {/* 분석 태그 */}
+                {isSell ? (
+                  <div className="mb-5">
+                    <AutoReasoningTagsField tags={trade.reasoning_tags} />
+                  </div>
+                ) : (
                   <div className="space-y-2 mb-5">
                     <Label>분석 태그 <span className="text-[12px] font-normal text-muted-foreground">(복수 선택)</span></Label>
                     <div className="grid grid-cols-2 gap-2">

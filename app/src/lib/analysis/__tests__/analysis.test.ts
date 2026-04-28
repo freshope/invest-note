@@ -252,7 +252,7 @@ describe("computeSummary", () => {
     expect(s.totalProfitLoss).toBe(20000);
   });
 
-  it("byEmotion: count=BUY+SELL 합계, winRate=SELL 기준", () => {
+  it("byEmotion: SELL의 저장된 emotion만 카운트 (BUY는 무시)", () => {
     const trades: Trade[] = [
       makeTrade({ id: "b1", trade_type: "BUY",  emotion: "CALM" }),
       makeTrade({ id: "s1", trade_type: "SELL", emotion: "CALM", result: "SUCCESS", traded_at: "2024-02-01T09:00:00+09:00" }),
@@ -260,29 +260,32 @@ describe("computeSummary", () => {
     ];
     const s = computeSummary(trades, emptyMaps.pnlMap, emptyMaps.holdingDaysMap);
     const calm = s.byEmotion.find((e) => e.type === "CALM");
-    expect(calm?.count).toBe(3);        // BUY 1 + SELL 2
-    expect(calm?.sellCount).toBe(2);    // SELL만
-    expect(calm?.resultCount).toBe(2);  // result 입력된 SELL
+    expect(calm?.count).toBe(2);        // SELL만
+    expect(calm?.resultCount).toBe(2);
     expect(calm?.winRate).toBeCloseTo(50);
   });
 
-  it("byTag: 기간 이전 BUY 태그도 allTrades로 귀속", () => {
-    // b1 은 "기간 이전" — allTrades에만 포함
-    const allBuy = makeTrade({ id: "b1", trade_type: "BUY", reasoning_tags: ["TECHNICAL"], traded_at: "2023-06-01T09:00:00+09:00" });
-    const sell   = makeTrade({ id: "s1", trade_type: "SELL", result: "SUCCESS", traded_at: "2024-01-10T09:00:00+09:00" });
-    // period-filtered trades: SELL만 있음 (b1 이전 기간)
-    const periodTrades = [sell];
-    const allTrades = [allBuy, sell];
+  it("byTag: SELL의 저장된 reasoning_tags만 사용 (BUY는 무시)", () => {
+    const buy = makeTrade({ id: "b1", trade_type: "BUY", reasoning_tags: ["FUNDAMENTAL"], traded_at: "2024-01-01T09:00:00+09:00" });
+    const sell = makeTrade({
+      id: "s1",
+      trade_type: "SELL",
+      reasoning_tags: ["TECHNICAL", "NEWS"],
+      result: "SUCCESS",
+      traded_at: "2024-01-10T09:00:00+09:00",
+    });
     const pnlMap = new Map([["s1", 10000]]);
-    const s = computeSummary(periodTrades, pnlMap, emptyMaps.holdingDaysMap, allTrades);
-    const techTag = s.byTag.find((t) => t.tag === "TECHNICAL");
-    expect(techTag).toBeDefined();
-    expect(techTag?.winRate).toBe(100);
+    const s = computeSummary([buy, sell], pnlMap, emptyMaps.holdingDaysMap);
+    const tags = new Map(s.byTag.map((t) => [t.tag, t]));
+    expect(tags.has("TECHNICAL")).toBe(true);
+    expect(tags.has("NEWS")).toBe(true);
+    expect(tags.has("FUNDAMENTAL")).toBe(false);
+    expect(tags.get("TECHNICAL")?.count).toBe(1);
+    expect(tags.get("TECHNICAL")?.winRate).toBe(100);
   });
 
-  it("byTag: allTrades 없으면 기간 내 BUY만 참조 (기존 동작)", () => {
+  it("byTag: SELL이 reasoning_tags를 갖지 않으면 빈 결과", () => {
     const sell = makeTrade({ id: "s1", trade_type: "SELL", result: "SUCCESS", traded_at: "2024-01-10T09:00:00+09:00" });
-    // 기간 내 BUY 없음 → 태그 귀속 불가
     const s = computeSummary([sell], emptyMaps.pnlMap, emptyMaps.holdingDaysMap);
     expect(s.byTag).toHaveLength(0);
   });
@@ -410,15 +413,15 @@ describe("evaluateRules", () => {
 
   it("FOMO 승률 낮으면 emotion_fomo_low_winrate 발동", () => {
     const summary = makeSummary({
-      byEmotion: [{ type: "FOMO", count: 8, sellCount: 6, resultCount: 5, winRate: 30, avgPnL: -5000 }],
+      byEmotion: [{ type: "FOMO", count: 6, resultCount: 5, winRate: 30, avgPnL: -5000 }],
     });
     const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
     expect(result.some((r) => r.id === "emotion_fomo_low_winrate")).toBe(true);
   });
 
-  it("FOMO sellCount < 5이면 발동 안 함 (경계값)", () => {
+  it("FOMO count < 5이면 발동 안 함 (경계값)", () => {
     const summary = makeSummary({
-      byEmotion: [{ type: "FOMO", count: 10, sellCount: 4, resultCount: 4, winRate: 20, avgPnL: -5000 }],
+      byEmotion: [{ type: "FOMO", count: 4, resultCount: 4, winRate: 20, avgPnL: -5000 }],
     });
     const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
     expect(result.some((r) => r.id === "emotion_fomo_low_winrate")).toBe(false);
@@ -426,7 +429,7 @@ describe("evaluateRules", () => {
 
   it("FOMO resultCount < 3이면 발동 안 함 — 결과 미입력 방어", () => {
     const summary = makeSummary({
-      byEmotion: [{ type: "FOMO", count: 8, sellCount: 6, resultCount: 2, winRate: 0, avgPnL: -5000 }],
+      byEmotion: [{ type: "FOMO", count: 6, resultCount: 2, winRate: 0, avgPnL: -5000 }],
     });
     const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
     expect(result.some((r) => r.id === "emotion_fomo_low_winrate")).toBe(false);
@@ -462,17 +465,17 @@ describe("evaluateRules", () => {
     expect(result.some((r) => r.id === "losing_strategy")).toBe(false);
   });
 
-  it("emotion_calm_high_winrate: CALM sellCount >= 5 && winRate >= 60 발동", () => {
+  it("emotion_calm_high_winrate: CALM count >= 5 && winRate >= 60 발동", () => {
     const summary = makeSummary({
-      byEmotion: [{ type: "CALM", count: 7, sellCount: 5, resultCount: 5, winRate: 70, avgPnL: 8000 }],
+      byEmotion: [{ type: "CALM", count: 5, resultCount: 5, winRate: 70, avgPnL: 8000 }],
     });
     const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
     expect(result.some((r) => r.id === "emotion_calm_high_winrate")).toBe(true);
   });
 
-  it("emotion_calm_high_winrate: sellCount < 5이면 발동 안 함", () => {
+  it("emotion_calm_high_winrate: count < 5이면 발동 안 함", () => {
     const summary = makeSummary({
-      byEmotion: [{ type: "CALM", count: 4, sellCount: 4, resultCount: 4, winRate: 80, avgPnL: 8000 }],
+      byEmotion: [{ type: "CALM", count: 4, resultCount: 4, winRate: 80, avgPnL: 8000 }],
     });
     const result = evaluateRules({ summary, profile: emptyProfile, concentration: emptyConc });
     expect(result.some((r) => r.id === "emotion_calm_high_winrate")).toBe(false);
@@ -749,6 +752,73 @@ describe("computeGroupPnL", () => {
     // s1 계산 시 b2(SK하이닉스)는 영향 없음 → avgCost=70000
     expect(result.get("s1")?.profit_loss).toBe(100000);
     expect(result.has("b1")).toBe(false); // BUY는 결과에 없음
+  });
+
+  it("reasoning_tags / emotion: 가장 최근 소비 BUY 기준", () => {
+    const trades: Trade[] = [
+      makeTrade({
+        id: "b1",
+        trade_type: "BUY",
+        quantity: 5,
+        reasoning_tags: ["FUNDAMENTAL"],
+        emotion: "CALM",
+        traded_at: "2024-01-01T09:00:00+09:00",
+      }),
+      makeTrade({
+        id: "b2",
+        trade_type: "BUY",
+        quantity: 5,
+        reasoning_tags: ["TECHNICAL", "NEWS"],
+        emotion: "CONFIDENT",
+        traded_at: "2024-01-05T09:00:00+09:00",
+      }),
+      makeTrade({ id: "s1", trade_type: "SELL", quantity: 10, traded_at: "2024-02-01T09:00:00+09:00" }),
+    ];
+    const key = { ticker: "005930", assetName: "삼성전자", country: "KR", accountId: "a1" };
+    const result = computeGroupPnL(trades, key);
+    expect(result.get("s1")?.reasoning_tags).toEqual(["TECHNICAL", "NEWS"]);
+    expect(result.get("s1")?.emotion).toBe("CONFIDENT");
+  });
+
+  it("부분 매도가 소비한 BUY만 반영 — 첫 SELL은 b1, 두번째 SELL은 b2", () => {
+    const trades: Trade[] = [
+      makeTrade({
+        id: "b1",
+        trade_type: "BUY",
+        quantity: 5,
+        reasoning_tags: ["FUNDAMENTAL"],
+        emotion: "CALM",
+        traded_at: "2024-01-01T09:00:00+09:00",
+      }),
+      makeTrade({
+        id: "b2",
+        trade_type: "BUY",
+        quantity: 5,
+        reasoning_tags: ["TECHNICAL"],
+        emotion: "FOMO",
+        traded_at: "2024-01-05T09:00:00+09:00",
+      }),
+      makeTrade({ id: "s1", trade_type: "SELL", quantity: 5, traded_at: "2024-02-01T09:00:00+09:00" }),
+      makeTrade({ id: "s2", trade_type: "SELL", quantity: 5, traded_at: "2024-03-01T09:00:00+09:00" }),
+    ];
+    const key = { ticker: "005930", assetName: "삼성전자", country: "KR", accountId: "a1" };
+    const result = computeGroupPnL(trades, key);
+    expect(result.get("s1")?.reasoning_tags).toEqual(["FUNDAMENTAL"]);
+    expect(result.get("s1")?.emotion).toBe("CALM");
+    expect(result.get("s2")?.reasoning_tags).toEqual(["TECHNICAL"]);
+    expect(result.get("s2")?.emotion).toBe("FOMO");
+  });
+
+  it("계좌가 다른 거래는 같은 종목이라도 다른 그룹으로 처리", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY", quantity: 10, account_id: "a1", reasoning_tags: ["FUNDAMENTAL"], traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "b2", trade_type: "BUY", quantity: 10, account_id: "a2", reasoning_tags: ["TECHNICAL"], traded_at: "2024-01-02T09:00:00+09:00" }),
+      makeTrade({ id: "s1", trade_type: "SELL", quantity: 10, account_id: "a1", traded_at: "2024-02-01T09:00:00+09:00" }),
+    ];
+    // a1 계좌만 계산 — a2의 BUY는 무시되어야 함
+    const keyA1 = { ticker: "005930", assetName: "삼성전자", country: "KR", accountId: "a1" };
+    const result = computeGroupPnL(trades, keyA1);
+    expect(result.get("s1")?.reasoning_tags).toEqual(["FUNDAMENTAL"]);
   });
 });
 

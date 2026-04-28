@@ -21,10 +21,10 @@ export interface RuleInput {
 type RuleFn = (input: RuleInput) => Suggestion | null;
 
 const rules: RuleFn[] = [
-  // FOMO 승률 낮음 — sellCount 기준으로 판단 (실제 매도 결과가 있는 건수)
+  // FOMO 승률 낮음 — count(SELL 건수) 기준
   ({ summary }) => {
     const fomo = summary.byEmotion.find((e) => e.type === "FOMO");
-    if (!fomo || fomo.sellCount < 5 || fomo.resultCount < 3 || fomo.winRate >= 40) return null;
+    if (!fomo || fomo.count < 5 || fomo.resultCount < 3 || fomo.winRate >= 40) return null;
     return {
       id: "emotion_fomo_low_winrate",
       severity: "warn",
@@ -35,10 +35,10 @@ const rules: RuleFn[] = [
     };
   },
 
-  // 평온할 때 성과 우수 — sellCount 기준
+  // 평온할 때 성과 우수 — count(SELL 건수) 기준
   ({ summary }) => {
     const calm = summary.byEmotion.find((e) => e.type === "CALM");
-    if (!calm || calm.sellCount < 5 || calm.winRate < 60) return null;
+    if (!calm || calm.count < 5 || calm.winRate < 60) return null;
     return {
       id: "emotion_calm_high_winrate",
       severity: "info",

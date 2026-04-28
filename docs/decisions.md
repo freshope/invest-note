@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-04-28 | SELL 거래 reasoning_tags · emotion 자동 산출 정책
+
+- **맥락:** 분석 탭의 byTag/byEmotion이 SELL 시점에 직전 BUY를 매번 FIFO로 매칭해 태그/감정을 귀속하는 구조였음. 프론트엔드 키는 `account_id`가 누락되어 다계좌 사용자에게 잘못된 귀속 가능. EmotionStats는 BUY+SELL 합산 `count`와 SELL 한정 `sellCount`를 분리해 UI 표기 혼동 유발.
+- **결정:** `strategy_type`이 이미 따르는 패턴(`compute_group_pnl` → `recalc_group_pnl` → SELL row UPDATE)을 그대로 `reasoning_tags`/`emotion`에 확장. 두 필드를 SELL row에 저장하고, 분석 라우터/aggregate는 SELL 저장값만 카운트한다. 통합 정책은 FIFO 소비 BUY lot 중 **가장 최근(`traded_at` 최대, 동률 시 BUY order 최대) lot의 값**을 그대로 복사 (`_meta_from_consumed_latest`). SELL UI는 두 필드를 read-only chip으로 표시하고, PATCH 입력은 라우터의 `strip_sell_auto_derived` 헬퍼에서 명시적으로 제거. 기존 데이터는 011 패턴의 PL/SQL FIFO 마이그레이션(013)으로 일괄 백필.
+- **이유:** byTag FIFO 매칭이 매 분석 호출마다 반복되는 hot-path 비용을 mutation 시점으로 이동. frontend의 키 누락(이슈 A)과 EmotionStats 의미 혼동(이슈 D)을 동시에 해소. `strategy_type`과 동일 패턴을 따라 향후 다른 SELL 자동 산출 필드(예: `result`)도 같은 자리에 끼워 넣기 쉬움. `strategy_type`(수량 가중 최다)과 `reasoning_tags`/`emotion`(가장 최근 BUY)의 두 정책 공존은, 전자가 SELL의 "주된 전략"을 묻고 후자는 "직전 진입의 근거/감정"을 묻기에 의미가 다르기 때문.
+- **트레이드오프:** `PNL_AFFECTING_FIELDS`에 두 필드를 추가해 BUY의 메타 단독 변경에서도 그룹 advisory lock + recalc가 발동 — DB write 부하 약간 증가, 정합성과 교환. 사용자가 SELL에 직접 입력했던 기존 emotion/reasoning_tags 값은 마이그레이션 시 무조건 덮어써짐 (의도된 결정). 자동 산출 정책 책임은 `SELL_AUTO_DERIVED_FIELDS` 상수와 `strip_sell_auto_derived` 헬퍼로 단일 등록 지점화 — 후속 필드 추가 시 한 줄 수정.
+
+---
+
 ## 2026-04-28 | 라이트 모드 전용 — 다크 모드 제거
 
 - **맥락:** 설정 탭의 "화면" 섹션에 시스템/라이트/다크 3종 토글이 있었고 next-themes로 동적 전환했음. 단일 디자인 일관성 확보와 다크 variant 색 결정·검증 비용 절감을 위해 라이트 모드 단일화 결정.

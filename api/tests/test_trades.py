@@ -424,6 +424,53 @@ class TestPatchTrade:
         _assert_lock_before_list(sql_calls)
         _assert_lock_timeout_before_lock(sql_calls)
 
+    def test_patch_sell_emotion_only_ignored(self, trades_client, monkeypatch):
+        """SELL의 emotion 단독 patch는 무시되어야 한다 — 자동 산출 정책."""
+        sql_calls = _capture_sql(monkeypatch)
+        sell_row = _make_trade_row(id_="s1", trade_type="SELL", quantity=10)
+        conn = FakeConnection(_to_record(sell_row))  # fetchrow만 호출, UPDATE 없음
+        with _patch_trades(conn):
+            resp = trades_client.patch("/api/trades/s1", json={"emotion": "FOMO"})
+        assert resp.status_code == 204
+        # patch_trade의 SET 쿼리가 호출되지 않아야 함
+        assert not any("UPDATE trades SET" in q for q in sql_calls)
+
+    def test_patch_sell_reasoning_tags_only_ignored(self, trades_client, monkeypatch):
+        """SELL의 reasoning_tags 단독 patch도 무시."""
+        sql_calls = _capture_sql(monkeypatch)
+        sell_row = _make_trade_row(id_="s1", trade_type="SELL", quantity=10)
+        conn = FakeConnection(_to_record(sell_row))
+        with _patch_trades(conn):
+            resp = trades_client.patch("/api/trades/s1", json={"reasoning_tags": ["TECHNICAL"]})
+        assert resp.status_code == 204
+        assert not any("UPDATE trades SET" in q for q in sql_calls)
+
+    def test_patch_sell_emotion_with_pnl_field_strips_emotion(self, trades_client, monkeypatch):
+        """SELL의 emotion과 price를 함께 patch하면 emotion만 빠지고 price는 처리되어야 한다."""
+        sql_calls = _capture_sql(monkeypatch)
+        sell_row = _make_trade_row(
+            id_="s1",
+            trade_type="SELL",
+            quantity=10,
+            traded_at=_dt("2024-02-01T09:00:00+09:00"),
+        )
+        buy_row = _make_trade_row(id_="b1", trade_type="BUY", quantity=10, traded_at=_dt("2024-01-01T09:00:00+09:00"))
+        conn = FakeConnection(
+            _to_record(sell_row),                          # fetchrow
+            [_to_record(buy_row), _to_record(sell_row)],   # list_trades (PNL 분기)
+            "UPDATE 1",                                    # patch_trade
+        )
+        with _patch_trades(conn):
+            resp = trades_client.patch(
+                "/api/trades/s1",
+                json={"emotion": "FOMO", "price": 90000},
+            )
+        assert resp.status_code == 204
+        # patch_trade의 SET 쿼리가 emotion 없이 price만 포함해야 함
+        patch_set = next(q for q in sql_calls if q.startswith("UPDATE trades SET") and "WHERE id" in q and "profit_loss" not in q)
+        assert "price" in patch_set
+        assert "emotion" not in patch_set
+
     def test_patch_buy_strategy_recalculates_matched_sell_strategy(self, trades_client, monkeypatch):
         """BUY 전략 수정은 이미 매칭된 SELL의 파생 strategy_type 재계산을 트리거해야 함."""
         sql_calls = _capture_sql(monkeypatch)

@@ -1,4 +1,4 @@
-import type { Trade, ReasoningTag } from "@/types/database";
+import type { Trade } from "@/types/database";
 import type { Period } from "./period";
 import {
   evaluateStrategyAdherence,
@@ -17,8 +17,7 @@ export interface StrategyStats {
 
 export interface EmotionStats {
   type: string;
-  count: number;        // BUY + SELL 전체 빈도 (감정 노출 빈도)
-  sellCount: number;    // SELL만 (winRate 분모 — 실제 결과 판단 기준)
+  count: number;        // SELL 건수 (mutation 시 직전 BUY로부터 자동 산출됨)
   resultCount: number;  // result 입력된 SELL 수 — winRate 신뢰도 판단용
   winRate: number;
   avgPnL: number;
@@ -67,12 +66,11 @@ function evaluateStrategyForSell(
 }
 
 // pnlMap, holdingDaysMap: allTrades 기준으로 저장/백필된 계산값 제공
-// allTrades: byTag 태그 귀속 시 기간 이전 BUY 포함을 위해 필요 (없으면 trades 내 BUY만 사용)
+// reasoning_tags / emotion은 SELL row에 자동 산출되어 저장되므로 SELL 저장값만 사용 (allTrades 불필요)
 export function computeSummary(
   trades: Trade[],
   pnlMap: Map<string, number>,
   holdingDaysMap: Map<string, number>,
-  allTrades?: Trade[],
 ): AnalysisSummary {
   const sells = trades.filter((t) => t.trade_type === "SELL");
   const buys = trades.filter((t) => t.trade_type === "BUY");
@@ -143,31 +141,20 @@ export function computeSummary(
   const strategyAdherenceRate =
     judged.length > 0 ? (judged.filter((e) => e?.adherence === "FOLLOWED").length / judged.length) * 100 : 0;
 
-  // --- byEmotion ---
-  // count: BUY+SELL 전체 감정 노출 빈도
-  // sellCount: SELL만 (winRate/avgPnL 분모)
-  const emotionMap = new Map<
-    string,
-    { totalCount: number; sellCount: number; pnls: number[]; results: string[] }
-  >();
-  for (const t of trades) {
+  // --- byEmotion --- SELL의 저장된 emotion만 사용 (mutation 시 직전 BUY로부터 자동 산출됨)
+  const emotionMap = new Map<string, { pnls: number[]; results: string[] }>();
+  for (const t of sells) {
     if (!t.emotion) continue;
-    if (!emotionMap.has(t.emotion))
-      emotionMap.set(t.emotion, { totalCount: 0, sellCount: 0, pnls: [], results: [] });
+    if (!emotionMap.has(t.emotion)) emotionMap.set(t.emotion, { pnls: [], results: [] });
     const e = emotionMap.get(t.emotion)!;
-    e.totalCount++;
-    if (t.trade_type === "SELL") {
-      e.sellCount++;
-      e.pnls.push(pnlMap.get(t.id) ?? 0);
-      if (t.result) e.results.push(t.result);
-    }
+    e.pnls.push(pnlMap.get(t.id) ?? 0);
+    if (t.result) e.results.push(t.result);
   }
 
   const byEmotion: EmotionStats[] = Array.from(emotionMap.entries())
     .map(([type, e]) => ({
       type,
-      count: e.totalCount,
-      sellCount: e.sellCount,
+      count: e.pnls.length,
       resultCount: e.results.length,
       winRate:
         e.results.length > 0
@@ -177,28 +164,10 @@ export function computeSummary(
     }))
     .sort((a, b) => b.count - a.count);
 
-  // --- byTag ---
-  // 기간 이전 BUY 태그도 포함해야 정확 — allTrades 제공 시 전체 BUY 사용
-  const allBuys = allTrades ? allTrades.filter((t) => t.trade_type === "BUY") : buys;
-  const buysByKey = new Map<string, Trade[]>();
-  for (const t of [...allBuys].sort(
-    (a, b) => new Date(a.traded_at).getTime() - new Date(b.traded_at).getTime(),
-  )) {
-    const key = `${t.ticker_symbol ?? t.asset_name}:${t.country_code ?? "KR"}`;
-    if (!buysByKey.has(key)) buysByKey.set(key, []);
-    buysByKey.get(key)!.push(t);
-  }
-
+  // --- byTag --- SELL의 저장된 reasoning_tags만 사용 (mutation 시 직전 BUY로부터 자동 산출됨)
   const tagMap = new Map<string, { pnls: number[]; results: string[] }>();
   for (const sell of sells) {
-    const key = `${sell.ticker_symbol ?? sell.asset_name}:${sell.country_code ?? "KR"}`;
-    const buysForKey = buysByKey.get(key) ?? [];
-    const sellTime = new Date(sell.traded_at).getTime();
-    const prevBuys = buysForKey.filter((b) => new Date(b.traded_at).getTime() <= sellTime);
-    const tags: ReasoningTag[] = prevBuys.at(-1)?.reasoning_tags ?? [];
-    if (tags.length === 0) continue;
-
-    for (const tag of tags) {
+    for (const tag of sell.reasoning_tags ?? []) {
       if (!tagMap.has(tag)) tagMap.set(tag, { pnls: [], results: [] });
       const tm = tagMap.get(tag)!;
       tm.pnls.push(pnlMap.get(sell.id) ?? 0);
