@@ -31,6 +31,7 @@ async def recalc_group_pnl(
             entry.strategy_type,
             entry.reasoning_tags,
             entry.emotion,
+            entry.result,
             sell_id,
         )
         for sell_id, entry in pnl_map.items()
@@ -39,7 +40,7 @@ async def recalc_group_pnl(
     try:
         await conn.executemany(
             "UPDATE trades SET profit_loss = $1, avg_buy_price = $2, holding_days = $3, "
-            "strategy_type = $4, reasoning_tags = $5, emotion = $6 WHERE id = $7",
+            "strategy_type = $4, reasoning_tags = $5, emotion = $6, result = $7 WHERE id = $8",
             rows,
         )
     except Exception as exc:

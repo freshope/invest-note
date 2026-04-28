@@ -53,7 +53,7 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
     try {
       await tradesApi.update(tradeId, {
         sell_reason: values.sell_reason.trim() || null,
-        result: summary?.result ?? null,
+        // SELL의 result는 백엔드가 PnL 부호로 자동 산출 — 패치 미포함.
         strategy_type: summary?.strategyEvaluation?.planned ?? null,
       });
       await Promise.all([

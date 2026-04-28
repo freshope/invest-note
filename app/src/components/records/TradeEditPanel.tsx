@@ -135,9 +135,10 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
         commission: values.commission,
         tax: values.tax,
         strategy_type: isSell ? (summary?.strategyEvaluation?.planned ?? null) : values.strategy_type,
-        // SELL의 emotion / reasoning_tags는 백엔드가 직전 BUY로부터 자동 산출 — 패치 미포함.
-        ...(isSell ? {} : { emotion: values.emotion, reasoning_tags: values.reasoning_tags }),
-        result: isSell ? (summary?.result ?? null) : values.result,
+        // SELL의 emotion / reasoning_tags / result는 백엔드가 자동 산출 — 패치 미포함.
+        ...(isSell
+          ? {}
+          : { emotion: values.emotion, reasoning_tags: values.reasoning_tags, result: values.result }),
         buy_reason: values.buy_reason.trim() || null,
         sell_reason: values.sell_reason.trim() || null,
       });

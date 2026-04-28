@@ -6,6 +6,9 @@ from typing import Literal
 
 from invest_note_api.domain.trade_types import (
     DEFAULT_COUNTRY,
+    RESULT_BREAKEVEN,
+    RESULT_FAIL,
+    RESULT_SUCCESS,
     STRATEGY_UNKNOWN,
     TRADE_TYPE_BUY,
     TRADE_TYPE_SELL,
@@ -13,6 +16,7 @@ from invest_note_api.domain.trade_types import (
     ReasoningTag,
     StrategyType,
     Trade,
+    TradeResult,
 )
 from invest_note_api.domain.trade_utils import MS_PER_DAY, to_kst
 
@@ -72,8 +76,17 @@ class GroupPnLEntry:
     strategy_type: StrategyType | None
     reasoning_tags: list[ReasoningTag]
     emotion: EmotionType | None
+    result: TradeResult
     matched_qty: float
     running_qty_after: float
+
+
+def derive_result_from_pnl(pnl: float) -> TradeResult:
+    if pnl > 0:
+        return RESULT_SUCCESS
+    if pnl < 0:
+        return RESULT_FAIL
+    return RESULT_BREAKEVEN
 
 
 def _strategy_from_consumed(consumed: list[dict]) -> StrategyType | None:
@@ -158,13 +171,15 @@ def compute_group_pnl(trades: list[Trade], key: TradeGroupKey) -> dict[str, Grou
                 else None
             )
             tags, emotion = _meta_from_consumed_latest(consumed)
+            pnl = _sell_pnl(trade, avg_cost, matched_qty)
             result[trade.id] = GroupPnLEntry(
-                profit_loss=_sell_pnl(trade, avg_cost, matched_qty),
+                profit_loss=pnl,
                 avg_buy_price=avg_cost,
                 holding_days=holding_days,
                 strategy_type=_strategy_from_consumed(consumed),
                 reasoning_tags=tags,
                 emotion=emotion,
+                result=derive_result_from_pnl(pnl),
                 matched_qty=matched_qty,
                 running_qty_after=max(0.0, running_qty - trade.quantity),
             )

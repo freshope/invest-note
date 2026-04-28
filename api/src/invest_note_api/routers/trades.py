@@ -28,12 +28,13 @@ from invest_note_api.domain.holdings import (
     compute_total_holding,
 )
 from invest_note_api.domain.analysis.strategy_adherence import evaluate_strategy_for_sell
-from invest_note_api.domain.realized_pnl import trade_to_group_key, validate_mutation
+from invest_note_api.domain.realized_pnl import (
+    derive_result_from_pnl,
+    trade_to_group_key,
+    validate_mutation,
+)
 from invest_note_api.domain.trade_types import (
     DEFAULT_COUNTRY,
-    RESULT_BREAKEVEN,
-    RESULT_FAIL,
-    RESULT_SUCCESS,
     TRADE_TYPE_SELL,
     Trade,
 )
@@ -67,14 +68,6 @@ def _breakdown_dict(bd: SellBreakdown) -> dict:
         "pnl": bd.pnl,
         "isManualInput": bd.is_manual_input,
     }
-
-
-def _derive_result(pnl: float) -> str:
-    if pnl > 0:
-        return RESULT_SUCCESS
-    if pnl < 0:
-        return RESULT_FAIL
-    return RESULT_BREAKEVEN
 
 
 @router.get("")
@@ -226,7 +219,8 @@ async def get_trade_summary(
 
     return {
         "pnl": breakdown.pnl,
-        "result": _derive_result(breakdown.pnl),
+        # result는 mutation 시 SELL row에 자동 저장됨. legacy NULL row 대비 fallback 유지.
+        "result": sell.result or derive_result_from_pnl(breakdown.pnl),
         "holdingDays": holding_days,
         "strategyEvaluation": strategy_eval,
         "breakdown": _breakdown_dict(breakdown),

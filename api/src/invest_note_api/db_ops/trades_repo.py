@@ -145,7 +145,7 @@ PNL_AFFECTING_FIELDS = {
 
 # SELL row에 자동 산출되어 저장되는 메타 필드 — 사용자 patch 무시 대상.
 # 새 자동 산출 필드 추가 시 여기에 등록.
-SELL_AUTO_DERIVED_FIELDS = frozenset({"reasoning_tags", "emotion"})
+SELL_AUTO_DERIVED_FIELDS = frozenset({"reasoning_tags", "emotion", "result"})
 
 
 def strip_sell_auto_derived(

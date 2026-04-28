@@ -86,6 +86,18 @@ class TestComputeGroupPnL:
         assert pytest.approx(result["s1"].avg_buy_price) == 70000.0
         assert result["s1"].holding_days == 31
         assert result["s1"].strategy_type == "LONG_TERM"
+        assert result["s1"].result == "SUCCESS"
+
+    def test_result_derives_from_pnl_sign(self):
+        # 손실 SELL → FAIL, 본전 SELL → BREAKEVEN.
+        trades = [
+            make_trade(id="b1", trade_type="BUY", price=80000, quantity=10, traded_at=_dt("2024-01-01T09:00:00+09:00")),
+            make_trade(id="s1", trade_type="SELL", price=70000, quantity=5, traded_at=_dt("2024-02-01T09:00:00+09:00")),
+            make_trade(id="s2", trade_type="SELL", price=80000, quantity=5, traded_at=_dt("2024-03-01T09:00:00+09:00")),
+        ]
+        result = compute_group_pnl(trades, self._key())
+        assert result["s1"].result == "FAIL"
+        assert result["s2"].result == "BREAKEVEN"
 
     def test_partial_sell(self):
         trades = [
