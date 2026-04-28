@@ -3,7 +3,6 @@
 import { cn } from "@/lib/utils";
 import { fmt } from "@/lib/format";
 import { ADHERENCE_CONFIG } from "@/lib/constants/trading";
-import { WinRateBar } from "./WinRateBar";
 import type { StrategyAdherenceStats } from "@/lib/analysis/aggregate";
 
 interface StrategyAdherencePanelProps {
@@ -11,8 +10,57 @@ interface StrategyAdherencePanelProps {
   data: StrategyAdherenceStats[];
 }
 
+function PnLLine({ value }: { value: number }) {
+  if (value === 0) return null;
+  return (
+    <p
+      className={cn(
+        "text-[11px] tabular-nums",
+        value > 0 ? "text-[var(--rise)]" : "text-[var(--fall)]",
+      )}
+    >
+      {value > 0 ? "+" : ""}
+      {fmt(Math.round(value))}원
+    </p>
+  );
+}
+
+function AdherenceSide({
+  type,
+  stats,
+  align,
+}: {
+  type: "FOLLOWED" | "DEVIATED";
+  stats: StrategyAdherenceStats | undefined;
+  align: "left" | "right";
+}) {
+  const config = ADHERENCE_CONFIG[type];
+  const count = stats?.count ?? 0;
+  return (
+    <div className={cn("space-y-0.5", align === "right" && "text-right")}>
+      <p className={cn("font-semibold", config.textClassName)}>{config.label}</p>
+      <p className="text-[11px] text-muted-foreground tabular-nums">
+        {count}건
+        {stats && stats.resultCount > 0 && (
+          <span className="ml-1">· 승률 {Math.round(stats.winRate)}%</span>
+        )}
+      </p>
+      <PnLLine value={stats?.avgPnL ?? 0} />
+    </div>
+  );
+}
+
 export function StrategyAdherencePanel({ rate, data }: StrategyAdherencePanelProps) {
-  const judged = data.filter((item) => item.type !== "UNKNOWN").reduce((sum, item) => sum + item.count, 0);
+  const followed = data.find((d) => d.type === "FOLLOWED");
+  const deviated = data.find((d) => d.type === "DEVIATED");
+  const unknown = data.find((d) => d.type === "UNKNOWN");
+
+  const followedCount = followed?.count ?? 0;
+  const deviatedCount = deviated?.count ?? 0;
+  const unknownCount = unknown?.count ?? 0;
+  const judged = followedCount + deviatedCount;
+  const followedPct = judged > 0 ? Math.round((followedCount / judged) * 100) : 0;
+  const deviatedPct = judged > 0 ? 100 - followedPct : 0;
 
   return (
     <div className="space-y-3">
@@ -29,32 +77,45 @@ export function StrategyAdherencePanel({ rate, data }: StrategyAdherencePanelPro
         </div>
       </div>
 
-      {data.length === 0 ? (
+      {judged === 0 ? (
         <div className="text-[13px] text-muted-foreground text-center py-4">
-          전략 준수 데이터가 없습니다
+          {unknownCount > 0
+            ? `전략 준수 판정이 가능한 거래가 없습니다 (분류 불가 ${unknownCount}건)`
+            : "전략 준수 데이터가 없습니다"}
         </div>
       ) : (
-        data.map((item) => {
-          const config = ADHERENCE_CONFIG[item.type];
-          return (
-            <div key={item.type} className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className={cn("text-[12px] font-semibold", config.className)}>
-                  {config.label}
-                </span>
-                <span className="text-[11px] text-muted-foreground tabular-nums">
-                  {item.count}건
-                  {item.avgPnL !== 0 && (
-                    <span className={cn("ml-1.5", item.avgPnL > 0 ? "text-[var(--rise)]" : "text-[var(--fall)]")}>
-                      {item.avgPnL > 0 ? "+" : ""}{fmt(Math.round(item.avgPnL))}원
-                    </span>
-                  )}
-                </span>
-              </div>
-              <WinRateBar rate={item.winRate} hasData={item.resultCount > 0} />
-            </div>
-          );
-        })
+        <div className="space-y-1.5">
+          <div className="flex items-start justify-between gap-2 text-[12px]">
+            <AdherenceSide type="FOLLOWED" stats={followed} align="left" />
+            <AdherenceSide type="DEVIATED" stats={deviated} align="right" />
+          </div>
+
+          <div className="flex h-2 rounded-full bg-muted overflow-hidden">
+            {followedPct > 0 && (
+              <div
+                className={ADHERENCE_CONFIG.FOLLOWED.barClassName}
+                style={{ width: `${followedPct}%` }}
+              />
+            )}
+            {deviatedPct > 0 && (
+              <div
+                className={ADHERENCE_CONFIG.DEVIATED.barClassName}
+                style={{ width: `${deviatedPct}%` }}
+              />
+            )}
+          </div>
+
+          <div className="flex justify-between text-[11px] text-muted-foreground tabular-nums">
+            <span>{followedPct}%</span>
+            <span>{deviatedPct}%</span>
+          </div>
+        </div>
+      )}
+
+      {judged > 0 && unknownCount > 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          분류 불가 {unknownCount}건은 통계에서 제외
+        </p>
       )}
     </div>
   );

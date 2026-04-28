@@ -50,7 +50,8 @@ export const TradeStrategyResultSection = memo(function TradeStrategyResultSecti
             {strategyEvaluation && strategyEvaluation.adherence !== "UNKNOWN" && (
               <span className={cn(
                 "inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold border",
-                ADHERENCE_CONFIG[strategyEvaluation.adherence].className,
+                ADHERENCE_CONFIG[strategyEvaluation.adherence].textClassName,
+                ADHERENCE_CONFIG[strategyEvaluation.adherence].bgClassName,
               )}>
                 {ADHERENCE_CONFIG[strategyEvaluation.adherence].label}
               </span>
