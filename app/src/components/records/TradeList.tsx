@@ -5,6 +5,7 @@ import { TradeCard } from "./TradeCard";
 import { TradeFormPanel } from "./TradeFormPanel";
 import { useDetailPanel } from "@/components/panels/DetailPanelProvider";
 import { CsvUploadButton } from "./CsvUploadButton";
+import { ImportTradesPanel } from "./ImportTradesPanel";
 import { AccountFilter } from "@/components/shared/AccountFilter";
 import { ACCOUNT_FILTER_ALL, useAccountFilter, useEnsureValidAccount } from "@/components/providers/AccountFilterProvider";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
@@ -19,6 +20,7 @@ interface TradeListProps {
 
 export function TradeList({ trades, accounts }: TradeListProps) {
   const [formOpen, setFormOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const { selectedAccountId, setSelectedAccountId } = useAccountFilter();
   const { openTrade } = useDetailPanel();
   useEnsureValidAccount(accounts);
@@ -36,7 +38,7 @@ export function TradeList({ trades, accounts }: TradeListProps) {
   return (
     <>
       <div className="sticky top-0 z-10 bg-background">
-        <PageHeader title="기록" actions={<CsvUploadButton />} sticky={false} />
+        <PageHeader title="기록" actions={<CsvUploadButton onClick={() => setImportOpen(true)} />} sticky={false} />
         {accounts.length >= 2 && (
           <AccountFilter
             accounts={accounts}
@@ -97,6 +99,13 @@ export function TradeList({ trades, accounts }: TradeListProps) {
       <TradeFormPanel
         open={formOpen}
         onOpenChange={setFormOpen}
+        accounts={accounts}
+      />
+
+      {/* 거래내역서 일괄 import 패널 */}
+      <ImportTradesPanel
+        open={importOpen}
+        onOpenChange={setImportOpen}
         accounts={accounts}
       />
     </>

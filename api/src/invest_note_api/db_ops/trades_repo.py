@@ -184,3 +184,72 @@ async def delete_trade(conn: Any, trade_id: str, user_id: str) -> bool:
         user_id,
     )
     return result != PG_DELETE_ZERO
+
+
+async def insert_trades_bulk(conn: Any, user_id: str, rows: list[dict]) -> int:
+    """거래 목록을 일괄 INSERT한다. 반환값: 삽입된 행 수."""
+    if not rows:
+        return 0
+
+    params = [
+        (
+            user_id,
+            data["account_id"],
+            data["asset_name"],
+            data["ticker_symbol"],
+            data.get("market_type", MARKET_TYPE_STOCK),
+            data["trade_type"],
+            data["price"],
+            data["quantity"],
+            data["traded_at"],
+            data.get("commission", 0),
+            data.get("tax", 0),
+            data.get("country_code", DEFAULT_COUNTRY),
+            data.get("exchange", ""),
+            data.get("strategy_type"),
+            data.get("reasoning_tags", []),
+            data.get("buy_reason"),
+            data.get("sell_reason"),
+            data.get("emotion"),
+            data.get("result"),
+        )
+        for data in rows
+    ]
+    await conn.executemany(
+        """
+        INSERT INTO trades (
+            user_id, account_id, asset_name, ticker_symbol, market_type,
+            trade_type, price, quantity, traded_at, commission, tax,
+            country_code, exchange,
+            strategy_type, reasoning_tags, buy_reason, sell_reason,
+            emotion, result
+        ) VALUES (
+            $1, $2, $3, $4, $5,
+            $6, $7, $8, $9, $10, $11,
+            $12, $13,
+            $14, $15, $16, $17,
+            $18, $19
+        )
+        """,
+        params,
+    )
+    return len(rows)
+
+
+async def list_trades_in_range(
+    conn: Any, user_id: str, start_date: str, end_date: str
+) -> list[Trade]:
+    """traded_at 이 [start_date, end_date] (날짜 기준) 범위인 거래를 반환한다."""
+    rows = await conn.fetch(
+        """
+        SELECT * FROM trades
+        WHERE user_id = $1
+          AND traded_at::date >= $2::date
+          AND traded_at::date <= $3::date
+        ORDER BY traded_at ASC
+        """,
+        user_id,
+        start_date,
+        end_date,
+    )
+    return [_row_to_trade(r) for r in rows]

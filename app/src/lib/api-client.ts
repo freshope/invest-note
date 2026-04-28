@@ -46,6 +46,8 @@ const ROUTES = {
     base: "/api/trades",
     byId: (id: string) => `/api/trades/${id}`,
     summary: (id: string) => `/api/trades/${id}/summary`,
+    importPreview: "/api/trades/import/preview",
+    importCommit: "/api/trades/import/commit",
   },
   portfolio: {
     summary: "/api/portfolio/summary",
@@ -209,6 +211,61 @@ export const tradesApi = {
     apiFetch<void>(ROUTES.trades.byId(id), { method: "DELETE" }),
 
   summary: (id: string) => apiFetch<TradeSummary>(ROUTES.trades.summary(id)),
+};
+
+// ============================================================
+// Import (거래내역서 파일 업로드)
+// ============================================================
+
+export interface ImportErrorItem {
+  row_no: number;
+  reason: string;
+}
+
+export interface ImportPreviewResponse {
+  staging_id: string;
+  broker_key: string;
+  broker_name: string;
+  account_hint: string | null;
+  new_count: number;
+  duplicate_count: number;
+  error_count: number;
+  usd_skip_count: number;
+  unresolved_ticker_count: number;
+  errors: ImportErrorItem[];
+}
+
+export interface ImportCommitResponse {
+  inserted_count: number;
+  skipped_count: number;
+  error_count: number;
+  errors: ImportErrorItem[];
+}
+
+export const importApi = {
+  preview: async (file: File, brokerKey?: string): Promise<ImportPreviewResponse> => {
+    const bearer = await getBearerHeader();
+    const formData = new FormData();
+    formData.append("file", file);
+    const url = `${API_BASE}${ROUTES.trades.importPreview}${brokerKey ? `?broker_key=${brokerKey}` : ""}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { ...bearer },
+      body: formData,
+    });
+    if (!res.ok) {
+      let msg = "파일 분석 중 오류가 발생했습니다.";
+      try { msg = (await res.json()).detail ?? msg; } catch { /* noop */ }
+      throw new ApiError(msg, res.status);
+    }
+    return res.json();
+  },
+
+  commit: (stagingId: string, accountId: string): Promise<ImportCommitResponse> =>
+    apiFetch<ImportCommitResponse>(ROUTES.trades.importCommit, {
+      method: "POST",
+      body: JSON.stringify({ staging_id: stagingId, account_id: accountId }),
+    }),
 };
 
 // ============================================================

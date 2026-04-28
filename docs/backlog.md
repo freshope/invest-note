@@ -20,11 +20,12 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [ ] PnL 저장값 검증 엔드포인트 (이슈 E) — `/api/admin/verify-pnl` 신설. SELL의 저장된 `profit_loss`/`avg_buy_price`/`holding_days`/`strategy_type`/`reasoning_tags`/`emotion`을 `compute_group_pnl()`로 재계산해 차이 검출. 사용자 단위 batch + 차이 리포트 + (옵션) 자동 보정. 권한은 admin scope. DB 직접 수정·마이그레이션 누락·mutation 경로 우회 시 분석 탭과 거래 기록 합계 불일치를 잡기 위함.
 
-## MVP 잔여 — CSV 임포트
+## 거래내역서 임포트 — 후속 과제
 
-- [ ] 임포트 포맷 정의 (컬럼 매핑)
-- [ ] CSV 파일 파싱 로직 (현재 `CsvUploadButton` UI만)
-- [ ] 파싱 결과 → DB insert
+- [ ] kr_stocks 갱신 자동화 — seed 스크립트를 주기적으로 실행하는 cron 또는 KIS API 연동 시 통합 (현재 수동 실행)
+- [ ] Preview staging 멀티 워커 대응 — 현재 `TTLCache` (단일 워커 메모리). 멀티 워커 배포 전 DB 임시 테이블 또는 Redis로 교체 필요
+- [ ] 임포트 통합 테스트 — `/import/preview`, `/import/commit` HTTP 엔드포인트 단위 테스트 (DB mock 또는 테스트 DB)
+- [ ] 해외 주식 임포트 지원 — 토스 PDF `달러 거래내역` 섹션 처리 (현재 MVP skip)
 
 ## 모바일앱 (v2.5) 잔여
 
