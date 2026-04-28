@@ -16,9 +16,7 @@ import { DrilldownHistograms } from "./DrilldownHistograms";
 import { SuggestionList } from "./SuggestionList";
 import { AnalysisEmptyState } from "./AnalysisEmptyState";
 import { DEFAULT_ANALYSIS_PERIOD, type Period } from "@/lib/analysis/period";
-import type { AnalysisSummary } from "@/lib/analysis/aggregate";
 import type { SuggestionsData } from "@/hooks/useAnalysisData";
-import { evaluateRules } from "@/lib/analysis/rules";
 import { useAnalysisData } from "@/hooks/useAnalysisData";
 import { ErrorState } from "@/components/shared/ErrorState";
 
@@ -36,16 +34,11 @@ function SkeletonCard({ h = "h-28" }: { h?: string }) {
 }
 
 function InsightSection({
-  summary,
   suggestionsData,
 }: {
-  summary: AnalysisSummary;
   suggestionsData: SuggestionsData | null;
 }) {
-  const suggestions = suggestionsData?.suggestions ?? [];
-  const top3 = suggestions.length > 0
-    ? suggestions.slice(0, 3)
-    : evaluateRules({ summary }).slice(0, 3);
+  const top3 = (suggestionsData?.suggestions ?? []).slice(0, 3);
   return top3.length > 0 ? <InsightHighlights insights={top3} /> : null;
 }
 
@@ -93,8 +86,8 @@ export function AnalysisDashboard() {
             {/* 섹션 1: 핵심 성과 */}
             <SummaryCards summary={summary} />
 
-            {/* 섹션 2: 오늘의 인사이트 — 룰 기반 상위 3개, suggestions 미로드 시 summary 전용 룰로 fallback */}
-            <InsightSection summary={summary} suggestionsData={suggestionsData} />
+            {/* 섹션 2: 오늘의 인사이트 — BE suggestions 응답 상위 3개 */}
+            <InsightSection suggestionsData={suggestionsData} />
 
             {/* 섹션 3: 투자 성향 프로필 */}
             {behavior && (

@@ -6,8 +6,22 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, TypedDict
 
 from invest_note_api.domain.analysis.thresholds import (
+    FEELING_RATE_HIGH,
     HHI_HIGH,
+    LOSING_STRATEGY_RATE,
     LOSS_THRESHOLD,
+    MIN_EMOTION_RESULTS,
+    MIN_EMOTION_TRADES,
+    MIN_HIGH_WINRATE_SELL,
+    MIN_SCALPING_TRADES,
+    MIN_SELL_TRADES,
+    MIN_STRATEGY_RESULTS,
+    MIN_STRATEGY_TRADES,
+    MIN_TOTAL_TRADES,
+    MISSING_TAG_RATE_HIGH,
+    REFLECTION_RATE_LOW,
+    RESULT_INPUT_RATE_LOW,
+    SCALPING_HOLDING_LIMIT_DAYS,
     TOP1_WEIGHT_HIGH,
     WIN_THRESHOLD,
 )
@@ -64,7 +78,12 @@ _RuleFn = Callable[[RuleInput], Suggestion | None]
 def _rule_fomo(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
     fomo = next((e for e in summary.by_emotion if e.type == EMOTION_FOMO), None)
-    if not fomo or fomo.count < 5 or fomo.result_count < 3 or fomo.win_rate >= LOSS_THRESHOLD:
+    if (
+        not fomo
+        or fomo.count < MIN_EMOTION_TRADES
+        or fomo.result_count < MIN_EMOTION_RESULTS
+        or fomo.win_rate >= LOSS_THRESHOLD
+    ):
         return None
     pct = _round(fomo.win_rate)
     return Suggestion(
@@ -80,7 +99,7 @@ def _rule_fomo(inp: RuleInput) -> Suggestion | None:
 def _rule_calm(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
     calm = next((e for e in summary.by_emotion if e.type == EMOTION_CALM), None)
-    if not calm or calm.count < 5 or calm.win_rate < WIN_THRESHOLD:
+    if not calm or calm.count < MIN_EMOTION_TRADES or calm.win_rate < WIN_THRESHOLD:
         return None
     pct = _round(calm.win_rate)
     return Suggestion(
@@ -112,7 +131,7 @@ def _rule_concentration(inp: RuleInput) -> Suggestion | None:
 
 def _rule_feeling_heavy(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
-    if summary.feeling_rate < 40 or summary.total_trades < 5:
+    if summary.feeling_rate < FEELING_RATE_HIGH or summary.total_trades < MIN_TOTAL_TRADES:
         return None
     pct = _round(summary.feeling_rate)
     return Suggestion(
@@ -127,7 +146,7 @@ def _rule_feeling_heavy(inp: RuleInput) -> Suggestion | None:
 
 def _rule_no_reflection(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
-    if summary.reflection_rate >= 30 or summary.sell_trades < 3:
+    if summary.reflection_rate >= REFLECTION_RATE_LOW or summary.sell_trades < MIN_SELL_TRADES:
         return None
     pct = _round(summary.reflection_rate)
     return Suggestion(
@@ -143,7 +162,11 @@ def _rule_no_reflection(inp: RuleInput) -> Suggestion | None:
 def _rule_holding_mismatch(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
     scalping = next((s for s in summary.by_strategy if s.type == STRATEGY_SCALPING), None)
-    if not scalping or scalping.count < 3 or scalping.avg_holding_days <= 7:
+    if (
+        not scalping
+        or scalping.count < MIN_SCALPING_TRADES
+        or scalping.avg_holding_days <= SCALPING_HOLDING_LIMIT_DAYS
+    ):
         return None
     days = _round(scalping.avg_holding_days)
     return Suggestion(
@@ -159,7 +182,13 @@ def _rule_holding_mismatch(inp: RuleInput) -> Suggestion | None:
 def _rule_losing_strategy(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
     worst = next(
-        (s for s in summary.by_strategy if s.count >= 5 and s.result_count >= 3 and s.win_rate < 30),
+        (
+            s
+            for s in summary.by_strategy
+            if s.count >= MIN_STRATEGY_TRADES
+            and s.result_count >= MIN_STRATEGY_RESULTS
+            and s.win_rate < LOSING_STRATEGY_RATE
+        ),
         None,
     )
     if not worst:
@@ -178,7 +207,7 @@ def _rule_losing_strategy(inp: RuleInput) -> Suggestion | None:
 
 def _rule_tag_missing(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
-    if summary.missing_tag_rate < 30 or summary.total_trades < 5:
+    if summary.missing_tag_rate < MISSING_TAG_RATE_HIGH or summary.total_trades < MIN_TOTAL_TRADES:
         return None
     pct = _round(summary.missing_tag_rate)
     return Suggestion(
@@ -193,7 +222,7 @@ def _rule_tag_missing(inp: RuleInput) -> Suggestion | None:
 
 def _rule_result_missing(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
-    if summary.result_input_rate >= 50 or summary.sell_trades < 3:
+    if summary.result_input_rate >= RESULT_INPUT_RATE_LOW or summary.sell_trades < MIN_SELL_TRADES:
         return None
     pct = _round(100 - summary.result_input_rate)
     return Suggestion(
@@ -208,7 +237,11 @@ def _rule_result_missing(inp: RuleInput) -> Suggestion | None:
 
 def _rule_high_winrate(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
-    if summary.win_rate < WIN_THRESHOLD or summary.sell_trades < 5 or summary.result_input_rate < 50:
+    if (
+        summary.win_rate < WIN_THRESHOLD
+        or summary.sell_trades < MIN_HIGH_WINRATE_SELL
+        or summary.result_input_rate < RESULT_INPUT_RATE_LOW
+    ):
         return None
     pct = _round(summary.win_rate)
     return Suggestion(

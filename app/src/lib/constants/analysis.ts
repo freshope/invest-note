@@ -19,17 +19,13 @@ export const PERIODS_COMPACT: { value: Period; label: string }[] = [
   { value: "all", label: "전체" },
 ];
 
-// HHI 집중도 임계치
+// HHI 집중도 임계치 (FE UI 라벨 결정용 — DiversificationPanel)
 export const HHI_HIGH = 0.5;
 export const HHI_MID = 0.25;
-export const TOP1_WEIGHT_HIGH = 0.4;
 
-// 전략별 보유일 임계치
-export const STRATEGY_THRESHOLDS = {
-  SCALPING_MAX_DAYS: 1,
-  SWING_MAX_DAYS: 30,
-} as const;
-
-// 승률 임계치 (%)
+// 승률 임계치 (%) — FE UI 색상 결정용 (WinRateBar, SummaryCards)
 export const WIN_THRESHOLD = 65;
 export const LOSS_THRESHOLD = 40;
+
+// 결과 입력률 임계치 (%) — 승률 표시 신뢰도 컷오프 (SummaryCards)
+export const RESULT_INPUT_RATE_LOW = 50;

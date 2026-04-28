@@ -6,12 +6,9 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 분석 탭 성능 / 유지보수
 
-- [ ] InsightSection `useMemo` 적용 — `evaluateRules()` 호출 메모이제이션 (176줄 룰 배열이 매 렌더마다 실행)
-- [ ] InsightSection 룰 일관성 — `suggestionsData` null 시 빈 배열 fallback으로 서버/클라이언트 룰 불일치 제거
 - [ ] 분석 API 3개(`/summary`, `/behavior`, `/suggestions`) 단일 엔드포인트 통합 또는 캐싱 — 동일 거래 데이터를 3번 조회
 - [ ] 분석 API 쿼리 `.limit(1000)` 가드 — 거래 수 급증 시 메모리/응답 보호
 - [ ] `compute_holding_days_map` 정리 — `trades.holding_days` 저장값 전환 후 분석 라우터/프로필/집계 인터페이스를 저장값 직접 사용으로 단순화하고 legacy FIFO fallback 제거 여부 결정
-- [ ] `aggregate.ts` `byTag` O(n²) → binary search / 누적 Map 개선
 - [ ] 수수료 현황 별도 패널 — BUY commission·세금 합계, 순실현손익 vs 총비용 비교
 - [ ] 테스트 보강 — `period.ts` 경계값, `computeRealizedPnL` 멀티 종목, `byTag` FIFO 귀속
 - [ ] PnL 표시 패턴 통합 — `EmotionBreakdown`/`StrategyBreakdown`/`ReasoningBreakdown`의 인라인 양수/음수 색상+부호+`fmt` 패턴을 `PnLLine` 공용 컴포넌트로 추출하고 `format.ts`에 `formatPnL` 헬퍼 추가
