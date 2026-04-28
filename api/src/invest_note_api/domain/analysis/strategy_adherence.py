@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from invest_note_api.domain.analysis.thresholds import SCALPING_MAX_DAYS, SWING_MAX_DAYS
 from invest_note_api.domain.trade_types import (
     STRATEGY_LONG_TERM,
     STRATEGY_SCALPING,
@@ -28,9 +29,9 @@ class StrategyEvaluation:
 
 
 def infer_actual_strategy(holding_days: int) -> "StrategyType":
-    if holding_days <= 1:
+    if holding_days <= SCALPING_MAX_DAYS:
         return STRATEGY_SCALPING
-    if holding_days <= 30:
+    if holding_days <= SWING_MAX_DAYS:
         return STRATEGY_SWING
     return STRATEGY_LONG_TERM
 

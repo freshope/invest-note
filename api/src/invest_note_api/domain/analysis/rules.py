@@ -5,7 +5,7 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, TypedDict
 
-from invest_note_api.domain.analysis.concentration import HHI_HIGH, TOP1_WEIGHT_HIGH
+from invest_note_api.domain.analysis.thresholds import HHI_HIGH, TOP1_WEIGHT_HIGH
 from invest_note_api.domain.trade_types import (
     EMOTION_CALM,
     EMOTION_FOMO,

@@ -10,10 +10,6 @@ if TYPE_CHECKING:
     from invest_note_api.domain.portfolio import Position
     from invest_note_api.domain.trade_types import Trade
 
-HHI_HIGH = 0.5
-HHI_MID = 0.25
-TOP1_WEIGHT_HIGH = 0.4
-
 
 @dataclass
 class ConcentrationData:

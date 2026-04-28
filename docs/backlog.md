@@ -18,8 +18,6 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 행동 프로파일 tempo 식 단순화 (이슈 B) — 현 식은 `(avg_holding_days / 60) * 100 - scalping_ratio * 10`로 보유기간과 스캘핑 페널티가 한 축에 혼합. 단순 평균 보유기간 점수만 사용하도록 변경 (`profile.py` / `profile.ts` 동시 수정, 테스트 갱신). 백엔드는 actual 기준, 프론트엔드는 planned 기준이라 결과도 어긋나는 정합성 문제도 함께 해소.
 - [ ] `recalc_group_pnl` 변경 row만 UPDATE 최적화 — `PNL_AFFECTING_FIELDS`에 `reasoning_tags`/`emotion` 추가로 BUY 메타 단독 변경에서도 그룹 advisory lock + `executemany`가 발동. `pnl_map` 결과를 기존 SELL row와 비교해 실제 변경된 row에만 UPDATE 발행. DB write 부하 절감.
 - [ ] SELL의 `result` 자동 산출 일관 처리 — 현재 `result`는 PnL 부호로 자동 결정되어 `summary.result`로 UI에 채워지나 SELL row에는 저장되지 않음. `strategy_type`/`reasoning_tags`/`emotion`과 동일하게 mutation 시점에 SELL row에 저장 + `PNL_AFFECTING_FIELDS` 확장 + UI 입력 차단으로 일관 처리. 분석 라우터의 `_derive_result` 의존도 함께 정리.
-- [ ] 분석 임계값 단일 SOT (이슈 C) — `STRATEGY_THRESHOLDS`(SCALPING_MAX_DAYS=1, SWING_MAX_DAYS=30), `HHI_HIGH=0.5`, `HHI_MID=0.25`, `TOP1_WEIGHT_HIGH=0.4`가 frontend 상수와 backend 하드코딩(`strategy_adherence.py`, `concentration.py`)으로 이중화. 백엔드는 `analysis/thresholds.py` 모듈로 추출하고 두 파일이 import하도록, frontend 상수 위치는 그대로 두되 `docs/decisions.md`에 "임계값 변경 시 양쪽 함께 수정" 명시.
-
 ## 운영 / 어드민 도구
 
 - [ ] PnL 저장값 검증 엔드포인트 (이슈 E) — `/api/admin/verify-pnl` 신설. SELL의 저장된 `profit_loss`/`avg_buy_price`/`holding_days`/`strategy_type`/`reasoning_tags`/`emotion`을 `compute_group_pnl()`로 재계산해 차이 검출. 사용자 단위 batch + 차이 리포트 + (옵션) 자동 보정. 권한은 admin scope. DB 직접 수정·마이그레이션 누락·mutation 경로 우회 시 분석 탭과 거래 기록 합계 불일치를 잡기 위함.

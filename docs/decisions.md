@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-04-28 | 분석 임계값 단일 SOT 정책 (BE thresholds.py + FE constants/analysis.ts)
+
+- **맥락:** `SCALPING_MAX_DAYS=1`, `SWING_MAX_DAYS=30`, `HHI_HIGH=0.5`, `HHI_MID=0.25`, `TOP1_WEIGHT_HIGH=0.4` 가 BE(`strategy_adherence.py` 매직 넘버, `concentration.py` 모듈 상수)와 FE(`app/src/lib/constants/analysis.ts`) 양쪽에 이중화. BE 내부에서도 두 파일에 분산되어 변경 시 업데이트 누락 위험.
+- **결정:** BE는 `api/src/invest_note_api/domain/analysis/thresholds.py` 단일 모듈로 추출. `strategy_adherence.py`(전략 임계값), `rules.py`(HHI 임계값)가 모두 `thresholds`에서 import. `concentration.py`의 자체 상수 정의는 제거. FE 상수는 정적 export + Capacitor 구조라 BE에서 직접 참조 불가하므로 `app/src/lib/constants/analysis.ts` 위치를 그대로 유지하고, **임계값 변경 시 두 파일을 함께 수정한다.**
+- **이유:** BE는 단일 SOT로 통합해 변경 지점 최소화. FE는 빌드 타임 정적 번들 제약으로 런타임 fetch가 비현실적이라 docs 정책으로 동기화 책임을 명시. 정책을 decisions.md에 기록해 향후 임계값 변경 PR이 양쪽 동시 수정을 잊지 않도록 함.
+- **트레이드오프:** BE/FE 동기화는 여전히 수동 — PR review 단계에서 양쪽 diff 확인 필요. 임계값 자동 sync(예: BE에서 JSON export → FE 빌드 시 import)는 정적 export 구조와 별도 빌드 단계가 필요해 비용 대비 효과가 낮다고 판단.
+
+---
+
 ## 2026-04-28 | SELL 거래 reasoning_tags · emotion 자동 산출 정책
 
 - **맥락:** 분석 탭의 byTag/byEmotion이 SELL 시점에 직전 BUY를 매번 FIFO로 매칭해 태그/감정을 귀속하는 구조였음. 프론트엔드 키는 `account_id`가 누락되어 다계좌 사용자에게 잘못된 귀속 가능. EmotionStats는 BUY+SELL 합산 `count`와 SELL 한정 `sellCount`를 분리해 UI 표기 혼동 유발.
