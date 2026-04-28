@@ -1,6 +1,6 @@
 "use client";
 
-import { useForm, Controller, useWatch } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -8,12 +8,10 @@ import { Button } from "@/components/base/Button";
 import { tradesApi } from "@/lib/api-client";
 import { VALIDATION_LIMITS, TRADE_FREE_TEXT_ERROR } from "@/lib/constants/validation";
 import { queryKeys } from "@/lib/query-keys";
-import { StrategyEmotionFields } from "./StrategyEmotionFields";
-import { EMOTION_VALUES } from "./constants";
 import { TradeFreeTextField } from "./TradeFreeTextField";
+import { AutoEmotionField } from "./AutoMetaField";
 
 const schema = z.object({
-  emotion: z.enum(EMOTION_VALUES).nullable(),
   sell_reason: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, TRADE_FREE_TEXT_ERROR),
 });
 
@@ -32,6 +30,12 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
     queryFn: () => tradesApi.summary(tradeId),
   });
 
+  // 자동 산출된 emotion 표시용 — 직전 BUY로부터 백엔드가 자동 채움
+  const { data: trade } = useQuery({
+    queryKey: queryKeys.trade(tradeId),
+    queryFn: () => tradesApi.get(tradeId),
+  });
+
   const {
     control,
     handleSubmit,
@@ -40,10 +44,7 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
     formState: { isSubmitting, errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: {
-      emotion: null,
-      sell_reason: "",
-    },
+    defaultValues: { sell_reason: "" },
   });
 
   const sellReason = useWatch({ control, name: "sell_reason" }) ?? "";
@@ -51,7 +52,6 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
   async function onSubmit(values: FormValues) {
     try {
       await tradesApi.update(tradeId, {
-        emotion: values.emotion,
         sell_reason: values.sell_reason.trim() || null,
         result: summary?.result ?? null,
         strategy_type: summary?.strategyEvaluation?.planned ?? null,
@@ -81,19 +81,7 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
           rows={2}
         />
 
-        <Controller
-          control={control}
-          name="emotion"
-          render={({ field: emoField }) => (
-            <StrategyEmotionFields
-              strategy=""
-              emotion={emoField.value ?? ""}
-              onStrategyChange={() => {}}
-              onEmotionChange={(v) => emoField.onChange(v || null)}
-              hideStrategy
-            />
-          )}
-        />
+        <AutoEmotionField emotion={trade?.emotion ?? null} />
 
         {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
       </div>

@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from invest_note_api.domain.trade_types import (
-    DEFAULT_COUNTRY,
     RESULT_SUCCESS,
     STRATEGY_UNKNOWN,
     TAG_FEELING,
@@ -32,7 +31,6 @@ class StrategyStats:
 class EmotionStats:
     type: str
     count: int
-    sell_count: int
     result_count: int
     win_rate: float
     avg_pnl: float
@@ -80,7 +78,6 @@ def compute_summary(
     trades: list[Trade],
     pnl_map: dict[str, float],
     holding_days_map: dict[str, int],
-    all_trades: list[Trade] | None = None,
 ) -> AnalysisSummary:
     sells = [t for t in trades if t.trade_type == TRADE_TYPE_SELL]
     buys = [t for t in trades if t.trade_type == TRADE_TYPE_BUY]
@@ -90,7 +87,7 @@ def compute_summary(
     win_rate = (win_count / len(sells_with_result) * 100) if sells_with_result else 0.0
     total_profit_loss = sum(pnl_map.get(t.id, 0.0) for t in sells)
 
-    strategy_evals = build_strategy_evaluations(all_trades or trades, holding_days_map)
+    strategy_evals = build_strategy_evaluations(trades, holding_days_map)
 
     # byStrategy — SELL에 저장된 계획 전략 기준
     strat_map: dict[str, dict] = {}
@@ -157,27 +154,23 @@ def compute_summary(
     followed = sum(1 for e in judged if e.adherence == "FOLLOWED")
     strategy_adherence_rate = followed / len(judged) * 100 if judged else 0.0
 
-    # byEmotion
+    # byEmotion — SELL의 저장된 emotion만 사용 (mutation 시 직전 BUY로부터 자동 산출됨)
     emotion_map: dict[str, dict] = {}
-    for t in trades:
+    for t in sells:
         if t.emotion is None:
             continue
         if t.emotion not in emotion_map:
-            emotion_map[t.emotion] = {"total_count": 0, "sell_count": 0, "pnls": [], "results": []}
+            emotion_map[t.emotion] = {"pnls": [], "results": []}
         e = emotion_map[t.emotion]
-        e["total_count"] += 1
-        if t.trade_type == TRADE_TYPE_SELL:
-            e["sell_count"] += 1
-            e["pnls"].append(pnl_map.get(t.id, 0.0))
-            if t.result:
-                e["results"].append(t.result)
+        e["pnls"].append(pnl_map.get(t.id, 0.0))
+        if t.result:
+            e["results"].append(t.result)
 
     by_emotion = sorted(
         [
             EmotionStats(
                 type=k,
-                count=e["total_count"],
-                sell_count=e["sell_count"],
+                count=len(e["pnls"]),
                 result_count=len(e["results"]),
                 win_rate=_win_rate(e["results"]),
                 avg_pnl=sum(e["pnls"]) / len(e["pnls"]) if e["pnls"] else 0.0,
@@ -188,25 +181,10 @@ def compute_summary(
         reverse=True,
     )
 
-    # byTag — 기간 밖 BUY도 포함 (allTrades 기준), 계좌별 분리
-    all_buys = sorted(
-        [t for t in (all_trades or trades) if t.trade_type == TRADE_TYPE_BUY],
-        key=lambda t: (t.traded_at, 0),  # BUY-first tie-break (BUY=0 < SELL=1)
-    )
-    buys_by_key: dict[str, list[Trade]] = {}
-    for t in all_buys:
-        key = f"{t.ticker_symbol or t.asset_name}:{t.country_code or DEFAULT_COUNTRY}:{t.account_id}"
-        buys_by_key.setdefault(key, []).append(t)
-
+    # byTag — SELL의 저장된 reasoning_tags만 사용 (mutation 시 직전 BUY로부터 자동 산출됨)
     tag_map: dict[str, dict] = {}
     for sell in sells:
-        key = f"{sell.ticker_symbol or sell.asset_name}:{sell.country_code or DEFAULT_COUNTRY}:{sell.account_id}"
-        buys_for_key = buys_by_key.get(key, [])
-        prev_buys = [b for b in buys_for_key if b.traded_at <= sell.traded_at]
-        tags = prev_buys[-1].reasoning_tags if prev_buys else []
-        if not tags:
-            continue
-        for tag in tags:
+        for tag in sell.reasoning_tags or []:
             if tag not in tag_map:
                 tag_map[tag] = {"pnls": [], "results": []}
             tm = tag_map[tag]

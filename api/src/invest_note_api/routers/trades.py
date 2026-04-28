@@ -20,6 +20,7 @@ from invest_note_api.db_ops.trades_repo import (
     list_trades,
     list_trades_with_account,
     patch_trade,
+    strip_sell_auto_derived,
 )
 from invest_note_api.domain.holdings import (
     SellBreakdown,
@@ -273,6 +274,9 @@ async def update_trade(
             raise APIError(ERR_TRADE_NOT_FOUND, 404)
 
         existing = Trade(**dict(existing_row))
+        patch, fields = strip_sell_auto_derived(patch, fields, existing.trade_type)
+        if not patch:
+            return Response(status_code=204)
 
         if fields & PNL_AFFECTING_FIELDS:
             await acquire_trade_group_lock(conn, str(user.id), trade_to_group_key(existing))

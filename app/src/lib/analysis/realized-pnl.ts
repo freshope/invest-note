@@ -1,4 +1,4 @@
-import type { StrategyType, Trade } from "@/types/database";
+import type { EmotionType, ReasoningTag, StrategyType, Trade } from "@/types/database";
 
 export type TradeGroupKey = {
   ticker: string | null;
@@ -19,6 +19,8 @@ export type GroupPnLEntry = {
   avg_buy_price: number;
   holding_days: number | null;
   strategy_type: StrategyType | null;
+  reasoning_tags: ReasoningTag[];
+  emotion: EmotionType | null;
   matched_qty: number;
   running_qty_after: number;
 };
@@ -64,9 +66,16 @@ export function sellPnL(trade: Trade, avgCost: number, costQty?: number): number
   return trade.price * qty - avgCost * qty - trade.commission - trade.tax;
 }
 
-function strategyFromConsumed(
-  consumed: { strategy: StrategyType | null; qty: number; order: number }[],
-): StrategyType | null {
+type ConsumedLot = {
+  strategy: StrategyType | null;
+  qty: number;
+  order: number;
+  timeMs: number;
+  reasoningTags: ReasoningTag[];
+  emotion: EmotionType | null;
+};
+
+function strategyFromConsumed(consumed: ConsumedLot[]): StrategyType | null {
   if (consumed.length === 0) return null;
 
   const byStrategy = new Map<StrategyType, { qty: number; order: number }>();
@@ -84,6 +93,20 @@ function strategyFromConsumed(
   })[0][0];
 }
 
+// 가장 최근(timeMs 최대, 동률 시 order 최대) 소비 BUY의 tags/emotion
+function metaFromConsumedLatest(
+  consumed: ConsumedLot[],
+): { tags: ReasoningTag[]; emotion: EmotionType | null } {
+  if (consumed.length === 0) return { tags: [], emotion: null };
+  let latest = consumed[0];
+  for (const lot of consumed) {
+    if (lot.timeMs > latest.timeMs || (lot.timeMs === latest.timeMs && lot.order > latest.order)) {
+      latest = lot;
+    }
+  }
+  return { tags: [...latest.reasoningTags], emotion: latest.emotion };
+}
+
 export function computeGroupPnL(
   trades: Trade[],
   key: TradeGroupKey,
@@ -94,7 +117,14 @@ export function computeGroupPnL(
 
   let runningQty = 0;
   let runningCost = 0;
-  const fifoLots: { qty: number; timeMs: number; strategy: StrategyType | null; order: number }[] = [];
+  const fifoLots: {
+    qty: number;
+    timeMs: number;
+    strategy: StrategyType | null;
+    reasoningTags: ReasoningTag[];
+    emotion: EmotionType | null;
+    order: number;
+  }[] = [];
   let buyOrder = 0;
 
   for (const trade of group) {
@@ -105,6 +135,8 @@ export function computeGroupPnL(
         qty: trade.quantity,
         timeMs: new Date(trade.traded_at).getTime(),
         strategy: trade.strategy_type,
+        reasoningTags: [...(trade.reasoning_tags ?? [])],
+        emotion: trade.emotion,
         order: buyOrder,
       });
       buyOrder += 1;
@@ -115,24 +147,34 @@ export function computeGroupPnL(
       const sellTime = new Date(trade.traded_at).getTime();
       let weightedMs = 0;
       let totalConsumed = 0;
-      const consumed: { strategy: StrategyType | null; qty: number; order: number }[] = [];
+      const consumed: ConsumedLot[] = [];
       while (remaining > 0 && fifoLots.length > 0) {
         const slot = fifoLots[0];
         const consume = Math.min(slot.qty, remaining);
         weightedMs += (sellTime - slot.timeMs) * consume;
         totalConsumed += consume;
-        consumed.push({ strategy: slot.strategy, qty: consume, order: slot.order });
+        consumed.push({
+          strategy: slot.strategy,
+          qty: consume,
+          order: slot.order,
+          timeMs: slot.timeMs,
+          reasoningTags: slot.reasoningTags,
+          emotion: slot.emotion,
+        });
         slot.qty -= consume;
         remaining -= consume;
         if (slot.qty <= 0) fifoLots.shift();
       }
       const holdingDays =
         totalConsumed > 0 ? Math.floor(weightedMs / totalConsumed / (1000 * 60 * 60 * 24) + 0.5) : null;
+      const meta = metaFromConsumedLatest(consumed);
       result.set(trade.id, {
         profit_loss: sellPnL(trade, avgCost, matchedQty),
         avg_buy_price: avgCost,
         holding_days: holdingDays,
         strategy_type: strategyFromConsumed(consumed),
+        reasoning_tags: meta.tags,
+        emotion: meta.emotion,
         matched_qty: matchedQty,
         running_qty_after: Math.max(0, runningQty - trade.quantity),
       });

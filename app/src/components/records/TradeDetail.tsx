@@ -257,10 +257,12 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
               <InfoRow label="전략">{STRATEGY_LABELS[trade.strategy_type] ?? trade.strategy_type}</InfoRow>
             )}
             {trade.emotion && (
-              <InfoRow label="감정">{EMOTION_LABELS[trade.emotion] ?? trade.emotion}</InfoRow>
+              <InfoRow label={isBuy ? "감정" : "감정 (자동)"}>
+                {EMOTION_LABELS[trade.emotion] ?? trade.emotion}
+              </InfoRow>
             )}
             {trade.reasoning_tags && trade.reasoning_tags.length > 0 && (
-              <InfoRow label="분석 태그">
+              <InfoRow label={isBuy ? "분석 태그" : "분석 태그 (자동)"}>
                 <div className="flex flex-wrap gap-1 justify-end">
                   {trade.reasoning_tags.map((tag) => (
                     <span key={tag} className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">

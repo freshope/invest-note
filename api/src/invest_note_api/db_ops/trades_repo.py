@@ -4,7 +4,13 @@ from __future__ import annotations
 from typing import Any
 
 from invest_note_api.domain.realized_pnl import TradeGroupKey
-from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, MARKET_TYPE_STOCK, Trade, TradeWithAccount
+from invest_note_api.domain.trade_types import (
+    DEFAULT_COUNTRY,
+    MARKET_TYPE_STOCK,
+    TRADE_TYPE_SELL,
+    Trade,
+    TradeWithAccount,
+)
 
 PG_UPDATE_ZERO = "UPDATE 0"
 PG_DELETE_ZERO = "DELETE 0"
@@ -127,7 +133,31 @@ _PATCH_ALLOWED = {
     "buy_reason", "sell_reason", "result",
 }
 
-PNL_AFFECTING_FIELDS = {"price", "quantity", "commission", "tax", "strategy_type"}
+PNL_AFFECTING_FIELDS = {
+    "price",
+    "quantity",
+    "commission",
+    "tax",
+    "strategy_type",
+    "reasoning_tags",
+    "emotion",
+}
+
+# SELL row에 자동 산출되어 저장되는 메타 필드 — 사용자 patch 무시 대상.
+# 새 자동 산출 필드 추가 시 여기에 등록.
+SELL_AUTO_DERIVED_FIELDS = frozenset({"reasoning_tags", "emotion"})
+
+
+def strip_sell_auto_derived(
+    patch: dict, fields: set[str], trade_type: str
+) -> tuple[dict, set[str]]:
+    """SELL은 자동 산출 필드를 patch/fields에서 제거 — BUY는 그대로."""
+    if trade_type != TRADE_TYPE_SELL:
+        return patch, fields
+    return (
+        {k: v for k, v in patch.items() if k not in SELL_AUTO_DERIVED_FIELDS},
+        fields - SELL_AUTO_DERIVED_FIELDS,
+    )
 
 
 async def patch_trade(conn: Any, trade_id: str, user_id: str, patch: dict) -> bool:

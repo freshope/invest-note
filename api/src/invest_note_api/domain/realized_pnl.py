@@ -9,6 +9,8 @@ from invest_note_api.domain.trade_types import (
     STRATEGY_UNKNOWN,
     TRADE_TYPE_BUY,
     TRADE_TYPE_SELL,
+    EmotionType,
+    ReasoningTag,
     StrategyType,
     Trade,
 )
@@ -68,24 +70,38 @@ class GroupPnLEntry:
     avg_buy_price: float
     holding_days: int | None
     strategy_type: StrategyType | None
+    reasoning_tags: list[ReasoningTag]
+    emotion: EmotionType | None
     matched_qty: float
     running_qty_after: float
 
 
-def _strategy_from_consumed(consumed: list[tuple[StrategyType | None, float, int]]) -> StrategyType | None:
+def _strategy_from_consumed(consumed: list[dict]) -> StrategyType | None:
     if not consumed:
         return None
 
     by_strategy: dict[str, dict] = {}
-    for strategy, qty, order in consumed:
-        key = strategy or STRATEGY_UNKNOWN
+    for lot in consumed:
+        key = lot["strategy"] or STRATEGY_UNKNOWN
         if key not in by_strategy:
-            by_strategy[key] = {"qty": 0.0, "order": order}
-        by_strategy[key]["qty"] += qty
-        by_strategy[key]["order"] = min(by_strategy[key]["order"], order)
+            by_strategy[key] = {"qty": 0.0, "order": lot["order"]}
+        by_strategy[key]["qty"] += lot["qty"]
+        by_strategy[key]["order"] = min(by_strategy[key]["order"], lot["order"])
 
     selected = sorted(by_strategy.items(), key=lambda item: (-item[1]["qty"], item[1]["order"]))[0][0]
     return selected  # type: ignore[return-value]
+
+
+def _meta_from_consumed_latest(
+    consumed: list[dict],
+) -> tuple[list[ReasoningTag], EmotionType | None]:
+    """소비된 BUY lot 중 가장 최근(time_ms 최대, 동률 시 order 최대)의 tags/emotion."""
+    if not consumed:
+        return [], None
+    latest = max(consumed, key=lambda lot: (lot["time_ms"], lot["order"]))
+    tags = list(latest.get("reasoning_tags") or [])
+    emotion = latest.get("emotion")
+    return tags, emotion
 
 
 def compute_group_pnl(trades: list[Trade], key: TradeGroupKey) -> dict[str, GroupPnLEntry]:
@@ -106,6 +122,8 @@ def compute_group_pnl(trades: list[Trade], key: TradeGroupKey) -> dict[str, Grou
                 "qty": trade.quantity,
                 "time_ms": int(to_kst(trade.traded_at).timestamp() * 1000),
                 "strategy": trade.strategy_type,
+                "reasoning_tags": list(trade.reasoning_tags or []),
+                "emotion": trade.emotion,
                 "order": buy_order,
             })
             buy_order += 1
@@ -116,13 +134,20 @@ def compute_group_pnl(trades: list[Trade], key: TradeGroupKey) -> dict[str, Grou
             sell_time_ms = int(to_kst(trade.traded_at).timestamp() * 1000)
             weighted_ms = 0.0
             total_consumed = 0.0
-            consumed: list[tuple[StrategyType | None, float, int]] = []
+            consumed: list[dict] = []
             while remaining > 0 and fifo_lots:
                 slot = fifo_lots[0]
                 consume = min(slot["qty"], remaining)
                 weighted_ms += (sell_time_ms - slot["time_ms"]) * consume
                 total_consumed += consume
-                consumed.append((slot["strategy"], consume, slot["order"]))
+                consumed.append({
+                    "strategy": slot["strategy"],
+                    "qty": consume,
+                    "order": slot["order"],
+                    "time_ms": slot["time_ms"],
+                    "reasoning_tags": slot["reasoning_tags"],
+                    "emotion": slot["emotion"],
+                })
                 slot["qty"] -= consume
                 remaining -= consume
                 if slot["qty"] <= 0:
@@ -132,11 +157,14 @@ def compute_group_pnl(trades: list[Trade], key: TradeGroupKey) -> dict[str, Grou
                 if total_consumed > 0
                 else None
             )
+            tags, emotion = _meta_from_consumed_latest(consumed)
             result[trade.id] = GroupPnLEntry(
                 profit_loss=_sell_pnl(trade, avg_cost, matched_qty),
                 avg_buy_price=avg_cost,
                 holding_days=holding_days,
                 strategy_type=_strategy_from_consumed(consumed),
+                reasoning_tags=tags,
+                emotion=emotion,
                 matched_qty=matched_qty,
                 running_qty_after=max(0.0, running_qty - trade.quantity),
             )

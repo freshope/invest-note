@@ -219,22 +219,40 @@ class TestComputeSummary:
             strategy_type="SCALPING",
             traded_at=_dt("2026-01-01T10:00:00+09:00"),
         )
+        # all_trades 인자는 더 이상 받지 않음 — period 내 sells만으로도 동일 결과
+        _ = (old_buy, old_sell)
         s = compute_summary(
             [recent_buy, recent_sell],
             {"s-old": -100.0, "s-recent": 100.0},
             {"s-old": 1, "s-recent": 0},
-            [old_buy, old_sell, recent_buy, recent_sell],
         )
         assert s.strategy_adherence_rate == 100.0
 
     def test_by_emotion(self):
-        trade1 = make_trade(id="t1", trade_type="BUY", emotion="FOMO")
-        trade2 = make_trade(id="t2", trade_type="SELL", emotion="FOMO", result="FAIL")
-        s = compute_summary([trade1, trade2], {"t2": -100.0}, {})
+        # SELL에 저장된 emotion만 카운트 (BUY는 무시) — mutation 시 자동 산출이 SELL에 채워짐
+        buy = make_trade(id="t1", trade_type="BUY", emotion="FOMO")
+        sell = make_trade(id="t2", trade_type="SELL", emotion="FOMO", result="FAIL")
+        s = compute_summary([buy, sell], {"t2": -100.0}, {})
         fomo = next(e for e in s.by_emotion if e.type == "FOMO")
-        assert fomo.count == 2
-        assert fomo.sell_count == 1
+        assert fomo.count == 1
         assert fomo.win_rate == 0.0
+
+    def test_by_tag_uses_sell_stored_tags(self):
+        # SELL의 저장된 reasoning_tags만 사용 (BUY는 무시)
+        buy = make_trade(id="b1", trade_type="BUY", reasoning_tags=["FUNDAMENTAL"])
+        sell = make_trade(
+            id="s1",
+            trade_type="SELL",
+            reasoning_tags=["TECHNICAL", "NEWS"],
+            result="SUCCESS",
+        )
+        s = compute_summary([buy, sell], {"s1": 100.0}, {})
+        tags = {t.tag: t for t in s.by_tag}
+        assert "TECHNICAL" in tags
+        assert "NEWS" in tags
+        assert "FUNDAMENTAL" not in tags
+        assert tags["TECHNICAL"].count == 1
+        assert tags["TECHNICAL"].win_rate == 100.0
 
     def test_meta_rates(self):
         buy_no_tag = make_trade(id="b1", trade_type="BUY", reasoning_tags=[])
@@ -365,7 +383,7 @@ class TestEvaluateRules:
     def test_severity_order(self):
         from invest_note_api.domain.analysis.aggregate import StrategyStats, EmotionStats
         worst_strat = StrategyStats(type="SWING", count=6, result_count=4, win_rate=10.0, avg_pnl=-100.0, avg_holding_days=10.0)
-        fomo_emotion = EmotionStats(type="FOMO", count=6, sell_count=6, result_count=5, win_rate=10.0, avg_pnl=-50.0)
+        fomo_emotion = EmotionStats(type="FOMO", count=6, result_count=5, win_rate=10.0, avg_pnl=-50.0)
         summary = _make_summary(by_strategy=[worst_strat], by_emotion=[fomo_emotion], feeling_rate=50.0, total_trades=10)
         inp: RuleInput = {"summary": summary}
         result = evaluate_rules(inp)
@@ -376,7 +394,7 @@ class TestEvaluateRules:
 
     def test_fomo_low_winrate(self):
         from invest_note_api.domain.analysis.aggregate import EmotionStats
-        fomo = EmotionStats(type="FOMO", count=6, sell_count=6, result_count=5, win_rate=20.0, avg_pnl=-50.0)
+        fomo = EmotionStats(type="FOMO", count=6, result_count=5, win_rate=20.0, avg_pnl=-50.0)
         summary = _make_summary(by_emotion=[fomo])
         inp: RuleInput = {"summary": summary}
         result = evaluate_rules(inp)

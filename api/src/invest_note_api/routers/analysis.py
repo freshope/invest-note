@@ -78,7 +78,7 @@ async def get_analysis_summary(
 
     pnl_map = build_pnl_map(all_trades)
     holding_days_map = compute_holding_days_map(all_trades)
-    summary = compute_summary(trades, pnl_map, holding_days_map, all_trades)
+    summary = compute_summary(trades, pnl_map, holding_days_map)
 
     return {
         "period": period_val,
@@ -101,7 +101,6 @@ async def get_analysis_summary(
             {
                 "type": e.type,
                 "count": e.count,
-                "sellCount": e.sell_count,
                 "resultCount": e.result_count,
                 "winRate": e.win_rate,
                 "avgPnL": e.avg_pnl,
@@ -218,7 +217,7 @@ async def get_analysis_suggestions(
     concentration = compute_concentration(positions, all_trades)
     pnl_map = build_pnl_map(all_trades)
     holding_days_map = compute_holding_days_map(all_trades)
-    summary = compute_summary(trades, pnl_map, holding_days_map, all_trades)
+    summary = compute_summary(trades, pnl_map, holding_days_map)
     profile, _ = compute_profile(trades, concentration.hhi, holding_days_map)
 
     suggestions = evaluate_rules({"summary": summary, "profile": profile, "concentration": concentration})

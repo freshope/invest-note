@@ -38,7 +38,7 @@ export function EmotionBreakdown({ data }: EmotionBreakdownProps) {
               )}
             </span>
           </div>
-          <WinRateBar rate={item.winRate} hasData={item.sellCount > 0} emptyLabel="매도 없음" />
+          <WinRateBar rate={item.winRate} hasData={item.resultCount > 0} emptyLabel="결과 미입력" />
         </div>
       ))}
     </div>
