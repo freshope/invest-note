@@ -5,7 +5,12 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, TypedDict
 
-from invest_note_api.domain.analysis.thresholds import HHI_HIGH, TOP1_WEIGHT_HIGH
+from invest_note_api.domain.analysis.thresholds import (
+    HHI_HIGH,
+    LOSS_THRESHOLD,
+    TOP1_WEIGHT_HIGH,
+    WIN_THRESHOLD,
+)
 from invest_note_api.domain.trade_types import (
     EMOTION_CALM,
     EMOTION_FOMO,
@@ -59,7 +64,7 @@ _RuleFn = Callable[[RuleInput], Suggestion | None]
 def _rule_fomo(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
     fomo = next((e for e in summary.by_emotion if e.type == EMOTION_FOMO), None)
-    if not fomo or fomo.count < 5 or fomo.result_count < 3 or fomo.win_rate >= 40:
+    if not fomo or fomo.count < 5 or fomo.result_count < 3 or fomo.win_rate >= LOSS_THRESHOLD:
         return None
     pct = _round(fomo.win_rate)
     return Suggestion(
@@ -75,7 +80,7 @@ def _rule_fomo(inp: RuleInput) -> Suggestion | None:
 def _rule_calm(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
     calm = next((e for e in summary.by_emotion if e.type == EMOTION_CALM), None)
-    if not calm or calm.count < 5 or calm.win_rate < 60:
+    if not calm or calm.count < 5 or calm.win_rate < WIN_THRESHOLD:
         return None
     pct = _round(calm.win_rate)
     return Suggestion(
