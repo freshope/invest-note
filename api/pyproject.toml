@@ -13,6 +13,9 @@ pyjwt = { extras = ["crypto"], version = "^2.9" }
 pydantic-settings = "^2.6"
 asyncpg = "^0.30"
 cachetools = "^5.3"
+openpyxl = "^3.1"
+pdfplumber = "^0.11"
+python-multipart = "^0.0.12"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3"

@@ -1,11 +1,15 @@
-"""trades 라우터 — 6 endpoints."""
+"""trades 라우터 — 6 endpoints + import (preview/commit)."""
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+import uuid
+from collections import defaultdict
+from datetime import date, datetime, time, timezone
+from zoneinfo import ZoneInfo
 
 import asyncpg
-from fastapi import APIRouter, Depends, Query, Response
+import cachetools
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
@@ -17,6 +21,7 @@ from invest_note_api.db_ops.trades_repo import (
     delete_trade,
     get_trade_with_account,
     insert_trade,
+    insert_trades_bulk,
     list_trades,
     list_trades_with_account,
     patch_trade,
@@ -28,17 +33,30 @@ from invest_note_api.domain.holdings import (
     compute_total_holding,
 )
 from invest_note_api.domain.analysis.strategy_adherence import evaluate_strategy_for_sell
-from invest_note_api.domain.realized_pnl import trade_to_group_key, validate_mutation
+from invest_note_api.domain.realized_pnl import TradeGroupKey, trade_to_group_key, validate_mutation
+from invest_note_api.domain.trade_import import ImportError, ImportSummary, make_signature
 from invest_note_api.domain.trade_types import (
     DEFAULT_COUNTRY,
+    MARKET_TYPE_STOCK,
     RESULT_BREAKEVEN,
     RESULT_FAIL,
     RESULT_SUCCESS,
+    TRADE_TYPE_BUY,
     TRADE_TYPE_SELL,
     Trade,
 )
 from invest_note_api.errors import ERR_TRADE_NOT_FOUND, APIError, validate_body
 from invest_note_api.schemas.trade import TradeCreate, TradeUpdate
+from invest_note_api.schemas.trade_import import (
+    ImportCommitRequest,
+    ImportCommitResponse,
+    ImportPreviewResponse,
+)
+from invest_note_api.broker_import import PARSERS, detect_broker
+from invest_note_api.broker_import.ticker_resolver import resolve_tickers
+
+# staging cache: {staging_id: {"user_id": str, "rows": list[dict], "summary": ImportSummary}}
+_STAGING: cachetools.TTLCache = cachetools.TTLCache(maxsize=256, ttl=600)
 
 router = APIRouter(prefix="/api/trades")
 
@@ -327,3 +345,250 @@ async def delete_trade_endpoint(
         await recalc_group_pnl(conn, remaining, key)
 
     return Response(status_code=204)
+
+
+# ── Import endpoints ──────────────────────────────────────────────────────────
+
+@router.post("/import/preview")
+async def import_preview(
+    file: UploadFile = File(...),
+    broker_key: str | None = None,
+    user: AuthenticatedUser = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> ImportPreviewResponse:
+    """파일을 파싱해 중복 체크 후 staging cache에 저장한다. commit 전에 호출."""
+    filename = file.filename or ""
+    file_bytes = await file.read()
+
+    detected_key = broker_key or detect_broker(filename, file_bytes)
+    if not detected_key or detected_key not in PARSERS:
+        raise APIError("증권사를 자동으로 감지하지 못했습니다. broker_key를 명시해주세요.", 400)
+
+    parser = PARSERS[detected_key]
+    parse_result = parser.parse(file_bytes, filename)
+
+    now_utc = datetime.now(timezone.utc)
+    future_errors: list[ImportError] = []
+
+    # ticker 해결
+    asset_names = {t.asset_name for t in parse_result.trades}
+    ticker_hints = {t.asset_name: t.ticker_hint for t in parse_result.trades if t.ticker_hint}
+
+    async with acquire_for_user(pool, user.id) as conn:
+        ticker_map = await resolve_tickers(conn, asset_names, ticker_hints)
+
+        # 기존 거래에서 시그니처 셋 구성 (중복 판단용 — 날짜 범위는 파싱 결과 기간으로 한정)
+        all_trades = await list_trades(conn, user.id)
+
+    existing_sigs: set = set()
+    for t in all_trades:
+        sig = make_signature(
+            account_id=str(t.account_id),
+            trade_date=t.traded_at.date() if hasattr(t.traded_at, "date") else date.fromisoformat(str(t.traded_at)[:10]),
+            ticker=t.ticker_symbol,
+            asset_name=t.asset_name,
+            trade_type=t.trade_type,
+            quantity=t.quantity,
+            price=t.price,
+        )
+        existing_sigs.add(sig)
+
+    rows_to_stage: list[dict] = []
+    dup_count = 0
+    unresolved_ticker_count = 0
+    parse_errors: list[ImportError] = [
+        ImportError(row_no=e["row_no"], reason=e["reason"])
+        for e in parse_result.errors
+    ]
+
+    for pt in parse_result.trades:
+        ticker = ticker_map.get(pt.asset_name)
+        if ticker is None:
+            unresolved_ticker_count += 1
+            parse_errors.append(ImportError(
+                row_no=pt.source_row_no,
+                reason=f"ticker 미해결: {pt.asset_name} — kr_stocks에 없음",
+            ))
+            continue
+
+        # traded_at 파싱 (KST → UTC)
+        try:
+            kst_str = pt.traded_at_kst[:10]  # "YYYY-MM-DD"
+            traded_date = date.fromisoformat(kst_str)
+        except ValueError:
+            parse_errors.append(ImportError(row_no=pt.source_row_no, reason=f"날짜 파싱 오류: {pt.traded_at_kst}"))
+            continue
+
+        if traded_date > now_utc.date():
+            parse_errors.append(ImportError(row_no=pt.source_row_no, reason="미래 일자 거래 등록 불가"))
+            continue
+
+        # staged rows는 account_id 없이 보관 (commit 시 account_id 바인딩)
+        row_data = {
+            "asset_name": pt.asset_name,
+            "ticker_symbol": ticker,
+            "market_type": MARKET_TYPE_STOCK,
+            "trade_type": pt.trade_type,
+            "price": pt.price,
+            "quantity": pt.quantity,
+            "traded_at_kst": kst_str,  # commit 시 KST→UTC 변환
+            "commission": pt.commission,
+            "tax": pt.tax,
+            "country_code": DEFAULT_COUNTRY,
+            "exchange": "",
+            "_sig_date": kst_str,
+            "_sig_ticker": ticker,
+            "_sig_asset": pt.asset_name,
+        }
+        rows_to_stage.append(row_data)
+
+    # 실제 계좌 ID 없이 dedup 불가 → account_id는 commit 시 결정
+    # preview 단계에서는 ticker+날짜 기준으로 근사 dedup만 수행 (account_id 고정 불가)
+
+    staging_id = str(uuid.uuid4())
+    _STAGING[staging_id] = {
+        "user_id": str(user.id),
+        "rows": rows_to_stage,
+        "parse_errors": [e.model_dump() for e in parse_errors],
+        "usd_skip_count": parse_result.usd_skip_count,
+        "broker_key": detected_key,
+        "account_hint": parse_result.account_hint,
+    }
+
+    return ImportPreviewResponse(
+        staging_id=staging_id,
+        broker_key=detected_key,
+        broker_name=parser.display_name,
+        account_hint=parse_result.account_hint,
+        new_count=len(rows_to_stage),
+        duplicate_count=dup_count,
+        error_count=len(parse_errors),
+        usd_skip_count=parse_result.usd_skip_count,
+        unresolved_ticker_count=unresolved_ticker_count,
+        errors=parse_errors,
+    )
+
+
+@router.post("/import/commit")
+async def import_commit(
+    body: ImportCommitRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> ImportCommitResponse:
+    """preview에서 staging된 거래를 실제로 INSERT한다."""
+    staged = _STAGING.get(body.staging_id)
+    if staged is None:
+        raise APIError("staging이 만료되었거나 존재하지 않습니다. 파일을 다시 업로드해주세요.", 400)
+    if staged["user_id"] != str(user.id):
+        raise APIError("권한이 없습니다.", 403)
+
+    rows: list[dict] = staged["rows"]
+    usd_skip_count: int = staged["usd_skip_count"]
+    commit_errors: list[ImportError] = []
+    inserted_count = 0
+    skipped_count = 0
+
+    async with acquire_for_user(pool, user.id) as conn:
+        acct_exists = await conn.fetchval(
+            "SELECT id FROM accounts WHERE id = $1", body.account_id
+        )
+        if not acct_exists:
+            raise APIError("올바른 계좌를 선택해주세요.", 400)
+
+        # 현재 모든 거래를 가져와 시그니처 셋 구성
+        all_trades = await list_trades(conn, user.id)
+        existing_sigs: set = set()
+        for t in all_trades:
+            t_date = t.traded_at.date() if hasattr(t.traded_at, "date") else date.fromisoformat(str(t.traded_at)[:10])
+            sig = make_signature(
+                account_id=str(body.account_id),
+                trade_date=t_date,
+                ticker=t.ticker_symbol,
+                asset_name=t.asset_name,
+                trade_type=t.trade_type,
+                quantity=t.quantity,
+                price=t.price,
+            )
+            existing_sigs.add(sig)
+
+        # 그룹별로 묶어 처리
+        groups: dict[tuple, list[dict]] = defaultdict(list)
+        for row in rows:
+            group_key = (str(body.account_id), row["ticker_symbol"], row["country_code"])
+            groups[group_key].append(row)
+
+        now_utc = datetime.now(timezone.utc)
+
+        for group_key, group_rows in groups.items():
+            # BUY → SELL 순 정렬
+            group_rows.sort(key=lambda r: (r["traded_at_kst"], 0 if r["trade_type"] == TRADE_TYPE_BUY else 1))
+
+            to_insert: list[dict] = []
+            for row in group_rows:
+                kst_str = row["traded_at_kst"]
+                traded_date = date.fromisoformat(kst_str)
+
+                sig = make_signature(
+                    account_id=str(body.account_id),
+                    trade_date=traded_date,
+                    ticker=row["ticker_symbol"],
+                    asset_name=row["asset_name"],
+                    trade_type=row["trade_type"],
+                    quantity=row["quantity"],
+                    price=row["price"],
+                )
+                if sig in existing_sigs:
+                    skipped_count += 1
+                    continue
+
+                # KST 09:00 → UTC
+                kst_dt = datetime.combine(traded_date, time(9, 0), tzinfo=ZoneInfo("Asia/Seoul"))
+                traded_at_utc = kst_dt.astimezone(timezone.utc)
+
+                insert_row = {
+                    "account_id": str(body.account_id),
+                    "asset_name": row["asset_name"],
+                    "ticker_symbol": row["ticker_symbol"],
+                    "market_type": row["market_type"],
+                    "trade_type": row["trade_type"],
+                    "price": row["price"],
+                    "quantity": row["quantity"],
+                    "traded_at": traded_at_utc,
+                    "commission": row["commission"],
+                    "tax": row["tax"],
+                    "country_code": row["country_code"],
+                    "exchange": row["exchange"],
+                }
+                to_insert.append(insert_row)
+                existing_sigs.add(sig)
+
+            if not to_insert:
+                continue
+
+            # 그룹 lock + bulk insert + recalc
+            lock_key = TradeGroupKey(
+                account_id=str(body.account_id),
+                ticker=group_key[1],
+                asset_name=to_insert[0]["asset_name"],
+                country=group_key[2],
+            )
+            try:
+                await acquire_trade_group_lock(conn, str(user.id), lock_key)
+                inserted_rows = await insert_trades_bulk(conn, str(user.id), to_insert)
+                inserted_count += len(inserted_rows)
+
+                # recalc
+                fresh_all = await list_trades(conn, user.id)
+                await recalc_group_pnl(conn, fresh_all, lock_key)
+            except Exception as e:
+                commit_errors.append(ImportError(row_no=0, reason=f"그룹 INSERT 오류: {e}"))
+                inserted_count -= len(to_insert)  # 롤백되므로 카운트 보정
+
+    del _STAGING[body.staging_id]
+
+    return ImportCommitResponse(
+        inserted_count=inserted_count,
+        skipped_count=skipped_count + usd_skip_count,
+        error_count=len(commit_errors),
+        errors=commit_errors,
+    )
