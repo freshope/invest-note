@@ -274,3 +274,17 @@
 
 - **결정:** `CsvUploadButton` UI만. 파싱/임포트 로직은 포맷 정의 후 구현.
 - **이유:** 컬럼 매핑 미확정 상태에서 로직 먼저 짜면 낭비.
+
+---
+
+## 2026-04-28 | stocks 마스터 시드 데이터 소스 — KIND 채택
+
+- **맥락:** 기존 `seed_kr_stocks.py` 가 사용하던 KRX 정보데이터시스템(`data.krx.co.kr`) OTP 엔드포인트가 정책 변경으로 막힘 — `generate.cmd` 호출 시 HTTP 200 + `LOGOUT` 응답으로 OTP 발급 자체가 거부됨. 시드 갱신 불가.
+- **결정:** KRX 의 다른 공식 사이트인 KIND 상장공시시스템(`kind.krx.co.kr/corpgeneral/corpList.do`) 으로 시드 데이터 소스 교체. KOSPI/KOSDAQ/KONEX 시장별 GET 1회로 EUC-KR HTML 테이블 다운로드, stdlib(`urllib` + `re`)만으로 파싱.
+- **이유:**
+  - **신선도** — 검증 시점 기준 어제(2026-04-27) 상장된 KONEX 종목까지 잡혀 T+1 이내 반영 확인. KIND 는 KRX 가 직접 운영하는 상장공시시스템이라 disclosure 파일링 즉시 반영되는 원천 소스.
+  - **인증/의존성 제로** — OTP, API key, 외부 라이브러리 모두 불필요. 단일 GET 으로 충분.
+  - **풍부한 메타데이터** — 회사명·시장구분·종목코드 외에 업종/주요제품/상장일/결산월/대표자명/홈페이지/지역까지 1회 호출에 포함.
+- **트레이드오프:**
+  - HTML 테이블 정규식 파싱이라 KIND 가 컬럼 순서를 바꾸면 silent corruption 가능 (헤더 검증 + 단위 테스트는 후속 backlog 로 분리).
+  - 후보였던 공공데이터포털(data.go.kr) 의 "한국거래소_주식 종목정보" API 는 키 발급 + 일일 호출 한도 + KRX → data.go.kr 일배치 동기화로 인한 T-1 지연이 있어 신선도·접근성에서 KIND 에 열위.

@@ -22,7 +22,8 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 거래내역서 임포트 — 후속 과제
 
-- [ ] kr_stocks 갱신 자동화 — seed 스크립트를 주기적으로 실행하는 cron 또는 KIS API 연동 시 통합 (현재 수동 실행)
+- [ ] stocks 마스터 갱신 자동화 — `seed_stocks.py` (KIND 시드)를 주기적으로 실행하는 cron 또는 KIS API 연동 시 통합 (현재 수동 실행)
+- [ ] KIND 시드 견고화 — `_parse_kind_html` / `_parse_date` 단위 테스트 + 첫 행(헤더) 컬럼 순서 검증 추가. 현재 `len(cells) < 10` 체크만 있어 KIND가 컬럼 순서를 바꾸면 silent corruption 가능
 - [ ] Preview staging 멀티 워커 대응 — 현재 `TTLCache` (단일 워커 메모리). 멀티 워커 배포 전 DB 임시 테이블 또는 Redis로 교체 필요
 - [ ] 임포트 통합 테스트 — `/import/preview`, `/import/commit` HTTP 엔드포인트 단위 테스트 (DB mock 또는 테스트 DB)
 - [ ] 해외 주식 임포트 지원 — 토스 PDF `달러 거래내역` 섹션 처리 (현재 MVP skip)
