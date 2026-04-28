@@ -20,9 +20,9 @@ export function ReasoningBreakdown({ data, summary }: ReasoningBreakdownProps) {
   return (
     <div className="space-y-3">
       {(showFeelingWarn || showMissingWarn) && (
-        <div className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 flex gap-2 items-start">
+        <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 flex gap-2 items-start">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
-          <p className="text-[12px] text-amber-700 dark:text-amber-400 leading-snug">
+          <p className="text-[12px] text-amber-700 leading-snug">
             {showFeelingWarn && `'감/직감' 진입 ${Math.round(summary.feelingRate)}% `}
             {showMissingWarn && `근거 태그 누락 ${Math.round(summary.missingTagRate)}%`}
             {(showFeelingWarn || showMissingWarn) && " — 분석 근거를 추가해보세요"}

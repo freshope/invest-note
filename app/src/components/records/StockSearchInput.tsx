@@ -7,7 +7,7 @@ import { Input } from "@/components/base/Input";
 import { stocksApi, type StockSearchResult } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { QUERY_STOCK_SEARCH_STALE_TIME_MS } from "@/lib/constants/query";
-import { COUNTRY_LABEL } from "@/lib/constants/market";
+import { CountryBadge } from "./trade-display";
 
 export interface SelectedStock {
   name: string;
@@ -22,11 +22,6 @@ interface StockSearchInputProps {
   value: string;
   onChange: (value: string) => void;
 }
-
-const KR_MARKET_BADGE = {
-  label: COUNTRY_LABEL.KR,
-  className: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-};
 
 async function fetchStocks(query: string): Promise<StockSearchResult[]> {
   return stocksApi.search(query);
@@ -135,9 +130,7 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
                 i === activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"
               }`}
             >
-              <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold ${KR_MARKET_BADGE.className}`}>
-                {KR_MARKET_BADGE.label}
-              </span>
+              <CountryBadge countryCode="KR" className="shrink-0" />
               <span className="flex-1 font-medium truncate">{stock.name}</span>
               <span className="shrink-0 text-[12px] text-muted-foreground font-mono">{stock.code}</span>
               <span className="shrink-0 text-[11px] text-muted-foreground">{stock.exchange}</span>

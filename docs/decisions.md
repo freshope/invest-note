@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-04-28 | 라이트 모드 전용 — 다크 모드 제거
+
+- **맥락:** 설정 탭의 "화면" 섹션에 시스템/라이트/다크 3종 토글이 있었고 next-themes로 동적 전환했음. 단일 디자인 일관성 확보와 다크 variant 색 결정·검증 비용 절감을 위해 라이트 모드 단일화 결정.
+- **결정:** 테마 토글 UI(`AppearanceSection`), `next-themes` 의존성, `ThemeProvider` 래퍼, `globals.css`의 `.dark { ... }` CSS 변수 블록 및 `@custom-variant dark` 선언, 그리고 11개 컴포넌트의 `dark:` Tailwind 프리픽스 26곳을 모두 제거. `ThemedToaster` → `AppToaster`로 리네임하고 sonner 기본값(light)을 활용해 prop 단순화.
+- **이유:** 디자인 토큰을 `:root` 단일 소스로 관리. 컴포넌트마다 dark variant 색을 별도 결정·QA할 필요 없음. `next-themes` 제거로 번들 사이즈와 hydration 비용 소폭 감소. `<html suppressHydrationWarning>` 같은 회피 코드도 함께 제거됨.
+- **트레이드오프:** 다크 모드 재도입 시 `dark:` 프리픽스 재추가와 `.dark` CSS 변수 블록 복원이 필요. 기존 사용자의 `localStorage["theme"]` 값은 next-themes가 사라져 무시되므로 별도 마이그레이션 코드는 두지 않음. shadcn 컴포넌트 동기화 시 원본 `dark:` 클래스와 diff가 발생할 수 있으나 본 프로젝트는 `src/components/base/` 래퍼 경유 사용이라 영향 제한적.
+
+---
+
 ## 2026-04-27 | MVP 해외 주식 제외 — 신규 진입 차단, 기존 데이터 호환 유지
 
 - **맥락:** MVP는 국내 주식 매매 기록과 분석에 집중한다. 기존 코드에는 US/Yahoo 검색·시세와 USD 합산 전제가 남아 있어 환율 미적용 총자산·분석 왜곡이 발생할 수 있음.

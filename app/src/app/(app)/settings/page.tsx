@@ -5,7 +5,6 @@ import { accountsApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { AccountList } from "@/components/settings/AccountList";
-import { AppearanceSection } from "@/components/settings/AppearanceSection";
 import { UserInfoSection } from "@/components/settings/UserInfoSection";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ErrorState } from "@/components/shared/ErrorState";
@@ -47,11 +46,6 @@ export default function SettingsPage() {
         <section className="space-y-3">
           <h2 className="text-[13px] font-semibold text-muted-foreground px-1">계좌 관리</h2>
           <AccountList accounts={accounts ?? []} />
-        </section>
-
-        <section className="space-y-3">
-          <h2 className="text-[13px] font-semibold text-muted-foreground px-1">화면</h2>
-          <AppearanceSection />
         </section>
 
         <section className="space-y-3">

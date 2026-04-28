@@ -3,8 +3,7 @@ import localFont from "next/font/local";
 import { AuthProvider } from "@/components/providers/AuthProvider";
 import { CapacitorDeepLinkHandler } from "@/components/providers/CapacitorDeepLinkHandler";
 import { QueryProvider } from "@/components/providers/QueryProvider";
-import { ThemeProvider } from "@/components/providers/ThemeProvider";
-import { ThemedToaster } from "@/components/providers/ThemedToaster";
+import { AppToaster } from "@/components/providers/AppToaster";
 import "./globals.css";
 
 const pretendard = localFont({
@@ -20,10 +19,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#7C3AED" },
-    { media: "(prefers-color-scheme: dark)", color: "#7C3AED" },
-  ],
+  themeColor: "#7C3AED",
 };
 
 export const metadata: Metadata = {
@@ -37,15 +33,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko" className={`${pretendard.variable} h-full antialiased`} suppressHydrationWarning>
+    <html lang="ko" className={`${pretendard.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
-        <ThemeProvider>
-          <AuthProvider>
-            <CapacitorDeepLinkHandler />
-            <QueryProvider>{children}</QueryProvider>
-          </AuthProvider>
-          <ThemedToaster />
-        </ThemeProvider>
+        <AuthProvider>
+          <CapacitorDeepLinkHandler />
+          <QueryProvider>{children}</QueryProvider>
+        </AuthProvider>
+        <AppToaster />
       </body>
     </html>
   );

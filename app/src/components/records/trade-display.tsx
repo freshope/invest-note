@@ -31,17 +31,19 @@ export function ExchangeBadge({ exchange }: { exchange: string }) {
   return <span className={mutedBadgeClass}>{exchange}</span>;
 }
 
-export function CountryBadge({ countryCode }: { countryCode: string }) {
+const COUNTRY_BADGE_CLASS: Record<string, string> = {
+  KR: "bg-blue-100 text-blue-700",
+  US: "bg-orange-100 text-orange-700",
+};
+
+export function CountryBadge({ countryCode, className }: { countryCode: string; className?: string }) {
   const label = getCountryLabel(countryCode) ?? "기타";
   return (
     <span
       className={cn(
         "text-[11px] font-bold px-1.5 py-0.5 rounded-md",
-        countryCode === "KR"
-          ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
-          : countryCode === "US"
-          ? "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300"
-          : "bg-muted text-muted-foreground"
+        COUNTRY_BADGE_CLASS[countryCode] ?? "bg-muted text-muted-foreground",
+        className,
       )}
     >
       {label}
