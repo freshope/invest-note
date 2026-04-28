@@ -82,6 +82,7 @@ class TestAnalysisSummary:
             traded_at=_dt("2026-04-22T09:00:00+09:00"),
             profit_loss=50000.0,
             avg_buy_price=70000.0,
+            holding_days=2,
             strategy_type="SWING",
             result="SUCCESS",
         )
@@ -161,6 +162,7 @@ class TestAnalysisBehavior:
             id_="s1",
             trade_type="SELL",
             traded_at=_dt("2026-04-22T09:00:00+09:00"),
+            holding_days=12,
         )
         conn = FakeConnection([buy, sell])
         with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):

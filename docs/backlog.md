@@ -19,7 +19,6 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] `recalc_group_pnl` 변경 row만 UPDATE 최적화 — `PNL_AFFECTING_FIELDS`에 `reasoning_tags`/`emotion` 추가로 BUY 메타 단독 변경에서도 그룹 advisory lock + `executemany`가 발동. `pnl_map` 결과를 기존 SELL row와 비교해 실제 변경된 row에만 UPDATE 발행. DB write 부하 절감.
 - [ ] SELL의 `result` 자동 산출 일관 처리 — 현재 `result`는 PnL 부호로 자동 결정되어 `summary.result`로 UI에 채워지나 SELL row에는 저장되지 않음. `strategy_type`/`reasoning_tags`/`emotion`과 동일하게 mutation 시점에 SELL row에 저장 + `PNL_AFFECTING_FIELDS` 확장 + UI 입력 차단으로 일관 처리. 분석 라우터의 `_derive_result` 의존도 함께 정리.
 - [ ] 분석 임계값 단일 SOT (이슈 C) — `STRATEGY_THRESHOLDS`(SCALPING_MAX_DAYS=1, SWING_MAX_DAYS=30), `HHI_HIGH=0.5`, `HHI_MID=0.25`, `TOP1_WEIGHT_HIGH=0.4`가 frontend 상수와 backend 하드코딩(`strategy_adherence.py`, `concentration.py`)으로 이중화. 백엔드는 `analysis/thresholds.py` 모듈로 추출하고 두 파일이 import하도록, frontend 상수 위치는 그대로 두되 `docs/decisions.md`에 "임계값 변경 시 양쪽 함께 수정" 명시.
-- [ ] 라우터 단위 테스트 사전 실패 2건 — `tests/test_analysis.py::TestAnalysisSummary::test_buy_and_sell`(`strategyAdherenceRate`가 100 기대인데 SELL `holding_days` 미지정으로 0), `TestAnalysisBehavior::test_holding_period_dist`(`holdingPeriodDist`가 비어 있음). develop 기준에서도 실패하므로 본 작업과 무관. 테스트 fixture에 `holding_days`를 채워주거나 라우터가 fallback 계산하도록 결정 필요.
 
 ## 운영 / 어드민 도구
 
