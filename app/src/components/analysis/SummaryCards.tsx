@@ -3,6 +3,7 @@
 import { cn } from "@/lib/utils";
 import { fmt } from "@/lib/format";
 import type { AnalysisSummary } from "@/lib/analysis/aggregate";
+import { LOSS_THRESHOLD, RESULT_INPUT_RATE_LOW, WIN_THRESHOLD } from "@/lib/constants/analysis";
 
 function StatCard({
   label,
@@ -32,11 +33,11 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
   const { totalTrades, sellTrades, winRate, totalProfitLoss, resultInputRate } = summary;
 
   const winRateClass =
-    resultInputRate < 50
+    resultInputRate < RESULT_INPUT_RATE_LOW
       ? "text-muted-foreground"
-      : winRate >= 60
+      : winRate >= WIN_THRESHOLD
         ? "text-[var(--rise)]"
-        : winRate < 40
+        : winRate < LOSS_THRESHOLD
           ? "text-[var(--fall)]"
           : "text-foreground";
 

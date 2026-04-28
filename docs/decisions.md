@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-04-28 | 분석 임계값 SOT 통합 — BE rules.py 매직 넘버 흡수 + FE 중복 판정 코드 제거 (후속)
+
+- **맥락:** 같은 날 통합한 BE `thresholds.py` SOT는 7개 상수만 담고 있었지만, `rules.py` 9개 규칙 함수 안에 도메인 판정 임계값(`feeling_rate < 40`, `reflection_rate >= 30`, `win_rate < 30`, `missing_tag_rate < 30`, `result_input_rate >= 50`, `avg_holding_days <= 7`)과 최소 샘플 가드(`count < 5/3`, `total_trades < 5`, `sell_trades < 3/5`)가 매직 넘버로 박혀 있어 SOT 외부에서 침묵하게 변경 가능. FE 쪽에서는 `SummaryCards.tsx`가 `60`/`40`을 하드코드해 같은 날 `WIN_THRESHOLD`가 60→65로 바뀐 변경을 따라가지 못했음(승률 63%면 초록인데 BE의 "좋은 승률" 규칙은 안 발동). 또 `lib/analysis/aggregate.ts:computeSummary`, `lib/analysis/rules.ts:evaluateRules`, `lib/analysis/strategy-adherence.ts`의 함수들이 production에서는 호출되지 않고 테스트에서만 살아 있어 임계값 import의존성을 만들고 있었음.
+- **결정:** ① BE `thresholds.py`에 도메인 판정 임계값 6개(`FEELING_RATE_HIGH`, `REFLECTION_RATE_LOW`, `LOSING_STRATEGY_RATE`, `MISSING_TAG_RATE_HIGH`, `RESULT_INPUT_RATE_LOW`, `SCALPING_HOLDING_LIMIT_DAYS`)와 최소 샘플 가드 8개(`MIN_EMOTION_TRADES/RESULTS`, `MIN_TOTAL_TRADES`, `MIN_SELL_TRADES`, `MIN_HIGH_WINRATE_SELL`, `MIN_SCALPING_TRADES`, `MIN_STRATEGY_TRADES/RESULTS`)를 추가. `rules.py`의 모든 비교 매직 넘버는 이 상수를 import해서 쓴다. ② FE `SummaryCards.tsx`는 `WIN_THRESHOLD`/`LOSS_THRESHOLD`를 import해서 사용, 60/40 하드코드를 제거. ③ FE `aggregate.ts:computeSummary`, `rules.ts:evaluateRules`, `strategy-adherence.ts:inferActualStrategy/evaluateStrategyAdherence` 및 `AnalysisDashboard.tsx`의 fallback 호출을 모두 삭제. 세 파일은 BE 응답 타입 정의(`AnalysisSummary`, `Suggestion`, `StrategyEvaluation` 등)만 보존. 관련 테스트(`computeSummary`/`evaluateRules` describe 블록)도 함께 삭제 — BE `tests/test_analysis_logic.py`가 동일 검증 담당.
+- **이유:** 같은 날 결정의 정신("임계값은 한 곳에서 변경")을 깨고 있던 사례를 제거하기 위함. BE는 매직 넘버를 모두 SOT로 흡수해 `thresholds.py`만 보면 모든 도메인 임계값을 파악 가능. 상수 명명은 "어디에서 쓰이는가"가 아닌 "무엇을 의미하는가" 기준 — 같은 숫자라도 의미가 다르면 별도 상수(예: `MIN_EMOTION_TRADES`와 `MIN_TOTAL_TRADES` 둘 다 `5`이지만 다른 도메인 개념). FE는 BE 응답이 이미 모든 판정 결과를 담고 있어 자체 평가 로직이 dead code였고, 이를 유지하면 임계값 동기화 책임이 더 흩어짐. 단, UI 색상/라벨 결정용으로 임계값이 구조적으로 필요한 컴포넌트(`WinRateBar`, `DiversificationPanel`)는 FE constants를 그대로 사용 — BE→rating 필드 응답화는 비용 대비 가치가 낮다고 판단해 미적용.
+- **트레이드오프:** BE suggestions 응답이 빈 배열/실패면 인사이트 섹션이 공란으로 표시 — fallback이 사라진 비용. 응답 실패는 `useAnalysisData`의 별도 에러 핸들링 경로가 담당하므로 정상 흐름엔 영향 없음. BE/FE 동기화 책임은 여전히 수동(분산도는 줄었지만 정책은 그대로). `analysis.py` 라우터의 `_HOLDING_BUCKETS`와 `_size_bucket`은 표시용 버킷팅이라 SOT 흡수 범위에서 제외.
+
+---
+
 ## 2026-04-28 | 분석 임계값 단일 SOT 정책 (BE thresholds.py + FE constants/analysis.ts)
 
 - **맥락:** `SCALPING_MAX_DAYS=1`, `SWING_MAX_DAYS=30`, `HHI_HIGH=0.5`, `HHI_MID=0.25`, `TOP1_WEIGHT_HIGH=0.4` 가 BE(`strategy_adherence.py` 매직 넘버, `concentration.py` 모듈 상수)와 FE(`app/src/lib/constants/analysis.ts`) 양쪽에 이중화. BE 내부에서도 두 파일에 분산되어 변경 시 업데이트 누락 위험.
