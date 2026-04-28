@@ -39,7 +39,7 @@ from invest_note_api.domain.realized_pnl import (
     trade_to_group_key,
     validate_mutation,
 )
-from invest_note_api.domain.trade_import import ImportError, ImportSummary, make_signature
+from invest_note_api.domain.trade_import import make_signature
 from invest_note_api.domain.trade_types import (
     DEFAULT_COUNTRY,
     MARKET_TYPE_STOCK,
@@ -55,12 +55,13 @@ from invest_note_api.schemas.trade import TradeCreate, TradeUpdate
 from invest_note_api.schemas.trade_import import (
     ImportCommitRequest,
     ImportCommitResponse,
+    ImportError,
     ImportPreviewResponse,
 )
 from invest_note_api.broker_import import PARSERS, detect_broker
 from invest_note_api.broker_import.ticker_resolver import resolve_tickers
 
-# staging cache: {staging_id: {"user_id": str, "rows": list[dict], "summary": ImportSummary}}
+# staging cache: {staging_id: {"user_id": str, "rows": list[dict], "parse_errors": list[dict]}}
 _STAGING: cachetools.TTLCache = cachetools.TTLCache(maxsize=256, ttl=600)
 
 router = APIRouter(prefix="/api/trades")
