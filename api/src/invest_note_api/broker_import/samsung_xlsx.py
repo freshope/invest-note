@@ -7,7 +7,7 @@ import re
 
 import openpyxl
 
-from .base import BrokerStatementParser, ParsedTrade, ParseResult
+from .base import BrokerStatementParser, ParsedTrade, ParseResult, parse_number
 
 _BUY_NAMES = {"매수", "매수_NXT"}
 _SELL_NAMES = {"매도", "매도_NXT"}
@@ -80,14 +80,10 @@ class SamsungXlsxParser(BrokerStatementParser):
                 continue
             traded_at_kst = str(traded_at_raw).strip()[:10]  # "YYYY-MM-DD"
 
-            try:
-                quantity = float(str(col(row, "거래수량") or 0).replace(",", ""))
-                price = float(str(col(row, "거래단가") or 0).replace(",", ""))
-                commission = float(str(col(row, "수수료/Fee") or 0).replace(",", ""))
-                tax = float(str(col(row, "제세금/대출이자") or 0).replace(",", ""))
-            except (ValueError, TypeError) as e:
-                result.add_error(sheet_row_no, f"숫자 파싱 오류: {e}")
-                continue
+            quantity = parse_number(col(row, "거래수량") or 0)
+            price = parse_number(col(row, "거래단가") or 0)
+            commission = parse_number(col(row, "수수료/Fee") or 0)
+            tax = parse_number(col(row, "제세금/대출이자") or 0)
 
             if quantity <= 0 or price <= 0:
                 result.add_error(sheet_row_no, f"수량({quantity}) 또는 단가({price})가 0 이하")

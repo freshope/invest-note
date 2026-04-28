@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -16,14 +16,10 @@ import { BrokerStep } from "./BrokerStep";
 import { FileStep } from "./FileStep";
 import { PreviewStep } from "./PreviewStep";
 import { ResultStep } from "./ResultStep";
+import { BROKER_OPTIONS } from "./brokers";
 import type { Account } from "@/types/database";
 
 type Step = "broker" | "file" | "preview" | "result";
-
-const BROKER_NAMES: Record<string, string> = {
-  samsung_xlsx: "삼성증권",
-  toss_pdf: "토스증권",
-};
 
 interface Props {
   open: boolean;
@@ -36,23 +32,35 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
   const [step, setStep] = useState<Step>("broker");
   const [detectedBrokerKey, setDetectedBrokerKey] = useState<string | null>(null);
   const [selectedBrokerKey, setSelectedBrokerKey] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ImportPreviewResponse | null>(null);
   const [result, setResult] = useState<ImportCommitResponse | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
 
   const effectiveBrokerKey = selectedBrokerKey ?? detectedBrokerKey;
+  const effectiveBroker = BROKER_OPTIONS.find((b) => b.key === effectiveBrokerKey);
+
+  useEffect(() => {
+    if (!open) {
+      const timer = setTimeout(() => {
+        setStep("broker");
+        setDetectedBrokerKey(null);
+        setSelectedBrokerKey(null);
+        setPreview(null);
+        setResult(null);
+        setSelectedAccountId("");
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [open]);
 
   const handleFileSelect = async (file: File) => {
-    setSelectedFile(file);
     setIsLoading(true);
     try {
       const res = await importApi.preview(file, effectiveBrokerKey ?? undefined);
       setDetectedBrokerKey(res.broker_key);
       setPreview(res);
 
-      // 계좌 자동 매칭 시도 (account_hint vs accounts 이름/브로커)
       if (accounts.length === 1) {
         setSelectedAccountId(accounts[0].id);
       } else if (res.account_hint) {
@@ -91,16 +99,6 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
 
   const handleClose = () => {
     onOpenChange(false);
-    // 닫힌 후 상태 초기화
-    setTimeout(() => {
-      setStep("broker");
-      setDetectedBrokerKey(null);
-      setSelectedBrokerKey(null);
-      setSelectedFile(null);
-      setPreview(null);
-      setResult(null);
-      setSelectedAccountId("");
-    }, 300);
   };
 
   const stepTitle: Record<Step, string> = {
@@ -125,7 +123,8 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
           )}
           {step === "file" && (
             <FileStep
-              brokerName={BROKER_NAMES[effectiveBrokerKey ?? ""] ?? "증권사"}
+              brokerName={effectiveBroker?.label ?? "증권사"}
+              accept={effectiveBroker?.accept ?? ".xlsx,.xls,.pdf"}
               onFileSelect={handleFileSelect}
               isLoading={isLoading}
             />

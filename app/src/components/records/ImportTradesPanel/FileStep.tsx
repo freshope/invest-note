@@ -6,16 +6,15 @@ import { Button } from "@/components/base/Button";
 
 interface Props {
   brokerName: string;
+  accept: string;
   onFileSelect: (file: File) => void;
   isLoading: boolean;
 }
 
-export function FileStep({ brokerName, onFileSelect, isLoading }: Props) {
+export function FileStep({ brokerName, accept, onFileSelect, isLoading }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-
-  const accept = brokerName === "토스증권" ? ".pdf" : ".xlsx,.xls";
 
   const handleFile = (file: File) => {
     setSelectedFile(file);

@@ -186,30 +186,13 @@ async def delete_trade(conn: Any, trade_id: str, user_id: str) -> bool:
     return result != PG_DELETE_ZERO
 
 
-async def insert_trades_bulk(conn: Any, user_id: str, rows: list[dict]) -> list[dict]:
-    """거래 목록을 executemany로 일괄 INSERT한다. 반환값: {id, trade_type} 목록."""
+async def insert_trades_bulk(conn: Any, user_id: str, rows: list[dict]) -> int:
+    """거래 목록을 일괄 INSERT한다. 반환값: 삽입된 행 수."""
     if not rows:
-        return []
+        return 0
 
-    results = []
-    for data in rows:
-        row = await conn.fetchrow(
-            """
-            INSERT INTO trades (
-                user_id, account_id, asset_name, ticker_symbol, market_type,
-                trade_type, price, quantity, traded_at, commission, tax,
-                country_code, exchange,
-                strategy_type, reasoning_tags, buy_reason, sell_reason,
-                emotion, result
-            ) VALUES (
-                $1, $2, $3, $4, $5,
-                $6, $7, $8, $9, $10, $11,
-                $12, $13,
-                $14, $15, $16, $17,
-                $18, $19
-            )
-            RETURNING id, trade_type
-            """,
+    params = [
+        (
             user_id,
             data["account_id"],
             data["asset_name"],
@@ -230,8 +213,27 @@ async def insert_trades_bulk(conn: Any, user_id: str, rows: list[dict]) -> list[
             data.get("emotion"),
             data.get("result"),
         )
-        results.append(dict(row))
-    return results
+        for data in rows
+    ]
+    await conn.executemany(
+        """
+        INSERT INTO trades (
+            user_id, account_id, asset_name, ticker_symbol, market_type,
+            trade_type, price, quantity, traded_at, commission, tax,
+            country_code, exchange,
+            strategy_type, reasoning_tags, buy_reason, sell_reason,
+            emotion, result
+        ) VALUES (
+            $1, $2, $3, $4, $5,
+            $6, $7, $8, $9, $10, $11,
+            $12, $13,
+            $14, $15, $16, $17,
+            $18, $19
+        )
+        """,
+        params,
+    )
+    return len(rows)
 
 
 async def list_trades_in_range(

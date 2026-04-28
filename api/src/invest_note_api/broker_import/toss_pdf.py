@@ -7,7 +7,7 @@ import re
 
 import pdfplumber
 
-from .base import BrokerStatementParser, ParsedTrade, ParseResult
+from .base import BrokerStatementParser, ParsedTrade, ParseResult, parse_number
 
 _FILENAME_RE = re.compile(r"^토스증권_거래내역서_\d{8}_\d{8}_\d+\.pdf$")
 _ACCOUNT_RE = re.compile(r"계좌\s*번호\s+([\d\-]+)")
@@ -15,23 +15,6 @@ _TICKER_RE = re.compile(r"^(.+?)\(A?(\d{6})\)$")
 
 _KRW_SECTION = "원화 거래내역"
 _USD_SECTION = "달러 거래내역"
-
-
-def _is_krw_section_start(text: str) -> bool:
-    return _KRW_SECTION in text
-
-
-def _is_usd_section_start(text: str) -> bool:
-    return _USD_SECTION in text
-
-
-def _parse_number(s: str | None) -> float:
-    if not s:
-        return 0.0
-    try:
-        return float(str(s).replace(",", "").strip())
-    except ValueError:
-        return 0.0
 
 
 def _parse_ticker_hint(raw_name: str) -> tuple[str, str | None]:
@@ -73,10 +56,10 @@ class TossPdfParser(BrokerStatementParser):
                         result.account_hint = m.group(1).strip()
 
                 # 섹션 감지
-                if _is_krw_section_start(page_text):
+                if _KRW_SECTION in page_text:
                     in_krw = True
                     in_usd = False
-                if _is_usd_section_start(page_text):
+                if _USD_SECTION in page_text:
                     in_usd = True
                     in_krw = False
 
@@ -147,7 +130,7 @@ class TossPdfParser(BrokerStatementParser):
             amount_raw = cells[5]
             tax_raw = cells[6]
             sec_tax_raw = cells[7]
-        elif trade_class == "" or trade_class is None:
+        elif trade_class == "":
             # 매도 행 — 셀이 하나 앞당겨짐
             trade_type = "SELL"
             name_raw = cells[1] if not re.match(r"\d{4}[.\-]\d{2}[.\-]\d{2}", cells[1]) else cells[2]

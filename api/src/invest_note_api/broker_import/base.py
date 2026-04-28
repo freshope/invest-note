@@ -6,6 +6,16 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
 
+def parse_number(s: object) -> float:
+    """쉼표가 포함된 숫자 문자열을 float으로 변환한다. 변환 실패 시 0.0 반환."""
+    if not s:
+        return 0.0
+    try:
+        return float(str(s).replace(",", "").strip())
+    except ValueError:
+        return 0.0
+
+
 @dataclass
 class ParsedTrade:
     source_row_no: int

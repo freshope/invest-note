@@ -574,8 +574,7 @@ async def import_commit(
             )
             try:
                 await acquire_trade_group_lock(conn, str(user.id), lock_key)
-                inserted_rows = await insert_trades_bulk(conn, str(user.id), to_insert)
-                inserted_count += len(inserted_rows)
+                inserted_count += await insert_trades_bulk(conn, str(user.id), to_insert)
 
                 # recalc
                 fresh_all = await list_trades(conn, user.id)

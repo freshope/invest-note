@@ -9,11 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/base/Select";
-
-const BROKER_OPTIONS = [
-  { key: "samsung_xlsx", label: "삼성증권" },
-  { key: "toss_pdf", label: "토스증권" },
-];
+import { BROKER_OPTIONS } from "./brokers";
 
 interface Props {
   detectedBrokerKey: string | null;
