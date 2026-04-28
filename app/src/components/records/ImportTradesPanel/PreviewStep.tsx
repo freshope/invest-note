@@ -76,7 +76,7 @@ export function PreviewStep({
       {preview.unresolved_ticker_count > 0 && (
         <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
           종목코드 미해결: {preview.unresolved_ticker_count}건 — 해당 종목은 등록되지 않습니다.
-          주식 마스터(stocks)에 종목을 추가한 뒤 다시 시도해주세요.
+          종목명을 정확히 입력했는지 확인하거나, 거래내역의 종목명 표기를 점검해주세요.
         </div>
       )}
 

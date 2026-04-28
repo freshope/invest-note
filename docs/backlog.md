@@ -22,8 +22,8 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 거래내역서 임포트 — 후속 과제
 
-- [ ] stocks 마스터 갱신 자동화 — `seed_stocks.py` (KIND 시드)를 주기적으로 실행하는 cron 또는 KIS API 연동 시 통합 (현재 수동 실행)
-- [ ] KIND 시드 견고화 — `_parse_kind_html` / `_parse_date` 단위 테스트 + 첫 행(헤더) 컬럼 순서 검증 추가. 현재 `len(cells) < 10` 체크만 있어 KIND가 컬럼 순서를 바꾸면 silent corruption 가능
+- [ ] stocks 마스터 재도입 검토 — 현재는 Naver 검색 API 단일 매칭(`docs/decisions.md` 참고). ETF/ETN/약칭을 모두 커버하는 공식 데이터 소스가 확보되거나, Naver API 의존 분리(독립성/오프라인 가용성/율 제한) 필요성이 발생하면 마스터 재도입 검토. 재도입 시 014/015 마이그레이션 이력과 이전 `seed_stocks.py` 구조를 참고
+- [ ] 미해결 종목 수동 매칭 UI — Naver 자동매칭 실패 또는 부분일치 오매칭 케이스에 대비, PreviewStep에서 사용자가 직접 종목 검색하여 매칭하는 UI 추가 검토
 - [ ] Preview staging 멀티 워커 대응 — 현재 `TTLCache` (단일 워커 메모리). 멀티 워커 배포 전 DB 임시 테이블 또는 Redis로 교체 필요
 - [ ] 임포트 통합 테스트 — `/import/preview`, `/import/commit` HTTP 엔드포인트 단위 테스트 (DB mock 또는 테스트 DB)
 - [ ] 해외 주식 임포트 지원 — 토스 PDF `달러 거래내역` 섹션 처리 (현재 MVP skip)

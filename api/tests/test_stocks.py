@@ -62,7 +62,7 @@ class TestStocksSearch:
         async def mock_search_kr(q):
             return [{"code": "005930", "name": "삼성전자", "market": "KR", "exchange": "KOSPI"}]
 
-        with patch("invest_note_api.routers.stocks._search_kr", mock_search_kr):
+        with patch("invest_note_api.routers.stocks.search_kr", mock_search_kr):
             resp = trades_client.get("/api/stocks/search", params={"q": "삼성"})
 
         assert resp.status_code == 200
@@ -73,7 +73,7 @@ class TestStocksSearch:
         async def mock_search_kr(q):
             return [{"code": "005930", "name": "삼성전자", "market": "KR", "exchange": ""}]
 
-        with patch("invest_note_api.routers.stocks._search_kr", mock_search_kr):
+        with patch("invest_note_api.routers.stocks.search_kr", mock_search_kr):
             resp = trades_client.get("/api/stocks/search", params={"q": "005930"})
 
         assert resp.status_code == 200
@@ -83,7 +83,7 @@ class TestStocksSearch:
         async def mock_search_kr(q):
             return []
 
-        with patch("invest_note_api.routers.stocks._search_kr", mock_search_kr):
+        with patch("invest_note_api.routers.stocks.search_kr", mock_search_kr):
             resp = trades_client.get("/api/stocks/search", params={"q": "apple"})
         assert resp.status_code == 200
         assert resp.json() == []
