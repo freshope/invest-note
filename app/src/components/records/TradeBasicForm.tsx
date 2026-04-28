@@ -358,7 +358,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
           name="ticker_symbol"
           render={({ field }) => (
             <div className="space-y-1.5">
-              <Label>종목코드 <span className="text-[12px] font-normal text-muted-foreground">(자동입력)</span></Label>
+              <Label>종목코드 (자동입력)</Label>
               <div className="flex h-12 items-center gap-2 rounded-xl bg-muted px-4 text-[15px] text-foreground">
                 {field.value ? (
                   <>
