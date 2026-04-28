@@ -82,7 +82,7 @@ export function PreviewStep({
 
       <div className="flex flex-col gap-2">
         <label className="text-sm font-medium">계좌 선택</label>
-        <Select value={selectedAccountId} onValueChange={onAccountChange}>
+        <Select value={selectedAccountId} onValueChange={(v) => onAccountChange(v as string)}>
           <SelectTrigger className="w-full">
             <SelectValue placeholder="거래를 등록할 계좌를 선택하세요" />
           </SelectTrigger>

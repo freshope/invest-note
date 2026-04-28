@@ -51,7 +51,7 @@ export function BrokerStep({ detectedBrokerKey, selectedBrokerKey, onSelect, onN
         <label className="text-sm font-medium text-foreground">증권사</label>
         <Select
           value={selectedBrokerKey ?? detectedBrokerKey ?? ""}
-          onValueChange={onSelect}
+          onValueChange={(v) => onSelect(v as string)}
         >
           <SelectTrigger className="w-full">
             <SelectValue placeholder="증권사 선택" />
