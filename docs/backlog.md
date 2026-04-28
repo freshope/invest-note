@@ -14,6 +14,7 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] `aggregate.ts` `byTag` O(n²) → binary search / 누적 Map 개선
 - [ ] 수수료 현황 별도 패널 — BUY commission·세금 합계, 순실현손익 vs 총비용 비교
 - [ ] 테스트 보강 — `period.ts` 경계값, `computeRealizedPnL` 멀티 종목, `byTag` FIFO 귀속
+- [ ] PnL 표시 패턴 통합 — `EmotionBreakdown`/`StrategyBreakdown`/`ReasoningBreakdown`의 인라인 양수/음수 색상+부호+`fmt` 패턴을 `PnLLine` 공용 컴포넌트로 추출하고 `format.ts`에 `formatPnL` 헬퍼 추가
 
 ## MVP 잔여 — CSV 임포트
 
