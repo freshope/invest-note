@@ -1,11 +1,8 @@
 "use client";
 
-import { useTheme } from "next-themes";
 import { Toaster } from "sonner";
-import { DEFAULT_THEME, type Theme } from "@/lib/constants/theme";
 
-export function ThemedToaster() {
-  const { resolvedTheme } = useTheme();
+export function AppToaster() {
   return (
     <Toaster
       position="top-center"
@@ -17,7 +14,6 @@ export function ThemedToaster() {
         left: "16px",
       }}
       richColors
-      theme={(resolvedTheme ?? DEFAULT_THEME) as Theme}
     />
   );
 }

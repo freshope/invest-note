@@ -2,8 +2,6 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
-
 :root {
   --rise: #F04452;
   --fall: #1B6AC9;
@@ -94,40 +92,6 @@ body {
     "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-.dark {
-  --background: #17171C;
-  --foreground: #ECECEC;
-  --card: #1E1E24;
-  --card-foreground: #ECECEC;
-  --popover: #1E1E24;
-  --popover-foreground: #ECECEC;
-  --primary: #7C3AED;
-  --primary-foreground: #FFFFFF;
-  --secondary: #2C2C34;
-  --secondary-foreground: #ECECEC;
-  --muted: #2C2C34;
-  --muted-foreground: #6B7684;
-  --accent: #2C2C34;
-  --accent-foreground: #ECECEC;
-  --destructive: #F04452;
-  --border: #2C2C34;
-  --input: #2C2C34;
-  --ring: #7C3AED;
-  --chart-1: #7C3AED;
-  --chart-2: #00C9A7;
-  --chart-3: #FFC107;
-  --chart-4: #F04452;
-  --chart-5: #EC4899;
-  --sidebar: #1E1E24;
-  --sidebar-foreground: #ECECEC;
-  --sidebar-primary: #7C3AED;
-  --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #2C2C34;
-  --sidebar-accent-foreground: #ECECEC;
-  --sidebar-border: #2C2C34;
-  --sidebar-ring: #7C3AED;
 }
 
 @layer base {
