@@ -389,18 +389,21 @@ async def import_preview(
         # 기존 거래에서 시그니처 셋 구성 (중복 판단용 — 날짜 범위는 파싱 결과 기간으로 한정)
         all_trades = await list_trades(conn, user.id)
 
+    # account_id 없이 ticker+날짜+거래유형+수량+가격으로 근사 dedup.
+    # commit 시 정확한 account_id 기반 dedup이 재실행되므로 이는 참고용 카운트.
+    _PREVIEW_ACCT = "__preview__"
     existing_sigs: set = set()
     for t in all_trades:
-        sig = make_signature(
-            account_id=str(t.account_id),
-            trade_date=t.traded_at.date() if hasattr(t.traded_at, "date") else date.fromisoformat(str(t.traded_at)[:10]),
+        t_date = t.traded_at.date() if hasattr(t.traded_at, "date") else date.fromisoformat(str(t.traded_at)[:10])
+        existing_sigs.add(make_signature(
+            account_id=_PREVIEW_ACCT,
+            trade_date=t_date,
             ticker=t.ticker_symbol,
             asset_name=t.asset_name,
             trade_type=t.trade_type,
             quantity=t.quantity,
             price=t.price,
-        )
-        existing_sigs.add(sig)
+        ))
 
     rows_to_stage: list[dict] = []
     dup_count = 0
@@ -432,7 +435,19 @@ async def import_preview(
             parse_errors.append(ImportError(row_no=pt.source_row_no, reason="미래 일자 거래 등록 불가"))
             continue
 
-        # staged rows는 account_id 없이 보관 (commit 시 account_id 바인딩)
+        preview_sig = make_signature(
+            account_id=_PREVIEW_ACCT,
+            trade_date=traded_date,
+            ticker=ticker,
+            asset_name=pt.asset_name,
+            trade_type=pt.trade_type,
+            quantity=pt.quantity,
+            price=pt.price,
+        )
+        if preview_sig in existing_sigs:
+            dup_count += 1
+
+        # 근사 중복이어도 staging — commit 시 account_id 기반 정확한 dedup 수행
         row_data = {
             "asset_name": pt.asset_name,
             "ticker_symbol": ticker,
@@ -469,7 +484,7 @@ async def import_preview(
         broker_key=detected_key,
         broker_name=parser.display_name,
         account_hint=parse_result.account_hint,
-        new_count=len(rows_to_stage),
+        new_count=len(rows_to_stage) - dup_count,
         duplicate_count=dup_count,
         error_count=len(parse_errors),
         usd_skip_count=parse_result.usd_skip_count,
@@ -550,7 +565,7 @@ async def import_commit(
                     skipped_count += 1
                     continue
 
-                # KST 09:00 → UTC
+                # 파일에 체결 시각이 없으므로 KST 장 시작 시간(09:00)으로 고정
                 kst_dt = datetime.combine(traded_date, time(9, 0), tzinfo=ZoneInfo("Asia/Seoul"))
                 traded_at_utc = kst_dt.astimezone(timezone.utc)
 
@@ -574,7 +589,7 @@ async def import_commit(
             if not to_insert:
                 continue
 
-            # 그룹 lock + bulk insert + recalc
+            # 그룹 lock + bulk insert + recalc (savepoint로 그룹 단위 롤백)
             lock_key = TradeGroupKey(
                 account_id=str(body.account_id),
                 ticker=group_key[1],
@@ -582,15 +597,19 @@ async def import_commit(
                 country=group_key[2],
             )
             try:
-                await acquire_trade_group_lock(conn, str(user.id), lock_key)
-                inserted_count += await insert_trades_bulk(conn, str(user.id), to_insert)
-
-                # recalc
-                fresh_all = await list_trades(conn, user.id)
-                await recalc_group_pnl(conn, fresh_all, lock_key)
+                async with conn.transaction():
+                    await acquire_trade_group_lock(conn, str(user.id), lock_key)
+                    inserted_count += await insert_trades_bulk(conn, str(user.id), to_insert)
+                    fresh_all = await list_trades(conn, user.id)
+                    await recalc_group_pnl(conn, fresh_all, lock_key)
+            except asyncpg.LockNotAvailableError:
+                commit_errors.append(ImportError(row_no=0, reason=f"{to_insert[0]['asset_name']} 처리 중 충돌 — 잠시 후 다시 시도해주세요."))
+            except asyncpg.UniqueViolationError:
+                commit_errors.append(ImportError(row_no=0, reason=f"{to_insert[0]['asset_name']} 중복 거래 감지 — 이미 등록된 거래가 있습니다."))
+            except asyncpg.PostgresError as e:
+                commit_errors.append(ImportError(row_no=0, reason=f"{to_insert[0]['asset_name']} DB 오류 ({e.sqlstate}): {e.args[0] if e.args else e}"))
             except Exception as e:
-                commit_errors.append(ImportError(row_no=0, reason=f"그룹 INSERT 오류: {e}"))
-                inserted_count -= len(to_insert)  # 롤백되므로 카운트 보정
+                commit_errors.append(ImportError(row_no=0, reason=f"{to_insert[0]['asset_name']} 처리 오류: {e}"))
 
     del _STAGING[body.staging_id]
 

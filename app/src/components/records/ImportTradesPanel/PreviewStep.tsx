@@ -63,10 +63,15 @@ export function PreviewStep({
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <CountCard label="신규 등록" value={preview.new_count} variant="success" />
-        <CountCard label="중복 건너뜀" value={preview.duplicate_count} variant="default" />
+        <CountCard label="중복(근사)" value={preview.duplicate_count} variant="default" />
         <CountCard label="제외된 오류" value={preview.error_count} variant={preview.error_count > 0 ? "warn" : "default"} />
         <CountCard label="USD 미지원" value={preview.usd_skip_count} variant={preview.usd_skip_count > 0 ? "warn" : "default"} />
       </div>
+      {preview.duplicate_count > 0 && (
+        <p className="text-xs text-muted-foreground -mt-3">
+          * 중복 건수는 계좌 선택 전 근사값이며, 실제 등록 시 정확히 처리됩니다.
+        </p>
+      )}
 
       {preview.unresolved_ticker_count > 0 && (
         <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">

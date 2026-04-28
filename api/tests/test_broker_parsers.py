@@ -1,4 +1,4 @@
-"""삼성증권 xlsx 파서 단위 테스트 (synthetic in-memory 파일 사용)."""
+"""증권사 파서 단위 테스트 (synthetic in-memory 파일 사용)."""
 
 import io
 from datetime import date
@@ -8,6 +8,8 @@ import pytest
 
 from invest_note_api.broker_import import PARSERS, detect_broker
 from invest_note_api.broker_import.samsung_xlsx import SamsungXlsxParser
+from invest_note_api.broker_import.toss_pdf import TossPdfParser, _parse_ticker_hint
+from invest_note_api.broker_import.base import ParseResult
 
 
 def _make_samsung_xlsx(rows: list[dict], account_meta: str = "7157197877-14 [ ISA ] 홍길동") -> bytes:
@@ -128,6 +130,110 @@ class TestSamsungXlsxParser:
         assert result.trades[0].asset_name == "삼성전자"
         assert result.trades[1].trade_type == "SELL"
         assert result.trades[2].asset_name == "SK하이닉스"
+
+
+class TestParseTickerHint:
+    def test_standard_ticker(self):
+        name, code = _parse_ticker_hint("삼성전자(005930)")
+        assert name == "삼성전자"
+        assert code == "005930"
+
+    def test_preferred_share_a_prefix(self):
+        name, code = _parse_ticker_hint("삼성전자우(A005935)")
+        assert name == "삼성전자우"
+        assert code == "005935"
+
+    def test_no_code_returns_none(self):
+        name, code = _parse_ticker_hint("삼성전자")
+        assert name == "삼성전자"
+        assert code is None
+
+    def test_strips_whitespace(self):
+        name, code = _parse_ticker_hint("  SK하이닉스(000660)  ")
+        assert name == "SK하이닉스"
+        assert code == "000660"
+
+
+def _make_toss_buy_row(
+    date_str="2026-03-30",
+    name="삼성전자(005930)",
+    qty=10,
+    amount=700000,
+    tax=0,
+    sec_tax=1260,
+) -> list:
+    """BUY 행 셀 목록 (pdfplumber extract_table 기준 포맷)."""
+    return [date_str, "구매", name, "", str(qty), str(amount), str(tax), str(sec_tax), "", "", ""]
+
+
+def _make_toss_sell_row(
+    date_str="2026-04-15",
+    name="삼성전자(005930)",
+    qty=5,
+    amount=365000,
+    tax=730,
+    sec_tax=365,
+) -> list:
+    """SELL 행 셀 목록 — 거래구분 셀이 빈 경우."""
+    return [date_str, "", name, "", str(qty), str(amount), str(tax), str(sec_tax), "", "", ""]
+
+
+class TestTossPdfParserRow:
+    parser = TossPdfParser()
+
+    def test_parses_buy_row(self):
+        result = ParseResult()
+        trade = self.parser._parse_row(_make_toss_buy_row(), 1, result)
+        assert trade is not None
+        assert trade.trade_type == "BUY"
+        assert trade.asset_name == "삼성전자"
+        assert trade.ticker_hint == "005930"
+        assert trade.quantity == 10
+        assert trade.price == pytest.approx(70000.0)
+        assert trade.tax == pytest.approx(1260.0)
+
+    def test_parses_sell_row(self):
+        result = ParseResult()
+        trade = self.parser._parse_row(_make_toss_sell_row(), 2, result)
+        assert trade is not None
+        assert trade.trade_type == "SELL"
+        assert trade.asset_name == "삼성전자"
+        assert trade.quantity == 5
+        assert trade.price == pytest.approx(73000.0)
+        assert trade.tax == pytest.approx(1095.0)
+
+    def test_invalid_date_returns_none(self):
+        result = ParseResult()
+        row = ["거래일자", "구매", "삼성전자(005930)", "", "10", "700000", "0", "0", "", "", ""]
+        trade = self.parser._parse_row(row, 3, result)
+        assert trade is None
+        assert len(result.errors) == 0
+
+    def test_zero_quantity_produces_error(self):
+        result = ParseResult()
+        row = _make_toss_buy_row(qty=0)
+        trade = self.parser._parse_row(row, 4, result)
+        assert trade is None
+        assert any("수량" in e["reason"] for e in result.errors)
+
+    def test_dot_date_separator(self):
+        result = ParseResult()
+        row = _make_toss_buy_row(date_str="2026.03.30")
+        trade = self.parser._parse_row(row, 5, result)
+        assert trade is not None
+        assert trade.traded_at_kst == "2026-03-30"
+
+    def test_unknown_trade_class_produces_error(self):
+        result = ParseResult()
+        row = ["2026-03-30", "배당", "삼성전자(005930)", "", "10", "700000", "0", "0", "", "", ""]
+        trade = self.parser._parse_row(row, 6, result)
+        assert trade is None
+        assert len(result.errors) == 1
+        assert "알 수 없는 거래구분" in result.errors[0]["reason"]
+
+    def test_match_by_filename(self):
+        assert TossPdfParser.match("토스증권_거래내역서_20250417_20260416_1.pdf", b"%PDF")
+        assert not TossPdfParser.match("삼성증권 거래내역서.xlsx", b"PK")
 
 
 class TestDetectBroker:

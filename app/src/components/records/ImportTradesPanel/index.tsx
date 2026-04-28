@@ -64,9 +64,9 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
       if (accounts.length === 1) {
         setSelectedAccountId(accounts[0].id);
       } else if (res.account_hint) {
-        const matched = accounts.find(
-          (a) => a.name?.includes(res.account_hint!) || res.account_hint?.includes(a.name ?? "")
-        );
+        // 파일 계좌번호가 계좌명에 포함되는 경우 자동 선택 (정확 포함 매칭)
+        const hint = res.account_hint;
+        const matched = accounts.find((a) => a.name?.includes(hint));
         if (matched) setSelectedAccountId(matched.id);
       }
       setStep("preview");

@@ -11,6 +11,7 @@ from .base import BrokerStatementParser, ParsedTrade, ParseResult, parse_number
 
 _FILENAME_RE = re.compile(r"^토스증권_거래내역서_\d{8}_\d{8}_\d+\.pdf$")
 _ACCOUNT_RE = re.compile(r"계좌\s*번호\s+([\d\-]+)")
+# KRX 6자리 코드. 우선주는 'A' 접두사가 붙는 경우가 있어(예: A005935) A?로 허용.
 _TICKER_RE = re.compile(r"^(.+?)\(A?(\d{6})\)$")
 
 _KRW_SECTION = "원화 거래내역"
@@ -131,13 +132,12 @@ class TossPdfParser(BrokerStatementParser):
             tax_raw = cells[6]
             sec_tax_raw = cells[7]
         elif trade_class == "":
-            # 매도 행 — 셀이 하나 앞당겨짐
             trade_type = "SELL"
-            name_raw = cells[1] if not re.match(r"\d{4}[.\-]\d{2}[.\-]\d{2}", cells[1]) else cells[2]
-            qty_raw = cells[3]
-            amount_raw = cells[4]
-            tax_raw = cells[5]
-            sec_tax_raw = cells[6]
+            name_raw = cells[2]
+            qty_raw = cells[4]
+            amount_raw = cells[5]
+            tax_raw = cells[6]
+            sec_tax_raw = cells[7]
         else:
             result.add_error(row_no, f"알 수 없는 거래구분: {trade_class}")
             return None
