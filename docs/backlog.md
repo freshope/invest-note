@@ -15,6 +15,11 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] `recalc_group_pnl` 변경 row만 UPDATE 최적화 — `PNL_AFFECTING_FIELDS`에 `reasoning_tags`/`emotion` 추가로 BUY 메타 단독 변경에서도 그룹 advisory lock + `executemany`가 발동. `pnl_map` 결과를 기존 SELL row와 비교해 실제 변경된 row에만 UPDATE 발행. DB write 부하 절감.
 - [ ] `trades.result` legacy NULL 백필 — SELL의 `result`가 nullable·default 없음이라 본 커밋(SOT 통합) 이전에 생성된 SELL row는 NULL 잔존. 분석(`aggregate.py`)은 NULL을 win-rate에서 제외하는 반면 `/summary`는 `derive_result_from_pnl` fallback으로 값을 채워 dual-truth 발생. `result IS NULL AND profit_loss IS NOT NULL` SELL을 PnL 부호로 일괄 채우는 마이그레이션 추가 후 `routers/trades.py`의 fallback 제거.
 
+## 프론트엔드 표시 / UI 정합성
+
+- [ ] `TradeDetail` inline PnL → `formatPnL` 통합 — `app/src/components/records/TradeDetail.tsx`의 `{summary.pnl >= 0 ? "+" : ""}{summary.pnl.toLocaleString("ko-KR")}원` 인라인 표현이 분석 탭의 `formatPnL` 헬퍼와 동일 로직. 점진 통합으로 부호/포맷 단일 SOT화. 부수로 `Math.round(-0)` → "-0원" 잠재 버그도 동시 해소.
+- [ ] PnL 색상 클래스 토큰화 — `text-[var(--rise)]` / `text-[var(--fall)]` raw string이 26+ 위치에 반복. `app/src/lib/constants/colors.ts`로 토큰화하여 색 변경 시 단일 지점 수정. 기존 `:root` CSS 변수 정의는 그대로 두고 클래스 문자열만 상수화.
+
 ## 운영 / 어드민 도구
 
 - [ ] PnL 저장값 검증 엔드포인트 (이슈 E) — `/api/admin/verify-pnl` 신설. SELL의 저장된 `profit_loss`/`avg_buy_price`/`holding_days`/`strategy_type`/`reasoning_tags`/`emotion`을 `compute_group_pnl()`로 재계산해 차이 검출. 사용자 단위 batch + 차이 리포트 + (옵션) 자동 보정. 권한은 admin scope. DB 직접 수정·마이그레이션 누락·mutation 경로 우회 시 분석 탭과 거래 기록 합계 불일치를 잡기 위함.
