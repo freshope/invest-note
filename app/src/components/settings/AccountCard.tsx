@@ -5,11 +5,8 @@ import { Button } from "@/components/base/Button";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { AccountFormPanel } from "./AccountFormPanel";
 import { DeleteAccountDialog } from "./DeleteAccountDialog";
+import { fmt } from "@/lib/format";
 import type { Account } from "@/types/database";
-
-function formatKRW(amount: number): string {
-  return new Intl.NumberFormat("ko-KR").format(amount) + "원";
-}
 
 interface AccountCardProps {
   account: Account;
@@ -62,7 +59,7 @@ export function AccountCard({ account, tradeCount }: AccountCardProps) {
         <div className="pt-1 border-t border-border/60">
           <p className="text-[13px] text-muted-foreground">예수금</p>
           <p className="text-[18px] font-bold text-foreground tabular-nums mt-0.5">
-            {formatKRW(cashBalance)}
+            {fmt(cashBalance)}원
           </p>
         </div>
 

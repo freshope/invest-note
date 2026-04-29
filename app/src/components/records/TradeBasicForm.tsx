@@ -27,7 +27,7 @@ import { COUNTRY_CODES } from "@/lib/constants/market";
 import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
 import { HoldingSelectInput } from "./HoldingSelectInput";
 import { CountryBadge } from "./trade-display";
-import { fmtNumberInput, parseNumberInput } from "@/lib/format";
+import { fmt, fmtNumberInput, parseNumberInput } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Account, TradeType } from "@/types/database";
 import { CalendarIcon } from "lucide-react";
@@ -165,7 +165,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
   }, [price, quantity, tradeType, setValue]);
 
   const total = (price || 0) * (quantity || 0);
-  const totalDisplay = total > 0 ? total.toLocaleString("ko-KR") : "-";
+  const totalDisplay = total > 0 ? fmt(total) : "-";
 
   const firstError = errors.root?.message ?? (Object.values(errors)[0]?.message as string | undefined);
 
@@ -403,7 +403,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 onClick={() => setValue("quantity", holdingQty, { shouldValidate: true })}
                 className="text-[12px] font-medium text-primary underline underline-offset-2"
               >
-                전량 ({holdingQty.toLocaleString("ko-KR")}주)
+                전량 ({fmt(holdingQty)}주)
               </button>
             )}
           </div>
@@ -430,7 +430,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 ? "보유 수량 조회 중..."
                 : holdingQty === 0
                   ? "보유하지 않은 종목입니다"
-                  : `보유 ${holdingQty.toLocaleString("ko-KR")}주${avgBuyPrice ? ` · 평단가 ${Math.round(avgBuyPrice).toLocaleString("ko-KR")}원` : ""}`}
+                  : `보유 ${fmt(holdingQty)}주${avgBuyPrice ? ` · 평단가 ${fmt(Math.round(avgBuyPrice))}원` : ""}`}
             </p>
           )}
         </div>

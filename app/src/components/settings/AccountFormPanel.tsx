@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { BROKERS } from "@/lib/brokers";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { VALIDATION_LIMITS } from "@/lib/constants/validation";
+import { fmtNumberInput, formatNumberInput, parseNumberInput } from "@/lib/format";
 import type { Account } from "@/types/database";
 
 const schema = z.object({
@@ -58,7 +59,7 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
     defaultValues: {
       name: account?.name ?? "",
       broker: account?.broker ?? null,
-      cash_display: account?.cash_balance ? Number(account.cash_balance).toLocaleString("ko-KR") : "",
+      cash_display: fmtNumberInput(account?.cash_balance ? Number(account.cash_balance) : null),
     },
   });
 
@@ -69,18 +70,17 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
     reset({
       name: account?.name ?? "",
       broker: account?.broker ?? null,
-      cash_display: account?.cash_balance ? Number(account.cash_balance).toLocaleString("ko-KR") : "",
+      cash_display: fmtNumberInput(account?.cash_balance ? Number(account.cash_balance) : null),
     });
   }, [open, account, reset]);
 
   const broker = watch("broker");
 
   async function onSubmit(values: FormValues) {
-    const cash = values.cash_display.replace(/,/g, "");
     const input = {
       name: values.name,
       broker: values.broker || null,
-      cash_balance: cash ? Number(cash) : 0,
+      cash_balance: parseNumberInput(values.cash_display),
     };
     try {
       if (isEdit) {
@@ -157,10 +157,7 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
                       inputMode="numeric"
                       placeholder="0"
                       value={field.value}
-                      onChange={(e) => {
-                        const digits = e.target.value.replace(/[^0-9]/g, "");
-                        field.onChange(digits ? Number(digits).toLocaleString("ko-KR") : "");
-                      }}
+                      onChange={(e) => field.onChange(formatNumberInput(e.target.value))}
                     />
                   )}
                 />

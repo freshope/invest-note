@@ -1,7 +1,9 @@
 "use client";
 
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { signColor } from "@/lib/format";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import { TradeCard } from "@/components/records/TradeCard";
 import { ChevronLeftIcon } from "lucide-react";
@@ -32,14 +34,11 @@ export function StockDetail({ assetName, ticker, country, trades, stats, account
   const router = useRouter();
   const { selectedAccountId, setSelectedAccountId } = useAccountFilter();
   const isFiltered = selectedAccountId !== ACCOUNT_FILTER_ALL;
-  const grouped = groupByDate(trades);
+  const grouped = useMemo(() => groupByDate(trades), [trades]);
 
   const winRate = stats.sellCount > 0
     ? Math.round((stats.winCount / stats.sellCount) * 100)
     : null;
-
-  const pnlPositive = stats.totalProfitLoss > 0;
-  const pnlNegative = stats.totalProfitLoss < 0;
 
   return (
     <>
@@ -93,12 +92,10 @@ export function StockDetail({ assetName, ticker, country, trades, stats, account
             <div className="rounded-2xl bg-muted/60 p-4 text-center">
               <p className={cn(
                 "text-[18px] font-bold",
-                pnlPositive && "text-[var(--rise)]",
-                pnlNegative && "text-[var(--fall)]",
-                !pnlPositive && !pnlNegative && "text-foreground",
+                signColor(stats.totalProfitLoss, "foreground"),
               )}>
                 {stats.totalProfitLoss !== 0
-                  ? `${pnlPositive ? "+" : ""}${Math.round(stats.totalProfitLoss / 10000)}만`
+                  ? `${stats.totalProfitLoss > 0 ? "+" : ""}${Math.round(stats.totalProfitLoss / 10000)}만`
                   : "-"}
               </p>
               <p className="text-[12px] text-muted-foreground mt-0.5">총 손익</p>

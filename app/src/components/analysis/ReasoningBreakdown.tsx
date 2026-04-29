@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle } from "lucide-react";
-import { REASONING_TAGS } from "@/components/records/constants";
+import { REASONING_TAG_LABELS } from "@/lib/constants/trading";
 import { PnLLine } from "./PnLLine";
 import { WinRateBar } from "./WinRateBar";
 import type { TagStats, AnalysisSummary } from "@/lib/analysis/aggregate";
@@ -12,7 +12,6 @@ interface ReasoningBreakdownProps {
 }
 
 export function ReasoningBreakdown({ data, summary }: ReasoningBreakdownProps) {
-  const labelMap = Object.fromEntries(REASONING_TAGS.map((t) => [t.value, t.label]));
   const showFeelingWarn = summary.feelingRate >= 40;
   const showMissingWarn = summary.missingTagRate >= 30;
 
@@ -38,7 +37,7 @@ export function ReasoningBreakdown({ data, summary }: ReasoningBreakdownProps) {
           <div key={item.tag} className="space-y-1.5">
             <div className="flex items-center justify-between">
               <span className="text-[13px] font-medium text-foreground">
-                {labelMap[item.tag] ?? item.tag}
+                {REASONING_TAG_LABELS[item.tag] ?? item.tag}
               </span>
               <span className="text-[11px] text-muted-foreground tabular-nums">
                 {item.count}건

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { fmt } from "@/lib/format";
+import { fmt, formatPnL, signColor } from "@/lib/format";
 import type { Position } from "@/lib/portfolio";
 import { CountryBadge } from "@/components/records/trade-display";
 
@@ -28,9 +28,6 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
 
   const hasMultipleLines = lastNote?.includes("\n") ?? false;
   const firstLine = lastNote?.split("\n")[0] ?? "";
-
-  const pnlPos = (unrealizedPnL ?? 0) > 0;
-  const pnlNeg = (unrealizedPnL ?? 0) < 0;
 
   const priceChangePct =
     currentPrice !== null && avgBuyPrice > 0
@@ -76,13 +73,10 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
             <p
               className={cn(
                 "text-[12px] font-semibold tabular-nums",
-                pnlPos && "text-[var(--rise)]",
-                pnlNeg && "text-[var(--fall)]",
-                !pnlPos && !pnlNeg && "text-muted-foreground",
+                signColor(unrealizedPnL, "muted"),
               )}
             >
-              {pnlPos ? "+" : ""}
-              {fmt(unrealizedPnL)}원
+              {formatPnL(unrealizedPnL)}
             </p>
           )}
         </div>
@@ -95,8 +89,7 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
           <p
             className={cn(
               "text-[13px] font-semibold tabular-nums text-foreground",
-              priceChangePct !== null && priceChangePct > 0 && "text-[var(--rise)]",
-              priceChangePct !== null && priceChangePct < 0 && "text-[var(--fall)]",
+              priceChangePct !== null && signColor(priceChangePct, "none"),
             )}
           >
             {currentPrice !== null ? `${fmt(currentPrice)}` : "-"}
@@ -105,9 +98,7 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
             <p
               className={cn(
                 "text-[11px] font-semibold tabular-nums",
-                priceChangePct > 0 && "text-[var(--rise)]",
-                priceChangePct < 0 && "text-[var(--fall)]",
-                priceChangePct === 0 && "text-muted-foreground",
+                signColor(priceChangePct, "muted"),
               )}
             >
               {priceChangePct > 0 ? "+" : ""}
@@ -124,7 +115,7 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
         <div>
           <p className="text-[10px] text-muted-foreground mb-0.5">보유수량</p>
           <p className="text-[13px] font-semibold tabular-nums text-foreground">
-            {holdingQuantity.toLocaleString("ko-KR")}주
+            {fmt(holdingQuantity)}주
           </p>
         </div>
       </div>
