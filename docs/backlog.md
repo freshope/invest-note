@@ -20,6 +20,7 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] `FullScreenPanelFooter` 컴포넌트 추출 — `<div className="sticky bottom-0 bg-background px-5 pt-3 pb-4" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>` 패턴이 코드베이스 9곳 중복 (`TradeBasicForm` / `TradeMetaBuyForm` / `TradeMetaSellForm` / `TradeEditPanel` / `AccountFormPanel` / `ImportTradesPanel`의 4 step). `TradeDetail`은 `flex-none` 변형으로 같은 safe-area 인라인 스타일 사용. magic 인라인 `calc(1rem + env(safe-area-inset-bottom))`가 9곳에 동일 복붙되어 한 곳만 바꾸면 어긋날 위험. `@/components/base/FullScreenPanel`에 `FullScreenPanelFooter`(optional `sticky` prop, `className` 합성) 추가 후 9곳 일괄 마이그레이션.
 - [ ] `components/records/constants.ts` shim 제거 — 현재 `@/lib/constants/trading`로의 단순 re-export. 5개 consumer (`AutoMetaField`/`StrategyEmotionFields`/`TradeMetaBuyForm`/`TradeDetail`/`TradeEditPanel`)의 import 경로를 `@/lib/constants/trading`으로 일괄 교체 후 shim 파일 삭제. simplify-fe-followup에서 호환성 유지 위해 남겨둔 항목.
 - [ ] `formatPctSigned(n, decimals)` 헬퍼 검토 — `HoldingCard.tsx:112-113`의 `${pct > 0 ? "+" : ""}${pct.toFixed(2)}%` 패턴. 현재 단일 사이트라 도입 가치 낮으나, 추후 등락률 표시가 추가되면 도입 검토.
+- [ ] `TradeDetail` sign-based 인라인 ternary `signColor` 적용 검토 — `app/src/components/records/TradeDetail.tsx:201-202, 234-235`의 `summary.pnl > 0/<0` 분기. 다른 사이트는 simplify-fe-followup에서 `signColor(value, "none")`로 통합했으나, 이 두 곳은 0일 때 색상 변경 없음 동작이 같음을 시각 검증한 후 적용.
 
 ## 운영 / 어드민 도구
 
