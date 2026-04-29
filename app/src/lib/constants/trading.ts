@@ -5,6 +5,7 @@ import type {
   StrategyType,
   TradeResult,
 } from "@/types/database";
+import { PNL_COLORS } from "./colors";
 
 export const MARKET_LABELS: Record<MarketType, string> = {
   STOCK: "주식",
@@ -84,7 +85,7 @@ export const RESULT_LABELS: Record<string, string> = {
 };
 
 export const RESULTS: { value: TradeResult; label: string; color: string }[] = [
-  { value: "SUCCESS", label: "수익 ✅", color: "bg-[var(--rise)] text-white border-[var(--rise)]" },
-  { value: "FAIL", label: "손실 ❌", color: "bg-[var(--fall)] text-white border-[var(--fall)]" },
+  { value: "SUCCESS", label: "수익 ✅", color: `${PNL_COLORS.rise.bg} text-white ${PNL_COLORS.rise.border}` },
+  { value: "FAIL", label: "손실 ❌", color: `${PNL_COLORS.fall.bg} text-white ${PNL_COLORS.fall.border}` },
   { value: "BREAKEVEN", label: "본전 ➖", color: "bg-muted text-foreground border-border" },
 ];

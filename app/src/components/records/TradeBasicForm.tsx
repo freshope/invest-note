@@ -23,6 +23,7 @@ import { tradesApi, portfolioApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { VALIDATION_LIMITS } from "@/lib/constants/validation";
 import { COMMISSION_RATE, SELL_TAX_RATE } from "@/lib/constants/trading";
+import { PNL_COLORS } from "@/lib/constants/colors";
 import { STORAGE_KEYS } from "@/lib/constants/storage";
 import { COUNTRY_CODES } from "@/lib/constants/market";
 import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
@@ -228,13 +229,21 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
               <TabsList className="group-data-horizontal/tabs:h-12 p-1">
                 <TabsTrigger
                   value="BUY"
-                  className="flex-1 text-[16px] font-bold text-[var(--rise)] data-active:bg-[var(--rise)] data-active:text-white"
+                  className={cn(
+                    "flex-1 text-[16px] font-bold data-active:text-white",
+                    PNL_COLORS.rise.text,
+                    PNL_COLORS.rise.dataActiveBg,
+                  )}
                 >
                   매수
                 </TabsTrigger>
                 <TabsTrigger
                   value="SELL"
-                  className="flex-1 text-[16px] font-bold text-[var(--fall)] data-active:bg-[var(--fall)] data-active:text-white"
+                  className={cn(
+                    "flex-1 text-[16px] font-bold data-active:text-white",
+                    PNL_COLORS.fall.text,
+                    PNL_COLORS.fall.dataActiveBg,
+                  )}
                 >
                   매도
                 </TabsTrigger>

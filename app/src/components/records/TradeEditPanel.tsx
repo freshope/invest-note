@@ -28,6 +28,7 @@ import {
   REASONING_TAG_VALUES,
   TRADE_RESULT_VALUES,
 } from "@/lib/constants/trading";
+import { PNL_COLORS } from "@/lib/constants/colors";
 import { AutoEmotionField, AutoReasoningTagsField } from "./AutoMetaField";
 import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
 import { fmt, fmtNumberInput, parseNumberInput } from "@/lib/format";
@@ -167,15 +168,15 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
             <div className="flex-1 px-5 pt-5 pb-4 space-y-5">
               {/* 종목 헤더 카드 */}
               <div className="rounded-2xl overflow-hidden bg-muted/60">
-                <div className={cn("h-1", isSell ? "bg-[var(--fall)]" : "bg-[var(--rise)]")} />
+                <div className={cn("h-1", isSell ? PNL_COLORS.fall.bg : PNL_COLORS.rise.bg)} />
                 <div className="p-5">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-[20px] font-bold text-foreground">{trade.asset_name}</span>
                     <span className={cn(
                       "text-[12px] font-bold px-2 py-0.5 rounded-md",
                       isSell
-                        ? "bg-[var(--fall)]/10 text-[var(--fall)]"
-                        : "bg-[var(--rise)]/10 text-[var(--rise)]"
+                        ? cn(PNL_COLORS.fall.bgSoft, PNL_COLORS.fall.text)
+                        : cn(PNL_COLORS.rise.bgSoft, PNL_COLORS.rise.text)
                     )}>
                       {isSell ? "매도" : "매수"}
                     </span>
@@ -195,7 +196,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                   <div className="mt-4 pt-4 border-t border-border/40">
                     <p className={cn(
                       "text-[24px] font-bold tabular-nums text-right",
-                      isSell ? "text-[var(--fall)]" : "text-[var(--rise)]"
+                      isSell ? PNL_COLORS.fall.text : PNL_COLORS.rise.text
                     )}>
                       {fmt(liveTotal)}원
                     </p>

@@ -4,6 +4,7 @@ import type { ConcentrationData } from "@/lib/analysis/concentration";
 import { HHI_HIGH, HHI_MID } from "@/lib/constants/analysis";
 import { COUNTRY_LABEL, isCountryCode } from "@/lib/constants/market";
 import { MARKET_LABELS } from "@/lib/constants/trading";
+import { PNL_COLORS } from "@/lib/constants/colors";
 
 function WeightBar({ label, weight }: { label: string; weight: number }) {
   const pct = Math.round(weight * 100);
@@ -35,10 +36,10 @@ export function DiversificationPanel({ concentration }: DiversificationPanelProp
     hhi > HHI_HIGH ? "집중" : hhi > HHI_MID ? "보통" : "분산";
   const hhiColor =
     hhi > HHI_HIGH
-      ? "text-[var(--fall)]"
+      ? PNL_COLORS.fall.text
       : hhi > HHI_MID
         ? "text-amber-500"
-        : "text-[var(--rise)]";
+        : PNL_COLORS.rise.text;
 
   return (
     <div className="space-y-4">

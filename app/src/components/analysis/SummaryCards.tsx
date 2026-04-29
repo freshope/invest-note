@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { formatPnL, signColor } from "@/lib/format";
 import type { AnalysisSummary } from "@/lib/analysis/aggregate";
 import { LOSS_THRESHOLD, RESULT_INPUT_RATE_LOW, WIN_THRESHOLD } from "@/lib/constants/analysis";
+import { PNL_COLORS } from "@/lib/constants/colors";
 
 function StatCard({
   label,
@@ -36,9 +37,9 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
     resultInputRate < RESULT_INPUT_RATE_LOW
       ? "text-muted-foreground"
       : winRate >= WIN_THRESHOLD
-        ? "text-[var(--rise)]"
+        ? PNL_COLORS.rise.text
         : winRate < LOSS_THRESHOLD
-          ? "text-[var(--fall)]"
+          ? PNL_COLORS.fall.text
           : "text-foreground";
 
   const pnlClass = signColor(totalProfitLoss, "foreground");
