@@ -19,6 +19,7 @@ import { queryKeys } from "@/lib/query-keys";
 import { ChevronLeftIcon } from "lucide-react";
 import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
 import { STRATEGY_LABELS, EMOTION_LABELS, REASONING_TAG_LABELS } from "@/lib/constants/trading";
+import { PNL_COLORS } from "@/lib/constants/colors";
 import { fmt, formatPnL, signColor } from "@/lib/format";
 import { TradeStrategyResultSection } from "./TradeStrategyResultSection";
 
@@ -106,7 +107,7 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
         )}>
           <div className={cn(
             "h-1",
-            isBuy ? "bg-[var(--rise)]" : "bg-[var(--fall)]"
+            isBuy ? PNL_COLORS.rise.bg : PNL_COLORS.fall.bg
           )} />
           <div className="p-5">
             <div className="flex items-center gap-2 mb-1">
@@ -132,8 +133,8 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
                 className={cn(
                   "text-[12px] font-bold px-2 py-0.5 rounded-md",
                   isBuy
-                    ? "bg-[var(--rise)]/10 text-[var(--rise)]"
-                    : "bg-[var(--fall)]/10 text-[var(--fall)]"
+                    ? cn(PNL_COLORS.rise.bgSoft, PNL_COLORS.rise.text)
+                    : cn(PNL_COLORS.fall.bgSoft, PNL_COLORS.fall.text)
                 )}
               >
                 {isBuy ? "매수" : "매도"}
@@ -154,7 +155,7 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
             <div className="mt-4 pt-4 border-t border-border/40">
               <p className={cn(
                 "text-[24px] font-bold tabular-nums text-right",
-                isBuy ? "text-[var(--rise)]" : "text-[var(--fall)]"
+                isBuy ? PNL_COLORS.rise.text : PNL_COLORS.fall.text
               )}>
                 {totalAmount}원
               </p>
@@ -189,8 +190,8 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
             <div className="flex items-center justify-between">
               <span className={cn(
                 "inline-flex items-center rounded-full px-2.5 py-0.5 text-[12px] font-bold border",
-                summary?.result === "SUCCESS" && "bg-[var(--rise)]/10 text-[var(--rise)] border-[var(--rise)]/30",
-                summary?.result === "FAIL" && "bg-[var(--fall)]/10 text-[var(--fall)] border-[var(--fall)]/30",
+                summary?.result === "SUCCESS" && cn(PNL_COLORS.rise.bgSoft, PNL_COLORS.rise.text, PNL_COLORS.rise.borderSoft),
+                summary?.result === "FAIL" && cn(PNL_COLORS.fall.bgSoft, PNL_COLORS.fall.text, PNL_COLORS.fall.borderSoft),
                 summary?.result === "BREAKEVEN" && "bg-muted text-foreground border-border",
                 !summary?.result && "bg-muted text-muted-foreground border-border",
               )}>

@@ -4,6 +4,7 @@ import type { Trade, Account } from "@/types/database";
 import { cn } from "@/lib/utils";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { STRATEGY_LABELS, EMOTION_LABELS, RESULT_LABELS } from "@/lib/constants/trading";
+import { PNL_COLORS } from "@/lib/constants/colors";
 import { fmt, formatPnL } from "@/lib/format";
 
 interface TradeCardProps {
@@ -29,7 +30,7 @@ export function TradeCard({ trade, onPress }: TradeCardProps) {
         <div
           className={cn(
             "w-1 flex-shrink-0 rounded-l-2xl",
-            isBuy ? "bg-[var(--rise)]" : "bg-[var(--fall)]"
+            isBuy ? PNL_COLORS.rise.bg : PNL_COLORS.fall.bg
           )}
         />
 
@@ -42,8 +43,8 @@ export function TradeCard({ trade, onPress }: TradeCardProps) {
                 className={cn(
                   "text-[11px] font-bold px-1.5 py-0.5 rounded-md flex-shrink-0",
                   isBuy
-                    ? "bg-[var(--rise)]/10 text-[var(--rise)]"
-                    : "bg-[var(--fall)]/10 text-[var(--fall)]"
+                    ? cn(PNL_COLORS.rise.bgSoft, PNL_COLORS.rise.text)
+                    : cn(PNL_COLORS.fall.bgSoft, PNL_COLORS.fall.text)
                 )}
               >
                 {isBuy ? "매수" : "매도"}
@@ -54,8 +55,8 @@ export function TradeCard({ trade, onPress }: TradeCardProps) {
             {!isBuy && trade.result && (
               <div className={cn(
                 "flex-shrink-0 text-right",
-                trade.result === "SUCCESS" && "text-[var(--rise)]",
-                trade.result === "FAIL" && "text-[var(--fall)]",
+                trade.result === "SUCCESS" && PNL_COLORS.rise.text,
+                trade.result === "FAIL" && PNL_COLORS.fall.text,
                 trade.result === "BREAKEVEN" && "text-muted-foreground",
               )}>
                 <div className="text-[13px] font-bold">

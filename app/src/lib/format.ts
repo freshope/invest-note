@@ -1,3 +1,5 @@
+import { PNL_COLORS } from "./constants/colors";
+
 export function fmt(n: number): string {
   return n.toLocaleString("ko-KR");
 }
@@ -51,8 +53,8 @@ export type SignFallback = "foreground" | "muted" | "none";
  * 빈 문자열을 자동으로 무시하는 `cn()` 안에서 사용.
  */
 export function signColor(value: number, fallback: SignFallback = "foreground"): string {
-  if (value > 0) return "text-[var(--rise)]";
-  if (value < 0) return "text-[var(--fall)]";
+  if (value > 0) return PNL_COLORS.rise.text;
+  if (value < 0) return PNL_COLORS.fall.text;
   if (fallback === "muted") return "text-muted-foreground";
   if (fallback === "none") return "";
   return "text-foreground";

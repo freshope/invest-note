@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import type { ProfileInputRates } from "@/lib/analysis/profile";
+import { PNL_COLORS } from "@/lib/constants/colors";
 
 function QualityBar({
   label,
@@ -14,13 +15,13 @@ function QualityBar({
 }) {
   const pct = Math.round(rate);
   const color =
-    pct >= 70 ? "bg-[var(--rise)]" : pct >= 40 ? "bg-amber-400" : "bg-[var(--fall)]";
+    pct >= 70 ? PNL_COLORS.rise.bg : pct >= 40 ? "bg-amber-400" : PNL_COLORS.fall.bg;
   const textColor =
     pct >= 70
-      ? "text-[var(--rise)]"
+      ? PNL_COLORS.rise.text
       : pct >= 40
         ? "text-amber-500"
-        : "text-[var(--fall)]";
+        : PNL_COLORS.fall.text;
 
   return (
     <div className="space-y-1.5">
