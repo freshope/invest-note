@@ -12,7 +12,6 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 테스트 보강 — `period.ts` 경계값, `computeRealizedPnL` 멀티 종목, `byTag` FIFO 귀속
 - [ ] 행동 프로파일 tempo 식 단순화 (이슈 B) — BE `profile.py:58-59`의 `(avg_holding_days / 60) * 100 - scalping_ratio * 10`은 보유기간과 스캘핑 페널티가 한 축에 혼합. 단순 평균 보유기간 점수만 사용하도록 변경 + 테스트 갱신. 같이 FE `app/src/lib/analysis/profile.ts`의 `computeProfile`은 production 미사용(테스트 전용 dead code)이라 함수·테스트를 함께 삭제하고 `BehaviorProfile`/`ProfileInputRates` 타입 정의만 보존(2026-04-28 SOT 통합 잔재 정리). 런타임 BE/FE 정합성 이슈는 이미 해소되어 추가 동기화 작업은 불필요.
 - [ ] `recalc_group_pnl` 변경 row만 UPDATE 최적화 — `PNL_AFFECTING_FIELDS`에 `reasoning_tags`/`emotion` 추가로 BUY 메타 단독 변경에서도 그룹 advisory lock + `executemany`가 발동. `pnl_map` 결과를 기존 SELL row와 비교해 실제 변경된 row에만 UPDATE 발행. DB write 부하 절감.
-- [ ] `trades.result` legacy NULL 백필 — SELL의 `result`가 nullable·default 없음이라 본 커밋(SOT 통합) 이전에 생성된 SELL row는 NULL 잔존. 분석(`aggregate.py`)은 NULL을 win-rate에서 제외하는 반면 `/summary`는 `derive_result_from_pnl` fallback으로 값을 채워 dual-truth 발생. `result IS NULL AND profit_loss IS NOT NULL` SELL을 PnL 부호로 일괄 채우는 마이그레이션 추가 후 `routers/trades.py`의 fallback 제거.
 
 ## 프론트엔드 표시 / UI 정합성
 

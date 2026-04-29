@@ -175,7 +175,7 @@ export interface TradesListResponse {
 
 export interface TradeSummary {
   pnl: number;
-  result: TradeResult;
+  result: TradeResult | null;
   holdingDays: number | null;
   strategyEvaluation: StrategyEvaluation | null;
   breakdown: SellBreakdown;

@@ -35,7 +35,6 @@ from invest_note_api.domain.holdings import (
 from invest_note_api.domain.analysis.strategy_adherence import evaluate_strategy_for_sell
 from invest_note_api.domain.realized_pnl import (
     TradeGroupKey,
-    derive_result_from_pnl,
     trade_to_group_key,
     validate_mutation,
 )
@@ -242,8 +241,7 @@ async def get_trade_summary(
 
     return {
         "pnl": breakdown.pnl,
-        # result는 mutation 시 SELL row에 자동 저장됨. legacy NULL row 대비 fallback 유지.
-        "result": sell.result or derive_result_from_pnl(breakdown.pnl),
+        "result": sell.result,
         "holdingDays": holding_days,
         "strategyEvaluation": strategy_eval,
         "breakdown": _breakdown_dict(breakdown),

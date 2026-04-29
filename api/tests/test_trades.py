@@ -30,6 +30,7 @@ def _make_trade_row(
     avg_buy_price=None,
     holding_days=None,
     strategy_type=None,
+    result=None,
     country_code="KR",
     exchange="",
     created_at=None,
@@ -52,7 +53,7 @@ def _make_trade_row(
         "buy_reason": None,
         "sell_reason": None,
         "emotion": None,
-        "result": None,
+        "result": result,
         "profit_loss": profit_loss,
         "avg_buy_price": avg_buy_price,
         "holding_days": holding_days,
@@ -574,6 +575,7 @@ class TestTradeSummary:
                                    avg_buy_price=70000.0, profit_loss=100000.0,
                                    holding_days=31,
                                    strategy_type="LONG_TERM",
+                                   result="SUCCESS",
                                    traded_at=_dt("2024-02-01T09:00:00+09:00"))
 
         conn = FakeConnection(
@@ -587,6 +589,7 @@ class TestTradeSummary:
         assert "pnl" in body
         assert "breakdown" in body
         assert body["pnl"] == 100000.0
+        assert body["result"] == "SUCCESS"
         assert body["strategyEvaluation"]["planned"] == "LONG_TERM"
         assert body["strategyEvaluation"]["actual"] == "LONG_TERM"
         assert body["strategyEvaluation"]["adherence"] == "FOLLOWED"
