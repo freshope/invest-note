@@ -5,7 +5,6 @@ import math
 from typing import Literal
 
 from invest_note_api.domain.trade_types import (
-    DEFAULT_COUNTRY,
     RESULT_BREAKEVEN,
     RESULT_FAIL,
     RESULT_SUCCESS,
@@ -17,6 +16,8 @@ from invest_note_api.domain.trade_types import (
     StrategyType,
     Trade,
     TradeResult,
+    trade_country,
+    trade_identifier,
 )
 from invest_note_api.domain.trade_utils import MS_PER_DAY, to_kst
 
@@ -36,7 +37,7 @@ def trade_to_group_key(trade: Trade) -> TradeGroupKey:
     return TradeGroupKey(
         ticker=trade.ticker_symbol,
         asset_name=trade.asset_name,
-        country=trade.country_code or DEFAULT_COUNTRY,
+        country=trade_country(trade),
         account_id=trade.account_id,
     )
 
@@ -44,9 +45,9 @@ def trade_to_group_key(trade: Trade) -> TradeGroupKey:
 def _is_same_group(trade: Trade, key: TradeGroupKey) -> bool:
     if trade.account_id != key.account_id:
         return False
-    if (trade.country_code or DEFAULT_COUNTRY) != key.country:
+    if trade_country(trade) != key.country:
         return False
-    trade_ticker = trade.ticker_symbol or trade.asset_name
+    trade_ticker = trade_identifier(trade)
     target_ticker = key.ticker or key.asset_name
     return trade_ticker == target_ticker
 

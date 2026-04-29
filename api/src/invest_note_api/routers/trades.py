@@ -1,11 +1,11 @@
 """trades 라우터 — 6 endpoints + import (preview/commit)."""
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from collections import defaultdict
-from datetime import date, datetime, time, timezone
-from zoneinfo import ZoneInfo
+from datetime import date, datetime, timezone
 
 import asyncpg
 import cachetools
@@ -18,7 +18,9 @@ from invest_note_api.db_ops.pnl_sync import recalc_group_pnl
 from invest_note_api.db_ops.trades_repo import (
     PNL_AFFECTING_FIELDS,
     acquire_trade_group_lock,
+    assert_account_exists,
     delete_trade,
+    get_trade_by_id,
     get_trade_with_account,
     insert_trade,
     insert_trades_bulk,
@@ -38,16 +40,15 @@ from invest_note_api.domain.realized_pnl import (
     trade_to_group_key,
     validate_mutation,
 )
+from invest_note_api.domain.trade_utils import kst_date_to_utc
 from invest_note_api.domain.trade_import import make_signature
 from invest_note_api.domain.trade_types import (
     DEFAULT_COUNTRY,
     MARKET_TYPE_STOCK,
-    RESULT_BREAKEVEN,
-    RESULT_FAIL,
-    RESULT_SUCCESS,
     TRADE_TYPE_BUY,
     TRADE_TYPE_SELL,
     Trade,
+    trade_country,
 )
 from invest_note_api.errors import ERR_TRADE_NOT_FOUND, APIError, validate_body
 from invest_note_api.schemas.trade import TradeCreate, TradeUpdate
@@ -59,6 +60,8 @@ from invest_note_api.schemas.trade_import import (
 )
 from invest_note_api.broker_import import PARSERS, detect_broker
 from invest_note_api.broker_import.ticker_resolver import resolve_tickers
+
+logger = logging.getLogger(__name__)
 
 # staging cache: {staging_id: {"user_id": str, "rows": list[dict], "parse_errors": list[dict]}}
 _STAGING: cachetools.TTLCache = cachetools.TTLCache(maxsize=256, ttl=600)
@@ -113,7 +116,7 @@ async def list_trades_endpoint(
     if ticker:
         trades = [
             t for t in trades
-            if (t.country_code or DEFAULT_COUNTRY) == country
+            if trade_country(t) == country
             and (t.ticker_symbol == ticker or t.asset_name == ticker)
         ]
 
@@ -134,12 +137,7 @@ async def create_trade(
     data = validate_body(TradeCreate, body)
 
     async with acquire_for_user(pool, user.id) as conn:
-        # 계좌 존재 확인
-        acct_exists = await conn.fetchval(
-            "SELECT id FROM accounts WHERE id = $1", data.account_id
-        )
-        if not acct_exists:
-            raise APIError("올바른 계좌를 선택해주세요.", 400)
+        await assert_account_exists(conn, data.account_id)
 
         now = datetime.now(timezone.utc)
         new_trade = Trade(
@@ -214,14 +212,9 @@ async def get_trade_summary(
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> dict:
     async with acquire_for_user(pool, user.id) as conn:
-        sell_row = await conn.fetchrow(
-            "SELECT * FROM trades WHERE id = $1 AND user_id = $2",
-            trade_id, user.id,
-        )
-        if not sell_row:
+        sell = await get_trade_by_id(conn, trade_id, user.id)
+        if sell is None:
             raise APIError(ERR_TRADE_NOT_FOUND, 404)
-
-        sell = Trade(**dict(sell_row))
         if sell.trade_type != TRADE_TYPE_SELL:
             raise APIError("매도 거래만 조회할 수 있습니다.", 400)
 
@@ -279,14 +272,10 @@ async def update_trade(
     patch = data.model_dump(exclude_unset=True)
 
     async with acquire_for_user(pool, user.id) as conn:
-        existing_row = await conn.fetchrow(
-            "SELECT * FROM trades WHERE id = $1 AND user_id = $2",
-            trade_id, user.id,
-        )
-        if not existing_row:
+        existing = await get_trade_by_id(conn, trade_id, user.id)
+        if existing is None:
             raise APIError(ERR_TRADE_NOT_FOUND, 404)
 
-        existing = Trade(**dict(existing_row))
         patch, fields = strip_sell_auto_derived(patch, fields, existing.trade_type)
         if not patch:
             return Response(status_code=204)
@@ -318,13 +307,9 @@ async def delete_trade_endpoint(
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> Response:
     async with acquire_for_user(pool, user.id) as conn:
-        target_row = await conn.fetchrow(
-            "SELECT * FROM trades WHERE id = $1 AND user_id = $2",
-            trade_id, user.id,
-        )
-        if target_row is None:
+        target = await get_trade_by_id(conn, trade_id, user.id)
+        if target is None:
             raise APIError(ERR_TRADE_NOT_FOUND, 404)
-        target = Trade(**dict(target_row))
 
         await acquire_trade_group_lock(conn, str(user.id), trade_to_group_key(target))
 
@@ -372,7 +357,6 @@ async def import_preview(
     parse_result = parser.parse(file_bytes, filename)
 
     now_utc = datetime.now(timezone.utc)
-    future_errors: list[ImportError] = []
 
     # ticker 해결
     asset_names = {t.asset_name for t in parse_result.trades}
@@ -508,11 +492,7 @@ async def import_commit(
     skipped_count = 0
 
     async with acquire_for_user(pool, user.id) as conn:
-        acct_exists = await conn.fetchval(
-            "SELECT id FROM accounts WHERE id = $1", body.account_id
-        )
-        if not acct_exists:
-            raise APIError("올바른 계좌를 선택해주세요.", 400)
+        await assert_account_exists(conn, body.account_id)
 
         # 현재 모든 거래를 가져와 시그니처 셋 구성
         all_trades = await list_trades(conn, user.id)
@@ -535,8 +515,6 @@ async def import_commit(
         for row in rows:
             group_key = (str(body.account_id), row["ticker_symbol"], row["country_code"])
             groups[group_key].append(row)
-
-        now_utc = datetime.now(timezone.utc)
 
         for group_key, group_rows in groups.items():
             # BUY → SELL 순 정렬
@@ -561,8 +539,7 @@ async def import_commit(
                     continue
 
                 # 파일에 체결 시각이 없으므로 KST 장 시작 시간(09:00)으로 고정
-                kst_dt = datetime.combine(traded_date, time(9, 0), tzinfo=ZoneInfo("Asia/Seoul"))
-                traded_at_utc = kst_dt.astimezone(timezone.utc)
+                traded_at_utc = kst_date_to_utc(traded_date)
 
                 insert_row = {
                     "account_id": str(body.account_id),
@@ -603,8 +580,9 @@ async def import_commit(
                 commit_errors.append(ImportError(row_no=0, reason=f"{to_insert[0]['asset_name']} 중복 거래 감지 — 이미 등록된 거래가 있습니다."))
             except asyncpg.PostgresError as e:
                 commit_errors.append(ImportError(row_no=0, reason=f"{to_insert[0]['asset_name']} DB 오류 ({e.sqlstate}): {e.args[0] if e.args else e}"))
-            except Exception as e:
-                commit_errors.append(ImportError(row_no=0, reason=f"{to_insert[0]['asset_name']} 처리 오류: {e}"))
+            except Exception:
+                logger.exception("import commit 처리 오류 user_id=%s asset=%s", user.id, to_insert[0]["asset_name"])
+                commit_errors.append(ImportError(row_no=0, reason=f"{to_insert[0]['asset_name']} 처리 오류 — 잠시 후 다시 시도해주세요."))
 
     del _STAGING[body.staging_id]
 

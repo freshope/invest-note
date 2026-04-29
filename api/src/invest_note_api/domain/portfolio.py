@@ -4,7 +4,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, TRADE_TYPE_BUY, TRADE_TYPE_SELL
+from invest_note_api.domain.trade_types import (
+    TRADE_TYPE_BUY,
+    TRADE_TYPE_SELL,
+    trade_country,
+    trade_identifier,
+)
 from invest_note_api.domain.trade_utils import to_kst
 from invest_note_api.domain.realized_pnl import build_pnl_map
 
@@ -77,8 +82,8 @@ def build_positions(trades: list["Trade"]) -> list[Position]:
     sorted_trades = sorted(trades, key=lambda t: t.traded_at)
 
     for trade in sorted_trades:
-        ticker = trade.ticker_symbol or trade.asset_name
-        country = trade.country_code or DEFAULT_COUNTRY
+        ticker = trade_identifier(trade)
+        country = trade_country(trade)
         lot_key = f"{ticker}:{country}:{trade.account_id}"
 
         if lot_key not in lot_map:
@@ -213,8 +218,8 @@ def build_account_snapshots(
         pos_map: dict[str, dict] = {}
 
         for trade in account_trades:
-            ticker = trade.ticker_symbol or trade.asset_name
-            key = f"{ticker}:{trade.country_code or DEFAULT_COUNTRY}"
+            ticker = trade_identifier(trade)
+            key = f"{ticker}:{trade_country(trade)}"
             if key not in pos_map:
                 pos_map[key] = {"qty": 0.0, "cost_basis": 0.0}
             p = pos_map[key]
