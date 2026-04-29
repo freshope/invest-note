@@ -9,6 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/base/Button";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
+import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
 import { TradeEditPanel } from "./TradeEditPanel";
 import { DeleteTradeDialog } from "./DeleteTradeDialog";
 import type { Account } from "@/types/database";
@@ -290,10 +291,7 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
       </div>
 
       {/* 하단 버튼 */}
-      <div
-        className="flex-none bg-background px-5 pt-3 flex gap-3"
-        style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
-      >
+      <FullScreenPanelFooter sticky={false} className="flex-none flex gap-3">
         <Button
           type="button"
           variant="outline"
@@ -311,7 +309,7 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
         >
           수정
         </Button>
-      </div>
+      </FullScreenPanelFooter>
 
       <TradeEditPanel
         open={editOpen}
