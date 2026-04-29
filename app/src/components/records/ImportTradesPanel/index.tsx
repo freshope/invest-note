@@ -89,17 +89,10 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
     onOpenChange(false);
   };
 
-  const stepTitle: Record<Step, string> = {
-    account: "계좌 선택",
-    file: "파일 선택",
-    preview: "등록 미리보기",
-    result: "등록 결과",
-  };
-
   return (
     <FullScreenPanel open={open} onOpenChange={onOpenChange}>
       <FullScreenPanelContent>
-        <FullScreenPanelHeader title={`거래 일괄 등록 — ${stepTitle[step]}`} />
+        <FullScreenPanelHeader title="거래 일괄 등록" />
         <FullScreenPanelBody>
           {step === "account" && (
             <AccountStep
