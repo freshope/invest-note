@@ -2,6 +2,13 @@ export function fmt(n: number): string {
   return n.toLocaleString("ko-KR");
 }
 
+export function formatPnL(value: number): string {
+  const rounded = Math.round(value);
+  if (rounded === 0) return "0원";
+  const sign = rounded > 0 ? "+" : "";
+  return `${sign}${fmt(rounded)}원`;
+}
+
 /** Compact Korean number format: 억/만 for chart labels */
 export function fmtCompact(n: number): string {
   if (n >= 100_000_000) return `${(n / 100_000_000).toLocaleString("ko-KR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}억`;

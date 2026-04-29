@@ -11,10 +11,14 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] `compute_holding_days_map` 정리 — `trades.holding_days` 저장값 전환 후 분석 라우터/프로필/집계 인터페이스를 저장값 직접 사용으로 단순화하고 legacy FIFO fallback 제거 여부 결정
 - [ ] 수수료 현황 별도 패널 — BUY commission·세금 합계, 순실현손익 vs 총비용 비교
 - [ ] 테스트 보강 — `period.ts` 경계값, `computeRealizedPnL` 멀티 종목, `byTag` FIFO 귀속
-- [ ] PnL 표시 패턴 통합 — `EmotionBreakdown`/`StrategyBreakdown`/`ReasoningBreakdown`의 인라인 양수/음수 색상+부호+`fmt` 패턴을 `PnLLine` 공용 컴포넌트로 추출하고 `format.ts`에 `formatPnL` 헬퍼 추가
 - [ ] 행동 프로파일 tempo 식 단순화 (이슈 B) — 현 식은 `(avg_holding_days / 60) * 100 - scalping_ratio * 10`로 보유기간과 스캘핑 페널티가 한 축에 혼합. 단순 평균 보유기간 점수만 사용하도록 변경 (`profile.py` / `profile.ts` 동시 수정, 테스트 갱신). 백엔드는 actual 기준, 프론트엔드는 planned 기준이라 결과도 어긋나는 정합성 문제도 함께 해소.
 - [ ] `recalc_group_pnl` 변경 row만 UPDATE 최적화 — `PNL_AFFECTING_FIELDS`에 `reasoning_tags`/`emotion` 추가로 BUY 메타 단독 변경에서도 그룹 advisory lock + `executemany`가 발동. `pnl_map` 결과를 기존 SELL row와 비교해 실제 변경된 row에만 UPDATE 발행. DB write 부하 절감.
 - [ ] `trades.result` legacy NULL 백필 — SELL의 `result`가 nullable·default 없음이라 본 커밋(SOT 통합) 이전에 생성된 SELL row는 NULL 잔존. 분석(`aggregate.py`)은 NULL을 win-rate에서 제외하는 반면 `/summary`는 `derive_result_from_pnl` fallback으로 값을 채워 dual-truth 발생. `result IS NULL AND profit_loss IS NOT NULL` SELL을 PnL 부호로 일괄 채우는 마이그레이션 추가 후 `routers/trades.py`의 fallback 제거.
+
+## 프론트엔드 표시 / UI 정합성
+
+- [ ] `TradeDetail` inline PnL → `formatPnL` 통합 — `app/src/components/records/TradeDetail.tsx`의 `{summary.pnl >= 0 ? "+" : ""}{summary.pnl.toLocaleString("ko-KR")}원` 인라인 표현이 분석 탭의 `formatPnL` 헬퍼와 동일 로직. 점진 통합으로 부호/포맷 단일 SOT화. 부수로 `Math.round(-0)` → "-0원" 잠재 버그도 동시 해소.
+- [ ] PnL 색상 클래스 토큰화 — `text-[var(--rise)]` / `text-[var(--fall)]` raw string이 26+ 위치에 반복. `app/src/lib/constants/colors.ts`로 토큰화하여 색 변경 시 단일 지점 수정. 기존 `:root` CSS 변수 정의는 그대로 두고 클래스 문자열만 상수화.
 
 ## 운영 / 어드민 도구
 

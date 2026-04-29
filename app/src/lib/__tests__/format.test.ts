@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fmtNumberInput, formatNumberInput, parseNumberInput } from "../format";
+import { fmtNumberInput, formatNumberInput, formatPnL, parseNumberInput } from "../format";
 
 describe("fmtNumberInput", () => {
   it("양수를 천단위 콤마 문자열로 반환한다", () => {
@@ -77,5 +77,30 @@ describe("parseNumberInput", () => {
 
   it("숫자가 아닌 입력은 0을 반환한다", () => {
     expect(parseNumberInput("abc")).toBe(0);
+  });
+});
+
+describe("formatPnL", () => {
+  it("양수는 + 부호와 콤마 포맷, 원 접미", () => {
+    expect(formatPnL(1234)).toBe("+1,234원");
+    expect(formatPnL(1234567)).toBe("+1,234,567원");
+  });
+
+  it("음수는 - 부호 자동, 콤마 포맷, 원 접미", () => {
+    expect(formatPnL(-1234)).toBe("-1,234원");
+  });
+
+  it("0은 부호 없이 0원", () => {
+    expect(formatPnL(0)).toBe("0원");
+  });
+
+  it("소수는 round 후 포맷", () => {
+    expect(formatPnL(1234.4)).toBe("+1,234원");
+    expect(formatPnL(1234.5)).toBe("+1,235원");
+  });
+
+  it("round 후 0이 되는 양/음수는 0원", () => {
+    expect(formatPnL(0.4)).toBe("0원");
+    expect(formatPnL(-0.4)).toBe("0원");
   });
 });

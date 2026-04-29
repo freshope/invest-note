@@ -1,8 +1,7 @@
 "use client";
 
-import { cn } from "@/lib/utils";
-import { fmt } from "@/lib/format";
 import { STRATEGIES } from "@/components/records/constants";
+import { PnLLine } from "./PnLLine";
 import { WinRateBar } from "./WinRateBar";
 import type { StrategyStats } from "@/lib/analysis/aggregate";
 
@@ -38,11 +37,7 @@ export function StrategyBreakdown({ data }: StrategyBreakdownProps) {
             </div>
             <span className="text-[11px] text-muted-foreground tabular-nums">
               {item.count}건
-              {item.avgPnL !== 0 && (
-                <span className={cn("ml-1.5", item.avgPnL > 0 ? "text-[var(--rise)]" : "text-[var(--fall)]")}>
-                  {item.avgPnL > 0 ? "+" : ""}{fmt(Math.round(item.avgPnL))}원
-                </span>
-              )}
+              <PnLLine value={item.avgPnL} />
             </span>
           </div>
           <WinRateBar rate={item.winRate} hasData={item.resultCount > 0} />
