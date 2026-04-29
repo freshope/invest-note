@@ -1,6 +1,6 @@
 "use client";
 
-import { EMOTIONS } from "@/components/records/constants";
+import { EMOTION_LABELS } from "@/lib/constants/trading";
 import { PnLLine } from "./PnLLine";
 import { WinRateBar } from "./WinRateBar";
 import type { EmotionStats } from "@/lib/analysis/aggregate";
@@ -18,15 +18,13 @@ export function EmotionBreakdown({ data }: EmotionBreakdownProps) {
     );
   }
 
-  const labelMap = Object.fromEntries(EMOTIONS.map((e) => [e.value, e.label]));
-
   return (
     <div className="space-y-3">
       {data.map((item) => (
         <div key={item.type} className="space-y-1.5">
           <div className="flex items-center justify-between">
             <span className="text-[13px] font-medium text-foreground">
-              {labelMap[item.type] ?? item.type}
+              {EMOTION_LABELS[item.type] ?? item.type}
             </span>
             <span className="text-[11px] text-muted-foreground tabular-nums">
               {item.count}건

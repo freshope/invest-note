@@ -1,6 +1,6 @@
 "use client";
 
-import { STRATEGIES } from "@/components/records/constants";
+import { STRATEGY_LABELS } from "@/lib/constants/trading";
 import { PnLLine } from "./PnLLine";
 import { WinRateBar } from "./WinRateBar";
 import type { StrategyStats } from "@/lib/analysis/aggregate";
@@ -18,8 +18,6 @@ export function StrategyBreakdown({ data }: StrategyBreakdownProps) {
     );
   }
 
-  const labelMap = Object.fromEntries(STRATEGIES.map((s) => [s.value, s.label]));
-
   return (
     <div className="space-y-3">
       {data.map((item) => (
@@ -27,7 +25,7 @@ export function StrategyBreakdown({ data }: StrategyBreakdownProps) {
           <div className="flex items-center justify-between">
             <div>
               <span className="text-[13px] font-medium text-foreground">
-                {labelMap[item.type] ?? item.type}
+                {STRATEGY_LABELS[item.type] ?? item.type}
               </span>
               {item.avgHoldingDays > 0 && (
                 <span className="text-[11px] text-muted-foreground ml-1.5">

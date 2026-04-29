@@ -4,6 +4,7 @@ import type { Trade, Account } from "@/types/database";
 import { cn } from "@/lib/utils";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { STRATEGY_LABELS, EMOTION_LABELS, RESULT_LABELS } from "@/lib/constants/trading";
+import { fmt, formatPnL } from "@/lib/format";
 
 interface TradeCardProps {
   trade: Trade & { account?: Pick<Account, "name" | "broker"> };
@@ -13,9 +14,9 @@ interface TradeCardProps {
 export function TradeCard({ trade, onPress }: TradeCardProps) {
   const isBuy = trade.trade_type === "BUY";
 
-  const price = Number(trade.price).toLocaleString("ko-KR");
+  const price = fmt(Number(trade.price));
   const quantity = Number(trade.quantity);
-  const totalAmount = Number(trade.total_amount).toLocaleString("ko-KR");
+  const totalAmount = fmt(Number(trade.total_amount));
 
   return (
     <button
@@ -62,7 +63,7 @@ export function TradeCard({ trade, onPress }: TradeCardProps) {
                 </div>
                 {trade.profit_loss != null && (
                   <div className="text-[12px] font-semibold tabular-nums">
-                    {Number(trade.profit_loss) > 0 ? "+" : ""}{Number(trade.profit_loss).toLocaleString("ko-KR")}원
+                    {formatPnL(Number(trade.profit_loss))}
                   </div>
                 )}
               </div>

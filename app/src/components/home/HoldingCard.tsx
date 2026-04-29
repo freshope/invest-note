@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { fmt } from "@/lib/format";
+import { fmt, formatPnL } from "@/lib/format";
 import type { Position } from "@/lib/portfolio";
 import { CountryBadge } from "@/components/records/trade-display";
 
@@ -81,8 +81,7 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
                 !pnlPos && !pnlNeg && "text-muted-foreground",
               )}
             >
-              {pnlPos ? "+" : ""}
-              {fmt(unrealizedPnL)}원
+              {formatPnL(unrealizedPnL)}
             </p>
           )}
         </div>
@@ -124,7 +123,7 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
         <div>
           <p className="text-[10px] text-muted-foreground mb-0.5">보유수량</p>
           <p className="text-[13px] font-semibold tabular-nums text-foreground">
-            {holdingQuantity.toLocaleString("ko-KR")}주
+            {fmt(holdingQuantity)}주
           </p>
         </div>
       </div>

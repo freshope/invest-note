@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
@@ -32,7 +33,7 @@ export function StockDetail({ assetName, ticker, country, trades, stats, account
   const router = useRouter();
   const { selectedAccountId, setSelectedAccountId } = useAccountFilter();
   const isFiltered = selectedAccountId !== ACCOUNT_FILTER_ALL;
-  const grouped = groupByDate(trades);
+  const grouped = useMemo(() => groupByDate(trades), [trades]);
 
   const winRate = stats.sellCount > 0
     ? Math.round((stats.winCount / stats.sellCount) * 100)

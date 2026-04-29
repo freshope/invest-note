@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { fmt } from "@/lib/format";
+import { formatPnL } from "@/lib/format";
 import { ADHERENCE_CONFIG } from "@/lib/constants/trading";
 import type { StrategyAdherenceStats } from "@/lib/analysis/aggregate";
 
@@ -10,7 +10,7 @@ interface StrategyAdherencePanelProps {
   data: StrategyAdherenceStats[];
 }
 
-function PnLLine({ value }: { value: number }) {
+function AdherencePnL({ value }: { value: number }) {
   if (value === 0) return null;
   return (
     <p
@@ -19,8 +19,7 @@ function PnLLine({ value }: { value: number }) {
         value > 0 ? "text-[var(--rise)]" : "text-[var(--fall)]",
       )}
     >
-      {value > 0 ? "+" : ""}
-      {fmt(Math.round(value))}원
+      {formatPnL(value)}
     </p>
   );
 }
@@ -45,7 +44,7 @@ function AdherenceSide({
           <span className="ml-1">· 승률 {Math.round(stats.winRate)}%</span>
         )}
       </p>
-      <PnLLine value={stats?.avgPnL ?? 0} />
+      <AdherencePnL value={stats?.avgPnL ?? 0} />
     </div>
   );
 }

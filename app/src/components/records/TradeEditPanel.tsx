@@ -29,7 +29,7 @@ import {
 } from "./constants";
 import { AutoEmotionField, AutoReasoningTagsField } from "./AutoMetaField";
 import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
-import { fmtNumberInput, parseNumberInput } from "@/lib/format";
+import { fmt, fmtNumberInput, parseNumberInput } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Trade, Account, ReasoningTag } from "@/types/database";
 import { format } from "date-fns";
@@ -196,10 +196,10 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                       "text-[24px] font-bold tabular-nums text-right",
                       isSell ? "text-[var(--fall)]" : "text-[var(--rise)]"
                     )}>
-                      {liveTotal.toLocaleString("ko-KR")}원
+                      {fmt(liveTotal)}원
                     </p>
                     <p className="text-[12px] text-muted-foreground text-right mt-0.5 tabular-nums">
-                      {livePrice.toLocaleString("ko-KR")}원 × {liveQty}{getQuantityUnit(trade.market_type)}
+                      {fmt(livePrice)}원 × {liveQty}{getQuantityUnit(trade.market_type)}
                     </p>
                   </div>
                 </div>

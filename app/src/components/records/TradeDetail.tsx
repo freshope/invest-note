@@ -18,6 +18,7 @@ import { queryKeys } from "@/lib/query-keys";
 import { ChevronLeftIcon } from "lucide-react";
 import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
 import { STRATEGY_LABELS, EMOTION_LABELS, REASONING_TAG_LABELS } from "./constants";
+import { fmt, formatPnL } from "@/lib/format";
 import { TradeStrategyResultSection } from "./TradeStrategyResultSection";
 
 interface TradeDetailProps {
@@ -68,11 +69,11 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
     : null;
 
   const tradedDate = format(new Date(trade.traded_at), "yyyy년 M월 d일 (EEE)", { locale: ko });
-  const price = Number(trade.price).toLocaleString("ko-KR");
+  const price = fmt(Number(trade.price));
   const quantity = Number(trade.quantity);
-  const totalAmount = Number(trade.total_amount).toLocaleString("ko-KR");
-  const commission = Number(trade.commission).toLocaleString("ko-KR");
-  const tax = Number(trade.tax).toLocaleString("ko-KR");
+  const totalAmount = fmt(Number(trade.total_amount));
+  const commission = fmt(Number(trade.commission));
+  const tax = fmt(Number(trade.tax));
 
   return (
     <div className="h-[100dvh] flex flex-col overflow-hidden">
@@ -200,30 +201,30 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
                   summary.pnl > 0 && "text-[var(--rise)]",
                   summary.pnl < 0 && "text-[var(--fall)]",
                 )}>
-                  {summary.pnl >= 0 ? "+" : ""}{summary.pnl.toLocaleString("ko-KR")}원
+                  {formatPnL(summary.pnl)}
                 </span>
               )}
             </div>
             {summary?.breakdown && !summary.breakdown.isManualInput && (
               <div className="rounded-lg bg-background border border-border/60 px-3 py-2.5 space-y-1.5">
                 <div className="flex justify-between items-center">
-                  <span className="text-[11px] text-muted-foreground">{`매도금액 (${summary.breakdown.sellPrice.toLocaleString("ko-KR")}원 × ${summary.breakdown.quantity}주)`}</span>
-                  <span className="text-[12px] tabular-nums text-foreground">+{summary.breakdown.sellAmount.toLocaleString("ko-KR")}원</span>
+                  <span className="text-[11px] text-muted-foreground">{`매도금액 (${fmt(summary.breakdown.sellPrice)}원 × ${summary.breakdown.quantity}주)`}</span>
+                  <span className="text-[12px] tabular-nums text-foreground">+{fmt(summary.breakdown.sellAmount)}원</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-[11px] text-muted-foreground">{`매수비용 (평단 ${Math.round(summary.breakdown.avgCostPrice).toLocaleString("ko-KR")}원 × ${summary.breakdown.quantity}주)`}</span>
-                  <span className="text-[12px] tabular-nums text-foreground">-{summary.breakdown.costBasis.toLocaleString("ko-KR")}원</span>
+                  <span className="text-[11px] text-muted-foreground">{`매수비용 (평단 ${fmt(Math.round(summary.breakdown.avgCostPrice))}원 × ${summary.breakdown.quantity}주)`}</span>
+                  <span className="text-[12px] tabular-nums text-foreground">-{fmt(summary.breakdown.costBasis)}원</span>
                 </div>
                 {summary.breakdown.commission > 0 && (
                   <div className="flex justify-between items-center">
                     <span className="text-[11px] text-muted-foreground">수수료</span>
-                    <span className="text-[12px] tabular-nums text-foreground">-{summary.breakdown.commission.toLocaleString("ko-KR")}원</span>
+                    <span className="text-[12px] tabular-nums text-foreground">-{fmt(summary.breakdown.commission)}원</span>
                   </div>
                 )}
                 {summary.breakdown.tax > 0 && (
                   <div className="flex justify-between items-center">
                     <span className="text-[11px] text-muted-foreground">세금</span>
-                    <span className="text-[12px] tabular-nums text-foreground">-{summary.breakdown.tax.toLocaleString("ko-KR")}원</span>
+                    <span className="text-[12px] tabular-nums text-foreground">-{fmt(summary.breakdown.tax)}원</span>
                   </div>
                 )}
                 <div className="border-t border-border/60 pt-1.5 flex justify-between items-center">
@@ -233,7 +234,7 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
                     summary.pnl != null && summary.pnl > 0 && "text-[var(--rise)]",
                     summary.pnl != null && summary.pnl < 0 && "text-[var(--fall)]",
                   )}>
-                    {summary.pnl != null ? `${summary.pnl >= 0 ? "+" : ""}${summary.pnl.toLocaleString("ko-KR")}원` : "–"}
+                    {summary.pnl != null ? formatPnL(summary.pnl) : "–"}
                   </span>
                 </div>
               </div>

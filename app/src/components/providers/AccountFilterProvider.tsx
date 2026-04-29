@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { Account } from "@/types/database";
 
 export const ACCOUNT_FILTER_ALL = "all" as const;
@@ -15,8 +15,13 @@ const AccountFilterContext = createContext<AccountFilterContextValue | null>(nul
 export function AccountFilterProvider({ children }: { children: React.ReactNode }) {
   const [selectedAccountId, setSelectedAccountId] = useState<string>(ACCOUNT_FILTER_ALL);
 
+  const value = useMemo(
+    () => ({ selectedAccountId, setSelectedAccountId }),
+    [selectedAccountId],
+  );
+
   return (
-    <AccountFilterContext.Provider value={{ selectedAccountId, setSelectedAccountId }}>
+    <AccountFilterContext.Provider value={value}>
       {children}
     </AccountFilterContext.Provider>
   );

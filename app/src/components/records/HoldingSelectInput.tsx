@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { usePortfolioSummary } from "@/hooks/usePortfolioSummary";
 import { Input } from "@/components/base/Input";
 import { CountryBadge } from "./trade-display";
+import { fmt } from "@/lib/format";
 import type { SelectedStock } from "./StockSearchInput";
 
 interface HoldingSelectInputProps {
@@ -37,11 +38,14 @@ export function HoldingSelectInput({ accountId, value, onChange, onSelect, onSel
     [data?.positions, accountId],
   );
 
-  const trimmed = value.trim();
-  const lowerTrimmed = trimmed.toLowerCase();
-  const filtered = trimmed
-    ? allPositions.filter((p) => p.assetName.includes(trimmed) || p.ticker.toLowerCase().includes(lowerTrimmed))
-    : allPositions;
+  const filtered = useMemo(() => {
+    const trimmed = value.trim();
+    if (!trimmed) return allPositions;
+    const lower = trimmed.toLowerCase();
+    return allPositions.filter(
+      (p) => p.assetName.includes(trimmed) || p.ticker.toLowerCase().includes(lower),
+    );
+  }, [allPositions, value]);
 
   const handleSelect = (pos: typeof allPositions[number]) => {
     const market = pos.country === "KR" ? "KR" : pos.country === "US" ? "US" : "OTHER";
@@ -85,7 +89,7 @@ export function HoldingSelectInput({ accountId, value, onChange, onSelect, onSel
               <span className="flex-1 font-medium truncate">{pos.assetName}</span>
               <span className="shrink-0 text-[12px] text-muted-foreground font-mono">{pos.ticker}</span>
               <span className="shrink-0 text-[12px] text-muted-foreground">
-                {pos.holdingQuantity.toLocaleString("ko-KR")}주
+                {fmt(pos.holdingQuantity)}주
               </span>
             </li>
           ))}

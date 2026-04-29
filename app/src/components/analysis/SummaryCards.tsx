@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { fmt } from "@/lib/format";
+import { formatPnL } from "@/lib/format";
 import type { AnalysisSummary } from "@/lib/analysis/aggregate";
 import { LOSS_THRESHOLD, RESULT_INPUT_RATE_LOW, WIN_THRESHOLD } from "@/lib/constants/analysis";
 
@@ -60,7 +60,7 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
       />
       <StatCard
         label="총 실현손익"
-        value={sellTrades === 0 ? "-" : `${totalProfitLoss >= 0 ? "+" : ""}${fmt(Math.round(totalProfitLoss))}원`}
+        value={sellTrades === 0 ? "-" : formatPnL(totalProfitLoss)}
         valueClass={pnlClass}
       />
     </div>

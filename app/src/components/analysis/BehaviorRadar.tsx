@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import {
   Radar,
   RadarChart,
@@ -46,19 +47,26 @@ interface BehaviorRadarProps {
 }
 
 export function BehaviorRadar({ profile, inputRates }: BehaviorRadarProps) {
-  const data = DIMENSIONS.map((d) => ({
-    subject: d.label,
-    value: profile[d.key],
-    fullMark: 100,
-  }));
+  const data = useMemo(
+    () =>
+      DIMENSIONS.map((d) => ({
+        subject: d.label,
+        value: profile[d.key],
+        fullMark: 100,
+      })),
+    [profile],
+  );
 
-  const dimInputRates: Record<string, number> = {
-    tempo: inputRates.holdingDays,
-    diversification: 100,
-    emotionStability: inputRates.emotion,
-    reasoningQuality: inputRates.reasoningTag,
-    reviewHabit: inputRates.reflection,
-  };
+  const dimInputRates = useMemo<Record<string, number>>(
+    () => ({
+      tempo: inputRates.holdingDays,
+      diversification: 100,
+      emotionStability: inputRates.emotion,
+      reasoningQuality: inputRates.reasoningTag,
+      reviewHabit: inputRates.reflection,
+    }),
+    [inputRates],
+  );
 
   return (
     <div className="space-y-4">
