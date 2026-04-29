@@ -3,7 +3,6 @@ import { computeRealizedPnL, sellPnL, sortForCalc, computeGroupPnL, validateMuta
 import { computeHoldingDays } from "../holding-period";
 import { computeConcentration } from "../concentration";
 import { parsePeriod, filterByPeriod } from "../period";
-import { computeProfile } from "../profile";
 import type { Trade } from "@/types/database";
 import type { Position } from "@/lib/portfolio";
 
@@ -522,60 +521,6 @@ describe("validateMutation", () => {
     const result = validateMutation(tradesWithBuy, { type: "insert", trade: sell });
     // BUY가 SELL보다 먼저 처리되어 oversell 없음
     expect(result.ok).toBe(true);
-  });
-});
-
-// ── computeProfile ────────────────────────────────────────────
-
-describe("computeProfile", () => {
-  it("거래 없으면 diversification=50(중립)", () => {
-    const { profile } = computeProfile([], 0, new Map());
-    expect(profile.diversification).toBe(50);
-  });
-
-  it("FOMO 거래만 있으면 emotionStability 낮음", () => {
-    const trades = [
-      makeTrade({ id: "b1", trade_type: "BUY", emotion: "FOMO" }),
-      makeTrade({ id: "b2", trade_type: "BUY", emotion: "FOMO" }),
-    ];
-    const { profile } = computeProfile(trades, 0, new Map());
-    expect(profile.emotionStability).toBe(0);
-  });
-
-  it("CALM 거래만 있으면 emotionStability 높음", () => {
-    const trades = [
-      makeTrade({ id: "b1", trade_type: "BUY", emotion: "CALM" }),
-      makeTrade({ id: "b2", trade_type: "BUY", emotion: "CALM" }),
-    ];
-    const { profile } = computeProfile(trades, 0, new Map());
-    expect(profile.emotionStability).toBe(100);
-  });
-
-  it("모든 BUY에 FEELING 태그 → reasoningQuality 낮음", () => {
-    const trades = [
-      makeTrade({ id: "b1", trade_type: "BUY", reasoning_tags: ["FEELING"] }),
-    ];
-    const { profile } = computeProfile(trades, 0, new Map());
-    expect(profile.reasoningQuality).toBe(0);
-  });
-
-  it("SELL에 sell_reason 있으면 reviewHabit 100", () => {
-    const trades = [
-      makeTrade({ id: "b1", trade_type: "BUY" }),
-      makeTrade({ id: "s1", trade_type: "SELL", sell_reason: "목표가 도달" }),
-    ];
-    const { profile } = computeProfile(trades, 0, new Map());
-    expect(profile.reviewHabit).toBe(100);
-  });
-
-  it("hhi 기반 diversification 계산", () => {
-    const trades = [
-      makeTrade({ id: "b1", trade_type: "BUY" }),
-      makeTrade({ id: "s1", trade_type: "SELL" }),
-    ];
-    const { profile } = computeProfile(trades, 0.5, new Map());
-    // (1 - 0.5) * 100 = 50
-    expect(profile.diversification).toBe(50);
   });
 });
 

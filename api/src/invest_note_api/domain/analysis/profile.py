@@ -8,12 +8,10 @@ from invest_note_api.domain.trade_types import (
     EMOTION_ANXIOUS,
     EMOTION_FOMO,
     EMOTION_IMPULSIVE,
-    STRATEGY_SCALPING,
     TAG_FEELING,
     TRADE_TYPE_BUY,
     TRADE_TYPE_SELL,
 )
-from invest_note_api.domain.analysis.strategy_adherence import infer_actual_strategy
 
 if TYPE_CHECKING:
     from invest_note_api.domain.trade_types import Trade
@@ -53,10 +51,7 @@ def compute_profile(
     sell_ids = {t.id for t in sells}
     all_days = [v for k, v in holding_days_map.items() if k in sell_ids]
     avg_days = sum(all_days) / len(all_days) if all_days else 0.0
-    scalping = sum(1 for days in all_days if infer_actual_strategy(days) == STRATEGY_SCALPING)
-    scalping_ratio = scalping / len(sells) if sells else 0.0
-    tempo_base = _clamp((avg_days / 60) * 100)
-    tempo = _clamp(tempo_base - scalping_ratio * 10)
+    tempo = _clamp((avg_days / 60) * 100)
 
     if not sells and not buys:
         diversification = 50.0
