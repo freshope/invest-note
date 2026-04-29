@@ -331,6 +331,18 @@ class TestComputeProfile:
         profile, _ = compute_profile(sells, 0.3, holding_map)
         assert profile.tempo == 100.0
 
+    def test_tempo_half_score_at_30_days(self):
+        sells = [make_trade(id=f"s{i}", trade_type="SELL") for i in range(4)]
+        holding_map = {f"s{i}": 30 for i in range(4)}
+        profile, _ = compute_profile(sells, 0.3, holding_map)
+        assert profile.tempo == 50.0
+
+    def test_tempo_short_holding_low_score(self):
+        sells = [make_trade(id=f"s{i}", trade_type="SELL") for i in range(4)]
+        holding_map = {f"s{i}": 1 for i in range(4)}
+        profile, _ = compute_profile(sells, 0.3, holding_map)
+        assert profile.tempo == pytest.approx((1 / 60) * 100)
+
     def test_emotion_stability_unstable(self):
         trades = [
             make_trade(id="t1", emotion="FOMO"),

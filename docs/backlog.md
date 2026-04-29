@@ -10,7 +10,7 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 분석 API 쿼리 `.limit(1000)` 가드 — 거래 수 급증 시 메모리/응답 보호
 - [ ] 수수료 현황 별도 패널 — BUY commission·세금 합계, 순실현손익 vs 총비용 비교
 - [ ] 테스트 보강 — `period.ts` 경계값, `computeRealizedPnL` 멀티 종목, `byTag` FIFO 귀속
-- [ ] 행동 프로파일 tempo 식 단순화 (이슈 B) — BE `profile.py:58-59`의 `(avg_holding_days / 60) * 100 - scalping_ratio * 10`은 보유기간과 스캘핑 페널티가 한 축에 혼합. 단순 평균 보유기간 점수만 사용하도록 변경 + 테스트 갱신. 같이 FE `app/src/lib/analysis/profile.ts`의 `computeProfile`은 production 미사용(테스트 전용 dead code)이라 함수·테스트를 함께 삭제하고 `BehaviorProfile`/`ProfileInputRates` 타입 정의만 보존(2026-04-28 SOT 통합 잔재 정리). 런타임 BE/FE 정합성 이슈는 이미 해소되어 추가 동기화 작업은 불필요.
+- [ ] `compute_profile` 잔여 중복/no-op 정리 — `input_rates.reflection`이 `review_habit`과 동일 식 두 번 계산(`with_sell_reason / len(sells) * 100`). `min(1.0, poor_ratio)`는 `poor_ratio`가 정의상 [0,1]이고 뒤이어 `_clamp`까지 통과해 무용. 사소하지만 명확한 정리 후보.
 - [ ] `recalc_group_pnl` 변경 row만 UPDATE 최적화 — `PNL_AFFECTING_FIELDS`에 `reasoning_tags`/`emotion` 추가로 BUY 메타 단독 변경에서도 그룹 advisory lock + `executemany`가 발동. `pnl_map` 결과를 기존 SELL row와 비교해 실제 변경된 row에만 UPDATE 발행. DB write 부하 절감.
 
 ## 프론트엔드 표시 / UI 정합성
