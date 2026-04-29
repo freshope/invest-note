@@ -13,6 +13,7 @@ import {
   FullScreenPanelContent,
   FullScreenPanelHeader,
   FullScreenPanelBody,
+  FullScreenPanelFooter,
 } from "@/components/base/FullScreenPanel";
 import { accountsApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
@@ -164,17 +165,14 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
               </div>
             </div>
 
-            <div
-              className="sticky bottom-0 bg-background px-5 pt-3 pb-4"
-              style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
-            >
+            <FullScreenPanelFooter>
               {errors.root && (
                 <p className="mb-2 text-sm text-destructive">{errors.root.message}</p>
               )}
               <Button type="submit" size="xl" disabled={isSubmitting} className="w-full">
                 {isSubmitting ? "저장 중..." : isEdit ? "수정하기" : "추가하기"}
               </Button>
-            </div>
+            </FullScreenPanelFooter>
           </form>
         </FullScreenPanelBody>
       </FullScreenPanelContent>

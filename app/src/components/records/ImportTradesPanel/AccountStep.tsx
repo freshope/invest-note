@@ -4,6 +4,7 @@ import { useEffect, useMemo } from "react";
 import { AlertCircleIcon } from "lucide-react";
 import { Button } from "@/components/base/Button";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
+import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
 import { cn } from "@/lib/utils";
 import type { Account } from "@/types/database";
 import { findBrokerKeyByAccountBroker } from "./brokers";
@@ -80,10 +81,7 @@ export function AccountStep({ accounts, selectedAccountId, onSelect, onNext }: P
         )}
       </div>
 
-      <div
-        className="sticky bottom-0 bg-background px-5 pt-3 pb-4"
-        style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
-      >
+      <FullScreenPanelFooter>
         <Button
           size="xl"
           className="w-full"
@@ -92,7 +90,7 @@ export function AccountStep({ accounts, selectedAccountId, onSelect, onNext }: P
         >
           다음
         </Button>
-      </div>
+      </FullScreenPanelFooter>
     </div>
   );
 }

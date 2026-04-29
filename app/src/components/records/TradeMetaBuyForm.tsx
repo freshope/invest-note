@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/base/Button";
+import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
 import { Label } from "@/components/base/Label";
 import { tradesApi } from "@/lib/api-client";
 import { VALIDATION_LIMITS, TRADE_FREE_TEXT_ERROR } from "@/lib/constants/validation";
@@ -147,17 +148,14 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
         {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
       </div>
 
-      <div
-        className="sticky bottom-0 bg-background px-5 pt-3 pb-4 flex gap-3"
-        style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
-      >
+      <FullScreenPanelFooter className="flex gap-3">
         <Button type="button" variant="outline" size="xl" className="flex-1" onClick={onDone}>
           건너뛰기
         </Button>
         <Button type="submit" size="xl" disabled={isSubmitting} className="flex-1">
           {isSubmitting ? "저장 중..." : "저장"}
         </Button>
-      </div>
+      </FullScreenPanelFooter>
     </form>
   );
 }

@@ -2,6 +2,7 @@
 
 import { CheckCircle2Icon, XCircleIcon } from "lucide-react";
 import { Button } from "@/components/base/Button";
+import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
 import type { ImportCommitResponse } from "@/lib/api-client";
 
 interface Props {
@@ -40,14 +41,11 @@ export function ResultStep({ result, onClose }: Props) {
         )}
       </div>
 
-      <div
-        className="sticky bottom-0 bg-background px-5 pt-3 pb-4"
-        style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
-      >
+      <FullScreenPanelFooter>
         <Button size="xl" className="w-full" onClick={onClose}>
           닫기
         </Button>
-      </div>
+      </FullScreenPanelFooter>
     </div>
   );
 }
