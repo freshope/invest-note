@@ -2,7 +2,7 @@
 
 import { Label } from "@/components/base/Label";
 import type { StrategyType, EmotionType } from "@/types/database";
-import { STRATEGIES, EMOTIONS } from "./constants";
+import { STRATEGIES, EMOTIONS } from "@/lib/constants/trading";
 
 interface StrategyEmotionFieldsProps {
   strategy: StrategyType | "";

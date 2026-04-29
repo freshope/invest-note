@@ -26,7 +26,7 @@ import {
   EMOTION_VALUES,
   REASONING_TAG_VALUES,
   TRADE_RESULT_VALUES,
-} from "./constants";
+} from "@/lib/constants/trading";
 import { AutoEmotionField, AutoReasoningTagsField } from "./AutoMetaField";
 import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
 import { fmt, fmtNumberInput, parseNumberInput } from "@/lib/format";

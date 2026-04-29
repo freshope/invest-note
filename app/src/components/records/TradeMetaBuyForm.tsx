@@ -14,7 +14,7 @@ import {
   STRATEGY_VALUES,
   EMOTION_VALUES,
   REASONING_TAG_VALUES,
-} from "./constants";
+} from "@/lib/constants/trading";
 import { StrategyEmotionFields } from "./StrategyEmotionFields";
 import { TradeFreeTextField } from "./TradeFreeTextField";
 
