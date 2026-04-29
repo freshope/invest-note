@@ -3,14 +3,15 @@ import { fmt, fmtCompact, signColor } from "@/lib/format";
 import type { DashboardTotals } from "@/lib/portfolio";
 
 function PnLText({ value, className }: { value: number; className?: string }) {
-  const abs = Math.abs(value);
-  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  const rounded = Math.round(value);
+  const abs = Math.abs(rounded);
+  const sign = rounded > 0 ? "+" : rounded < 0 ? "-" : "";
   const amount = abs >= 10_000_000 ? fmtCompact(abs) : fmt(abs);
   return (
     <span
       className={cn(
         "tabular-nums whitespace-nowrap",
-        signColor(value, "foreground"),
+        signColor(rounded, "foreground"),
         className,
       )}
     >
