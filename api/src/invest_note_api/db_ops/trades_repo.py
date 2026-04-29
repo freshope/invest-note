@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from invest_note_api.domain.realized_pnl import TradeGroupKey
+from invest_note_api.errors import APIError
 from invest_note_api.domain.trade_types import (
     DEFAULT_COUNTRY,
     MARKET_TYPE_STOCK,
@@ -66,6 +67,26 @@ async def list_trades_with_account(conn: Any, user_id: str) -> list[TradeWithAcc
         user_id,
     )
     return [_row_to_trade_with_account(r) for r in rows]
+
+
+async def assert_account_exists(conn: Any, account_id: str) -> None:
+    """계좌 존재 확인 — 없으면 400 APIError raise."""
+    exists = await conn.fetchval(
+        "SELECT id FROM accounts WHERE id = $1", account_id
+    )
+    if not exists:
+        raise APIError("올바른 계좌를 선택해주세요.", 400)
+
+
+async def get_trade_by_id(conn: Any, trade_id: str, user_id: str) -> Trade | None:
+    row = await conn.fetchrow(
+        "SELECT * FROM trades WHERE id = $1 AND user_id = $2",
+        trade_id,
+        user_id,
+    )
+    if row is None:
+        return None
+    return _row_to_trade(row)
 
 
 async def get_trade_with_account(conn: Any, trade_id: str, user_id: str) -> TradeWithAccount | None:

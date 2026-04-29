@@ -4,7 +4,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, MARKET_TYPE_ETC, TRADE_TYPE_BUY
+from invest_note_api.domain.trade_types import (
+    MARKET_TYPE_ETC,
+    TRADE_TYPE_BUY,
+    trade_country,
+    trade_identifier,
+)
 
 if TYPE_CHECKING:
     from invest_note_api.domain.portfolio import Position
@@ -52,7 +57,7 @@ def compute_concentration(positions: list[Position], trades: list[Trade]) -> Con
 
     market_by_key: dict[str, str] = {}
     for t in sorted((t for t in trades if t.trade_type == TRADE_TYPE_BUY), key=lambda t: t.traded_at):
-        key = f"{t.ticker_symbol or t.asset_name}:{t.country_code or DEFAULT_COUNTRY}"
+        key = f"{trade_identifier(t)}:{trade_country(t)}"
         market_by_key[key] = t.market_type
 
     market_map: dict[str, float] = {}

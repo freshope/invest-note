@@ -48,21 +48,23 @@ async def get_holding(
     if not account_id or not asset_name:
         raise APIError("accountId, assetName은 필수입니다.", 400)
 
+    target_ticker = ticker or asset_name
+
     async with acquire_for_user(pool, user.id) as conn:
         rows = await conn.fetch(
             """
-            SELECT trade_type, quantity, price, ticker_symbol, asset_name,
-                   country_code, account_id, traded_at,
-                   id, user_id, market_type, total_amount,
-                   strategy_type, reasoning_tags, buy_reason, sell_reason,
-                   emotion, result,
-                   profit_loss, avg_buy_price, exchange, commission, tax,
-                   created_at, updated_at
-            FROM trades
+            SELECT * FROM trades
             WHERE user_id = $1
+              AND account_id = $2
+              AND COALESCE(NULLIF(country_code, ''), 'KR') = $3
+              AND (ticker_symbol = $4 OR asset_name = $5)
             ORDER BY traded_at ASC
             """,
             user.id,
+            account_id,
+            country,
+            target_ticker,
+            asset_name,
         )
 
     trades = [Trade(**dict(r)) for r in rows]

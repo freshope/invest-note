@@ -42,6 +42,16 @@ MAX_CODE_LEN = 20
 MAX_NAME_LEN = 50
 
 
+def trade_identifier(trade: "Trade") -> str:
+    """ticker_symbol 우선, 없으면 asset_name. lot/포지션 그룹핑의 1차 키."""
+    return trade.ticker_symbol or trade.asset_name
+
+
+def trade_country(trade: "Trade") -> str:
+    """country_code fallback to DEFAULT_COUNTRY (KR). 빈 문자열도 KR로 정규화."""
+    return trade.country_code or DEFAULT_COUNTRY
+
+
 class Trade(BaseModel):
     id: str
     user_id: str

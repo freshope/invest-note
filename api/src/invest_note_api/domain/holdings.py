@@ -4,7 +4,7 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, TRADE_TYPE_BUY
+from invest_note_api.domain.trade_types import TRADE_TYPE_BUY, trade_country, trade_identifier
 from invest_note_api.domain.trade_utils import MS_PER_DAY, to_kst
 
 if TYPE_CHECKING:
@@ -41,10 +41,9 @@ def _is_flexible_match(
 ) -> bool:
     if trade.account_id != target_account_id:
         return False
-    trade_country = trade.country_code or DEFAULT_COUNTRY
-    if trade_country != target_country:
+    if trade_country(trade) != target_country:
         return False
-    trade_ticker = trade.ticker_symbol or trade.asset_name
+    trade_ticker = trade_identifier(trade)
     return trade_ticker == target_ticker or trade.asset_name == target_asset
 
 
@@ -57,7 +56,7 @@ def compute_lot_quantity(trades: list["Trade"], key: LotKey) -> float:
     running_qty = 0.0
 
     for trade in _sort_by_traded_at(trades):
-        trade_key = f"{trade.ticker_symbol or trade.asset_name}:{trade.country_code or DEFAULT_COUNTRY}:{trade.account_id}"
+        trade_key = f"{trade_identifier(trade)}:{trade_country(trade)}:{trade.account_id}"
         if trade_key != lot_key:
             continue
         if trade.trade_type == TRADE_TYPE_BUY:
@@ -148,8 +147,8 @@ def compute_flexible_breakdown(sell: "Trade") -> SellBreakdown:
 
 def compute_flexible_holding_days(sell: "Trade", all_trades: list["Trade"]) -> int | None:
     """FIFO 가중평균 보유일수 계산."""
-    target_country = sell.country_code or DEFAULT_COUNTRY
-    target_ticker = sell.ticker_symbol or sell.asset_name
+    target_country = trade_country(sell)
+    target_ticker = trade_identifier(sell)
     target_asset = sell.asset_name
     target_account_id = sell.account_id
     sell_time_ms = int(to_kst(sell.traded_at).timestamp() * 1000)
