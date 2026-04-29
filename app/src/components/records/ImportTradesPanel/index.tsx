@@ -12,14 +12,14 @@ import {
 import { queryKeys } from "@/lib/query-keys";
 import { importApi, type ImportPreviewResponse, type ImportCommitResponse } from "@/lib/api-client";
 import { ApiError } from "@/lib/api-client";
-import { BrokerStep } from "./BrokerStep";
+import { AccountStep } from "./AccountStep";
 import { FileStep } from "./FileStep";
 import { PreviewStep } from "./PreviewStep";
 import { ResultStep } from "./ResultStep";
-import { BROKER_OPTIONS } from "./brokers";
+import { BROKER_OPTIONS, findBrokerKeyByAccountBroker } from "./brokers";
 import type { Account } from "@/types/database";
 
-type Step = "broker" | "file" | "preview" | "result";
+type Step = "account" | "file" | "preview" | "result";
 
 interface Props {
   open: boolean;
@@ -29,46 +29,34 @@ interface Props {
 
 export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
   const queryClient = useQueryClient();
-  const [step, setStep] = useState<Step>("broker");
-  const [detectedBrokerKey, setDetectedBrokerKey] = useState<string | null>(null);
-  const [selectedBrokerKey, setSelectedBrokerKey] = useState<string | null>(null);
+  const [step, setStep] = useState<Step>("account");
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [preview, setPreview] = useState<ImportPreviewResponse | null>(null);
   const [result, setResult] = useState<ImportCommitResponse | null>(null);
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const effectiveBrokerKey = selectedBrokerKey ?? detectedBrokerKey;
+  const selectedAccount = accounts.find((a) => a.id === selectedAccountId) ?? null;
+  const effectiveBrokerKey = findBrokerKeyByAccountBroker(selectedAccount?.broker);
   const effectiveBroker = BROKER_OPTIONS.find((b) => b.key === effectiveBrokerKey);
 
   useEffect(() => {
     if (!open) {
       const timer = setTimeout(() => {
-        setStep("broker");
-        setDetectedBrokerKey(null);
-        setSelectedBrokerKey(null);
+        setStep("account");
+        setSelectedAccountId("");
         setPreview(null);
         setResult(null);
-        setSelectedAccountId("");
       }, 300);
       return () => clearTimeout(timer);
     }
   }, [open]);
 
   const handleFileSelect = async (file: File) => {
+    if (!effectiveBrokerKey) return;
     setIsLoading(true);
     try {
-      const res = await importApi.preview(file, effectiveBrokerKey ?? undefined);
-      setDetectedBrokerKey(res.broker_key);
+      const res = await importApi.preview(file, effectiveBrokerKey);
       setPreview(res);
-
-      if (accounts.length === 1) {
-        setSelectedAccountId(accounts[0].id);
-      } else if (res.account_hint) {
-        // 파일 계좌번호가 계좌명에 포함되는 경우 자동 선택 (정확 포함 매칭)
-        const hint = res.account_hint;
-        const matched = accounts.find((a) => a.name?.includes(hint));
-        if (matched) setSelectedAccountId(matched.id);
-      }
       setStep("preview");
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "파일 분석 중 오류가 발생했습니다.";
@@ -102,7 +90,7 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
   };
 
   const stepTitle: Record<Step, string> = {
-    broker: "증권사 선택",
+    account: "계좌 선택",
     file: "파일 선택",
     preview: "등록 미리보기",
     result: "등록 결과",
@@ -113,11 +101,11 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
       <FullScreenPanelContent>
         <FullScreenPanelHeader title={`거래 일괄 등록 — ${stepTitle[step]}`} />
         <FullScreenPanelBody>
-          {step === "broker" && (
-            <BrokerStep
-              detectedBrokerKey={detectedBrokerKey}
-              selectedBrokerKey={selectedBrokerKey}
-              onSelect={setSelectedBrokerKey}
+          {step === "account" && (
+            <AccountStep
+              accounts={accounts}
+              selectedAccountId={selectedAccountId}
+              onSelect={setSelectedAccountId}
               onNext={() => setStep("file")}
             />
           )}
@@ -129,12 +117,10 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
               isLoading={isLoading}
             />
           )}
-          {step === "preview" && preview && (
+          {step === "preview" && preview && selectedAccount && (
             <PreviewStep
               preview={preview}
-              accounts={accounts}
-              selectedAccountId={selectedAccountId}
-              onAccountChange={setSelectedAccountId}
+              account={selectedAccount}
               onCommit={handleCommit}
               isLoading={isLoading}
             />
