@@ -6,6 +6,7 @@ Next.js `fetch(..., { next: { revalidate: 60 } })` 동작과 등가.
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import TypedDict
 
@@ -22,6 +23,8 @@ from invest_note_api.external.constants import (
     QUOTE_CACHE_TTL,
     USER_AGENT,
 )
+
+logger = logging.getLogger(__name__)
 
 _HEADERS = {"User-Agent": USER_AGENT}
 
@@ -49,7 +52,7 @@ async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult |
             if price > 0:
                 return {"price": price, "currency": CURRENCY_KRW, "as_of": datetime.now(timezone.utc).isoformat()}
     except Exception:
-        pass
+        logger.warning("naver realtime 시세 실패 code=%s", code, exc_info=True)
 
     # 백업: stock basic API
     try:
@@ -66,7 +69,7 @@ async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult |
             if price > 0:
                 return {"price": price, "currency": CURRENCY_KRW, "as_of": datetime.now(timezone.utc).isoformat()}
     except Exception:
-        pass
+        logger.warning("naver basic 시세 실패 code=%s", code, exc_info=True)
 
     return None
 

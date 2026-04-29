@@ -1,6 +1,8 @@
 """portfolio 라우터 — holding + summary."""
 from __future__ import annotations
 
+import logging
+
 import asyncpg
 from fastapi import APIRouter, Depends, Query
 
@@ -18,6 +20,8 @@ from invest_note_api.domain.portfolio import (
 from invest_note_api.domain.trade_types import Trade, TradeWithAccount
 from invest_note_api.errors import APIError
 from invest_note_api.external.quotes import fetch_quotes_by_keys
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/portfolio")
 
@@ -112,7 +116,7 @@ async def get_portfolio_summary(
     try:
         quotes = await fetch_quotes_by_keys([p.key for p in positions0])
     except Exception:
-        pass
+        logger.warning("fetch_quotes_by_keys 실패 user_id=%s", user.id, exc_info=True)
 
     positions = merge_quotes(positions0, quotes)
     snapshots = build_account_snapshots(accounts, trades, quotes)

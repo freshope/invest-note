@@ -7,6 +7,8 @@ import re
 
 import pdfplumber
 
+from invest_note_api.domain.trade_types import TRADE_TYPE_BUY, TRADE_TYPE_SELL
+
 from .base import BrokerStatementParser, ParsedTrade, ParseResult, parse_number
 
 _FILENAME_RE = re.compile(r"^토스증권_거래내역서_\d{8}_\d{8}_\d+\.pdf$")
@@ -125,14 +127,14 @@ class TossPdfParser(BrokerStatementParser):
         # 거래구분 판단
         trade_class = cells[1]
         if trade_class == "구매":
-            trade_type = "BUY"
+            trade_type = TRADE_TYPE_BUY
             name_raw = cells[2]
             qty_raw = cells[4]
             amount_raw = cells[5]
             tax_raw = cells[6]
             sec_tax_raw = cells[7]
         elif trade_class == "":
-            trade_type = "SELL"
+            trade_type = TRADE_TYPE_SELL
             name_raw = cells[2]
             qty_raw = cells[4]
             amount_raw = cells[5]

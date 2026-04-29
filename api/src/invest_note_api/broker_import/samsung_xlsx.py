@@ -7,6 +7,8 @@ import re
 
 import openpyxl
 
+from invest_note_api.domain.trade_types import TRADE_TYPE_BUY, TRADE_TYPE_SELL
+
 from .base import BrokerStatementParser, ParsedTrade, ParseResult, parse_number
 
 _BUY_NAMES = {"매수", "매수_NXT"}
@@ -67,7 +69,7 @@ class SamsungXlsxParser(BrokerStatementParser):
                     result.add_error(sheet_row_no, f"미지원 거래명: {trade_name}", {"거래명": trade_name})
                 continue
 
-            trade_type = "BUY" if trade_name in _BUY_NAMES else "SELL"
+            trade_type = TRADE_TYPE_BUY if trade_name in _BUY_NAMES else TRADE_TYPE_SELL
 
             asset_name = str(col(row, "종목명") or "").strip()
             if not asset_name:

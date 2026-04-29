@@ -71,9 +71,7 @@ def build_strategy_evaluations(
 
 def evaluate_strategy_for_sell(
     sell: "Trade",
-    all_trades: list["Trade"],
     holding_days: int | None,
 ) -> StrategyEvaluation | None:
-    _ = all_trades
     holding_days_map = {sell.id: holding_days} if holding_days is not None else None
     return build_strategy_evaluations([sell], holding_days_map).get(sell.id)

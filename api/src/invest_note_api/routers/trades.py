@@ -225,10 +225,8 @@ async def get_trade_summary(
         if sell.trade_type != TRADE_TYPE_SELL:
             raise APIError("매도 거래만 조회할 수 있습니다.", 400)
 
-        all_trades = await list_trades(conn, user.id)
-
     breakdown = compute_flexible_breakdown(sell)
-    evaluation = evaluate_strategy_for_sell(sell, all_trades, None)
+    evaluation = evaluate_strategy_for_sell(sell, None)
     holding_days = sell.holding_days
     strategy_eval = None
     if evaluation is not None:
@@ -278,7 +276,7 @@ async def update_trade(
     if not fields:
         return Response(status_code=204)
 
-    patch = {k: v for k, v in data.model_dump(include=fields).items() if v is not None or k in fields}
+    patch = data.model_dump(exclude_unset=True)
 
     async with acquire_for_user(pool, user.id) as conn:
         existing_row = await conn.fetchrow(
