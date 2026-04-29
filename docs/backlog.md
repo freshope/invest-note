@@ -17,7 +17,6 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [ ] `TradeDetail` inline PnL → `formatPnL` 통합 — `app/src/components/records/TradeDetail.tsx`의 `{summary.pnl >= 0 ? "+" : ""}{summary.pnl.toLocaleString("ko-KR")}원` 인라인 표현이 분석 탭의 `formatPnL` 헬퍼와 동일 로직. 점진 통합으로 부호/포맷 단일 SOT화. 부수로 `Math.round(-0)` → "-0원" 잠재 버그도 동시 해소.
 - [ ] PnL 색상 클래스 토큰화 — `text-[var(--rise)]` / `text-[var(--fall)]` raw string이 26+ 위치에 반복. `app/src/lib/constants/colors.ts`로 토큰화하여 색 변경 시 단일 지점 수정. 기존 `:root` CSS 변수 정의는 그대로 두고 클래스 문자열만 상수화.
-- [ ] `TradeDetail` footer를 `FullScreenPanelFooter`(`sticky={false}`)로 통합 — 2026-04-29 추출 시 9곳은 마이그레이션했으나 `TradeDetail.tsx`의 `flex-none` 변형은 범위 외로 남겼음. 같은 safe-area 인라인 `calc(1rem + env(safe-area-inset-bottom))`이 한 곳에 더 남아있어 단일 지점화 미완. `FullScreenPanelFooter`는 이미 `sticky` prop을 지원하므로 `sticky={false}`로 마이그레이션 가능.
 
 ## 운영 / 어드민 도구
 
