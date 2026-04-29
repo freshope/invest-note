@@ -18,7 +18,7 @@ import { queryKeys } from "@/lib/query-keys";
 import { ChevronLeftIcon } from "lucide-react";
 import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
 import { STRATEGY_LABELS, EMOTION_LABELS, REASONING_TAG_LABELS } from "@/lib/constants/trading";
-import { fmt, formatPnL } from "@/lib/format";
+import { fmt, formatPnL, signColor } from "@/lib/format";
 import { TradeStrategyResultSection } from "./TradeStrategyResultSection";
 
 interface TradeDetailProps {
@@ -198,8 +198,7 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
               {summary?.pnl != null && (
                 <span className={cn(
                   "text-[16px] font-bold tabular-nums",
-                  summary.pnl > 0 && "text-[var(--rise)]",
-                  summary.pnl < 0 && "text-[var(--fall)]",
+                  signColor(summary.pnl, "none"),
                 )}>
                   {formatPnL(summary.pnl)}
                 </span>
@@ -231,8 +230,7 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
                   <span className="text-[12px] font-semibold text-foreground">실현손익</span>
                   <span className={cn(
                     "text-[13px] font-bold tabular-nums",
-                    summary.pnl != null && summary.pnl > 0 && "text-[var(--rise)]",
-                    summary.pnl != null && summary.pnl < 0 && "text-[var(--fall)]",
+                    summary.pnl != null && signColor(summary.pnl, "none"),
                   )}>
                     {summary.pnl != null ? formatPnL(summary.pnl) : "–"}
                   </span>
