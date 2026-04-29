@@ -35,3 +35,17 @@ export function formatNumberInput(raw: string): string {
 export function parseNumberInput(s: string): number {
   return Number(s.replace(/[^0-9.]/g, "")) || 0;
 }
+
+export type SignFallback = "foreground" | "muted" | "none";
+
+/**
+ * 손익/등락 색상 클래스. 0일 때 fallback으로 분기 — "none"은 부모 색 상속용 빈 문자열.
+ * 빈 문자열을 자동으로 무시하는 `cn()` 안에서 사용.
+ */
+export function signColor(value: number, fallback: SignFallback = "foreground"): string {
+  if (value > 0) return "text-[var(--rise)]";
+  if (value < 0) return "text-[var(--fall)]";
+  if (fallback === "muted") return "text-muted-foreground";
+  if (fallback === "none") return "";
+  return "text-foreground";
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { formatPnL } from "@/lib/format";
+import { formatPnL, signColor } from "@/lib/format";
 
 interface PnLLineProps {
   value: number;
@@ -11,12 +11,7 @@ interface PnLLineProps {
 export function PnLLine({ value }: PnLLineProps) {
   if (value === 0) return null;
   return (
-    <span
-      className={cn(
-        "ml-1.5",
-        value > 0 ? "text-[var(--rise)]" : "text-[var(--fall)]",
-      )}
-    >
+    <span className={cn("ml-1.5", signColor(value, "none"))}>
       {formatPnL(value)}
     </span>
   );

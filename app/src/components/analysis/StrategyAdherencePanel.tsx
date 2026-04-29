@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { formatPnL } from "@/lib/format";
+import { formatPnL, signColor } from "@/lib/format";
 import { ADHERENCE_CONFIG } from "@/lib/constants/trading";
 import type { StrategyAdherenceStats } from "@/lib/analysis/aggregate";
 
@@ -10,15 +10,11 @@ interface StrategyAdherencePanelProps {
   data: StrategyAdherenceStats[];
 }
 
+// canonical PnLLine과 분리: 블록(`<p>`) + 11px 사이즈 — Adherence row 레이아웃 전용.
 function AdherencePnL({ value }: { value: number }) {
   if (value === 0) return null;
   return (
-    <p
-      className={cn(
-        "text-[11px] tabular-nums",
-        value > 0 ? "text-[var(--rise)]" : "text-[var(--fall)]",
-      )}
-    >
+    <p className={cn("text-[11px] tabular-nums", signColor(value, "none"))}>
       {formatPnL(value)}
     </p>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { formatPnL } from "@/lib/format";
+import { formatPnL, signColor } from "@/lib/format";
 import type { AnalysisSummary } from "@/lib/analysis/aggregate";
 import { LOSS_THRESHOLD, RESULT_INPUT_RATE_LOW, WIN_THRESHOLD } from "@/lib/constants/analysis";
 
@@ -41,12 +41,7 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
           ? "text-[var(--fall)]"
           : "text-foreground";
 
-  const pnlClass =
-    totalProfitLoss > 0
-      ? "text-[var(--rise)]"
-      : totalProfitLoss < 0
-        ? "text-[var(--fall)]"
-        : "text-foreground";
+  const pnlClass = signColor(totalProfitLoss, "foreground");
 
   return (
     <div className="grid grid-cols-2 gap-2">

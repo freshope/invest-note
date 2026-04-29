@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { fmt, formatPnL } from "@/lib/format";
+import { fmt, formatPnL, signColor } from "@/lib/format";
 import type { Position } from "@/lib/portfolio";
 import { CountryBadge } from "@/components/records/trade-display";
 
@@ -28,9 +28,6 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
 
   const hasMultipleLines = lastNote?.includes("\n") ?? false;
   const firstLine = lastNote?.split("\n")[0] ?? "";
-
-  const pnlPos = (unrealizedPnL ?? 0) > 0;
-  const pnlNeg = (unrealizedPnL ?? 0) < 0;
 
   const priceChangePct =
     currentPrice !== null && avgBuyPrice > 0
@@ -76,9 +73,7 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
             <p
               className={cn(
                 "text-[12px] font-semibold tabular-nums",
-                pnlPos && "text-[var(--rise)]",
-                pnlNeg && "text-[var(--fall)]",
-                !pnlPos && !pnlNeg && "text-muted-foreground",
+                signColor(unrealizedPnL, "muted"),
               )}
             >
               {formatPnL(unrealizedPnL)}
@@ -94,8 +89,7 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
           <p
             className={cn(
               "text-[13px] font-semibold tabular-nums text-foreground",
-              priceChangePct !== null && priceChangePct > 0 && "text-[var(--rise)]",
-              priceChangePct !== null && priceChangePct < 0 && "text-[var(--fall)]",
+              priceChangePct !== null && signColor(priceChangePct, "none"),
             )}
           >
             {currentPrice !== null ? `${fmt(currentPrice)}` : "-"}
@@ -104,9 +98,7 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
             <p
               className={cn(
                 "text-[11px] font-semibold tabular-nums",
-                priceChangePct > 0 && "text-[var(--rise)]",
-                priceChangePct < 0 && "text-[var(--fall)]",
-                priceChangePct === 0 && "text-muted-foreground",
+                signColor(priceChangePct, "muted"),
               )}
             >
               {priceChangePct > 0 ? "+" : ""}
