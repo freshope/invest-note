@@ -194,6 +194,32 @@ function FullScreenPanelBody({ children, className }: FullScreenPanelBodyProps) 
   );
 }
 
+interface FullScreenPanelFooterProps {
+  children: React.ReactNode;
+  className?: string;
+  sticky?: boolean;
+}
+
+function FullScreenPanelFooter({
+  children,
+  className,
+  sticky = true,
+}: FullScreenPanelFooterProps) {
+  return (
+    <div
+      data-slot="full-screen-panel-footer"
+      className={cn(
+        "bg-background px-5 pt-3 pb-4",
+        sticky && "sticky bottom-0",
+        className,
+      )}
+      style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function useSnapshotWhileOpen<T>(open: boolean, value: T): T {
   const ref = React.useRef(value);
   // render 중 ref를 직접 쓰는 것은 React 공식 허용 패턴 (escape hatch).
@@ -209,4 +235,5 @@ export {
   FullScreenPanelContent,
   FullScreenPanelHeader,
   FullScreenPanelBody,
+  FullScreenPanelFooter,
 };

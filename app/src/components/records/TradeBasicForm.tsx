@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/base/Button";
+import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
@@ -484,10 +485,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         )}
       </div>
 
-      <div
-        className="sticky bottom-0 bg-background px-5 pt-3 pb-4"
-        style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
-      >
+      <FullScreenPanelFooter>
         <Button
           type="submit"
           size="xl"
@@ -496,7 +494,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         >
           {isSubmitting ? "저장 중..." : "다음"}
         </Button>
-      </div>
+      </FullScreenPanelFooter>
     </form>
   );
 }

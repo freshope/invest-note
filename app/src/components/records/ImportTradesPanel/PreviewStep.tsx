@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronDownIcon, ChevronUpIcon, AlertCircleIcon } from "lucide-react";
 import { Button } from "@/components/base/Button";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
+import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
 import type { ImportPreviewResponse } from "@/lib/api-client";
 import type { Account } from "@/types/database";
 
@@ -111,10 +112,7 @@ export function PreviewStep({ preview, account, onCommit, isLoading }: Props) {
         )}
       </div>
 
-      <div
-        className="sticky bottom-0 bg-background px-5 pt-3 pb-4"
-        style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
-      >
+      <FullScreenPanelFooter>
         <Button
           size="xl"
           className="w-full"
@@ -123,7 +121,7 @@ export function PreviewStep({ preview, account, onCommit, isLoading }: Props) {
         >
           {isLoading ? "등록 중..." : `${preview.new_count}건 등록하기`}
         </Button>
-      </div>
+      </FullScreenPanelFooter>
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { UploadCloudIcon } from "lucide-react";
 import { Button } from "@/components/base/Button";
+import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
 
 interface Props {
   brokerName: string;
@@ -74,10 +75,7 @@ export function FileStep({ brokerName, accept, onFileSelect, isLoading }: Props)
         )}
       </div>
 
-      <div
-        className="sticky bottom-0 bg-background px-5 pt-3 pb-4"
-        style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
-      >
+      <FullScreenPanelFooter>
         <Button
           size="xl"
           className="w-full"
@@ -87,7 +85,7 @@ export function FileStep({ brokerName, accept, onFileSelect, isLoading }: Props)
         >
           {buttonLabel}
         </Button>
-      </div>
+      </FullScreenPanelFooter>
     </div>
   );
 }
