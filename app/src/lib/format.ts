@@ -9,6 +9,14 @@ export function formatPnL(value: number): string {
   return `${sign}${fmt(rounded)}원`;
 }
 
+/** 부호 + 소수점 + % 표시. 0은 부호 없이, -0 케이스는 0으로 정규화. */
+export function formatPctSigned(n: number, decimals: number = 2): string {
+  const rounded = Number(n.toFixed(decimals));
+  if (rounded === 0) return `${(0).toFixed(decimals)}%`;
+  const sign = rounded > 0 ? "+" : "";
+  return `${sign}${rounded.toFixed(decimals)}%`;
+}
+
 /** Compact Korean number format: 억/만 for chart labels */
 export function fmtCompact(n: number): string {
   if (n >= 100_000_000) return `${(n / 100_000_000).toLocaleString("ko-KR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}억`;

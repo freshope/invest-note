@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fmtNumberInput, formatNumberInput, formatPnL, parseNumberInput } from "../format";
+import { fmtNumberInput, formatNumberInput, formatPctSigned, formatPnL, parseNumberInput } from "../format";
 
 describe("fmtNumberInput", () => {
   it("양수를 천단위 콤마 문자열로 반환한다", () => {
@@ -102,5 +102,39 @@ describe("formatPnL", () => {
   it("round 후 0이 되는 양/음수는 0원", () => {
     expect(formatPnL(0.4)).toBe("0원");
     expect(formatPnL(-0.4)).toBe("0원");
+  });
+});
+
+describe("formatPctSigned", () => {
+  it("양수는 + 부호와 소수 2자리 + %", () => {
+    expect(formatPctSigned(5.43)).toBe("+5.43%");
+    expect(formatPctSigned(0.01)).toBe("+0.01%");
+  });
+
+  it("음수는 - 부호 자동, 소수 2자리 + %", () => {
+    expect(formatPctSigned(-2.1)).toBe("-2.10%");
+    expect(formatPctSigned(-0.01)).toBe("-0.01%");
+  });
+
+  it("0은 부호 없이 0.00%", () => {
+    expect(formatPctSigned(0)).toBe("0.00%");
+  });
+
+  it("반올림 후 0이 되는 작은 음수는 -0.00%가 아닌 0.00%", () => {
+    expect(formatPctSigned(-0.001)).toBe("0.00%");
+    expect(formatPctSigned(0.001)).toBe("0.00%");
+  });
+
+  it("decimals 인자로 자릿수 조절", () => {
+    expect(formatPctSigned(5.4321, 0)).toBe("+5%");
+    expect(formatPctSigned(5.4321, 1)).toBe("+5.4%");
+    expect(formatPctSigned(5.4321, 3)).toBe("+5.432%");
+    expect(formatPctSigned(0, 0)).toBe("0%");
+  });
+
+  it("소수점 자릿수 초과는 반올림", () => {
+    expect(formatPctSigned(1.236)).toBe("+1.24%");
+    expect(formatPctSigned(1.234)).toBe("+1.23%");
+    expect(formatPctSigned(-1.236)).toBe("-1.24%");
   });
 });

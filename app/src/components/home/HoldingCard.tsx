@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { fmt, formatPnL, signColor } from "@/lib/format";
+import { fmt, formatPctSigned, formatPnL, signColor } from "@/lib/format";
 import type { Position } from "@/lib/portfolio";
 import { CountryBadge } from "@/components/records/trade-display";
 
@@ -101,8 +101,7 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
                 signColor(priceChangePct, "muted"),
               )}
             >
-              {priceChangePct > 0 ? "+" : ""}
-              {priceChangePct.toFixed(2)}%
+              {formatPctSigned(priceChangePct)}
             </p>
           )}
         </div>
