@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { Label } from "@/components/base/Label";
 import type { EmotionType, ReasoningTag } from "@/types/database";
-import { EMOTION_LABELS, REASONING_TAG_LABELS } from "./constants";
+import { EMOTION_LABELS, REASONING_TAG_LABELS } from "@/lib/constants/trading";
 
 const AUTO_HINT = "(매수 시점에서 자동)";
 

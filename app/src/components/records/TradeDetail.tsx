@@ -17,7 +17,7 @@ import { tradesApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { ChevronLeftIcon } from "lucide-react";
 import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
-import { STRATEGY_LABELS, EMOTION_LABELS, REASONING_TAG_LABELS } from "./constants";
+import { STRATEGY_LABELS, EMOTION_LABELS, REASONING_TAG_LABELS } from "@/lib/constants/trading";
 import { fmt, formatPnL } from "@/lib/format";
 import { TradeStrategyResultSection } from "./TradeStrategyResultSection";
 
