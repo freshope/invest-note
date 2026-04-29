@@ -5,6 +5,10 @@ export const BROKER_OPTIONS = [
 
 export type BrokerKey = (typeof BROKER_OPTIONS)[number]["key"];
 
-export const BROKER_NAMES: Record<string, string> = Object.fromEntries(
-  BROKER_OPTIONS.map((b) => [b.key, b.label])
-);
+export function findBrokerKeyByAccountBroker(
+  broker: string | null | undefined
+): BrokerKey | null {
+  if (!broker) return null;
+  const matched = BROKER_OPTIONS.find((b) => b.label === broker);
+  return matched ? matched.key : null;
+}

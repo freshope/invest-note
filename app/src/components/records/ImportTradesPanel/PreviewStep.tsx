@@ -1,23 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronUpIcon, AlertCircleIcon } from "lucide-react";
 import { Button } from "@/components/base/Button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/base/Select";
+import { BrokerLogo } from "@/components/base/BrokerLogo";
 import type { ImportPreviewResponse } from "@/lib/api-client";
 import type { Account } from "@/types/database";
 
 interface Props {
   preview: ImportPreviewResponse;
-  accounts: Account[];
-  selectedAccountId: string;
-  onAccountChange: (id: string) => void;
+  account: Account;
   onCommit: () => void;
   isLoading: boolean;
 }
@@ -42,16 +34,11 @@ function CountCard({ label, value, variant = "default" }: {
   );
 }
 
-export function PreviewStep({
-  preview,
-  accounts,
-  selectedAccountId,
-  onAccountChange,
-  onCommit,
-  isLoading,
-}: Props) {
+export function PreviewStep({ preview, account, onCommit, isLoading }: Props) {
   const [showErrors, setShowErrors] = useState(false);
   const hasErrors = preview.errors.length > 0;
+  const hint = preview.account_hint;
+  const hintMismatch = !!hint && !account.name?.includes(hint);
 
   return (
     <div className="flex flex-col gap-6">
@@ -69,7 +56,7 @@ export function PreviewStep({
       </div>
       {preview.duplicate_count > 0 && (
         <p className="text-xs text-muted-foreground -mt-3">
-          * 중복 건수는 계좌 선택 전 근사값이며, 실제 등록 시 정확히 처리됩니다.
+          * 미리보기 단계의 근사값이며, 실제 등록 시 정확히 처리됩니다.
         </p>
       )}
 
@@ -81,23 +68,23 @@ export function PreviewStep({
       )}
 
       <div className="flex flex-col gap-2">
-        <label className="text-sm font-medium">계좌 선택</label>
-        <Select value={selectedAccountId} onValueChange={(v) => onAccountChange(v as string)}>
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="거래를 등록할 계좌를 선택하세요" />
-          </SelectTrigger>
-          <SelectContent>
-            {accounts.map((a) => (
-              <SelectItem key={a.id} value={a.id}>
-                {a.name} {a.broker ? `(${a.broker})` : ""}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {preview.account_hint && (
-          <p className="text-xs text-muted-foreground">
-            파일 계좌번호: {preview.account_hint}
-          </p>
+        <p className="text-sm font-medium">등록 대상 계좌</p>
+        <div className="flex items-center gap-3 rounded-lg border bg-muted/30 p-3">
+          <BrokerLogo broker={account.broker} size={32} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium">{account.name}</p>
+            {account.broker && (
+              <p className="truncate text-xs text-muted-foreground">{account.broker}</p>
+            )}
+          </div>
+        </div>
+        {hintMismatch && (
+          <div className="flex items-start gap-2 rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
+            <AlertCircleIcon className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              파일의 계좌번호({hint})와 선택한 계좌가 다를 수 있습니다. 그대로 등록하려면 계속 진행하세요.
+            </span>
+          </div>
         )}
       </div>
 
@@ -126,7 +113,7 @@ export function PreviewStep({
 
       <Button
         onClick={onCommit}
-        disabled={!selectedAccountId || preview.new_count === 0 || isLoading}
+        disabled={preview.new_count === 0 || isLoading}
         className="self-end"
       >
         {isLoading ? "등록 중..." : `${preview.new_count}건 등록하기`}
