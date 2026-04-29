@@ -39,6 +39,10 @@ def _clamp(v: float) -> float:
     return min(100.0, max(0.0, v))
 
 
+def _percent(numer: float, denom: int) -> float:
+    return numer / denom * 100 if denom else 0.0
+
+
 def compute_profile(
     trades: list[Trade],
     hhi: float,
@@ -73,14 +77,13 @@ def compute_profile(
     with_sell_reason = sum(
         1 for t in sells if t.sell_reason and t.sell_reason.strip()
     )
-    review_habit = with_sell_reason / len(sells) * 100 if sells else 0.0
+    review_habit = _percent(with_sell_reason, len(sells))
 
-    sells_with_holding = len(all_days)
     input_rates = ProfileInputRates(
-        holding_days=sells_with_holding / len(sells) * 100 if sells else 0.0,
-        emotion=len(emotion_tagged) / len(trades) * 100 if trades else 0.0,
-        reasoning_tag=(len(buys) - buys_with_no_tag) / len(buys) * 100 if buys else 0.0,
-        result=sum(1 for t in sells if t.result is not None) / len(sells) * 100 if sells else 0.0,
+        holding_days=_percent(len(all_days), len(sells)),
+        emotion=_percent(len(emotion_tagged), len(trades)),
+        reasoning_tag=_percent(len(buys) - buys_with_no_tag, len(buys)),
+        result=_percent(sum(1 for t in sells if t.result is not None), len(sells)),
         reflection=review_habit,
     )
 
