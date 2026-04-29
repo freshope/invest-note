@@ -13,6 +13,34 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] `aggregate.py` percentage 패턴 헬퍼 통합 — `profile.py`에 도입한 `_percent(numer, denom)` 패턴을 `aggregate.py`의 7곳(line 74/87/155/211/214/217/220)에 동일 적용. `analysis/_math.py` 같은 공용 모듈로 옮겨 두 파일이 공유. 기능 변경 없는 정리.
 - [ ] `recalc_group_pnl` 변경 row만 UPDATE 최적화 — `PNL_AFFECTING_FIELDS`에 `reasoning_tags`/`emotion` 추가로 BUY 메타 단독 변경에서도 그룹 advisory lock + `executemany`가 발동. `pnl_map` 결과를 기존 SELL row와 비교해 실제 변경된 row에만 UPDATE 발행. DB write 부하 절감.
 
+## 백엔드 코드 단순화 / 효율 (2026-04-29 simplify 리뷰)
+
+### HIGH — 성능
+- [ ] 임포트 commit 루프 N+1 제거 (`routers/trades.py:600`) — 그룹마다 `list_trades(conn, user.id)` 재호출. 30종목 import면 사용자 전체 거래를 30번 fetch. 루프 진입 전 1회 로드 → in-memory append → 그룹별 슬라이스로 `recalc_group_pnl` 호출하도록 재구성.
+- [ ] `get_holding` 풀 테이블 fetch 제거 (`routers/portfolio.py:48-62`) — 단일 (계좌, 종목) 보유량/WAC 한 쌍을 위해 사용자 전체 거래를 로드. `WHERE account_id=$1 AND (ticker_symbol=$2 OR asset_name=$3) AND country_code=$4`로 좁힌 전용 쿼리로 교체.
+
+### 구조 개선 — 라우터 보일러플레이트
+- [ ] `body: dict` + `validate_body` 패턴 제거 — `routers/trades.py:130,272`, `routers/accounts.py:49,73`. FastAPI가 typed body로 422를 자동 처리하므로 `body: TradeCreate` 형태로 선언하면 `errors.validate_body` 함수 자체 제거 가능.
+- [ ] 수동 snake→camel dict 빌더를 Pydantic response_model로 대체 — `routers/portfolio.py:121-166`(`_pos_dict`/`_snap_dict`/`_totals_dict`), `routers/analysis.py:89-134,181-205,227-237`, `routers/trades.py:71-92`. `model_config = {"alias_generator": to_camel, "populate_by_name": True}` + `response_model`로 수십 줄 제거.
+- [ ] trade fetch-by-id 헬퍼 추출 — `routers/trades.py:218,285,324`에서 동일한 `SELECT * FROM trades WHERE id=$1 AND user_id=$2` + 404 + `Trade(**dict(row))` 패턴 3회 반복. `db_ops/trades_repo.get_trade(conn, trade_id, user_id)` 추가 (`get_trade_with_account` 옆)하고 라우터는 `if trade is None: raise APIError(ERR_TRADE_NOT_FOUND, 404)`로 통일.
+- [ ] account 존재 검증 헬퍼 추출 — `routers/trades.py:138-142`와 `:513-517`의 동일한 `SELECT id FROM accounts WHERE id=$1` + 400 raise 중복. `db_ops`로 추출.
+
+### 도메인 — 중복 회계 로직
+- [ ] FIFO/WAC walker 통합 — `domain/realized_pnl.py:120` `compute_group_pnl`, `:192` `validate_mutation`, `domain/portfolio.py:73` `build_positions`가 같은 그룹별 FIFO/WAC 회계를 각자 재구현. 공통 walker(이벤트 콜백 또는 generator) 추출 → 회계 변경 시 drift 방지.
+- [ ] `compute_total_holding`+`compute_wac` 단일 함수로 병합 — `domain/holdings.py:83-128`. `routers/portfolio.py:66-79`에서 같은 trades 리스트를 두 번 정렬·필터링. `(qty, avg)` 한 번에 반환.
+- [ ] `_is_flexible_match` ↔ `_is_same_group` 통합 — `domain/holdings.py:35` vs `domain/realized_pnl.py:44`가 같은 의도, 다른 시그니처. `LotKey`/`TradeGroupKey` 타입을 단일화.
+- [ ] `trade_identifier(t)` / `trade_country(t)` 헬퍼 도입 — `t.ticker_symbol or t.asset_name`이 7곳, `t.country_code or DEFAULT_COUNTRY`가 11곳 인라인 반복. `domain/trade_types`에 헬퍼 추가하면 일괄 정리 가능.
+- [ ] `kst_date_to_utc` 헬퍼 추출 — `schemas/trade.py:51-68` `_traded_at_transform`과 `routers/trades.py:566-567` import commit 경로에 KST→UTC 변환 로직 분산. `domain/trade_utils`로 공통화.
+
+### 스키마 / DB
+- [ ] 콤마 숫자 파싱 헬퍼 통합 — `schemas/trade.py:29-48`(`_comma_positive`/`_comma_non_negative`), `broker_import/base.py:9` `parse_number`, `schemas/account.py:10` `_parse_cash`가 동일한 `replace(",", "")` 변환 코어를 각자 보유. `utils/numbers.py` 같은 공용 모듈로 통합.
+- [ ] `insert_trade` ↔ `insert_trades_bulk` SQL 중복 제거 (`db_ops/trades_repo.py:89` vs `:185-235`) — 19개 컬럼이 두 번 나열됨. `insert_trade`가 bulk를 `[data]`로 호출하고 `RETURNING id`만 추가하도록 통합.
+- [ ] patch 필드 메타데이터 통합 — `db_ops/trades_repo.py`의 `_PATCH_ALLOWED`/`PNL_AFFECTING_FIELDS`/`SELL_AUTO_DERIVED_FIELDS` 세 셋이 같은 파일에서 drift 위험. 단일 메타 dict (`{name: {patchable, pnl_affecting, auto_derived}}`)로 통합.
+
+### 코드 위생
+- [ ] `routers/trades.py` 사전 존재 미사용 import/변수 정리 — `RESULT_BREAKEVEN/FAIL/SUCCESS` import, `future_errors`(line 375), `now_utc`(line 539) 미사용. ruff F401/F841.
+- [ ] `routers/trades.py:608` 광범위 `except Exception as e:` — `e.args` 등 raw exception을 사용자 메시지에 노출. 메시지 sanitize 또는 catch 범위 좁히기.
+
 ## 운영 / 어드민 도구
 
 - [ ] PnL 저장값 검증 엔드포인트 (이슈 E) — `/api/admin/verify-pnl` 신설. SELL의 저장된 `profit_loss`/`avg_buy_price`/`holding_days`/`strategy_type`/`reasoning_tags`/`emotion`을 `compute_group_pnl()`로 재계산해 차이 검출. 사용자 단위 batch + 차이 리포트 + (옵션) 자동 보정. 권한은 admin scope. DB 직접 수정·마이그레이션 누락·mutation 경로 우회 시 분석 탭과 거래 기록 합계 불일치를 잡기 위함.
