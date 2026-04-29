@@ -13,10 +13,6 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] `aggregate.py` percentage 패턴 헬퍼 통합 — `profile.py`에 도입한 `_percent(numer, denom)` 패턴을 `aggregate.py`의 7곳(line 74/87/155/211/214/217/220)에 동일 적용. `analysis/_math.py` 같은 공용 모듈로 옮겨 두 파일이 공유. 기능 변경 없는 정리.
 - [ ] `recalc_group_pnl` 변경 row만 UPDATE 최적화 — `PNL_AFFECTING_FIELDS`에 `reasoning_tags`/`emotion` 추가로 BUY 메타 단독 변경에서도 그룹 advisory lock + `executemany`가 발동. `pnl_map` 결과를 기존 SELL row와 비교해 실제 변경된 row에만 UPDATE 발행. DB write 부하 절감.
 
-## 프론트엔드 표시 / UI 정합성
-
-- [ ] `TradeDetail` inline PnL → `formatPnL` 통합 — `app/src/components/records/TradeDetail.tsx`의 `{summary.pnl >= 0 ? "+" : ""}{summary.pnl.toLocaleString("ko-KR")}원` 인라인 표현이 분석 탭의 `formatPnL` 헬퍼와 동일 로직. 점진 통합으로 부호/포맷 단일 SOT화. 부수로 `Math.round(-0)` → "-0원" 잠재 버그도 동시 해소.
-
 ## 운영 / 어드민 도구
 
 - [ ] PnL 저장값 검증 엔드포인트 (이슈 E) — `/api/admin/verify-pnl` 신설. SELL의 저장된 `profit_loss`/`avg_buy_price`/`holding_days`/`strategy_type`/`reasoning_tags`/`emotion`을 `compute_group_pnl()`로 재계산해 차이 검출. 사용자 단위 batch + 차이 리포트 + (옵션) 자동 보정. 권한은 admin scope. DB 직접 수정·마이그레이션 누락·mutation 경로 우회 시 분석 탭과 거래 기록 합계 불일치를 잡기 위함.
