@@ -10,7 +10,7 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 분석 API 쿼리 `.limit(1000)` 가드 — 거래 수 급증 시 메모리/응답 보호
 - [ ] 수수료 현황 별도 패널 — BUY commission·세금 합계, 순실현손익 vs 총비용 비교
 - [ ] 테스트 보강 — `period.ts` 경계값, `computeRealizedPnL` 멀티 종목, `byTag` FIFO 귀속
-- [ ] `compute_profile` 잔여 중복/no-op 정리 — `input_rates.reflection`이 `review_habit`과 동일 식 두 번 계산(`with_sell_reason / len(sells) * 100`). `min(1.0, poor_ratio)`는 `poor_ratio`가 정의상 [0,1]이고 뒤이어 `_clamp`까지 통과해 무용. 사소하지만 명확한 정리 후보.
+- [ ] `aggregate.py` percentage 패턴 헬퍼 통합 — `profile.py`에 도입한 `_percent(numer, denom)` 패턴을 `aggregate.py`의 7곳(line 74/87/155/211/214/217/220)에 동일 적용. `analysis/_math.py` 같은 공용 모듈로 옮겨 두 파일이 공유. 기능 변경 없는 정리.
 - [ ] `recalc_group_pnl` 변경 row만 UPDATE 최적화 — `PNL_AFFECTING_FIELDS`에 `reasoning_tags`/`emotion` 추가로 BUY 메타 단독 변경에서도 그룹 advisory lock + `executemany`가 발동. `pnl_map` 결과를 기존 SELL row와 비교해 실제 변경된 row에만 UPDATE 발행. DB write 부하 절감.
 
 ## 프론트엔드 표시 / UI 정합성
