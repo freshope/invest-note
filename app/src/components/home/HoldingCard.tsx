@@ -12,6 +12,7 @@ interface HoldingCardProps {
 
 export function HoldingCard({ position, onPress }: HoldingCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [pressing, setPressing] = useState(false);
 
   const {
     assetName,
@@ -38,13 +39,20 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
       role="button"
       tabIndex={0}
       onClick={onPress}
+      onPointerDown={() => setPressing(true)}
+      onPointerUp={() => setPressing(false)}
+      onPointerLeave={() => setPressing(false)}
+      onPointerCancel={() => setPressing(false)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onPress?.();
         }
       }}
-      className="w-full text-left rounded-2xl bg-muted/60 p-4 space-y-3 cursor-pointer transition-transform active:scale-[0.98]"
+      className={cn(
+        "w-full text-left rounded-2xl bg-muted/60 p-4 space-y-3 transition-transform cursor-pointer",
+        pressing && "scale-[0.98]",
+      )}
     >
       {/* 헤더 */}
       <div className="flex items-start justify-between gap-2">
@@ -119,6 +127,7 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
             expanded ? "items-start" : "items-center",
             hasMultipleLines && "cursor-pointer",
           )}
+          onPointerDown={(e) => { if (hasMultipleLines) e.stopPropagation(); }}
           onClick={(e) => {
             if (!hasMultipleLines) return;
             e.stopPropagation();

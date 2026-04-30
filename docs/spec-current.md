@@ -17,7 +17,7 @@
 
 1. **`formatTradedAtLabel` 유틸 추출** — `lib/trade-utils.ts` 에 추가, `format(new Date(...), "yyyy년 M월 d일 (EEE)", { locale: ko })` 패턴 4 곳 통합 (`TradeDetail`, `TradeEditPanel`, `TradeBasicForm`, `TradeStrategyResultSection`).
 2. **`useClickOutside` 훅 추출** — `hooks/useClickOutside.ts` 신규, `StockSearchInput` / `HoldingSelectInput` 의 `useEffect` 외부클릭 리스너 패턴 통합.
-3. **`HoldingCard` pressing state CSS 화** — `useState(pressing)` + 4 개 pointer 핸들러 → `active:scale-[0.98]` 만 (TradeCard 패턴 미러).
+3. ~~**`HoldingCard` pressing state CSS 화**~~ — Round 1 도중 복원. inner note 의 `onPointerDown` `stopPropagation` 으로 outer pressing 을 차단하던 명시적 UX (note 탭 시 outer 카드 scale 안 함) 가 CSS `:active` 로는 보존 불가능 — `:active` 는 stopPropagation 미준수. backlog 로 이관.
 4. **중첩 ternary 헬퍼화** —
    - `HoldingSelectInput` placeholder 4 단 ternary → `getPlaceholder()` 함수
    - `SummaryCards` winRateClass 4 단 ternary → `classifyWinRate()` 헬퍼
@@ -41,7 +41,7 @@
 - [x] `TradeDetail`, `TradeEditPanel`, `TradeBasicForm`, `TradeStrategyResultSection` 4 곳에서 `formatTradedAtLabel` 사용으로 치환
 - [x] `hooks/useClickOutside.ts` 추가
 - [x] `StockSearchInput`, `HoldingSelectInput` 의 외부클릭 useEffect 를 `useClickOutside` 로 치환
-- [x] `HoldingCard` 의 `pressing` state + pointer 핸들러 4 개 제거, `active:scale-[0.98]` 만 사용
+- [~] `HoldingCard` pressing state CSS 화 — **복원 (보류)**. `:active` 가 inner note 의 stopPropagation 을 미준수해 원본 UX 보존 불가. backlog 로 이관.
 - [x] `HoldingSelectInput` placeholder 함수 추출
 - [x] `SummaryCards` `classifyWinRate` 헬퍼 추출
 - [x] `TradeDetail` `RESULT_BADGE` 룩업 테이블 추출

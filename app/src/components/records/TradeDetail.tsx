@@ -198,21 +198,18 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
         </div>
 
         {/* 거래 결과 (매도 자동 계산) */}
-        {!isBuy && (
+        {!isBuy && (() => {
+          const badge = summary?.result ? RESULT_BADGE[summary.result] : RESULT_BADGE_FALLBACK;
+          return (
           <div className="rounded-2xl bg-muted/60 p-4 space-y-3">
             <p className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wide">거래 결과 (자동 계산)</p>
             <div className="flex items-center justify-between">
-              {(() => {
-                const badge = summary?.result ? RESULT_BADGE[summary.result] : RESULT_BADGE_FALLBACK;
-                return (
-                  <span className={cn(
-                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-[12px] font-bold border",
-                    badge.classes,
-                  )}>
-                    {badge.label}
-                  </span>
-                );
-              })()}
+              <span className={cn(
+                "inline-flex items-center rounded-full px-2.5 py-0.5 text-[12px] font-bold border",
+                badge.classes,
+              )}>
+                {badge.label}
+              </span>
               {summary?.pnl != null && (
                 <span className={cn(
                   "text-[16px] font-bold tabular-nums",
@@ -256,7 +253,8 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
               </div>
             )}
           </div>
-        )}
+          );
+        })()}
 
         {/* 전략 결과 (매도) */}
         {!isBuy && (
