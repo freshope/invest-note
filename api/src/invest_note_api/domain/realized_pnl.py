@@ -20,7 +20,7 @@ from invest_note_api.domain.trade_types import (
     trade_country,
     trade_identifier,
 )
-from invest_note_api.domain.trade_utils import MS_PER_DAY, to_kst
+from invest_note_api.domain.trade_utils import MS_PER_DAY, to_kst_ms
 from invest_note_api.domain.trade_walker import (
     ConsumedLot,
     walk_trades,
@@ -143,7 +143,7 @@ def compute_group_pnl(trades: list[Trade], key: TradeGroupKey) -> dict[str, Grou
         if ev.kind != "SELL":
             continue
 
-        sell_time_ms = int(to_kst(ev.trade.traded_at).timestamp() * 1000)
+        sell_time_ms = to_kst_ms(ev.trade.traded_at)
         avg_cost = ev.state_before.avg_cost
         pnl = _sell_pnl(ev.trade, avg_cost, ev.matched_qty)
         tags, emotion = _meta_from_consumed_latest(ev.consumed)

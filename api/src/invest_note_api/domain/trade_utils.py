@@ -15,6 +15,11 @@ def to_kst(utc_dt: datetime) -> datetime:
     return utc_dt.astimezone(KST)
 
 
+def to_kst_ms(utc_dt: datetime) -> int:
+    """UTC datetime → KST 기준 epoch milliseconds."""
+    return int(to_kst(utc_dt).timestamp() * 1000)
+
+
 def kst_date_to_utc(d: date, t: time = _KST_MARKET_OPEN) -> datetime:
     """KST 날짜 + 시간 → UTC datetime. 거래내역서처럼 시각이 없는 입력에 KST 장 시작(09:00)을 부여한다."""
     return datetime.combine(d, t, tzinfo=KST).astimezone(timezone.utc)

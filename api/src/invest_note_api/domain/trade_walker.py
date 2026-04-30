@@ -11,7 +11,7 @@ from invest_note_api.domain.trade_types import (
     StrategyType,
     Trade,
 )
-from invest_note_api.domain.trade_utils import to_kst
+from invest_note_api.domain.trade_utils import to_kst_ms
 
 
 EventKind = Literal["BUY", "SELL"]
@@ -112,7 +112,7 @@ def walk_trades(
             if track_fifo_lots:
                 lot = FifoLot(
                     qty=trade.quantity,
-                    time_ms=int(to_kst(trade.traded_at).timestamp() * 1000),
+                    time_ms=to_kst_ms(trade.traded_at),
                     strategy=trade.strategy_type,
                     reasoning_tags=tuple(trade.reasoning_tags or ()),
                     emotion=trade.emotion,
