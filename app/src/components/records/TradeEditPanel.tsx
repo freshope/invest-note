@@ -28,9 +28,9 @@ import {
   REASONING_TAG_VALUES,
   TRADE_RESULT_VALUES,
 } from "@/lib/constants/trading";
-import { PNL_COLORS } from "@/lib/constants/colors";
 import { AutoEmotionField, AutoReasoningTagsField } from "./AutoMetaField";
-import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
+import { TradeHeaderCard } from "./TradeHeaderCard";
+import { CompactRow } from "./trade-display";
 import { fmt, fmtNumberInput, parseNumberInput } from "@/lib/format";
 import { cn, getFirstFormError } from "@/lib/utils";
 import type { Trade, Account, ReasoningTag } from "@/types/database";
@@ -165,46 +165,13 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
         <FullScreenPanelBody>
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">
             <div className="flex-1 px-5 pt-5 pb-4 space-y-5">
-              {/* 종목 헤더 카드 */}
-              <div className="rounded-2xl overflow-hidden bg-muted/60">
-                <div className={cn("h-1", isSell ? PNL_COLORS.fall.bg : PNL_COLORS.rise.bg)} />
-                <div className="p-5">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[20px] font-bold text-foreground">{trade.asset_name}</span>
-                    <span className={cn(
-                      "text-[12px] font-bold px-2 py-0.5 rounded-md",
-                      isSell
-                        ? cn(PNL_COLORS.fall.bgSoft, PNL_COLORS.fall.text)
-                        : cn(PNL_COLORS.rise.bgSoft, PNL_COLORS.rise.text)
-                    )}>
-                      {isSell ? "매도" : "매수"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {trade.ticker_symbol && (
-                      <span className="text-[13px] font-mono text-muted-foreground">{trade.ticker_symbol}</span>
-                    )}
-                    <MarketTypeBadge marketType={trade.market_type} />
-                    {trade.market_type === "STOCK" && (
-                      <>
-                        <CountryBadge countryCode={trade.country_code ?? "KR"} />
-                        <ExchangeBadge exchange={trade.exchange} />
-                      </>
-                    )}
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-border/40">
-                    <p className={cn(
-                      "text-[24px] font-bold tabular-nums text-right",
-                      isSell ? PNL_COLORS.fall.text : PNL_COLORS.rise.text
-                    )}>
-                      {fmt(liveTotal)}원
-                    </p>
-                    <p className="text-[12px] text-muted-foreground text-right mt-0.5 tabular-nums">
-                      {fmt(livePrice)}원 × {liveQty}{getQuantityUnit(trade.market_type)}
-                    </p>
-                  </div>
-                </div>
-              </div>
+              <TradeHeaderCard
+                trade={trade}
+                isBuy={!isSell}
+                totalAmount={liveTotal}
+                price={livePrice}
+                quantity={liveQty}
+              />
 
               {/* 기본 거래 정보 */}
               <div className="rounded-2xl bg-muted/60 p-4">
