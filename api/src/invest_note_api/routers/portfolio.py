@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.db import acquire_for_user, get_pool
+from invest_note_api.db_ops.trades_repo import list_trades_with_account
 from invest_note_api.domain.holdings import compute_holding_summary
 from invest_note_api.domain.portfolio import (
     Account,
@@ -18,7 +19,7 @@ from invest_note_api.domain.portfolio import (
     merge_quotes,
 )
 from invest_note_api.domain.realized_pnl import TradeGroupKey
-from invest_note_api.domain.trade_types import Trade, TradeWithAccount
+from invest_note_api.domain.trade_types import Trade
 from invest_note_api.errors import APIError
 from invest_note_api.external.quotes import fetch_quotes_by_keys
 from invest_note_api.schemas.portfolio_response import PortfolioSummaryResponse
@@ -87,23 +88,11 @@ async def get_portfolio_summary(
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> PortfolioSummaryResponse:
     async with acquire_for_user(pool, user.id) as conn:
-        trade_rows = await conn.fetch(
-            """
-            SELECT t.*,
-                   a.name  AS account_name,
-                   a.broker AS account_broker
-            FROM trades t
-            LEFT JOIN accounts a ON a.id = t.account_id
-            WHERE t.user_id = $1
-            ORDER BY t.traded_at DESC
-            """,
-            user.id,
-        )
+        trades = await list_trades_with_account(conn, user.id)
         account_rows = await conn.fetch(
             "SELECT * FROM accounts ORDER BY created_at ASC"
         )
 
-    trades = [TradeWithAccount(**dict(r)) for r in trade_rows]
     accounts = [_account_from_row(r) for r in account_rows]
 
     positions0 = build_positions(trades)

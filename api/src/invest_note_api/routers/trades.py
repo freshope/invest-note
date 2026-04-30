@@ -25,6 +25,7 @@ from invest_note_api.db_ops.trades_repo import (
     insert_trade,
     insert_trades_bulk,
     list_trades,
+    list_trades_in_group,
     list_trades_with_account,
     patch_trade,
     strip_sell_auto_derived,
@@ -145,19 +146,20 @@ async def create_trade(
         )
 
         # BUY도 lock — recalc_group_pnl이 같은 그룹 SELL들을 UPDATE하므로 BUY/SELL 모두 직렬화 필요
-        await acquire_trade_group_lock(conn, str(user.id), trade_to_group_key(new_trade))
+        group_key = trade_to_group_key(new_trade)
+        await acquire_trade_group_lock(conn, str(user.id), group_key)
 
-        all_trades = await list_trades(conn, user.id)
+        group_trades = await list_trades_in_group(conn, user.id, group_key)
 
         if data.trade_type == TRADE_TYPE_SELL:
-            holding = compute_holding_summary(all_trades, trade_to_group_key(new_trade))
+            holding = compute_holding_summary(group_trades, group_key)
             if holding.quantity <= 0:
                 raise APIError("보유하지 않은 종목입니다.", 400)
             if data.quantity > holding.quantity:
                 raise APIError(f"보유 수량이 부족합니다 (현재 {holding.quantity}주).", 400)
 
         if data.trade_type == TRADE_TYPE_SELL:
-            ok, msg, _ = validate_mutation(all_trades, "insert", new_trade)
+            ok, msg, _ = validate_mutation(group_trades, "insert", new_trade)
             if not ok:
                 raise APIError(msg, 400)
 
@@ -176,9 +178,8 @@ async def create_trade(
             "exchange": data.exchange or "",
         })
 
-        key = trade_to_group_key(new_trade)
-        fresh_trades = [*all_trades, Trade(**{**new_trade.model_dump(), "id": row["id"]})]
-        await recalc_group_pnl(conn, fresh_trades, key)
+        fresh_trades = [*group_trades, Trade(**{**new_trade.model_dump(), "id": row["id"]})]
+        await recalc_group_pnl(conn, fresh_trades, group_key)
 
     return row
 
@@ -253,16 +254,16 @@ async def update_trade(
             return Response(status_code=204)
 
         if fields & PNL_AFFECTING_FIELDS:
-            await acquire_trade_group_lock(conn, str(user.id), trade_to_group_key(existing))
-            all_trades = await list_trades(conn, user.id)
-            ok, msg, _ = validate_mutation(all_trades, "update", existing, patch)
+            key = trade_to_group_key(existing)
+            await acquire_trade_group_lock(conn, str(user.id), key)
+            group_trades = await list_trades_in_group(conn, user.id, key)
+            ok, msg, _ = validate_mutation(group_trades, "update", existing, patch)
             if not ok:
                 raise APIError(msg, 400)
 
             await patch_trade(conn, trade_id, user.id, patch)
 
-            fresh_trades = [Trade(**{**t.model_dump(), **patch}) if t.id == trade_id else t for t in all_trades]
-            key = trade_to_group_key(existing)
+            fresh_trades = [Trade(**{**t.model_dump(), **patch}) if t.id == trade_id else t for t in group_trades]
             await recalc_group_pnl(conn, fresh_trades, key)
         else:
             # 파생 SELL 값에 영향을 주지 않는 메타 필드는 lock/recalc 없이 수정.
@@ -283,17 +284,17 @@ async def delete_trade_endpoint(
         if target is None:
             raise APIError(ERR_TRADE_NOT_FOUND, 404)
 
-        await acquire_trade_group_lock(conn, str(user.id), trade_to_group_key(target))
+        key = trade_to_group_key(target)
+        await acquire_trade_group_lock(conn, str(user.id), key)
 
-        all_trades = await list_trades(conn, user.id)
-        ok, msg, _ = validate_mutation(all_trades, "delete", target)
+        group_trades = await list_trades_in_group(conn, user.id, key)
+        ok, msg, _ = validate_mutation(group_trades, "delete", target)
         if not ok:
             raise APIError(msg, 400)
 
-        key = trade_to_group_key(target)
         await delete_trade(conn, trade_id, user.id)
 
-        remaining = [t for t in all_trades if t.id != trade_id]
+        remaining = [t for t in group_trades if t.id != trade_id]
         await recalc_group_pnl(conn, remaining, key)
 
     return Response(status_code=204)
@@ -466,29 +467,32 @@ async def import_commit(
     async with acquire_for_user(pool, user.id) as conn:
         await assert_account_exists(conn, body.account_id)
 
-        # 현재 모든 거래를 가져와 시그니처 셋 구성
-        all_trades = await list_trades(conn, user.id)
-        existing_sigs: set = set()
-        for t in all_trades:
-            t_date = t.traded_at.date() if hasattr(t.traded_at, "date") else date.fromisoformat(str(t.traded_at)[:10])
-            sig = make_signature(
-                account_id=str(body.account_id),
-                trade_date=t_date,
-                ticker=t.ticker_symbol,
-                asset_name=t.asset_name,
-                trade_type=t.trade_type,
-                quantity=t.quantity,
-                price=t.price,
-            )
-            existing_sigs.add(sig)
-
-        # 그룹별로 묶어 처리
-        groups: dict[tuple, list[dict]] = defaultdict(list)
+        # staged rows를 (account_id, ticker, country) 그룹으로 분할 후 그룹별로 처리
+        groups: dict[TradeGroupKey, list[dict]] = defaultdict(list)
         for row in rows:
-            group_key = (str(body.account_id), row["ticker_symbol"], row["country_code"])
+            group_key = TradeGroupKey(
+                account_id=str(body.account_id),
+                ticker=row["ticker_symbol"],
+                asset_name=row["asset_name"],
+                country=row["country_code"],
+            )
             groups[group_key].append(row)
 
         for group_key, group_rows in groups.items():
+            # 그룹별로 기존 거래 페치 → sig 셋 구성 (사용자 전체 fetch 회피)
+            group_existing = await list_trades_in_group(conn, user.id, group_key)
+            existing_sigs: set = set()
+            for t in group_existing:
+                existing_sigs.add(make_signature(
+                    account_id=str(body.account_id),
+                    trade_date=t.traded_at.date(),
+                    ticker=t.ticker_symbol,
+                    asset_name=t.asset_name,
+                    trade_type=t.trade_type,
+                    quantity=t.quantity,
+                    price=t.price,
+                ))
+
             # BUY → SELL 순 정렬
             group_rows.sort(key=lambda r: (r["traded_at_kst"], 0 if r["trade_type"] == TRADE_TYPE_BUY else 1))
 
@@ -534,19 +538,12 @@ async def import_commit(
                 continue
 
             # 그룹 lock + bulk insert + recalc (savepoint로 그룹 단위 롤백)
-            lock_key = TradeGroupKey(
-                account_id=str(body.account_id),
-                ticker=group_key[1],
-                asset_name=to_insert[0]["asset_name"],
-                country=group_key[2],
-            )
             try:
                 async with conn.transaction():
-                    await acquire_trade_group_lock(conn, str(user.id), lock_key)
+                    await acquire_trade_group_lock(conn, str(user.id), group_key)
                     inserted_trades = await insert_trades_bulk(conn, str(user.id), to_insert)
                     inserted_count += len(inserted_trades)
-                    all_trades.extend(inserted_trades)
-                    await recalc_group_pnl(conn, all_trades, lock_key)
+                    await recalc_group_pnl(conn, [*group_existing, *inserted_trades], group_key)
             except asyncpg.LockNotAvailableError:
                 commit_errors.append(ImportError(row_no=0, reason=f"{to_insert[0]['asset_name']} 처리 중 충돌 — 잠시 후 다시 시도해주세요."))
             except asyncpg.UniqueViolationError:

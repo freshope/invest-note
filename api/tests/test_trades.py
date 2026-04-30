@@ -387,7 +387,7 @@ class TestImportCommit:
             "exchange": "KOSPI",
         }
 
-    def test_commit_fetches_all_trades_once_for_multiple_groups(
+    def test_commit_fetches_per_group(
         self,
         trades_client,
         monkeypatch,
@@ -411,8 +411,9 @@ class TestImportCommit:
 
         conn = FakeConnection(
             "a1",  # assert_account_exists
-            [],  # initial list_trades
+            [],  # group 1 list_trades_in_group (삼성전자)
             [_to_record(_make_trade_row(id_="new-1", ticker="005930", asset_name="삼성전자"))],
+            [],  # group 2 list_trades_in_group (SK하이닉스)
             [_to_record(_make_trade_row(id_="new-2", ticker="000660", asset_name="SK하이닉스"))],
         )
 
@@ -429,7 +430,8 @@ class TestImportCommit:
             if q.lower().startswith("select * from trades")
             and "where user_id = $1" in q.lower()
         ]
-        assert len(list_trade_calls) == 1
+        # 그룹 단위 fetch — 그룹 수만큼 호출
+        assert len(list_trade_calls) == 2
 
 
 class TestGetTrade:

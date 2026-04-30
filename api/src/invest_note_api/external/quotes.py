@@ -30,6 +30,7 @@ _HEADERS = {"User-Agent": USER_AGENT}
 
 _cache: TTLCache[str, dict | None] = TTLCache(maxsize=QUOTE_CACHE_MAXSIZE, ttl=QUOTE_CACHE_TTL)
 _cache_lock = asyncio.Lock()
+_inflight: dict[str, asyncio.Future] = {}
 
 
 class QuoteResult(TypedDict):
@@ -75,15 +76,35 @@ async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult |
 
 
 async def _get_cached(key: str, fetch_fn) -> dict | None:
+    """동일 키 동시 요청은 single-flight — 첫 호출자만 fetch_fn 실행."""
     async with _cache_lock:
         if key in _cache:
             return _cache[key]
+        existing = _inflight.get(key)
+        if existing is not None:
+            future, owner = existing, False
+        else:
+            future = asyncio.get_running_loop().create_future()
+            _inflight[key] = future
+            owner = True
 
-    result = await fetch_fn()
+    if not owner:
+        return await future
+
+    try:
+        result = await fetch_fn()
+    except Exception as exc:
+        async with _cache_lock:
+            _inflight.pop(key, None)
+        if not future.done():
+            future.set_exception(exc)
+        raise
 
     async with _cache_lock:
         _cache[key] = result
-
+        _inflight.pop(key, None)
+    if not future.done():
+        future.set_result(result)
     return result
 
 
