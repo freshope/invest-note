@@ -6,8 +6,7 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## BE simplify — 후속
 
-- [ ] **portfolio summary 풀스캔 1회 통합** — `domain/portfolio.py`의 `build_positions`/`build_account_snapshots`/`build_totals` 가 동일 trades 리스트를 3번 순회하고 `pnl_map`도 두 번 빌드. `build_positions`가 만든 `lot_map`을 외부 노출하고 `build_account_snapshots(accounts, lot_map, quotes)` / `build_totals(positions, accounts, pnl_map)` 시그니처로 변경, `build_account_snapshots` 의 사용되지 않는 `cost_basis` 누적도 제거. `/api/portfolio/summary` 핫패스 1회 페이즈 통합.
-- [ ] **BE simplify Tier 2 — 헬퍼 추출 + dead code 제거** — `to_kst_ms` (4곳 중복), `half_up` (3곳 중복), `lot_key`/`position_key` (6곳 f-string 중복) 헬퍼 추출. dead code 제거: `compute_lot_quantity`, `find_latest_buy_strategy`, `compute_flexible_holding_days`, `list_trades_in_range`, `build_account_snapshots`의 미사용 `cost_basis`. `quotes.py`의 raw `replace(",", "")` 3곳을 `strip_comma_number`로 교체.
+- [ ] **BE simplify Tier 2 — 헬퍼 추출 + dead code 제거** — `to_kst_ms` (4곳 중복), `half_up` (3곳 중복), `lot_key`/`position_key` (6곳 f-string 중복) 헬퍼 추출. dead code 제거: `compute_lot_quantity`, `find_latest_buy_strategy`, `compute_flexible_holding_days`, `list_trades_in_range`. `quotes.py`의 raw `replace(",", "")` 3곳을 `strip_comma_number`로 교체.
 
 ## 분석 탭 성능 / 유지보수
 
