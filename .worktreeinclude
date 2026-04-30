@@ -1,0 +1,4 @@
+api/.env.local
+app/.env.local
+app/.env.production
+certificates/
