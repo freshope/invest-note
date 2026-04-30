@@ -80,7 +80,7 @@ class DashboardTotals:
 
 
 def _lot_key_of(trade: "Trade") -> str:
-    return f"{trade_identifier(trade)}:{trade_country(trade)}:{trade.account_id}"
+    return f"{position_key(trade_identifier(trade), trade_country(trade))}:{trade.account_id}"
 
 
 def _by_traded_at(trades: list["Trade"]) -> list["Trade"]:

@@ -14,6 +14,7 @@ import httpx
 from cachetools import TTLCache
 
 from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, MAX_CODE_LEN
+from invest_note_api.domain.trade_utils import position_key
 from invest_note_api.external.constants import (
     CURRENCY_KRW,
     HTTP_TIMEOUT_SECONDS,
@@ -128,7 +129,7 @@ async def fetch_quotes_by_keys(keys: list[str]) -> dict[str, QuoteResult | None]
         kr_entries = [e for e in entries if e["country"] == DEFAULT_COUNTRY]
         tasks = [
             _get_cached(
-                f"{DEFAULT_COUNTRY}:{e['code']}",
+                position_key(e["code"], DEFAULT_COUNTRY),
                 lambda c=client, code=e["code"]: _fetch_kr_price(c, code),
             )
             for e in kr_entries

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import Literal
@@ -100,7 +101,7 @@ def walk_trades(
 
     running_qty = 0.0
     running_cost = 0.0
-    fifo_queue: list[_QueueEntry] = []
+    fifo_queue: deque[_QueueEntry] = deque()
     buy_order = 0
 
     for trade in sorted_trades:
@@ -143,7 +144,7 @@ def walk_trades(
                     entry.remaining -= take
                     remaining -= take
                     if entry.remaining <= 0:
-                        fifo_queue.pop(0)
+                        fifo_queue.popleft()
 
             deduction = cost_deduction(trade, state_before, matched_qty)
             running_cost = max(0.0, running_cost - deduction)
