@@ -4,10 +4,6 @@ MVP 이후 구현할 작업 후보 목록.
 
 ---
 
-## BE simplify — 후속
-
-- [ ] **BE simplify Tier 2 — 헬퍼 추출 + dead code 제거** — `to_kst_ms` (4곳 중복), `half_up` (3곳 중복), `lot_key`/`position_key` (6곳 f-string 중복) 헬퍼 추출. dead code 제거: `compute_lot_quantity`, `find_latest_buy_strategy`, `compute_flexible_holding_days`, `list_trades_in_range`. `quotes.py`의 raw `replace(",", "")` 3곳을 `strip_comma_number`로 교체.
-
 ## 분석 탭 성능 / 유지보수
 
 - [ ] 분석 API 쿼리 `.limit(1000)` 가드 — 거래 수 급증 시 메모리/응답 보호
