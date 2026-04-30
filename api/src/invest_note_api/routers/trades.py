@@ -5,11 +5,12 @@ import logging
 import re
 import uuid
 from collections import defaultdict
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 
 import asyncpg
 import cachetools
-from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
 
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
@@ -70,8 +71,23 @@ from invest_note_api.broker_import.ticker_resolver import resolve_tickers
 
 logger = logging.getLogger(__name__)
 
-# staging cache: {staging_id: {"user_id": str, "rows": list[dict], "parse_errors": list[dict]}}
-_STAGING: cachetools.TTLCache = cachetools.TTLCache(maxsize=256, ttl=600)
+
+@dataclass
+class TradeStagingState:
+    """import preview → commit 사이의 staging cache.
+
+    값 형식: {staging_id: {"user_id": str, "rows": list[dict], "parse_errors": list[dict], ...}}
+    `app.state.trade_staging` 에 보관하고 라우터에서 `Depends(get_trade_staging_state)` 로 주입.
+    """
+
+    cache: cachetools.TTLCache = field(
+        default_factory=lambda: cachetools.TTLCache(maxsize=256, ttl=600)
+    )
+
+
+def get_trade_staging_state(request: Request) -> TradeStagingState:
+    return request.app.state.trade_staging
+
 
 router = APIRouter(prefix="/api/trades")
 
@@ -312,6 +328,7 @@ async def import_preview(
     broker_key: str | None = None,
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
+    staging: TradeStagingState = Depends(get_trade_staging_state),
 ) -> ImportPreviewResponse:
     """파일을 파싱해 중복 체크 후 staging cache에 저장한다. commit 전에 호출."""
     filename = file.filename or ""
@@ -410,7 +427,7 @@ async def import_preview(
         rows_to_stage.append(row_data)
 
     staging_id = str(uuid.uuid4())
-    _STAGING[staging_id] = {
+    staging.cache[staging_id] = {
         "user_id": str(user.id),
         "rows": rows_to_stage,
         "parse_errors": [e.model_dump() for e in parse_errors],
@@ -438,9 +455,10 @@ async def import_commit(
     body: ImportCommitRequest,
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
+    staging: TradeStagingState = Depends(get_trade_staging_state),
 ) -> ImportCommitResponse:
     """preview에서 staging된 거래를 실제로 INSERT한다."""
-    staged = _STAGING.get(body.staging_id)
+    staged = staging.cache.get(body.staging_id)
     if staged is None:
         raise APIError("staging이 만료되었거나 존재하지 않습니다. 파일을 다시 업로드해주세요.", 400)
     if staged["user_id"] != str(user.id):
@@ -534,7 +552,7 @@ async def import_commit(
                 logger.exception("import commit 처리 오류 user_id=%s asset=%s", user.id, to_insert[0]["asset_name"])
                 commit_errors.append(ImportError(row_no=0, reason=f"{to_insert[0]['asset_name']} 처리 오류 — 잠시 후 다시 시도해주세요."))
 
-    del _STAGING[body.staging_id]
+    del staging.cache[body.staging_id]
 
     return ImportCommitResponse(
         inserted_count=inserted_count,

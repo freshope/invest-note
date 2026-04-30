@@ -2,17 +2,22 @@
 
 캐싱: TTLCache(maxsize=512, ttl=60) + asyncio.Lock으로 symbol:country 키별 60초 in-memory 캐시.
 Next.js `fetch(..., { next: { revalidate: 60 } })` 동작과 등가.
+
+캐시 상태(`QuoteCacheState`)는 `app.state.quote_cache` 에 보관하고 라우터에서
+`Depends(get_quote_cache_state)` 로 주입한다.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TypedDict
 
 import httpx
 from cachetools import TTLCache
+from fastapi import Request
 
 from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, MAX_CODE_LEN
 from invest_note_api.domain.trade_utils import position_key
@@ -31,9 +36,18 @@ logger = logging.getLogger(__name__)
 
 _HEADERS = {"User-Agent": USER_AGENT}
 
-_cache: TTLCache[str, dict | None] = TTLCache(maxsize=QUOTE_CACHE_MAXSIZE, ttl=QUOTE_CACHE_TTL)
-_cache_lock = asyncio.Lock()
-_inflight: dict[str, asyncio.Future] = {}
+
+@dataclass
+class QuoteCacheState:
+    cache: TTLCache[str, dict | None] = field(
+        default_factory=lambda: TTLCache(maxsize=QUOTE_CACHE_MAXSIZE, ttl=QUOTE_CACHE_TTL)
+    )
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    inflight: dict[str, asyncio.Future] = field(default_factory=dict)
+
+
+def get_quote_cache_state(request: Request) -> QuoteCacheState:
+    return request.app.state.quote_cache
 
 
 class QuoteResult(TypedDict):
@@ -102,17 +116,17 @@ async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult |
     )
 
 
-async def _get_cached(key: str, fetch_fn) -> dict | None:
+async def _get_cached(state: QuoteCacheState, key: str, fetch_fn) -> dict | None:
     """동일 키 동시 요청은 single-flight — 첫 호출자만 fetch_fn 실행."""
-    async with _cache_lock:
-        if key in _cache:
-            return _cache[key]
-        existing = _inflight.get(key)
+    async with state.lock:
+        if key in state.cache:
+            return state.cache[key]
+        existing = state.inflight.get(key)
         if existing is not None:
             future, owner = existing, False
         else:
             future = asyncio.get_running_loop().create_future()
-            _inflight[key] = future
+            state.inflight[key] = future
             owner = True
 
     if not owner:
@@ -121,21 +135,23 @@ async def _get_cached(key: str, fetch_fn) -> dict | None:
     try:
         result = await fetch_fn()
     except Exception as exc:
-        async with _cache_lock:
-            _inflight.pop(key, None)
+        async with state.lock:
+            state.inflight.pop(key, None)
         if not future.done():
             future.set_exception(exc)
         raise
 
-    async with _cache_lock:
-        _cache[key] = result
-        _inflight.pop(key, None)
+    async with state.lock:
+        state.cache[key] = result
+        state.inflight.pop(key, None)
     if not future.done():
         future.set_result(result)
     return result
 
 
-async def fetch_quotes_by_keys(keys: list[str]) -> dict[str, QuoteResult | None]:
+async def fetch_quotes_by_keys(
+    state: QuoteCacheState, keys: list[str]
+) -> dict[str, QuoteResult | None]:
     """keys 형식: "종목코드:국가" (예: "005930:KR"). KR 외 국가는 MVP에서 null."""
     if not keys:
         return {}
@@ -152,6 +168,7 @@ async def fetch_quotes_by_keys(keys: list[str]) -> dict[str, QuoteResult | None]
         kr_entries = [e for e in entries if e["country"] == DEFAULT_COUNTRY]
         tasks = [
             _get_cached(
+                state,
                 position_key(e["code"], DEFAULT_COUNTRY),
                 lambda c=client, code=e["code"]: _fetch_kr_price(c, code),
             )

@@ -19,7 +19,11 @@ from invest_note_api.domain.analysis.strategy_adherence import build_strategy_ev
 from invest_note_api.domain.portfolio import build_positions, merge_quotes
 from invest_note_api.domain.realized_pnl import build_pnl_map
 from invest_note_api.domain.trade_types import TRADE_TYPE_BUY
-from invest_note_api.external.quotes import fetch_quotes_by_keys
+from invest_note_api.external.quotes import (
+    QuoteCacheState,
+    fetch_quotes_by_keys,
+    get_quote_cache_state,
+)
 from invest_note_api.schemas.analysis_response import AnalysisDashboardResponse
 
 logger = logging.getLogger(__name__)
@@ -72,6 +76,7 @@ async def get_analysis_dashboard(
     period: str = Query(default=DEFAULT_PERIOD),
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
+    quote_state: QuoteCacheState = Depends(get_quote_cache_state),
 ) -> AnalysisDashboardResponse:
     async with acquire_for_user(pool, user.id) as conn:
         all_trades = await list_trades(conn, user.id)
@@ -84,7 +89,7 @@ async def get_analysis_dashboard(
 
     positions = positions0
     try:
-        quotes = await fetch_quotes_by_keys([p.key for p in positions0])
+        quotes = await fetch_quotes_by_keys(quote_state, [p.key for p in positions0])
         positions = merge_quotes(positions0, quotes)
     except Exception as e:
         logger.warning("시세 fetch 실패, cost_basis fallback: %s", e)
