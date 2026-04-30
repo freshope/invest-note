@@ -34,7 +34,9 @@ async def list_accounts(
             " FROM accounts ORDER BY created_at ASC"
         )
         counts = await conn.fetch(
-            "SELECT account_id, count(*)::int AS c FROM trades GROUP BY account_id"
+            "SELECT account_id, count(*)::int AS c FROM trades"
+            " WHERE user_id = $1 GROUP BY account_id",
+            user.id,
         )
 
     count_map: dict[UUID, int] = {r["account_id"]: r["c"] for r in counts}
