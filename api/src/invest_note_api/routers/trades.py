@@ -50,7 +50,7 @@ from invest_note_api.domain.trade_types import (
     Trade,
     trade_country,
 )
-from invest_note_api.errors import ERR_TRADE_NOT_FOUND, APIError, validate_body
+from invest_note_api.errors import ERR_TRADE_NOT_FOUND, APIError
 from invest_note_api.schemas.trade import TradeCreate, TradeUpdate
 from invest_note_api.schemas.trade_import import (
     ImportCommitRequest,
@@ -130,12 +130,10 @@ async def list_trades_endpoint(
 
 @router.post("", status_code=201)
 async def create_trade(
-    body: dict,
+    data: TradeCreate,
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> dict:
-    data = validate_body(TradeCreate, body)
-
     async with acquire_for_user(pool, user.id) as conn:
         await assert_account_exists(conn, data.account_id)
 
@@ -260,11 +258,10 @@ async def get_trade(
 @router.patch("/{trade_id}", responses={204: {"description": "No fields to update"}})
 async def update_trade(
     trade_id: str,
-    body: dict,
+    data: TradeUpdate,
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
 ):
-    data = validate_body(TradeUpdate, body)
     fields = data.model_fields_set
     if not fields:
         return Response(status_code=204)

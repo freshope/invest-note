@@ -208,14 +208,14 @@ class TestCreateTrade:
         assert resp.status_code == 201
         assert resp.json()["id"] == "new-t1"
 
-    def test_invalid_body_400(self, trades_client):
+    def test_invalid_body_422(self, trades_client):
         resp = trades_client.post("/api/trades", json={"trade_type": "BUY"})
-        assert resp.status_code == 400
+        assert resp.status_code == 422
 
-    def test_create_future_trade_400(self, trades_client):
+    def test_create_future_trade_422(self, trades_client):
         payload = {**self._buy_payload(), "traded_at": "2999-01-10T09:00:00"}
         resp = trades_client.post("/api/trades", json=payload)
-        assert resp.status_code == 400
+        assert resp.status_code == 422
         assert "미래" in resp.json()["error"]
 
     def test_create_future_datetime_rejected_by_schema(self):
@@ -226,7 +226,7 @@ class TestCreateTrade:
         with pytest.raises(ValueError, match="미래"):
             TradeCreate.model_validate(payload)
 
-    def test_create_foreign_buy_400_in_mvp(self, trades_client):
+    def test_create_foreign_buy_422_in_mvp(self, trades_client):
         payload = {
             **self._buy_payload(),
             "asset_name": "Apple",
@@ -235,7 +235,7 @@ class TestCreateTrade:
             "exchange": "NASDAQ",
         }
         resp = trades_client.post("/api/trades", json=payload)
-        assert resp.status_code == 400
+        assert resp.status_code == 422
         assert "해외 주식 신규 매수" in resp.json()["error"]
 
     def test_create_foreign_sell_allowed_for_existing_holding(self, trades_client):
@@ -463,12 +463,12 @@ class TestPatchTrade:
             )
         assert resp.status_code == 204
 
-    def test_patch_free_text_5001_chars_400(self, trades_client):
+    def test_patch_free_text_5001_chars_422(self, trades_client):
         resp = trades_client.patch(
             "/api/trades/t1",
             json={"buy_reason": "가" * (TRADE_FREE_TEXT_MAX_LEN + 1)},
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 422
         assert "5000" in resp.json()["error"]
 
     def test_patch_not_found_404(self, trades_client):

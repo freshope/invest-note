@@ -1,12 +1,10 @@
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ValidationError
 
 ERR_TRADE_NOT_FOUND = "거래를 찾을 수 없습니다."
 ERR_ACCOUNT_NOT_FOUND = "계좌를 찾을 수 없습니다."
 ERR_UNAUTHORIZED = "Unauthorized"
-ERR_VALIDATION_FALLBACK = "올바르지 않은 입력입니다."
 ERR_REQUEST_FALLBACK = "올바르지 않은 요청입니다."
 ERR_LOCK_BUSY = "처리 중 다른 요청과 충돌이 발생했습니다. 잠시 후 다시 시도해주세요."
 
@@ -16,14 +14,6 @@ class APIError(Exception):
         self.message = message
         self.status = status
         super().__init__(message)
-
-
-def validate_body[T: BaseModel](model_cls: type[T], body: dict) -> T:
-    try:
-        return model_cls.model_validate(body)
-    except ValidationError as e:
-        first = e.errors()[0]
-        raise APIError(first.get("msg", ERR_VALIDATION_FALLBACK), 400)
 
 
 async def api_error_handler(request: Request, exc: APIError) -> JSONResponse:
