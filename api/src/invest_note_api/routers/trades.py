@@ -103,7 +103,7 @@ async def list_trades_endpoint(
         trades = [
             t for t in trades
             if trade_country(t) == country
-            and (t.ticker_symbol == ticker or t.asset_name == ticker)
+            and t.ticker_symbol == ticker
         ]
 
     accounts = [dict(r) for r in accounts_rows]

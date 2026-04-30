@@ -171,6 +171,20 @@ class TestListTrades:
             resp = trades_client.get("/api/trades", params={"ticker": "005930", "country": "KR"})
         assert resp.status_code == 200
 
+    def test_list_ticker_filter_strict_ticker_symbol_only(self, trades_client):
+        # ticker_symbol invariant(2026-04-30 decisions.md) — asset_name 매칭 분기는 dead branch.
+        match_row = _make_trade_row(id_="match", ticker="005930", asset_name="삼성전자")
+        name_only_row = _make_trade_row(id_="name-only", ticker="000660", asset_name="005930")
+        conn = FakeConnection(
+            [_to_record(match_row), _to_record(name_only_row)],
+            [],
+        )
+        with _patch_trades(conn):
+            resp = trades_client.get("/api/trades", params={"ticker": "005930", "country": "KR"})
+        assert resp.status_code == 200
+        ids = [t["id"] for t in resp.json()["trades"]]
+        assert ids == ["match"]
+
     def test_list_invalid_ticker_400(self, trades_client):
         resp = trades_client.get("/api/trades", params={"ticker": "/../etc/passwd"})
         assert resp.status_code == 400
