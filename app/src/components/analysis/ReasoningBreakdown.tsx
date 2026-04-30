@@ -33,20 +33,25 @@ export function ReasoningBreakdown({ data, summary }: ReasoningBreakdownProps) {
           매칭된 태그 데이터가 없습니다
         </div>
       ) : (
-        data.map((item) => (
-          <div key={item.tag} className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[13px] font-medium text-foreground">
-                {REASONING_TAG_LABELS[item.tag] ?? item.tag}
-              </span>
-              <span className="text-[11px] text-muted-foreground tabular-nums">
-                {item.count}건
-                <PnLLine value={item.avgPnL} />
-              </span>
+        <>
+          {data.map((item) => (
+            <div key={item.tag} className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] font-medium text-foreground">
+                  {REASONING_TAG_LABELS[item.tag] ?? item.tag}
+                </span>
+                <span className="text-[11px] text-muted-foreground tabular-nums">
+                  {item.count}건
+                  <PnLLine value={item.sumPnL} />
+                </span>
+              </div>
+              <WinRateBar rate={item.winRate} hasData={item.count > 0} />
             </div>
-            <WinRateBar rate={item.winRate} hasData={item.count > 0} />
-          </div>
-        ))
+          ))}
+          <p className="text-[11px] text-muted-foreground pt-1">
+            한 거래가 여러 태그에 포함되어 합계가 총 실현손익과 다를 수 있습니다.
+          </p>
+        </>
       )}
     </div>
   );

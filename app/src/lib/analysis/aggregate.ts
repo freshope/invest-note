@@ -10,7 +10,7 @@ export interface StrategyStats {
   count: number;
   resultCount: number;
   winRate: number;
-  avgPnL: number;
+  sumPnL: number;
   avgHoldingDays: number;
 }
 
@@ -19,14 +19,14 @@ export interface EmotionStats {
   count: number;
   resultCount: number;
   winRate: number;
-  avgPnL: number;
+  sumPnL: number;
 }
 
 export interface TagStats {
   tag: string;
   count: number;
   winRate: number;
-  avgPnL: number;
+  sumPnL: number;
 }
 
 export interface StrategyAdherenceStats {
@@ -34,7 +34,7 @@ export interface StrategyAdherenceStats {
   count: number;
   resultCount: number;
   winRate: number;
-  avgPnL: number;
+  sumPnL: number;
 }
 
 export interface AnalysisSummary {

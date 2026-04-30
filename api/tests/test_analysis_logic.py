@@ -265,6 +265,66 @@ class TestComputeSummary:
         assert s.reflection_rate == 50.0
         assert s.result_input_rate == 50.0
 
+    def test_by_emotion_includes_untagged_bucket(self):
+        # emotion 미입력 SELL이 통째 누락되어 합계가 어긋나던 버그 회귀 방지.
+        sell_tagged = make_trade(id="s1", trade_type="SELL", emotion="FOMO", result="FAIL")
+        sell_untagged = make_trade(id="s2", trade_type="SELL", emotion=None, result="SUCCESS")
+        s = compute_summary([sell_tagged, sell_untagged], {"s1": -100.0, "s2": 50.0}, {})
+        emotions = {e.type: e for e in s.by_emotion}
+        assert "UNTAGGED" in emotions
+        assert emotions["UNTAGGED"].count == 1
+        assert emotions["UNTAGGED"].sum_pnl == 50.0
+
+    def test_by_tag_includes_untagged_bucket(self):
+        # reasoning_tags=[]인 SELL이 통째 누락되어 합계가 어긋나던 버그 회귀 방지.
+        sell_tagged = make_trade(id="s1", trade_type="SELL", reasoning_tags=["TECHNICAL"], result="SUCCESS")
+        sell_untagged = make_trade(id="s2", trade_type="SELL", reasoning_tags=[], result="FAIL")
+        s = compute_summary([sell_tagged, sell_untagged], {"s1": 100.0, "s2": -30.0}, {})
+        tags = {t.tag: t for t in s.by_tag}
+        assert "UNTAGGED" in tags
+        assert tags["UNTAGGED"].count == 1
+        assert tags["UNTAGGED"].sum_pnl == -30.0
+
+    def test_sum_pnl_equals_total_profit_loss(self):
+        # 화면 상의 항목별 sumPnL 합계가 총 실현손익과 일치해야 한다 (byTag 제외).
+        # byTag는 다중 태그로 인해 중복 합산되므로 별도 검증.
+        sells = [
+            make_trade(
+                id="s1",
+                trade_type="SELL",
+                strategy_type="SWING",
+                emotion="CALM",
+                reasoning_tags=["TECHNICAL"],
+                result="SUCCESS",
+            ),
+            make_trade(
+                id="s2",
+                trade_type="SELL",
+                strategy_type=None,
+                emotion=None,
+                reasoning_tags=[],
+                result=None,
+            ),
+            make_trade(
+                id="s3",
+                trade_type="SELL",
+                strategy_type="LONG_TERM",
+                emotion="FOMO",
+                reasoning_tags=["NEWS", "FUNDAMENTAL"],
+                result="FAIL",
+                holding_days=5,
+            ),
+        ]
+        pnl = {"s1": 100.0, "s2": -50.0, "s3": -200.0}
+        s = compute_summary(sells, pnl, {})
+        assert s.total_profit_loss == pytest.approx(-150.0)
+        assert sum(e.sum_pnl for e in s.by_emotion) == pytest.approx(s.total_profit_loss)
+        assert sum(x.sum_pnl for x in s.by_strategy) == pytest.approx(s.total_profit_loss)
+        assert sum(x.sum_pnl for x in s.by_strategy_adherence) == pytest.approx(s.total_profit_loss)
+        # byTag: s3가 두 태그를 가지므로 -200이 두 번 합산 → 합계가 더 작음(중복).
+        # 다중 태그 거래로 인해 합계가 totalProfitLoss와 다른 것이 정상.
+        assert sum(t.sum_pnl for t in s.by_tag) != pytest.approx(s.total_profit_loss)
+
 
 # --- concentration ---
 
@@ -383,7 +443,7 @@ class TestEvaluateRules:
 
     def test_losing_strategy_triggers(self):
         from invest_note_api.domain.analysis.aggregate import StrategyStats
-        worst = StrategyStats(type="SCALPING", count=6, result_count=4, win_rate=20.0, avg_pnl=-100.0, avg_holding_days=0.5)
+        worst = StrategyStats(type="SCALPING", count=6, result_count=4, win_rate=20.0, sum_pnl=-100.0, avg_holding_days=0.5)
         summary = _make_summary(by_strategy=[worst])
         inp: RuleInput = {"summary": summary}
         result = evaluate_rules(inp)
@@ -394,8 +454,8 @@ class TestEvaluateRules:
 
     def test_severity_order(self):
         from invest_note_api.domain.analysis.aggregate import StrategyStats, EmotionStats
-        worst_strat = StrategyStats(type="SWING", count=6, result_count=4, win_rate=10.0, avg_pnl=-100.0, avg_holding_days=10.0)
-        fomo_emotion = EmotionStats(type="FOMO", count=6, result_count=5, win_rate=10.0, avg_pnl=-50.0)
+        worst_strat = StrategyStats(type="SWING", count=6, result_count=4, win_rate=10.0, sum_pnl=-100.0, avg_holding_days=10.0)
+        fomo_emotion = EmotionStats(type="FOMO", count=6, result_count=5, win_rate=10.0, sum_pnl=-50.0)
         summary = _make_summary(by_strategy=[worst_strat], by_emotion=[fomo_emotion], feeling_rate=50.0, total_trades=10)
         inp: RuleInput = {"summary": summary}
         result = evaluate_rules(inp)
@@ -406,7 +466,7 @@ class TestEvaluateRules:
 
     def test_fomo_low_winrate(self):
         from invest_note_api.domain.analysis.aggregate import EmotionStats
-        fomo = EmotionStats(type="FOMO", count=6, result_count=5, win_rate=20.0, avg_pnl=-50.0)
+        fomo = EmotionStats(type="FOMO", count=6, result_count=5, win_rate=20.0, sum_pnl=-50.0)
         summary = _make_summary(by_emotion=[fomo])
         inp: RuleInput = {"summary": summary}
         result = evaluate_rules(inp)

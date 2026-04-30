@@ -32,6 +32,10 @@ EMOTION_ANXIOUS: EmotionType = "ANXIOUS"
 EMOTION_CONFIDENT: EmotionType = "CONFIDENT"
 EMOTION_CALM: EmotionType = "CALM"
 TAG_FEELING: ReasoningTag = "FEELING"
+# 분석 집계에서 emotion/reasoning_tags 미입력 SELL을 묶기 위한 표시 전용 키.
+# 사용자가 직접 선택할 수 없는 값이므로 폼 옵션 배열에는 포함하지 않는다.
+EMOTION_UNTAGGED = "UNTAGGED"
+TAG_UNTAGGED = "UNTAGGED"
 RESULT_SUCCESS: TradeResult = "SUCCESS"
 RESULT_FAIL: TradeResult = "FAIL"
 RESULT_BREAKEVEN: TradeResult = "BREAKEVEN"

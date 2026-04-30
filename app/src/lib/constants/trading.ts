@@ -43,13 +43,19 @@ export const STRATEGY_LABELS: Record<string, string> = Object.fromEntries(
   STRATEGIES.map((s) => [s.value, s.label]),
 );
 
-export const EMOTION_LABELS: Record<string, string> = Object.fromEntries(
-  EMOTIONS.map((e) => [e.value, e.label]),
-);
+// 분석 집계의 미입력 버킷 라벨. BE의 EMOTION_UNTAGGED/TAG_UNTAGGED와 동일한 키.
+// 폼 옵션 배열(EMOTIONS, REASONING_TAGS)에는 추가하지 않는다 — 사용자 선택 불가.
+const UNTAGGED_KEY = "UNTAGGED";
 
-export const REASONING_TAG_LABELS: Record<string, string> = Object.fromEntries(
-  REASONING_TAGS.map((t) => [t.value, t.label]),
-);
+export const EMOTION_LABELS: Record<string, string> = {
+  ...Object.fromEntries(EMOTIONS.map((e) => [e.value, e.label])),
+  [UNTAGGED_KEY]: "미입력",
+};
+
+export const REASONING_TAG_LABELS: Record<string, string> = {
+  ...Object.fromEntries(REASONING_TAGS.map((t) => [t.value, t.label])),
+  [UNTAGGED_KEY]: "미입력",
+};
 
 // satisfies로 database.ts의 타입과 동기화 보장
 export const STRATEGY_VALUES = ["SCALPING", "SWING", "LONG_TERM", "UNKNOWN"] as const satisfies readonly StrategyType[];

@@ -92,7 +92,7 @@ async def get_analysis_summary(
                 "count": s.count,
                 "resultCount": s.result_count,
                 "winRate": s.win_rate,
-                "avgPnL": s.avg_pnl,
+                "sumPnL": s.sum_pnl,
                 "avgHoldingDays": s.avg_holding_days,
             }
             for s in summary.by_strategy
@@ -103,7 +103,7 @@ async def get_analysis_summary(
                 "count": e.count,
                 "resultCount": e.result_count,
                 "winRate": e.win_rate,
-                "avgPnL": e.avg_pnl,
+                "sumPnL": e.sum_pnl,
             }
             for e in summary.by_emotion
         ],
@@ -112,7 +112,7 @@ async def get_analysis_summary(
                 "tag": t.tag,
                 "count": t.count,
                 "winRate": t.win_rate,
-                "avgPnL": t.avg_pnl,
+                "sumPnL": t.sum_pnl,
             }
             for t in summary.by_tag
         ],
@@ -123,7 +123,7 @@ async def get_analysis_summary(
                 "count": s.count,
                 "resultCount": s.result_count,
                 "winRate": s.win_rate,
-                "avgPnL": s.avg_pnl,
+                "sumPnL": s.sum_pnl,
             }
             for s in summary.by_strategy_adherence
         ],
