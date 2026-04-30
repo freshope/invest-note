@@ -2,6 +2,8 @@ from decimal import Decimal, InvalidOperation
 
 from pydantic import BaseModel, field_validator
 
+from ..utils.numbers import strip_comma_number
+
 _MAX_CASH = Decimal("9999999999999999.99")
 _MAX_NAME = 50
 _MAX_BROKER = 50
@@ -10,10 +12,9 @@ _MAX_BROKER = 50
 def _parse_cash(value: object) -> Decimal:
     if value in (None, ""):
         return Decimal(0)
-    if isinstance(value, str):
-        value = value.replace(",", "").strip()
-        if not value:
-            return Decimal(0)
+    value = strip_comma_number(value)
+    if isinstance(value, str) and not value:
+        return Decimal(0)
     try:
         d = Decimal(str(value))
     except InvalidOperation:
