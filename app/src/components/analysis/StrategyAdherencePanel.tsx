@@ -1,5 +1,6 @@
 "use client";
 
+import { AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatPnL, signColor } from "@/lib/format";
 import { ADHERENCE_CONFIG } from "@/lib/constants/trading";
@@ -53,6 +54,7 @@ export function StrategyAdherencePanel({ rate, data }: StrategyAdherencePanelPro
   const followedCount = followed?.count ?? 0;
   const deviatedCount = deviated?.count ?? 0;
   const unknownCount = unknown?.count ?? 0;
+  const unknownPnL = unknown?.sumPnL ?? 0;
   const judged = followedCount + deviatedCount;
   const followedPct = judged > 0 ? Math.round((followedCount / judged) * 100) : 0;
   const deviatedPct = judged > 0 ? 100 - followedPct : 0;
@@ -108,9 +110,14 @@ export function StrategyAdherencePanel({ rate, data }: StrategyAdherencePanelPro
       )}
 
       {judged > 0 && unknownCount > 0 && (
-        <p className="text-[11px] text-muted-foreground">
-          분류 불가 {unknownCount}건은 통계에서 제외
-        </p>
+        <div className="rounded-xl bg-amber-50 border border-amber-200 p-2.5 flex gap-2 items-start">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+          <p className="text-[12px] text-amber-700 leading-snug">
+            분류 불가 {unknownCount}건
+            {unknownPnL !== 0 && ` (${formatPnL(unknownPnL)})`}
+            은 통계에서 제외 — 두 금액 합이 총 실현손익과 다를 수 있습니다.
+          </p>
+        </div>
       )}
     </div>
   );
