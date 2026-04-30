@@ -28,9 +28,6 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] `compute_total_holding`+`compute_wac` 단일 함수로 병합 — `domain/holdings.py:83-128`. `routers/portfolio.py:66-79`에서 같은 trades 리스트를 두 번 정렬·필터링. `(qty, avg)` 한 번에 반환.
 - [ ] `_is_flexible_match` ↔ `_is_same_group` 통합 — `domain/holdings.py:35` vs `domain/realized_pnl.py:44`가 같은 의도, 다른 시그니처. `LotKey`/`TradeGroupKey` 타입을 단일화.
 
-### 스키마 / DB
-- [ ] `insert_trade` ↔ `insert_trades_bulk` SQL 중복 제거 (`db_ops/trades_repo.py:89` vs `:185-235`) — 19개 컬럼이 두 번 나열됨. `insert_trade`가 bulk를 `[data]`로 호출하고 `RETURNING id`만 추가하도록 통합.
-
 ## 운영 / 어드민 도구
 
 - [ ] PnL 저장값 검증 엔드포인트 (이슈 E) — `/api/admin/verify-pnl` 신설. SELL의 저장된 `profit_loss`/`avg_buy_price`/`holding_days`/`strategy_type`/`reasoning_tags`/`emotion`을 `compute_group_pnl()`로 재계산해 차이 검출. 사용자 단위 batch + 차이 리포트 + (옵션) 자동 보정. 권한은 admin scope. DB 직접 수정·마이그레이션 누락·mutation 경로 우회 시 분석 탭과 거래 기록 합계 불일치를 잡기 위함.
