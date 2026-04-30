@@ -52,6 +52,44 @@ Round 1 (`docs/spec-history/...`) 에서 처리된 6 개 외에 도출된 후속
 - [ ] `AccountFilter` `"all"` sentinel 검토 — `selectedAccountId: string` + `ACCOUNT_FILTER_ALL = "all"` 패턴이 곳곳에 분기. discriminated union (`{kind: "all"} | {kind: "one"; id}`) 또는 `string | null` 로 type-safe 화 검토. 유지/변경 결정 필요
 - [ ] `StockSearchInput` `prevQuery` derived state → `useEffect(() => setActiveIndex(-1), [debouncedValue])` 검토 — 단순화 가치 vs 공식 권장 패턴 간 결정
 
+## BE simplify (Round 1 이후 deferred — 2026-05-01 `/simplify` 결과)
+
+Round 1 (`docs/spec-history/2026-05-01-be-simplify-round1-quick-wins.md`) 에서 처리된 3 개 (`model_copy(update=)` / `dataclasses.replace` / `sort_by_traded_at` 통합) 외에 도출된 후속 항목. 위험도/가치 평가 후 Round 2+ 에서 분할 처리.
+
+### 응답 매핑 / 라우터 청소
+
+- [ ] `routers/analysis.py` 응답 31줄 손-매핑 → `model_validate(dataclass)` — `AnalysisSummary` 에 `period` 필드 추가하여 spread
+- [ ] `routers/portfolio._account_from_row` UUID→str 누수 → `account_row_to_dict` 흡수 또는 `Account` 생성자 변환
+- [ ] `routers/trades._trade_with_account_dict` `pop` 으로 dict reshape → `TradeWithAccountResponse` 스키마 + `response_model` 위임
+- [ ] `routers/accounts.update_account` SET-clause 손-빌드 → `db_ops/accounts_repo.patch_account` 추출 (`patch_trade` 와 동형)
+- [ ] `routers/trades.create_trade` `TradeCreate` → `Trade` 매핑 17줄 단순화
+
+### 효율 / 핫패스
+
+- [ ] `httpx.AsyncClient` lifespan 공유 — `external/quotes.py` / `external/naver_search.py` 매 요청 신규 생성 → app.state 공유 client
+- [ ] broker parser threadpool 화 — `routers/trades.py:351` 동기 `pdfplumber` / `openpyxl` 호출이 async 라우터 이벤트 루프 차단 → `run_in_threadpool` 래핑
+- [ ] `GET /api/trades` 페이지네이션 + `ticker` 필터 SQL push — 현재 전량 fetch 후 Python 필터 (FE backlog `tradesApi.list()` 와 동반)
+- [ ] `import_preview` 사용자 전체 trades fetch 축소 — 날짜·티커 범위 SQL 좁히기 (참고용 dup_count 단순화)
+- [ ] `routers/analysis` period 파라미터 SQL push — 1m/3m/6m 선택 시 전체 fetch 회피
+- [ ] `routers/accounts.delete_account` `exists` + `count` 두 round-trip 통합 (또는 RLS + IntegrityError 활용)
+
+### 도메인 정리
+
+- [ ] `domain/holdings.compute_holding_summary` → `walk_trades` 위에 재구성 — WAC 누산 인라인 재구현 제거, 마지막 walker state 만 취하기
+- [ ] `domain/portfolio.build_positions` 105줄 함수 분리 — `_build_lot_map` + `_lot_to_positions`
+
+### 재사용 / 잔여
+
+- [ ] `accounts_repo.list_accounts` 헬퍼 추출 — 라우터 3곳 (`accounts`/`portfolio`/`trades`) 인라인 SQL 흡수 + `_ACCOUNT_RETURNING_COLS` SOT 화
+- [ ] `make_signature` ↔ `make_preview_signature` 4함수 통합 — `account_id: str | None` 단일화 + KST 일자 파싱 헬퍼 (`routers/trades.py:387, 498` 인라인 try/except 흡수)
+- [ ] `_holding_bucket` / `_size_bucket` 통합 + `Counter` 로 dist 빌드
+- [ ] `_decimal_to_float*` 3 validator 공통 헬퍼 추출 (cosmetic)
+- [ ] `EMOTION_UNTAGGED` / `TAG_UNTAGGED` Literal 타입 누락 — `EmotionBucket = EmotionType | Literal["UNTAGGED"]` 정의
+- [ ] `SellBreakdown.is_manual_input` 필드 폐기 또는 명세화 — BE/FE 모두 항상 `false` 만 송수신, FE `TradeDetail.tsx:177` 가 분기 사용. 진짜 manual input 케이스 명세 후 제거 결정 (BE+FE 동기 변경)
+- [ ] `external/quotes._parse_realtime_price` / `_parse_basic_price` 통합 (cosmetic, realtime shim 차이로 완전 통합 어려움)
+
+> 참고: `aggregate.py` 4 누산 패턴 (`strat_map`/`adherence_map`/`emotion_map`/`tag_map`) 헬퍼화는 [Tier 3 결정 (2026-04-30)](decisions.md) 으로 **미진행 확정**. 향후 재제기 시 `decisions.md` 의 도메인 시맨틱 비대칭 근거 참조.
+
 ## 운영 / 어드민 도구
 
 - [ ] PnL 저장값 검증 엔드포인트 (이슈 E) — `/api/admin/verify-pnl` 신설. SELL의 저장된 `profit_loss`/`avg_buy_price`/`holding_days`/`strategy_type`/`reasoning_tags`/`emotion`을 `compute_group_pnl()`로 재계산해 차이 검출. 사용자 단위 batch + 차이 리포트 + (옵션) 자동 보정. 권한은 admin scope. DB 직접 수정·마이그레이션 누락·mutation 경로 우회 시 분석 탭과 거래 기록 합계 불일치를 잡기 위함.
