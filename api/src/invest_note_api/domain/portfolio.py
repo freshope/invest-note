@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -12,6 +13,10 @@ from invest_note_api.domain.trade_types import (
 )
 from invest_note_api.domain.trade_utils import to_kst
 from invest_note_api.domain.realized_pnl import build_pnl_map
+from invest_note_api.domain.trade_walker import (
+    stored_avg_cost_deduction,
+    walk_trades,
+)
 
 if TYPE_CHECKING:
     from invest_note_api.domain.trade_types import Trade
@@ -75,54 +80,62 @@ class DashboardTotals:
     missing_quote_tickers: list[str]
 
 
+def _lot_key_of(trade: "Trade") -> str:
+    return f"{trade_identifier(trade)}:{trade_country(trade)}:{trade.account_id}"
+
+
+def _by_traded_at(trades: list["Trade"]) -> list["Trade"]:
+    return sorted(trades, key=lambda t: t.traded_at)
+
+
 def build_positions(trades: list["Trade"]) -> list[Position]:
     """계좌별 lot 추적 → 종목별 포지션 집계."""
+    trades_by_lot: dict[str, list["Trade"]] = defaultdict(list)
+    for trade in trades:
+        trades_by_lot[_lot_key_of(trade)].append(trade)
+
     lot_map: dict[str, dict] = {}
+    for lot_key, lot_trades in trades_by_lot.items():
+        first = lot_trades[0]
+        lot = {
+            "ticker": trade_identifier(first),
+            "country": trade_country(first),
+            "asset_name": first.asset_name,
+            "account_id": first.account_id,
+            "exchange": "",
+            "running_qty": 0.0,
+            "running_cost": 0.0,
+            "realized_pnl": 0.0,
+            "last_traded_at": first.traded_at.isoformat(),
+            "last_note_type": None,
+            "last_note": None,
+        }
 
-    sorted_trades = sorted(trades, key=lambda t: t.traded_at)
+        for ev in walk_trades(
+            lot_trades,
+            group_filter=lambda _t: True,
+            sort_fn=_by_traded_at,
+            cost_deduction=stored_avg_cost_deduction,
+            track_fifo_lots=False,
+        ):
+            lot["last_traded_at"] = ev.trade.traded_at.isoformat()
+            if ev.trade.exchange:
+                lot["exchange"] = ev.trade.exchange
+            if ev.kind == "BUY":
+                reason = (ev.trade.buy_reason or "").strip()
+                if reason:
+                    lot["last_note_type"] = NOTE_TYPE_REASON
+                    lot["last_note"] = reason
+            else:
+                lot["realized_pnl"] += ev.trade.profit_loss or 0.0
+                note = (ev.trade.sell_reason or "").strip()
+                if note:
+                    lot["last_note_type"] = NOTE_TYPE_SELL
+                    lot["last_note"] = note
+            lot["running_qty"] = ev.state_after.running_qty
+            lot["running_cost"] = ev.state_after.running_cost
 
-    for trade in sorted_trades:
-        ticker = trade_identifier(trade)
-        country = trade_country(trade)
-        lot_key = f"{ticker}:{country}:{trade.account_id}"
-
-        if lot_key not in lot_map:
-            lot_map[lot_key] = {
-                "ticker": ticker,
-                "country": country,
-                "asset_name": trade.asset_name,
-                "account_id": trade.account_id,
-                "exchange": trade.exchange,
-                "running_qty": 0.0,
-                "running_cost": 0.0,
-                "realized_pnl": 0.0,
-                "last_traded_at": trade.traded_at.isoformat(),
-                "last_note_type": None,
-                "last_note": None,
-            }
-
-        lot = lot_map[lot_key]
-        lot["last_traded_at"] = trade.traded_at.isoformat()
-        if trade.exchange:
-            lot["exchange"] = trade.exchange
-
-        if trade.trade_type == TRADE_TYPE_BUY:
-            lot["running_qty"] += trade.quantity
-            lot["running_cost"] += trade.price * trade.quantity
-            reason = (trade.buy_reason or "").strip()
-            if reason:
-                lot["last_note_type"] = NOTE_TYPE_REASON
-                lot["last_note"] = reason
-        else:
-            avg_cost = trade.avg_buy_price or 0.0
-            matched_qty = min(trade.quantity, lot["running_qty"])
-            lot["realized_pnl"] += trade.profit_loss or 0.0
-            lot["running_cost"] = max(0.0, lot["running_cost"] - avg_cost * matched_qty)
-            lot["running_qty"] = max(0.0, lot["running_qty"] - trade.quantity)
-            note = (trade.sell_reason or "").strip()
-            if note:
-                lot["last_note_type"] = NOTE_TYPE_SELL
-                lot["last_note"] = note
+        lot_map[lot_key] = lot
 
     # lot → position 집계 (보유수량 > 0인 lot만)
     pos_map: dict[str, dict] = {}

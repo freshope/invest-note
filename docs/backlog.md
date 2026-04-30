@@ -17,7 +17,7 @@ MVP 이후 구현할 작업 후보 목록.
 ## 백엔드 코드 단순화 / 효율 (2026-04-29 simplify 리뷰)
 
 ### 도메인 — 중복 회계 로직
-- [ ] FIFO/WAC walker 통합 — `domain/realized_pnl.py:120` `compute_group_pnl`, `:192` `validate_mutation`, `domain/portfolio.py:73` `build_positions`가 같은 그룹별 FIFO/WAC 회계를 각자 재구현. 공통 walker(이벤트 콜백 또는 generator) 추출 → 회계 변경 시 drift 방지.
+- [x] FIFO/WAC walker 통합 — `domain/trade_walker.py` 신설(generator + 정책 주입), `compute_group_pnl`/`validate_mutation`/`build_positions`가 모두 walker 위에 재구현됨 (2026-04-30).
 - [ ] `compute_total_holding`+`compute_wac` 단일 함수로 병합 — `domain/holdings.py:83-128`. `routers/portfolio.py:66-79`에서 같은 trades 리스트를 두 번 정렬·필터링. `(qty, avg)` 한 번에 반환.
 - [ ] `_is_flexible_match` ↔ `_is_same_group` 통합 — `domain/holdings.py:35` vs `domain/realized_pnl.py:44`가 같은 의도, 다른 시그니처. `LotKey`/`TradeGroupKey` 타입을 단일화.
 
