@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.db import acquire_for_user, get_pool
-from invest_note_api.domain.holdings import compute_total_holding, compute_wac
+from invest_note_api.domain.holdings import compute_holding_summary
 from invest_note_api.domain.portfolio import (
     Account,
     build_account_snapshots,
@@ -70,14 +70,7 @@ async def get_holding(
 
     trades = [Trade(**dict(r)) for r in rows]
 
-    quantity = compute_total_holding(
-        trades,
-        ticker=ticker,
-        asset_name=asset_name,
-        country=country,
-        account_id=account_id,
-    )
-    avg_buy_price = compute_wac(
+    holding = compute_holding_summary(
         trades,
         ticker=ticker,
         asset_name=asset_name,
@@ -85,7 +78,7 @@ async def get_holding(
         account_id=account_id,
     )
 
-    return {"quantity": quantity, "avgBuyPrice": avg_buy_price}
+    return {"quantity": holding.quantity, "avgBuyPrice": holding.avg_buy_price}
 
 
 @router.get("/summary", response_model=PortfolioSummaryResponse)

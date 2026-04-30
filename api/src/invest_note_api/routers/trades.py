@@ -31,7 +31,7 @@ from invest_note_api.db_ops.trades_repo import (
 )
 from invest_note_api.domain.holdings import (
     compute_flexible_breakdown,
-    compute_total_holding,
+    compute_holding_summary,
 )
 from invest_note_api.domain.analysis.strategy_adherence import evaluate_strategy_for_sell
 from invest_note_api.domain.realized_pnl import (
@@ -150,17 +150,17 @@ async def create_trade(
         all_trades = await list_trades(conn, user.id)
 
         if data.trade_type == TRADE_TYPE_SELL:
-            holding = compute_total_holding(
+            holding = compute_holding_summary(
                 all_trades,
                 ticker=data.ticker_symbol,
                 asset_name=data.asset_name,
                 country=data.country_code or DEFAULT_COUNTRY,
                 account_id=data.account_id,
             )
-            if holding <= 0:
+            if holding.quantity <= 0:
                 raise APIError("보유하지 않은 종목입니다.", 400)
-            if data.quantity > holding:
-                raise APIError(f"보유 수량이 부족합니다 (현재 {holding}주).", 400)
+            if data.quantity > holding.quantity:
+                raise APIError(f"보유 수량이 부족합니다 (현재 {holding.quantity}주).", 400)
 
         if data.trade_type == TRADE_TYPE_SELL:
             ok, msg, _ = validate_mutation(all_trades, "insert", new_trade)

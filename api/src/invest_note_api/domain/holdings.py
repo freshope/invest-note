@@ -32,6 +32,12 @@ class SellBreakdown:
     is_manual_input: bool = False
 
 
+@dataclass
+class HoldingSummary:
+    quantity: float
+    avg_buy_price: float | None
+
+
 def _is_flexible_match(
     trade: "Trade",
     target_country: str,
@@ -79,39 +85,18 @@ def find_latest_buy_strategy(trades: list["Trade"], key: LotKey) -> "StrategyTyp
     return buys[0].strategy_type if buys else None
 
 
-def compute_total_holding(
+def compute_holding_summary(
     trades: list["Trade"],
     ticker: str | None,
     asset_name: str,
     country: str,
     account_id: str,
-) -> float:
+) -> HoldingSummary:
+    """보유 수량과 가중평균단가(WAC)를 한 번의 순회로 계산."""
     target_ticker = ticker or asset_name
 
-    running_qty = 0.0
-    for trade in _sort_by_traded_at(trades):
-        if not _is_flexible_match(trade, country, target_ticker, asset_name, account_id):
-            continue
-        if trade.trade_type == TRADE_TYPE_BUY:
-            running_qty += trade.quantity
-        else:
-            running_qty = max(0.0, running_qty - trade.quantity)
-
-    return running_qty
-
-
-def compute_wac(
-    trades: list["Trade"],
-    ticker: str | None,
-    asset_name: str,
-    country: str,
-    account_id: str,
-) -> float | None:
-    """가중평균단가(WAC) 계산. 보유 수량이 없으면 None."""
-    target_ticker = ticker or asset_name
     running_qty = 0.0
     running_cost = 0.0
-
     for trade in _sort_by_traded_at(trades):
         if not _is_flexible_match(trade, country, target_ticker, asset_name, account_id):
             continue
@@ -124,7 +109,8 @@ def compute_wac(
             running_cost = max(0.0, running_cost - avg_cost * matched)
             running_qty = max(0.0, running_qty - matched)
 
-    return running_cost / running_qty if running_qty > 0 else None
+    avg_buy_price = running_cost / running_qty if running_qty > 0 else None
+    return HoldingSummary(quantity=running_qty, avg_buy_price=avg_buy_price)
 
 
 def compute_flexible_breakdown(sell: "Trade") -> SellBreakdown:
