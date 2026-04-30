@@ -9,7 +9,7 @@ import { Button } from "@/components/base/Button";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
 import { TradeEditPanel } from "./TradeEditPanel";
-import { DeleteTradeDialog } from "./DeleteTradeDialog";
+import { ConfirmDeleteDialog } from "@/components/shared/ConfirmDeleteDialog";
 import type { Account, TradeResult } from "@/types/database";
 import { formatTradedAtLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import { tradesApi } from "@/lib/api-client";
@@ -61,6 +61,8 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletePending, setDeletePending] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const mountedAt = useMemo(() => Date.now(), []);
   const { data: trade = initialTrade } = useQuery({
@@ -71,6 +73,20 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
   });
 
   const handleDeleted = onDeleted ?? (() => router.push("/records"));
+
+  async function handleDeleteConfirm() {
+    setDeleteError(null);
+    setDeletePending(true);
+    try {
+      await tradesApi.delete(trade.id);
+      setDeleteOpen(false);
+      handleDeleted();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "삭제할 수 없습니다.");
+    } finally {
+      setDeletePending(false);
+    }
+  }
 
   const isBuy = trade.trade_type === "BUY";
 
@@ -334,12 +350,20 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
         onSaved={onSaved}
       />
 
-      <DeleteTradeDialog
+      <ConfirmDeleteDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        tradeId={trade.id}
-        assetName={trade.asset_name}
-        onDeleted={handleDeleted}
+        title="거래 삭제"
+        description={
+          <>
+            <strong>{trade.asset_name}</strong> 거래 기록을 삭제하시겠습니까?
+            <br />
+            이 작업은 되돌릴 수 없습니다.
+          </>
+        }
+        pending={deletePending}
+        error={deleteError}
+        onConfirm={handleDeleteConfirm}
       />
     </div>
   );
