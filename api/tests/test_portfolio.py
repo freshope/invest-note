@@ -117,7 +117,7 @@ class TestPortfolioSummary:
             [_to_record(account)],  # account_rows
         )
 
-        async def mock_quotes(keys):
+        async def mock_quotes(state, keys):
             return {}
 
         with _patch_portfolio(conn):
@@ -157,7 +157,7 @@ class TestPortfolioSummary:
             [_to_record(account)],
         )
 
-        async def failing_quotes(keys):
+        async def failing_quotes(state, keys):
             raise Exception("Naver down")
 
         with _patch_portfolio(conn):

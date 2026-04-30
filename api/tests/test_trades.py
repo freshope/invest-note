@@ -395,9 +395,7 @@ class TestImportCommit:
         sql_calls = _capture_sql(monkeypatch)
         staging_id = str(uuid4())
 
-        from invest_note_api.routers import trades
-
-        trades._STAGING[staging_id] = {
+        trades_client.app.state.trade_staging.cache[staging_id] = {
             "user_id": TEST_USER_ID,
             "rows": [
                 self._staged_row("005930", "삼성전자"),
