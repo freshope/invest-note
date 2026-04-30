@@ -132,6 +132,21 @@ class TestPortfolioSummary:
         assert body["hasAccounts"] is True
         assert body["hasTrades"] is True
 
+        # PnL 약어는 대문자 'L'로 직렬화 (FE 타입 호환). to_camel은 'Pnl'로
+        # 변환되지만 to_camel_pnl wrapper가 'PnL'로 보정한다.
+        pos = body["positions"][0]
+        assert "realizedPnL" in pos
+        assert "unrealizedPnL" in pos
+        totals = body["totals"]
+        assert "totalUnrealizedPnL" in totals
+        assert "totalRealizedPnL" in totals
+        assert "monthRealizedPnL" in totals
+
+        # snapshot.account 중첩 객체는 snake_case 유지 (FE Account 타입 호환).
+        snap_account = body["snapshots"][0]["account"]
+        assert "user_id" in snap_account
+        assert "cash_balance" in snap_account
+
     def test_summary_quote_failure_fallback(self, trades_client):
         """시세 fetch 실패 시에도 200 반환 (evaluation=null 허용)."""
         trade = _make_trade_row()

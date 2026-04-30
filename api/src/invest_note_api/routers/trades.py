@@ -30,7 +30,6 @@ from invest_note_api.db_ops.trades_repo import (
     strip_sell_auto_derived,
 )
 from invest_note_api.domain.holdings import (
-    SellBreakdown,
     compute_flexible_breakdown,
     compute_total_holding,
 )
@@ -58,6 +57,7 @@ from invest_note_api.schemas.trade_import import (
     ImportError,
     ImportPreviewResponse,
 )
+from invest_note_api.schemas.trade_response import TradeSummaryResponse
 from invest_note_api.broker_import import PARSERS, detect_broker
 from invest_note_api.broker_import.ticker_resolver import resolve_tickers
 
@@ -79,20 +79,6 @@ def _trade_with_account_dict(trade) -> dict:
     d = _trade_dict(trade)
     d["account"] = {"name": d.pop("account_name", None), "broker": d.pop("account_broker", None)}
     return d
-
-
-def _breakdown_dict(bd: SellBreakdown) -> dict:
-    return {
-        "sellPrice": bd.sell_price,
-        "quantity": bd.quantity,
-        "avgCostPrice": bd.avg_cost_price,
-        "sellAmount": bd.sell_amount,
-        "costBasis": bd.cost_basis,
-        "commission": bd.commission,
-        "tax": bd.tax,
-        "pnl": bd.pnl,
-        "isManualInput": bd.is_manual_input,
-    }
 
 
 @router.get("")
@@ -203,12 +189,16 @@ async def create_trade(
     return row
 
 
-@router.get("/{trade_id}/summary")
+@router.get(
+    "/{trade_id}/summary",
+    response_model=TradeSummaryResponse,
+    response_model_exclude_none=True,
+)
 async def get_trade_summary(
     trade_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
-) -> dict:
+) -> TradeSummaryResponse:
     async with acquire_for_user(pool, user.id) as conn:
         sell = await get_trade_by_id(conn, trade_id, user.id)
         if sell is None:
@@ -218,23 +208,14 @@ async def get_trade_summary(
 
     breakdown = compute_flexible_breakdown(sell)
     evaluation = evaluate_strategy_for_sell(sell, None)
-    holding_days = sell.holding_days
-    strategy_eval = None
-    if evaluation is not None:
-        strategy_eval = {
-            "planned": evaluation.planned,
-            "actual": evaluation.actual,
-            "holdingDays": evaluation.holding_days,
-            "adherence": evaluation.adherence,
-        }
 
-    return {
+    return TradeSummaryResponse.model_validate({
         "pnl": breakdown.pnl,
         "result": sell.result,
-        "holdingDays": holding_days,
-        "strategyEvaluation": strategy_eval,
-        "breakdown": _breakdown_dict(breakdown),
-    }
+        "holding_days": sell.holding_days,
+        "strategy_evaluation": evaluation,
+        "breakdown": breakdown,
+    })
 
 
 @router.get("/{trade_id}")

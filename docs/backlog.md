@@ -16,9 +16,6 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 백엔드 코드 단순화 / 효율 (2026-04-29 simplify 리뷰)
 
-### 구조 개선 — 라우터 보일러플레이트
-- [ ] 수동 snake→camel dict 빌더를 Pydantic response_model로 대체 — `routers/portfolio.py:121-166`(`_pos_dict`/`_snap_dict`/`_totals_dict`), `routers/analysis.py:89-134,181-205,227-237`, `routers/trades.py:71-92`. `model_config = {"alias_generator": to_camel, "populate_by_name": True}` + `response_model`로 수십 줄 제거.
-
 ### 도메인 — 중복 회계 로직
 - [ ] FIFO/WAC walker 통합 — `domain/realized_pnl.py:120` `compute_group_pnl`, `:192` `validate_mutation`, `domain/portfolio.py:73` `build_positions`가 같은 그룹별 FIFO/WAC 회계를 각자 재구현. 공통 walker(이벤트 콜백 또는 generator) 추출 → 회계 변경 시 drift 방지.
 - [ ] `compute_total_holding`+`compute_wac` 단일 함수로 병합 — `domain/holdings.py:83-128`. `routers/portfolio.py:66-79`에서 같은 trades 리스트를 두 번 정렬·필터링. `(qty, avg)` 한 번에 반환.
