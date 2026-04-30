@@ -7,7 +7,7 @@ export const PERIODS_FULL: { value: Period; label: string }[] = [
   { value: "1m", label: "1개월" },
   { value: "3m", label: "3개월" },
   { value: "6m", label: "6개월" },
-  { value: "ytd", label: "올해" },
+  { value: "ytd", label: "올해(YTD)" },
   { value: "all", label: "전체" },
 ];
 
