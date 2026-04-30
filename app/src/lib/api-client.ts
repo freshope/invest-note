@@ -58,9 +58,7 @@ const ROUTES = {
     quote: "/api/stocks/quote",
   },
   analysis: {
-    summary: "/api/analysis/summary",
-    behavior: "/api/analysis/behavior",
-    suggestions: "/api/analysis/suggestions",
+    dashboard: "/api/analysis/dashboard",
   },
 } as const;
 
@@ -348,13 +346,16 @@ export interface SuggestionsData {
   suggestions: Suggestion[];
 }
 
+export interface AnalysisDashboardData {
+  period: Period;
+  summary: AnalysisSummary;
+  behavior: BehaviorData;
+  suggestions: SuggestionsData;
+}
+
 export const analysisApi = {
-  summary: (period: Period) =>
-    apiFetch<AnalysisSummary>(`${ROUTES.analysis.summary}?period=${period}`),
-
-  behavior: (period: Period) =>
-    apiFetch<BehaviorData>(`${ROUTES.analysis.behavior}?period=${period}`),
-
-  suggestions: (period: Period) =>
-    apiFetch<SuggestionsData>(`${ROUTES.analysis.suggestions}?period=${period}`),
+  dashboard: (period: Period) =>
+    apiFetch<AnalysisDashboardData>(
+      `${ROUTES.analysis.dashboard}?period=${period}`,
+    ),
 };

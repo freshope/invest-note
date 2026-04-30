@@ -19,8 +19,6 @@ export const queryKeys = {
 
   stockSearch: (q: string) => ["stocks", "search", q] as const,
 
-  analysisSummary: (period: Period) => ["analysis", "summary", period] as const,
-  analysisBehavior: (period: Period) => ["analysis", "behavior", period] as const,
-  analysisSuggestions: (period: Period) =>
-    ["analysis", "suggestions", period] as const,
+  analysisDashboard: (period: Period) =>
+    ["analysis", "dashboard", period] as const,
 };
