@@ -9,14 +9,10 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 분석 API 쿼리 `.limit(1000)` 가드 — 거래 수 급증 시 메모리/응답 보호
 - [ ] 수수료 현황 별도 패널 — BUY commission·세금 합계, 순실현손익 vs 총비용 비교
 
-## BE simplify Tier 3 (이번 라운드 deferred)
+## BE simplify Tier 3 (Round 2 이후 deferred)
 
-- [ ] 계좌 row 변환 헬퍼 통합 — `routers/accounts.py:_row_to_dict`, `routers/portfolio.py:_account_from_row`, `routers/trades.py` 인라인 cash_balance float 변환 3곳 중복. `db_ops/accounts_repo.py`에 `list_account_rows(conn)`, `account_row_to_dict(row)` 추출.
 - [ ] `aggregate.py` 3개 버킷 루프 통합 — `strat_map`, `adherence_map`, `emotion_map` 골격이 거의 동일. `_bucketize(sells, key_fn)` 헬퍼로 통합 (시맨틱 위험 있어 신중히).
-- [ ] `external/quotes.py` `_fetch_kr_price` 두 endpoint try/except 블록 dedup — `_try_endpoint(client, url, parser)` 내부 헬퍼로 통합.
-- [ ] `db_ops/pnl_sync.py` `_is_changed` reflection — 7필드 sequential check를 `(getter, comparator)` 페어 list + `any(...)`로 압축.
 - [ ] 모듈 레벨 글로벌 상태 → `app.state` 이전 — `external/quotes.py` `_cache`/`_inflight`, `routers/trades.py` `_STAGING`. 테스트 격리 + 멀티 워커 대비.
-- [ ] `routers/analysis.py` `_HOLDING_BUCKETS`(`float("inf")` sentinel)/`_size_bucket` 6단 if 캐스케이드 — typed lookup table로 단순화.
 - [ ] 분석 dashboard `build_strategy_evaluations` 입력 범위 정리 — router는 `all_trades`, `compute_summary` 내부는 period-filtered `trades`로 호출되어 2회 빌드. 입력 시맨틱 통일 후 1회로 통합.
 - [ ] `domain/portfolio.py` `Lot` 데이터클래스화 — 현재 `LotMap = dict[str, dict]` 가변 상태를 frozen dataclass(`Position` 미러)로 교체.
 - [ ] `routers/trades.py` `_PREVIEW_ACCT = "__preview__"` placeholder 제거 — `TradeSignature.account_id`를 Optional로 변경하거나 dedupe-only signature 분리.

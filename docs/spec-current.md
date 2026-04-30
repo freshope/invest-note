@@ -54,16 +54,16 @@ Round 2 이후로 넘긴다.
 
 ## 구현 체크리스트
 
-- [ ] A1. `api/src/invest_note_api/db_ops/accounts_repo.py` 신규 + `account_row_to_dict` 정의
-- [ ] A2. `routers/accounts.py:_row_to_dict` 헬퍼 사용
-- [ ] A3. `routers/portfolio.py:_account_from_row` 헬퍼 사용
-- [ ] A4. `routers/trades.py` accounts 인라인 변환 헬퍼 사용
-- [ ] B. `external/quotes.py:_fetch_kr_price` 두 endpoint 를 `_try_endpoint` 헬퍼로 통합
-- [ ] C. `db_ops/pnl_sync.py:_is_changed` 7 필드 lookup table 압축
-- [ ] D. `routers/analysis.py:_size_bucket` 을 `_SIZE_BUCKETS` typed table + 루프로 변경
-- [ ] `cd api && poetry run pytest -q` 통과
-- [ ] `docs/backlog.md` Tier 3 섹션에서 완료 4 개(A·B·C·D) 제거
-- [ ] 각 항목별 독립 커밋 (`refactor(api): ...`)
+- [x] A1. `api/src/invest_note_api/db_ops/accounts_repo.py` 신규 + `account_row_to_dict` 정의
+- [x] A2. `routers/accounts.py:_row_to_dict` 헬퍼 사용
+- [x] A3. `routers/portfolio.py:_account_from_row` 헬퍼 사용
+- [x] A4. `routers/trades.py` accounts 인라인 변환 헬퍼 사용
+- [x] B. `external/quotes.py:_fetch_kr_price` 두 endpoint 를 `_try_endpoint` 헬퍼로 통합
+- [x] C. `db_ops/pnl_sync.py:_is_changed` 7 필드 lookup table 압축
+- [x] D. `routers/analysis.py:_size_bucket` 을 `_SIZE_BUCKETS` typed table + 루프로 변경
+- [x] `cd api && poetry run pytest -q` 통과 (250 passed)
+- [x] `docs/backlog.md` Tier 3 섹션에서 완료 4 개(A·B·C·D) 제거
+- [x] 각 항목별 독립 커밋 (`refactor(api): ...`)
 
 ## 우려사항 / 리스크
 
