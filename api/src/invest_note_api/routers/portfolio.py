@@ -20,6 +20,7 @@ from invest_note_api.domain.portfolio import (
 from invest_note_api.domain.trade_types import Trade, TradeWithAccount
 from invest_note_api.errors import APIError
 from invest_note_api.external.quotes import fetch_quotes_by_keys
+from invest_note_api.schemas.portfolio_response import PortfolioSummaryResponse
 
 logger = logging.getLogger(__name__)
 
@@ -87,11 +88,11 @@ async def get_holding(
     return {"quantity": quantity, "avgBuyPrice": avg_buy_price}
 
 
-@router.get("/summary")
+@router.get("/summary", response_model=PortfolioSummaryResponse)
 async def get_portfolio_summary(
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
-) -> dict:
+) -> PortfolioSummaryResponse:
     async with acquire_for_user(pool, user.id) as conn:
         trade_rows = await conn.fetch(
             """
@@ -124,57 +125,10 @@ async def get_portfolio_summary(
     snapshots = build_account_snapshots(accounts, trades, quotes)
     totals = build_totals(positions, accounts, trades)
 
-    def _pos_dict(p) -> dict:
-        return {
-            "key": p.key,
-            "ticker": p.ticker,
-            "country": p.country,
-            "assetName": p.asset_name,
-            "exchange": p.exchange,
-            "holdingQuantity": p.holding_quantity,
-            "avgBuyPrice": p.avg_buy_price,
-            "costBasis": p.cost_basis,
-            "realizedPnL": p.realized_pnl,
-            "currentPrice": p.current_price,
-            "evaluation": p.evaluation,
-            "unrealizedPnL": p.unrealized_pnl,
-            "lastNoteType": p.last_note_type,
-            "lastNote": p.last_note,
-            "lastTradedAt": p.last_traded_at,
-            "accountIds": p.account_ids,
-        }
-
-    def _snap_dict(s) -> dict:
-        a = s.account
-        return {
-            "account": {
-                "id": a.id,
-                "user_id": a.user_id,
-                "name": a.name,
-                "broker": a.broker,
-                "cash_balance": a.cash_balance,
-            },
-            "stockEvaluation": s.stock_evaluation,
-            "cashBalance": s.cash_balance,
-            "totalValue": s.total_value,
-        }
-
-    def _totals_dict(t) -> dict:
-        return {
-            "totalEvaluation": t.total_evaluation,
-            "totalUnrealizedPnL": t.total_unrealized_pnl,
-            "totalRealizedPnL": t.total_realized_pnl,
-            "totalCash": t.total_cash,
-            "totalAssets": t.total_assets,
-            "monthRealizedPnL": t.month_realized_pnl,
-            "monthTradeCount": t.month_trade_count,
-            "missingQuoteTickers": t.missing_quote_tickers,
-        }
-
-    return {
-        "totals": _totals_dict(totals),
-        "positions": [_pos_dict(p) for p in positions],
-        "snapshots": [_snap_dict(s) for s in snapshots],
-        "hasAccounts": len(accounts) > 0,
-        "hasTrades": len(trades) > 0,
-    }
+    return PortfolioSummaryResponse.model_validate({
+        "totals": totals,
+        "positions": positions,
+        "snapshots": snapshots,
+        "has_accounts": len(accounts) > 0,
+        "has_trades": len(trades) > 0,
+    })

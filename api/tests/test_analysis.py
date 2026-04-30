@@ -99,6 +99,9 @@ class TestAnalysisSummary:
         assert data["byStrategy"][0]["type"] == "SWING"
         assert data["strategyAdherenceRate"] == 100.0
         assert data["byStrategyAdherence"][0]["type"] == "FOLLOWED"
+        # PnL 약어 키는 대문자 'L' (FE 타입 호환)
+        assert "sumPnL" in data["byStrategy"][0]
+        assert "sumPnL" in data["byStrategyAdherence"][0]
 
     def test_period_filter(self, trades_client):
         old_buy = _make_trade_row(id_="b1", traded_at=_dt("2024-01-01T09:00:00+09:00"))
