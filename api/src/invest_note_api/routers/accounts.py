@@ -8,7 +8,7 @@ from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.db import acquire_for_user, get_pool
 from invest_note_api.db_ops.trades_repo import PG_DELETE_ZERO
-from invest_note_api.errors import ERR_ACCOUNT_NOT_FOUND, APIError, validate_body
+from invest_note_api.errors import ERR_ACCOUNT_NOT_FOUND, APIError
 from invest_note_api.schemas.account import AccountCreate, AccountUpdate
 
 router = APIRouter(prefix="/api/accounts")
@@ -46,12 +46,10 @@ async def list_accounts(
 
 @router.post("", status_code=201)
 async def create_account(
-    body: dict,
+    data: AccountCreate,
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> dict:
-    data = validate_body(AccountCreate, body)
-
     async with acquire_for_user(pool, user.id) as conn:
         row = await conn.fetchrow(
             "INSERT INTO accounts (user_id, name, broker, cash_balance)"
@@ -70,12 +68,10 @@ async def create_account(
 @router.patch("/{account_id}", responses={204: {"description": "No fields to update"}})
 async def update_account(
     account_id: UUID,
-    body: dict,
+    data: AccountUpdate,
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
 ):
-    data = validate_body(AccountUpdate, body)
-
     fields = data.model_fields_set & _UPDATABLE_COLS
     if not fields:
         return Response(status_code=204)

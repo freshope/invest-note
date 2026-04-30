@@ -71,7 +71,7 @@ def test_create_account_empty_name(accounts_client):
     conn = FakeConnection()
     with _patch(conn):
         r = accounts_client.post("/api/accounts", json={"name": "  ", "cash_balance": 0})
-    assert r.status_code == 400
+    assert r.status_code == 422
     assert "error" in r.json()
 
 
@@ -82,7 +82,7 @@ def test_create_account_cash_balance_over_max(accounts_client):
             "/api/accounts",
             json={"name": "계좌", "cash_balance": "99999999999999999.99"},
         )
-    assert r.status_code == 400
+    assert r.status_code == 422
     assert "error" in r.json()
 
 
@@ -214,23 +214,23 @@ def test_create_account_db_returns_none_gives_500(accounts_client):
 
 # ─── 400 추가 케이스 ──────────────────────────────────────────────────────────
 
-def test_create_account_negative_cash_balance_returns_400(accounts_client):
+def test_create_account_negative_cash_balance_returns_422(accounts_client):
     conn = FakeConnection()
     with _patch(conn):
         r = accounts_client.post(
             "/api/accounts",
             json={"name": "계좌", "cash_balance": "-1"},
         )
-    assert r.status_code == 400
+    assert r.status_code == 422
     assert "error" in r.json()
 
 
-def test_update_account_invalid_name_returns_400(accounts_client):
+def test_update_account_invalid_name_returns_422(accounts_client):
     conn = FakeConnection()
     with _patch(conn):
         r = accounts_client.patch(
             f"/api/accounts/{ACC_ID}",
             json={"name": "x" * 51},
         )
-    assert r.status_code == 400
+    assert r.status_code == 422
     assert "error" in r.json()

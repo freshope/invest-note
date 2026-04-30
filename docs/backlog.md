@@ -17,7 +17,6 @@ MVP 이후 구현할 작업 후보 목록.
 ## 백엔드 코드 단순화 / 효율 (2026-04-29 simplify 리뷰)
 
 ### 구조 개선 — 라우터 보일러플레이트
-- [ ] `body: dict` + `validate_body` 패턴 제거 — `routers/trades.py:130,272`, `routers/accounts.py:49,73`. FastAPI가 typed body로 422를 자동 처리하므로 `body: TradeCreate` 형태로 선언하면 `errors.validate_body` 함수 자체 제거 가능.
 - [ ] 수동 snake→camel dict 빌더를 Pydantic response_model로 대체 — `routers/portfolio.py:121-166`(`_pos_dict`/`_snap_dict`/`_totals_dict`), `routers/analysis.py:89-134,181-205,227-237`, `routers/trades.py:71-92`. `model_config = {"alias_generator": to_camel, "populate_by_name": True}` + `response_model`로 수십 줄 제거.
 
 ### 도메인 — 중복 회계 로직
