@@ -150,13 +150,7 @@ async def create_trade(
         all_trades = await list_trades(conn, user.id)
 
         if data.trade_type == TRADE_TYPE_SELL:
-            holding = compute_holding_summary(
-                all_trades,
-                ticker=data.ticker_symbol,
-                asset_name=data.asset_name,
-                country=data.country_code or DEFAULT_COUNTRY,
-                account_id=data.account_id,
-            )
+            holding = compute_holding_summary(all_trades, trade_to_group_key(new_trade))
             if holding.quantity <= 0:
                 raise APIError("보유하지 않은 종목입니다.", 400)
             if data.quantity > holding.quantity:

@@ -4,19 +4,16 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from invest_note_api.domain.trade_types import TRADE_TYPE_BUY, trade_country, trade_identifier
+from invest_note_api.domain.realized_pnl import (
+    TradeGroupKey,
+    is_same_group,
+    trade_to_group_key,
+)
+from invest_note_api.domain.trade_types import TRADE_TYPE_BUY
 from invest_note_api.domain.trade_utils import MS_PER_DAY, to_kst
 
 if TYPE_CHECKING:
     from invest_note_api.domain.trade_types import Trade, StrategyType
-
-
-@dataclass
-class LotKey:
-    ticker: str
-    country: str
-    account_id: str
-    asset_name: str | None = None
 
 
 @dataclass
@@ -38,32 +35,15 @@ class HoldingSummary:
     avg_buy_price: float | None
 
 
-def _is_flexible_match(
-    trade: "Trade",
-    target_country: str,
-    target_ticker: str,
-    target_asset: str,
-    target_account_id: str,
-) -> bool:
-    if trade.account_id != target_account_id:
-        return False
-    if trade_country(trade) != target_country:
-        return False
-    trade_ticker = trade_identifier(trade)
-    return trade_ticker == target_ticker or trade.asset_name == target_asset
-
-
 def _sort_by_traded_at(trades: list["Trade"]) -> list["Trade"]:
     return sorted(trades, key=lambda t: t.traded_at)
 
 
-def compute_lot_quantity(trades: list["Trade"], key: LotKey) -> float:
-    lot_key = f"{key.ticker}:{key.country}:{key.account_id}"
+def compute_lot_quantity(trades: list["Trade"], key: TradeGroupKey) -> float:
     running_qty = 0.0
 
     for trade in _sort_by_traded_at(trades):
-        trade_key = f"{trade_identifier(trade)}:{trade_country(trade)}:{trade.account_id}"
-        if trade_key != lot_key:
+        if not is_same_group(trade, key):
             continue
         if trade.trade_type == TRADE_TYPE_BUY:
             running_qty += trade.quantity
@@ -73,32 +53,22 @@ def compute_lot_quantity(trades: list["Trade"], key: LotKey) -> float:
     return running_qty
 
 
-def find_latest_buy_strategy(trades: list["Trade"], key: LotKey) -> "StrategyType | None":
-    asset_name = key.asset_name or key.ticker
+def find_latest_buy_strategy(trades: list["Trade"], key: TradeGroupKey) -> "StrategyType | None":
     buys = [
         t
         for t in trades
-        if t.trade_type == TRADE_TYPE_BUY
-        and _is_flexible_match(t, key.country, key.ticker, asset_name, key.account_id)
+        if t.trade_type == TRADE_TYPE_BUY and is_same_group(t, key)
     ]
     buys.sort(key=lambda t: t.traded_at, reverse=True)
     return buys[0].strategy_type if buys else None
 
 
-def compute_holding_summary(
-    trades: list["Trade"],
-    ticker: str | None,
-    asset_name: str,
-    country: str,
-    account_id: str,
-) -> HoldingSummary:
+def compute_holding_summary(trades: list["Trade"], key: TradeGroupKey) -> HoldingSummary:
     """보유 수량과 가중평균단가(WAC)를 한 번의 순회로 계산."""
-    target_ticker = ticker or asset_name
-
     running_qty = 0.0
     running_cost = 0.0
     for trade in _sort_by_traded_at(trades):
-        if not _is_flexible_match(trade, country, target_ticker, asset_name, account_id):
+        if not is_same_group(trade, key):
             continue
         if trade.trade_type == TRADE_TYPE_BUY:
             running_qty += trade.quantity
@@ -133,10 +103,7 @@ def compute_flexible_breakdown(sell: "Trade") -> SellBreakdown:
 
 def compute_flexible_holding_days(sell: "Trade", all_trades: list["Trade"]) -> int | None:
     """FIFO 가중평균 보유일수 계산."""
-    target_country = trade_country(sell)
-    target_ticker = trade_identifier(sell)
-    target_asset = sell.asset_name
-    target_account_id = sell.account_id
+    key = trade_to_group_key(sell)
     sell_time_ms = int(to_kst(sell.traded_at).timestamp() * 1000)
 
     queue: list[dict] = []  # [{qty, time_ms}]
@@ -159,7 +126,7 @@ def compute_flexible_holding_days(sell: "Trade", all_trades: list["Trade"]) -> i
                 return math.floor(weighted_ms / total_consumed / MS_PER_DAY + 0.5)
             return None
 
-        if not _is_flexible_match(trade, target_country, target_ticker, target_asset, target_account_id):
+        if not is_same_group(trade, key):
             continue
 
         if trade.trade_type == TRADE_TYPE_BUY:

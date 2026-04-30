@@ -17,6 +17,7 @@ from invest_note_api.domain.portfolio import (
     build_totals,
     merge_quotes,
 )
+from invest_note_api.domain.realized_pnl import TradeGroupKey
 from invest_note_api.domain.trade_types import Trade, TradeWithAccount
 from invest_note_api.errors import APIError
 from invest_note_api.external.quotes import fetch_quotes_by_keys
@@ -58,25 +59,24 @@ async def get_holding(
             WHERE user_id = $1
               AND account_id = $2
               AND COALESCE(NULLIF(country_code, ''), 'KR') = $3
-              AND (ticker_symbol = $4 OR asset_name = $5)
+              AND ticker_symbol = $4
             ORDER BY traded_at ASC
             """,
             user.id,
             account_id,
             country,
             target_ticker,
-            asset_name,
         )
 
     trades = [Trade(**dict(r)) for r in rows]
 
-    holding = compute_holding_summary(
-        trades,
+    key = TradeGroupKey(
         ticker=ticker,
         asset_name=asset_name,
         country=country,
         account_id=account_id,
     )
+    holding = compute_holding_summary(trades, key)
 
     return {"quantity": holding.quantity, "avgBuyPrice": holding.avg_buy_price}
 

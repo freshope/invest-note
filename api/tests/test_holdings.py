@@ -3,14 +3,18 @@ from datetime import datetime, timezone
 
 
 from invest_note_api.domain.trade_types import Trade
+from invest_note_api.domain.realized_pnl import TradeGroupKey
 from invest_note_api.domain.holdings import (
-    LotKey,
     compute_lot_quantity,
     compute_holding_summary,
     compute_flexible_breakdown,
     compute_flexible_holding_days,
     find_latest_buy_strategy,
 )
+
+
+def _key(ticker: str | None = "005930", asset_name: str = "삼성전자", country: str = "KR", account_id: str = "a1") -> TradeGroupKey:
+    return TradeGroupKey(ticker=ticker, asset_name=asset_name, country=country, account_id=account_id)
 
 
 def _dt(s: str) -> datetime:
@@ -52,33 +56,30 @@ def make_trade(**kwargs) -> Trade:
 
 class TestComputeLotQuantity:
     def test_buy_increases_qty(self):
-        key = LotKey(ticker="005930", country="KR", account_id="a1")
         buy = make_trade(id="b1", trade_type="BUY", quantity=10)
-        assert compute_lot_quantity([buy], key) == 10.0
+        assert compute_lot_quantity([buy], _key()) == 10.0
 
     def test_sell_decreases_qty(self):
-        key = LotKey(ticker="005930", country="KR", account_id="a1")
         buy = make_trade(id="b1", trade_type="BUY", quantity=10, traded_at=_dt("2024-01-01T09:00:00+09:00"))
         sell = make_trade(id="s1", trade_type="SELL", quantity=4, traded_at=_dt("2024-02-01T09:00:00+09:00"))
-        assert compute_lot_quantity([buy, sell], key) == 6.0
+        assert compute_lot_quantity([buy, sell], _key()) == 6.0
 
     def test_different_account_excluded(self):
-        key = LotKey(ticker="005930", country="KR", account_id="a1")
         other = make_trade(id="b2", trade_type="BUY", quantity=10, account_id="a2")
-        assert compute_lot_quantity([other], key) == 0.0
+        assert compute_lot_quantity([other], _key()) == 0.0
 
 
 class TestComputeHoldingSummary:
     def test_simple_holding(self):
         buy = make_trade(id="b1", trade_type="BUY", quantity=10)
-        result = compute_holding_summary([buy], ticker="005930", asset_name="삼성전자", country="KR", account_id="a1")
+        result = compute_holding_summary([buy], _key())
         assert result.quantity == 10.0
         assert result.avg_buy_price == 70000.0
 
     def test_holding_after_partial_sell(self):
         buy = make_trade(id="b1", trade_type="BUY", quantity=10, traded_at=_dt("2024-01-01T09:00:00+09:00"))
         sell = make_trade(id="s1", trade_type="SELL", quantity=3, traded_at=_dt("2024-02-01T09:00:00+09:00"))
-        result = compute_holding_summary([buy, sell], ticker="005930", asset_name="삼성전자", country="KR", account_id="a1")
+        result = compute_holding_summary([buy, sell], _key())
         assert result.quantity == 7.0
         assert result.avg_buy_price == 70000.0
 
@@ -99,17 +100,10 @@ class TestComputeHoldingSummary:
         )
         sell = make_trade(id="s1", trade_type="SELL", quantity=5, traded_at=_dt("2024-01-03T09:00:00+09:00"))
 
-        result = compute_holding_summary([b1, b2, sell], ticker="005930", asset_name="삼성전자", country="KR", account_id="a1")
+        result = compute_holding_summary([b1, b2, sell], _key())
 
         assert result.quantity == 15.0
         assert result.avg_buy_price == 1500.0
-
-    def test_flexible_match_by_asset_name(self):
-        """ticker 없이 asset_name으로도 매칭 가능."""
-        buy = make_trade(id="b1", trade_type="BUY", quantity=10, ticker_symbol="005930")
-        result = compute_holding_summary([buy], ticker=None, asset_name="삼성전자", country="KR", account_id="a1")
-        assert result.quantity == 10.0
-        assert result.avg_buy_price == 70000.0
 
 
 class TestComputeFlexibleBreakdown:
@@ -174,12 +168,10 @@ class TestFindLatestBuyStrategy:
     def test_returns_most_recent_buy_strategy(self):
         b1 = make_trade(id="b1", trade_type="BUY", strategy_type="SWING", traded_at=_dt("2024-01-01T09:00:00+09:00"))
         b2 = make_trade(id="b2", trade_type="BUY", strategy_type="LONG_TERM", traded_at=_dt("2024-02-01T09:00:00+09:00"))
-        key = LotKey(ticker="005930", country="KR", account_id="a1")
-        result = find_latest_buy_strategy([b1, b2], key)
+        result = find_latest_buy_strategy([b1, b2], _key())
         assert result == "LONG_TERM"
 
     def test_no_buy_returns_none(self):
         sell = make_trade(id="s1", trade_type="SELL")
-        key = LotKey(ticker="005930", country="KR", account_id="a1")
-        result = find_latest_buy_strategy([sell], key)
+        result = find_latest_buy_strategy([sell], _key())
         assert result is None
