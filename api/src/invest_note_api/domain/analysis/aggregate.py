@@ -96,6 +96,7 @@ def compute_summary(
     win_rate = _percent(win_count, len(sells_with_result))
     total_profit_loss = sum(pnl_map.get(t.id, 0.0) for t in sells)
 
+    # period-filtered trades 입력 — 기간별 strat_map/adherence_map 스냅샷 용
     strategy_evals = build_strategy_evaluations(trades, holding_days_map)
 
     # byStrategy — SELL에 저장된 전략 기준

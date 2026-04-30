@@ -91,6 +91,7 @@ async def get_analysis_dashboard(
 
     concentration = compute_concentration(positions, all_trades)
     summary = compute_summary(trades, pnl_map, holding_days_map)
+    # all_trades 입력 — compute_profile 의 누적 일관성 평가용 (compute_summary 내부 호출과는 의도가 다름)
     strategy_evals = build_strategy_evaluations(all_trades, holding_days_map)
     profile, input_rates = compute_profile(trades, holding_days_map, strategy_evals)
     suggestions = evaluate_rules(
