@@ -11,9 +11,7 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## BE simplify Tier 3 (Round 2 이후 deferred)
 
-- [ ] `aggregate.py` 3개 버킷 루프 통합 — `strat_map`, `adherence_map`, `emotion_map` 골격이 거의 동일. `_bucketize(sells, key_fn)` 헬퍼로 통합 (시맨틱 위험 있어 신중히).
 - [ ] 모듈 레벨 글로벌 상태 → `app.state` 이전 — `external/quotes.py` `_cache`/`_inflight`, `routers/trades.py` `_STAGING`. 테스트 격리 + 멀티 워커 대비.
-- [ ] 분석 dashboard `build_strategy_evaluations` 입력 범위 정리 — router는 `all_trades`, `compute_summary` 내부는 period-filtered `trades`로 호출되어 2회 빌드. 입력 시맨틱 통일 후 1회로 통합.
 - [ ] `domain/portfolio.py` `Lot` 데이터클래스화 — 현재 `LotMap = dict[str, dict]` 가변 상태를 frozen dataclass(`Position` 미러)로 교체.
 - [ ] `routers/trades.py` `_PREVIEW_ACCT = "__preview__"` placeholder 제거 — `TradeSignature.account_id`를 Optional로 변경하거나 dedupe-only signature 분리.
 

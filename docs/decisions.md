@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-04-30 | BE simplify Tier 3 — aggregate.py 3-bucket loop / build_strategy_evaluations 호출 통합 미진행
+
+- **맥락:** Tier 3 backlog 의 항목 E (`aggregate.py` 의 `strat_map` / `adherence_map` / `emotion_map` 3 개 버킷 루프를 `_bucketize(sells, key_fn)` 헬퍼로 통합) 와 F (`build_strategy_evaluations` 가 router 에서는 `all_trades` 입력, `compute_summary` 내부에서는 period-filtered `trades` 입력으로 2 번 빌드되는 것을 1 회로 통합) 가 deferred 상태였음. Round 2 진행 전 두 항목의 실현 가능성을 재평가.
+- **결정:** **두 항목 모두 통합하지 않는다.** ① E: 3 개 버킷 루프는 도메인 의미 (계획된 전략 / 전략 준수도 / 감정) 가 다르고, `strat_map` 만 보유일 배열 (`days`) 을 추가 추적하며 key 추출 로직 (evaluation fallback, ADHERENCE_UNKNOWN 기본값, EMOTION_UNTAGGED 기본값) 도 비대칭. ② F: 두 호출은 입력 시맨틱이 본질적으로 다름 — router 호출은 `compute_profile` 의 장기 일관성 평가용 (전체 거래 기반), `compute_summary` 내부 호출은 기간별 `strat_map` / `adherence_map` 스냅샷용 (period-filtered). 어느 쪽으로든 통일하면 시맨틱 손실. 대신 두 호출지점에 의도 차이를 주석/docstring 으로 명시하는 것까지만 진행 (`feature/be-simplify-tier3-round2` 의 F1).
+- **이유:** 코드 라인 절감 가치 < 도메인 명확성 손실 위험. E 의 단일 헬퍼는 옵션 매개변수 (보유일 추적 여부, key fallback 정책) 확산으로 이어져 가독성 손해. F 의 통합은 어느 입력으로 통일해도 다른 호출지점의 시맨틱이 깨짐. 두 항목 다 "다르게 보이지만 사실 다른 것" 사례.
+- **트레이드오프:** 두 호출 / 세 루프의 표면적 유사성을 보고 향후 재통합 시도가 다시 제기될 수 있음 — 본 결정과 docstring 주석으로 차단. backlog Tier 3 섹션에서 E, F 두 줄 제거 후 G/H/I 만 남김.
+
+---
+
 ## 2026-04-30 | trade group 매칭 — `ticker_symbol` 항상 존재 invariant 명시 의존
 
 - **맥락:** `domain/holdings.py`의 `_is_flexible_match`와 `domain/realized_pnl.py`의 `_is_same_group`은 같은 의도(같은 종목·계좌·국가의 trade 그룹화)이지만 매칭 정책이 미묘하게 달랐음. 전자는 `trade_id == target_ticker OR trade.asset_name == target_asset` (OR 너그러움), 후자는 `trade_id == (key.ticker or key.asset_name)` (단일 비교, strict). `routers/portfolio.py`의 `/holding` SQL 도 `ticker_symbol = $4 OR asset_name = $5` 의 OR 분기를 가지고 있었음. 두 정책의 결과 차이는 `Trade.ticker_symbol` 이 빈 문자열인 경우에만 발생.
