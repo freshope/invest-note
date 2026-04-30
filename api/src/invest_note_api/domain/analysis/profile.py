@@ -6,6 +6,10 @@ from statistics import median
 from typing import TYPE_CHECKING
 
 from invest_note_api.domain.analysis._math import _percent
+from invest_note_api.domain.analysis.strategy_adherence import (
+    ADHERENCE_FOLLOWED,
+    ADHERENCE_UNKNOWN,
+)
 from invest_note_api.domain.trade_types import (
     EMOTION_ANXIOUS,
     EMOTION_FOMO,
@@ -84,8 +88,8 @@ def compute_profile(
         period_evals = [
             e for sid, e in strategy_evals.items() if sid in sell_ids
         ]
-        judged = [e for e in period_evals if e.adherence != "UNKNOWN"]
-        followed = sum(1 for e in judged if e.adherence == "FOLLOWED")
+        judged = [e for e in period_evals if e.adherence != ADHERENCE_UNKNOWN]
+        followed = sum(1 for e in judged if e.adherence == ADHERENCE_FOLLOWED)
         strategy_consistency = _percent(followed, len(judged))
         strategy_input_rate = _percent(len(judged), len(sells))
     else:

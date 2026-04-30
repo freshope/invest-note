@@ -5,7 +5,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from invest_note_api.domain.analysis._math import _percent
-from invest_note_api.domain.analysis.strategy_adherence import build_strategy_evaluations
+from invest_note_api.domain.analysis.strategy_adherence import (
+    ADHERENCE_DEVIATED,
+    ADHERENCE_FOLLOWED,
+    ADHERENCE_UNKNOWN,
+    build_strategy_evaluations,
+)
 from invest_note_api.domain.trade_types import (
     EMOTION_UNTAGGED,
     RESULT_SUCCESS,
@@ -127,7 +132,7 @@ def compute_summary(
     adherence_map: dict[str, dict] = {}
     for t in sells:
         evaluation = strategy_evals.get(t.id)
-        key = evaluation.adherence if evaluation else "UNKNOWN"
+        key = evaluation.adherence if evaluation else ADHERENCE_UNKNOWN
         if key not in adherence_map:
             adherence_map[key] = {"pnls": [], "results": []}
         a = adherence_map[key]
@@ -135,7 +140,7 @@ def compute_summary(
         if t.result:
             a["results"].append(t.result)
 
-    adherence_order = {"FOLLOWED": 0, "DEVIATED": 1, "UNKNOWN": 2}
+    adherence_order = {ADHERENCE_FOLLOWED: 0, ADHERENCE_DEVIATED: 1, ADHERENCE_UNKNOWN: 2}
     by_strategy_adherence = sorted(
         [
             StrategyAdherenceStats(
@@ -153,9 +158,9 @@ def compute_summary(
     judged = [
         e
         for sell_id, e in strategy_evals.items()
-        if sell_id in period_sell_ids and e is not None and e.adherence != "UNKNOWN"
+        if sell_id in period_sell_ids and e is not None and e.adherence != ADHERENCE_UNKNOWN
     ]
-    followed = sum(1 for e in judged if e.adherence == "FOLLOWED")
+    followed = sum(1 for e in judged if e.adherence == ADHERENCE_FOLLOWED)
     strategy_adherence_rate = _percent(followed, len(judged))
 
     # byEmotion — emotion 미입력 SELL은 EMOTION_UNTAGGED 버킷으로 모음.

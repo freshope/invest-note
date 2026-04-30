@@ -19,6 +19,10 @@ if TYPE_CHECKING:
 
 StrategyAdherence = Literal["FOLLOWED", "DEVIATED", "UNKNOWN"]
 
+ADHERENCE_FOLLOWED: StrategyAdherence = "FOLLOWED"
+ADHERENCE_DEVIATED: StrategyAdherence = "DEVIATED"
+ADHERENCE_UNKNOWN: StrategyAdherence = "UNKNOWN"
+
 
 @dataclass
 class StrategyEvaluation:
@@ -58,9 +62,9 @@ def build_strategy_evaluations(
         planned = trade.strategy_type
         actual = infer_actual_strategy(holding_days)
         if not planned or planned == STRATEGY_UNKNOWN:
-            adherence: StrategyAdherence = "UNKNOWN"
+            adherence: StrategyAdherence = ADHERENCE_UNKNOWN
         else:
-            adherence = "FOLLOWED" if planned == actual else "DEVIATED"
+            adherence = ADHERENCE_FOLLOWED if planned == actual else ADHERENCE_DEVIATED
 
         result[trade.id] = StrategyEvaluation(
             planned=planned,
