@@ -1,6 +1,7 @@
 "use client";
 
-import { EMOTION_LABELS } from "@/lib/constants/trading";
+import { cn } from "@/lib/utils";
+import { EMOTION_LABELS, UNTAGGED_KEY } from "@/lib/constants/trading";
 import { PnLLine } from "./PnLLine";
 import { WinRateBar } from "./WinRateBar";
 import type { EmotionStats } from "@/lib/analysis/aggregate";
@@ -18,22 +19,29 @@ export function EmotionBreakdown({ data }: EmotionBreakdownProps) {
     );
   }
 
+  const others = data.filter((d) => d.type !== UNTAGGED_KEY);
+  const untagged = data.filter((d) => d.type === UNTAGGED_KEY);
+  const sortedData = [...others, ...untagged];
+
   return (
     <div className="space-y-3">
-      {data.map((item) => (
-        <div key={item.type} className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <span className="text-[13px] font-medium text-foreground">
-              {EMOTION_LABELS[item.type] ?? item.type}
-            </span>
-            <span className="text-[11px] text-muted-foreground tabular-nums">
-              {item.count}건
-              <PnLLine value={item.sumPnL} />
-            </span>
+      {sortedData.map((item) => {
+        const isMuted = item.type === UNTAGGED_KEY;
+        return (
+          <div key={item.type} className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className={cn("text-[13px] font-medium", isMuted ? "text-muted-foreground" : "text-foreground")}>
+                {EMOTION_LABELS[item.type] ?? item.type}
+              </span>
+              <span className="text-[11px] text-muted-foreground tabular-nums">
+                {item.count}건
+                <PnLLine value={item.sumPnL} muted={isMuted} />
+              </span>
+            </div>
+            <WinRateBar rate={item.winRate} hasData={item.resultCount > 0} emptyLabel="결과 미입력" muted={isMuted} />
           </div>
-          <WinRateBar rate={item.winRate} hasData={item.resultCount > 0} emptyLabel="결과 미입력" />
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

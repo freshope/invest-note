@@ -45,7 +45,10 @@ export const STRATEGY_LABELS: Record<string, string> = Object.fromEntries(
 
 // 분석 집계의 미입력 버킷 라벨. BE의 EMOTION_UNTAGGED/TAG_UNTAGGED와 동일한 키.
 // 폼 옵션 배열(EMOTIONS, REASONING_TAGS)에는 추가하지 않는다 — 사용자 선택 불가.
-const UNTAGGED_KEY = "UNTAGGED";
+export const UNTAGGED_KEY = "UNTAGGED";
+
+// 전략 미입력(STRATEGIES의 "없음") 버킷 키. 분석 섹션에서 마지막 위치 + muted 처리에 사용.
+export const STRATEGY_UNKNOWN_KEY = "UNKNOWN";
 
 export const EMOTION_LABELS: Record<string, string> = {
   ...Object.fromEntries(EMOTIONS.map((e) => [e.value, e.label])),
