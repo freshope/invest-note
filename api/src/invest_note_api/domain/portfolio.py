@@ -6,13 +6,11 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from invest_note_api.domain.trade_types import (
-    TRADE_TYPE_BUY,
     TRADE_TYPE_SELL,
     trade_country,
     trade_identifier,
 )
 from invest_note_api.domain.trade_utils import to_kst
-from invest_note_api.domain.realized_pnl import build_pnl_map
 from invest_note_api.domain.trade_walker import (
     stored_avg_cost_deduction,
     walk_trades,
@@ -38,6 +36,7 @@ class Account:
 
 QuoteEntry = dict  # {"price": float, "currency": str, "as_of": str}
 QuoteMap = dict[str, QuoteEntry | None]  # key: "TICKER:COUNTRY"
+LotMap = dict[str, dict]  # lot_key → lot info dict (account_id 별 종목 잔량/원가 등)
 
 
 @dataclass
@@ -88,20 +87,25 @@ def _by_traded_at(trades: list["Trade"]) -> list["Trade"]:
     return sorted(trades, key=lambda t: t.traded_at)
 
 
-def build_positions(trades: list["Trade"]) -> list[Position]:
-    """계좌별 lot 추적 → 종목별 포지션 집계."""
+def build_positions(trades: list["Trade"]) -> tuple[list[Position], LotMap]:
+    """계좌별 lot 추적 → 종목별 포지션 집계.
+
+    Returns:
+        (positions, lot_map): 보유 수량 > 0인 포지션 리스트와 lot_key → lot dict.
+        `lot_map` 은 `build_account_snapshots` 등 후속 단계에서 재사용된다.
+    """
     trades_by_lot: dict[str, list["Trade"]] = defaultdict(list)
     for trade in trades:
         trades_by_lot[_lot_key_of(trade)].append(trade)
 
-    lot_map: dict[str, dict] = {}
+    lot_map: LotMap = {}
     for lot_key, lot_trades in trades_by_lot.items():
         first = lot_trades[0]
         lot = {
             "ticker": trade_identifier(first),
             "country": trade_country(first),
             "asset_name": first.asset_name,
-            "account_id": first.account_id,
+            "account_id": str(first.account_id),
             "exchange": "",
             "running_qty": 0.0,
             "running_cost": 0.0,
@@ -194,7 +198,7 @@ def build_positions(trades: list["Trade"]) -> list[Position]:
             account_ids=list(pos["account_ids"]),
         ))
 
-    return positions
+    return positions, lot_map
 
 
 def merge_quotes(positions: list[Position], quotes: QuoteMap) -> list[Position]:
@@ -218,37 +222,28 @@ def merge_quotes(positions: list[Position], quotes: QuoteMap) -> list[Position]:
 
 def build_account_snapshots(
     accounts: list[Account],
-    trades: list["Trade"],
+    lot_map: LotMap,
     quotes: QuoteMap,
 ) -> list[AccountSnapshot]:
-    by_account: dict[str, list["Trade"]] = {}
-    for t in trades:
-        by_account.setdefault(t.account_id, []).append(t)
+    """`build_positions` 가 반환한 lot_map 을 재사용해 계좌별 stock_evaluation 집계.
+
+    trades 풀스캔 없이 lot 의 running_qty 와 quote.price 만으로 평가액을 계산한다.
+    """
+    by_account: dict[str, list[dict]] = defaultdict(list)
+    for lot in lot_map.values():
+        by_account[str(lot["account_id"])].append(lot)
 
     snapshots = []
     for account in accounts:
-        account_trades = by_account.get(str(account.id), [])
-        pos_map: dict[str, dict] = {}
-
-        for trade in account_trades:
-            ticker = trade_identifier(trade)
-            key = f"{ticker}:{trade_country(trade)}"
-            if key not in pos_map:
-                pos_map[key] = {"qty": 0.0, "cost_basis": 0.0}
-            p = pos_map[key]
-            if trade.trade_type == TRADE_TYPE_BUY:
-                p["qty"] += trade.quantity
-                p["cost_basis"] += trade.price * trade.quantity
-            else:
-                p["qty"] -= trade.quantity
-
+        account_lots = by_account.get(str(account.id), [])
         stock_evaluation = 0.0
-        for key, p in pos_map.items():
-            if p["qty"] <= 0:
+        for lot in account_lots:
+            if lot["running_qty"] <= 0:
                 continue
-            quote = quotes.get(key)
+            quote_key = f"{lot['ticker']}:{lot['country']}"
+            quote = quotes.get(quote_key)
             if quote:
-                stock_evaluation += quote["price"] * p["qty"]
+                stock_evaluation += quote["price"] * lot["running_qty"]
 
         snapshots.append(AccountSnapshot(
             account=account,
@@ -264,7 +259,13 @@ def build_totals(
     positions: list[Position],
     accounts: list[Account],
     trades: list["Trade"],
+    pnl_map: dict[str, float],
 ) -> DashboardTotals:
+    """포트폴리오 totals 집계.
+
+    `pnl_map` 은 호출자가 `build_pnl_map(trades)` 로 미리 빌드해 주입한다.
+    내부에서 다시 빌드하지 않으므로 summary 핫패스에서 trades 풀스캔이 1회 줄어든다.
+    """
     total_evaluation = sum(p.evaluation or 0 for p in positions)
     total_unrealized_pnl = sum(p.unrealized_pnl or 0 for p in positions)
     total_cash = sum(a.cash_balance for a in accounts)
@@ -272,8 +273,6 @@ def build_totals(
     now = to_kst(datetime.now(timezone.utc))
     this_year = now.year
     this_month = now.month
-
-    pnl_map = build_pnl_map(trades)
 
     total_realized_pnl = 0.0
     month_realized_pnl = 0.0

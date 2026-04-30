@@ -78,7 +78,7 @@ async def get_analysis_dashboard(
 
     pnl_map = build_pnl_map(trades)
     holding_days_map = compute_holding_days_map(trades)
-    positions0 = build_positions(all_trades)
+    positions0, _ = build_positions(all_trades)
 
     positions = positions0
     try:
