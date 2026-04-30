@@ -7,7 +7,7 @@
 ## 2026-04-30 | trade group 매칭 — `ticker_symbol` 항상 존재 invariant 명시 의존
 
 - **맥락:** `domain/holdings.py`의 `_is_flexible_match`와 `domain/realized_pnl.py`의 `_is_same_group`은 같은 의도(같은 종목·계좌·국가의 trade 그룹화)이지만 매칭 정책이 미묘하게 달랐음. 전자는 `trade_id == target_ticker OR trade.asset_name == target_asset` (OR 너그러움), 후자는 `trade_id == (key.ticker or key.asset_name)` (단일 비교, strict). `routers/portfolio.py`의 `/holding` SQL 도 `ticker_symbol = $4 OR asset_name = $5` 의 OR 분기를 가지고 있었음. 두 정책의 결과 차이는 `Trade.ticker_symbol` 이 빈 문자열인 경우에만 발생.
-- **결정:** `Trade.ticker_symbol` 은 항상 채워진다는 invariant를 명시적으로 신뢰하기로 한다. 이 가정 하에 `_is_flexible_match` 의 OR 분기와 `/holding` SQL 의 `OR asset_name = $5` 분기를 dead branch 로 간주해 모두 제거. `LotKey` 를 폐기하고 `TradeGroupKey` 단일 키 + `is_same_group` 단일 매칭 함수로 통합.
+- **결정:** `Trade.ticker_symbol` 은 항상 채워진다는 invariant를 명시적으로 신뢰하기로 한다. 이 가정 하에 `_is_flexible_match` 의 OR 분기와 `/holding` SQL 의 `OR asset_name = $5` 분기를 dead branch 로 간주해 모두 제거. `LotKey` 를 폐기하고 `TradeGroupKey` 단일 키 + `is_same_group` 단일 매칭 함수로 통합. 후속으로 `routers/trades.py` 의 `GET /api/trades?ticker=...` 메모리 필터도 동일 정책에 맞춰 `t.ticker_symbol == ticker` strict 비교로 정리(2026-04-30).
 - **이유:** 두 함수의 정책 차이를 유지하면 "왜 다른가" 를 추적해야 하는 비용이 영구화. invariant가 깨진 데이터가 실재하지 않는 한 strict 정책으로 통일해도 동작 회귀 없음. 백엔드 도메인 코드와 SQL 양쪽에서 invariant 위배 시 동일하게 매칭 실패하므로 정합성 일관됨.
 - **트레이드오프:** invariant가 깨진 레거시 row 가 DB 에 존재한다면 holding이 0 으로 잘못 계산될 수 있음. 향후 데이터 임포트 경로(broker_import 등)에서 `ticker_symbol` 빈 문자열 진입을 차단하는 검증을 강화해야 함. invariant 검증 쿼리: `SELECT count(*) FROM trades WHERE ticker_symbol = '' OR ticker_symbol IS NULL`.
 
