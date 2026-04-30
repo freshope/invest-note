@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 import math
 from typing import Literal
@@ -20,6 +21,10 @@ from invest_note_api.domain.trade_types import (
     trade_identifier,
 )
 from invest_note_api.domain.trade_utils import MS_PER_DAY, to_kst
+from invest_note_api.domain.trade_walker import (
+    ConsumedLot,
+    walk_trades,
+)
 
 
 @dataclass(frozen=True)
@@ -90,104 +95,87 @@ def derive_result_from_pnl(pnl: float) -> TradeResult:
     return RESULT_BREAKEVEN
 
 
-def _strategy_from_consumed(consumed: list[dict]) -> StrategyType | None:
+def _strategy_from_consumed(consumed: Sequence[ConsumedLot]) -> StrategyType | None:
     if not consumed:
         return None
 
     by_strategy: dict[str, dict] = {}
-    for lot in consumed:
-        key = lot["strategy"] or STRATEGY_UNKNOWN
+    for c in consumed:
+        key = c.lot.strategy or STRATEGY_UNKNOWN
         if key not in by_strategy:
-            by_strategy[key] = {"qty": 0.0, "order": lot["order"]}
-        by_strategy[key]["qty"] += lot["qty"]
-        by_strategy[key]["order"] = min(by_strategy[key]["order"], lot["order"])
+            by_strategy[key] = {"qty": 0.0, "order": c.lot.order}
+        by_strategy[key]["qty"] += c.qty
+        by_strategy[key]["order"] = min(by_strategy[key]["order"], c.lot.order)
 
     selected = sorted(by_strategy.items(), key=lambda item: (-item[1]["qty"], item[1]["order"]))[0][0]
     return selected  # type: ignore[return-value]
 
 
 def _meta_from_consumed_latest(
-    consumed: list[dict],
+    consumed: Sequence[ConsumedLot],
 ) -> tuple[list[ReasoningTag], EmotionType | None]:
     """소비된 BUY lot 중 가장 최근(time_ms 최대, 동률 시 order 최대)의 tags/emotion."""
     if not consumed:
         return [], None
-    latest = max(consumed, key=lambda lot: (lot["time_ms"], lot["order"]))
-    tags = list(latest.get("reasoning_tags") or [])
-    emotion = latest.get("emotion")
-    return tags, emotion
+    latest = max(consumed, key=lambda c: (c.lot.time_ms, c.lot.order))
+    return list(latest.lot.reasoning_tags), latest.lot.emotion
+
+
+def _holding_days_from_consumed(
+    consumed: Sequence[ConsumedLot], sell_time_ms: int
+) -> int | None:
+    total = sum(c.qty for c in consumed)
+    if total <= 0:
+        return None
+    weighted_ms = sum((sell_time_ms - c.lot.time_ms) * c.qty for c in consumed)
+    return math.floor(weighted_ms / total / MS_PER_DAY + 0.5)
 
 
 def compute_group_pnl(trades: list[Trade], key: TradeGroupKey) -> dict[str, GroupPnLEntry]:
     """그룹 내 SELL 거래별 WAC PnL 계산."""
-    group = sort_for_calc([t for t in trades if _is_same_group(t, key)])
-
     result: dict[str, GroupPnLEntry] = {}
-    running_qty = 0.0
-    running_cost = 0.0
-    fifo_lots: list[dict] = []
-    buy_order = 0
 
-    for trade in group:
-        if trade.trade_type == TRADE_TYPE_BUY:
-            running_qty += trade.quantity
-            running_cost += trade.price * trade.quantity
-            fifo_lots.append({
-                "qty": trade.quantity,
-                "time_ms": int(to_kst(trade.traded_at).timestamp() * 1000),
-                "strategy": trade.strategy_type,
-                "reasoning_tags": list(trade.reasoning_tags or []),
-                "emotion": trade.emotion,
-                "order": buy_order,
-            })
-            buy_order += 1
-        else:
-            avg_cost = running_cost / running_qty if running_qty > 0 else 0.0
-            matched_qty = min(trade.quantity, running_qty)
-            remaining = trade.quantity
-            sell_time_ms = int(to_kst(trade.traded_at).timestamp() * 1000)
-            weighted_ms = 0.0
-            total_consumed = 0.0
-            consumed: list[dict] = []
-            while remaining > 0 and fifo_lots:
-                slot = fifo_lots[0]
-                consume = min(slot["qty"], remaining)
-                weighted_ms += (sell_time_ms - slot["time_ms"]) * consume
-                total_consumed += consume
-                consumed.append({
-                    "strategy": slot["strategy"],
-                    "qty": consume,
-                    "order": slot["order"],
-                    "time_ms": slot["time_ms"],
-                    "reasoning_tags": slot["reasoning_tags"],
-                    "emotion": slot["emotion"],
-                })
-                slot["qty"] -= consume
-                remaining -= consume
-                if slot["qty"] <= 0:
-                    fifo_lots.pop(0)
-            holding_days = (
-                math.floor(weighted_ms / total_consumed / MS_PER_DAY + 0.5)
-                if total_consumed > 0
-                else None
-            )
-            tags, emotion = _meta_from_consumed_latest(consumed)
-            pnl = _sell_pnl(trade, avg_cost, matched_qty)
-            result[trade.id] = GroupPnLEntry(
-                profit_loss=pnl,
-                avg_buy_price=avg_cost,
-                holding_days=holding_days,
-                strategy_type=_strategy_from_consumed(consumed),
-                reasoning_tags=tags,
-                emotion=emotion,
-                result=derive_result_from_pnl(pnl),
-                matched_qty=matched_qty,
-                running_qty_after=max(0.0, running_qty - trade.quantity),
-            )
-            running_cost = max(0.0, running_cost - avg_cost * matched_qty)
-            running_qty = max(0.0, running_qty - trade.quantity)
+    for ev in walk_trades(
+        trades,
+        group_filter=lambda t: _is_same_group(t, key),
+        sort_fn=sort_for_calc,
+    ):
+        if ev.kind != "SELL":
+            continue
+
+        sell_time_ms = int(to_kst(ev.trade.traded_at).timestamp() * 1000)
+        avg_cost = ev.state_before.avg_cost
+        pnl = _sell_pnl(ev.trade, avg_cost, ev.matched_qty)
+        tags, emotion = _meta_from_consumed_latest(ev.consumed)
+
+        result[ev.trade.id] = GroupPnLEntry(
+            profit_loss=pnl,
+            avg_buy_price=avg_cost,
+            holding_days=_holding_days_from_consumed(ev.consumed, sell_time_ms),
+            strategy_type=_strategy_from_consumed(ev.consumed),
+            reasoning_tags=tags,
+            emotion=emotion,
+            result=derive_result_from_pnl(pnl),
+            matched_qty=ev.matched_qty,
+            running_qty_after=ev.state_after.running_qty,
+        )
 
     return result
+
+
+def _apply_virtual(
+    trades: list[Trade],
+    mutation_type: MutationType,
+    trade: Trade,
+    patch: dict | None,
+) -> list[Trade]:
+    if mutation_type == "insert":
+        return [*trades, trade]
+    if mutation_type == "update":
+        patched_data = {**trade.model_dump(), **(patch or {})}
+        patched = Trade(**patched_data)
+        return [patched if t.id == trade.id else t for t in trades]
+    return [t for t in trades if t.id != trade.id]
 
 
 def validate_mutation(
@@ -202,36 +190,23 @@ def validate_mutation(
     Returns:
         (ok, message, affected_sell_ids)
     """
-    if mutation_type == "insert":
-        virtual = [*trades, trade]
-    elif mutation_type == "update":
-        patched_data = {**trade.model_dump(), **(patch or {})}
-        patched = Trade(**patched_data)
-        virtual = [patched if t.id == trade.id else t for t in trades]
-    else:  # delete
-        virtual = [t for t in trades if t.id != trade.id]
-
+    virtual = _apply_virtual(trades, mutation_type, trade, patch)
     key = trade_to_group_key(trade)
-    group = sort_for_calc([t for t in virtual if _is_same_group(t, key)])
-
-    running_qty = 0.0
-    running_cost = 0.0
     affected_sell_ids: list[str] = []
 
-    for t in group:
-        if t.trade_type == TRADE_TYPE_BUY:
-            running_qty += t.quantity
-            running_cost += t.price * t.quantity
-        else:
-            if running_qty <= 0:
-                return False, "보유 수량이 없어 매도할 수 없습니다.", []
-            if t.quantity > running_qty:
-                return False, "보유 수량이 부족한 매도 거래가 생깁니다.", []
-            avg_cost = running_cost / running_qty
-            matched_qty = min(t.quantity, running_qty)
-            affected_sell_ids.append(t.id)
-            running_cost = max(0.0, running_cost - avg_cost * matched_qty)
-            running_qty = max(0.0, running_qty - t.quantity)
+    for ev in walk_trades(
+        virtual,
+        group_filter=lambda t: _is_same_group(t, key),
+        sort_fn=sort_for_calc,
+        track_fifo_lots=False,
+    ):
+        if ev.kind != "SELL":
+            continue
+        if ev.no_holding:
+            return False, "보유 수량이 없어 매도할 수 없습니다.", []
+        if ev.oversell:
+            return False, "보유 수량이 부족한 매도 거래가 생깁니다.", []
+        affected_sell_ids.append(ev.trade.id)
 
     return True, "", affected_sell_ids
 
