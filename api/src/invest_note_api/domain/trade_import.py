@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from invest_note_api.domain.trade_types import Trade
 
 
 @dataclass(frozen=True)
@@ -40,6 +44,19 @@ def make_signature(
         trade_type=trade_type,
         quantity=Decimal(str(quantity)),
         price=_normalise_price(price),
+    )
+
+
+def trade_to_signature(trade: "Trade", account_id: str) -> TradeSignature:
+    """저장된 Trade row → 시그니처."""
+    return make_signature(
+        account_id=account_id,
+        trade_date=trade.traded_at.date(),
+        ticker=trade.ticker_symbol,
+        asset_name=trade.asset_name,
+        trade_type=trade.trade_type,
+        quantity=trade.quantity,
+        price=trade.price,
     )
 
 

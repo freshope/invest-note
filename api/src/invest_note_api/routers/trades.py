@@ -41,7 +41,7 @@ from invest_note_api.domain.realized_pnl import (
     validate_mutation,
 )
 from invest_note_api.domain.trade_utils import kst_date_to_utc
-from invest_note_api.domain.trade_import import make_signature
+from invest_note_api.domain.trade_import import make_signature, trade_to_signature
 from invest_note_api.domain.trade_types import (
     DEFAULT_COUNTRY,
     MARKET_TYPE_STOCK,
@@ -78,7 +78,10 @@ def _trade_dict(trade) -> dict:
 
 def _trade_with_account_dict(trade) -> dict:
     d = _trade_dict(trade)
-    d["account"] = {"name": d.pop("account_name", None), "broker": d.pop("account_broker", None)}
+    d["account"] = {
+        "name": d.pop("account_name", None),
+        "broker": d.pop("account_broker", None),
+    }
     return d
 
 
@@ -158,7 +161,6 @@ async def create_trade(
             if data.quantity > holding.quantity:
                 raise APIError(f"보유 수량이 부족합니다 (현재 {holding.quantity}주).", 400)
 
-        if data.trade_type == TRADE_TYPE_SELL:
             ok, msg, _ = validate_mutation(group_trades, "insert", new_trade)
             if not ok:
                 raise APIError(msg, 400)
@@ -178,7 +180,7 @@ async def create_trade(
             "exchange": data.exchange or "",
         })
 
-        fresh_trades = [*group_trades, Trade(**{**new_trade.model_dump(), "id": row["id"]})]
+        fresh_trades = [*group_trades, new_trade.model_copy(update={"id": row["id"]})]
         await recalc_group_pnl(conn, fresh_trades, group_key)
 
     return row
@@ -224,11 +226,7 @@ async def get_trade(
 
     if trade is None:
         raise APIError("거래를 찾을 수 없습니다.", 404)
-    d = _trade_dict(trade)
-    account_name = d.pop("account_name", None)
-    account_broker = d.pop("account_broker", None)
-    d["account"] = {"name": account_name, "broker": account_broker}
-    return d
+    return _trade_with_account_dict(trade)
 
 
 @router.patch("/{trade_id}", responses={204: {"description": "No fields to update"}})
@@ -263,7 +261,10 @@ async def update_trade(
 
             await patch_trade(conn, trade_id, user.id, patch)
 
-            fresh_trades = [Trade(**{**t.model_dump(), **patch}) if t.id == trade_id else t for t in group_trades]
+            fresh_trades = [
+                t.model_copy(update=patch) if t.id == trade_id else t
+                for t in group_trades
+            ]
             await recalc_group_pnl(conn, fresh_trades, key)
         else:
             # 파생 SELL 값에 영향을 주지 않는 메타 필드는 lock/recalc 없이 수정.
@@ -344,18 +345,7 @@ async def import_preview(
     # account_id 없이 ticker+날짜+거래유형+수량+가격으로 근사 dedup.
     # commit 시 정확한 account_id 기반 dedup이 재실행되므로 이는 참고용 카운트.
     _PREVIEW_ACCT = "__preview__"
-    existing_sigs: set = set()
-    for t in all_trades:
-        t_date = t.traded_at.date() if hasattr(t.traded_at, "date") else date.fromisoformat(str(t.traded_at)[:10])
-        existing_sigs.add(make_signature(
-            account_id=_PREVIEW_ACCT,
-            trade_date=t_date,
-            ticker=t.ticker_symbol,
-            asset_name=t.asset_name,
-            trade_type=t.trade_type,
-            quantity=t.quantity,
-            price=t.price,
-        ))
+    existing_sigs: set = {trade_to_signature(t, _PREVIEW_ACCT) for t in all_trades}
 
     rows_to_stage: list[dict] = []
     dup_count = 0
@@ -418,9 +408,6 @@ async def import_preview(
         }
         rows_to_stage.append(row_data)
 
-    # 실제 계좌 ID 없이 dedup 불가 → account_id는 commit 시 결정
-    # preview 단계에서는 ticker+날짜 기준으로 근사 dedup만 수행 (account_id 고정 불가)
-
     staging_id = str(uuid.uuid4())
     _STAGING[staging_id] = {
         "user_id": str(user.id),
@@ -481,17 +468,9 @@ async def import_commit(
         for group_key, group_rows in groups.items():
             # 그룹별로 기존 거래 페치 → sig 셋 구성 (사용자 전체 fetch 회피)
             group_existing = await list_trades_in_group(conn, user.id, group_key)
-            existing_sigs: set = set()
-            for t in group_existing:
-                existing_sigs.add(make_signature(
-                    account_id=str(body.account_id),
-                    trade_date=t.traded_at.date(),
-                    ticker=t.ticker_symbol,
-                    asset_name=t.asset_name,
-                    trade_type=t.trade_type,
-                    quantity=t.quantity,
-                    price=t.price,
-                ))
+            existing_sigs: set = {
+                trade_to_signature(t, str(body.account_id)) for t in group_existing
+            }
 
             # BUY → SELL 순 정렬
             group_rows.sort(key=lambda r: (r["traded_at_kst"], 0 if r["trade_type"] == TRADE_TYPE_BUY else 1))
