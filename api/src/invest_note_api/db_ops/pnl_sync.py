@@ -6,11 +6,47 @@ FastAPI는 acquire_for_user 트랜잭션 내 executemany → all-or-nothing.
 """
 from __future__ import annotations
 
+import math
 from typing import Any
 
-from invest_note_api.domain.realized_pnl import TradeGroupKey, compute_group_pnl
+from invest_note_api.domain.realized_pnl import (
+    GroupPnLEntry,
+    TradeGroupKey,
+    compute_group_pnl,
+)
 from invest_note_api.domain.trade_types import Trade
 from invest_note_api.errors import APIError
+
+
+def _is_changed(existing: Trade | None, entry: GroupPnLEntry) -> bool:
+    """기존 SELL row의 PnL 7필드와 신규 entry 비교.
+
+    DB round-trip 후의 부동소수 미세 오차로 false-positive UPDATE가 발생하지 않도록
+    숫자 필드는 math.isclose로 비교. None ↔ 값 전이는 항상 변경으로 간주.
+    """
+    if existing is None:
+        return True
+    if not _float_eq(existing.profit_loss, entry.profit_loss):
+        return True
+    if not _float_eq(existing.avg_buy_price, entry.avg_buy_price):
+        return True
+    if existing.holding_days != entry.holding_days:
+        return True
+    if existing.strategy_type != entry.strategy_type:
+        return True
+    if existing.reasoning_tags != entry.reasoning_tags:
+        return True
+    if existing.emotion != entry.emotion:
+        return True
+    if existing.result != entry.result:
+        return True
+    return False
+
+
+def _float_eq(a: float | None, b: float | None) -> bool:
+    if a is None or b is None:
+        return a is b
+    return math.isclose(a, b, rel_tol=1e-9, abs_tol=1e-9)
 
 
 async def recalc_group_pnl(
@@ -18,10 +54,12 @@ async def recalc_group_pnl(
     trades: list[Trade],
     key: TradeGroupKey,
 ) -> None:
-    """그룹 PnL 재계산 후 SELL 거래에 일괄 UPDATE."""
+    """그룹 PnL 재계산 후 변경된 SELL 거래에만 UPDATE 발행."""
     pnl_map = compute_group_pnl(trades, key)
     if not pnl_map:
         return
+
+    existing_by_id: dict[str, Trade] = {t.id: t for t in trades}
 
     rows = [
         (
@@ -35,7 +73,11 @@ async def recalc_group_pnl(
             sell_id,
         )
         for sell_id, entry in pnl_map.items()
+        if _is_changed(existing_by_id.get(sell_id), entry)
     ]
+
+    if not rows:
+        return
 
     try:
         await conn.executemany(
