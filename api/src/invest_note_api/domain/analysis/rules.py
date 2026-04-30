@@ -1,7 +1,6 @@
 """10개 투자 패턴 규칙 + evaluateRules 등가."""
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, TypedDict
 
@@ -33,6 +32,7 @@ from invest_note_api.domain.trade_types import (
     STRATEGY_SWING,
     STRATEGY_UNKNOWN,
 )
+from invest_note_api.utils.numbers import half_up_int
 
 if TYPE_CHECKING:
     from invest_note_api.domain.analysis.aggregate import AnalysisSummary
@@ -49,11 +49,6 @@ SECTION_EMOTION = "emotion"
 SECTION_TAG = "tag"
 SECTION_CONCENTRATION = "concentration"
 SECTION_REVIEW = "review"
-
-
-def _round(x: float) -> int:
-    """JS Math.round 동작 (HALF_UP)."""
-    return math.floor(x + 0.5)
 
 
 @dataclass
@@ -85,7 +80,7 @@ def _rule_fomo(inp: RuleInput) -> Suggestion | None:
         or fomo.win_rate >= LOSS_THRESHOLD
     ):
         return None
-    pct = _round(fomo.win_rate)
+    pct = half_up_int(fomo.win_rate)
     return Suggestion(
         id="emotion_fomo_low_winrate",
         severity=SEVERITY_WARN,
@@ -101,7 +96,7 @@ def _rule_calm(inp: RuleInput) -> Suggestion | None:
     calm = next((e for e in summary.by_emotion if e.type == EMOTION_CALM), None)
     if not calm or calm.count < MIN_EMOTION_TRADES or calm.win_rate < WIN_THRESHOLD:
         return None
-    pct = _round(calm.win_rate)
+    pct = half_up_int(calm.win_rate)
     return Suggestion(
         id="emotion_calm_high_winrate",
         severity=SEVERITY_INFO,
@@ -123,7 +118,7 @@ def _rule_concentration(inp: RuleInput) -> Suggestion | None:
         id="concentration_high",
         severity=SEVERITY_WARN,
         title="한 종목 비중이 높습니다",
-        body=f"상위 종목 비중 {_round(top1_weight * 100)}%, 집중도(HHI) {concentration.hhi:.2f} — 분산 투자를 고려해보세요.",
+        body=f"상위 종목 비중 {half_up_int(top1_weight * 100)}%, 집중도(HHI) {concentration.hhi:.2f} — 분산 투자를 고려해보세요.",
         metric={"label": "HHI", "value": f"{concentration.hhi:.2f}"},
         link_section=SECTION_CONCENTRATION,
     )
@@ -133,7 +128,7 @@ def _rule_feeling_heavy(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
     if summary.feeling_rate < FEELING_RATE_HIGH or summary.total_trades < MIN_TOTAL_TRADES:
         return None
-    pct = _round(summary.feeling_rate)
+    pct = half_up_int(summary.feeling_rate)
     return Suggestion(
         id="feeling_heavy",
         severity=SEVERITY_WARN,
@@ -148,7 +143,7 @@ def _rule_no_reflection(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
     if summary.reflection_rate >= REFLECTION_RATE_LOW or summary.sell_trades < MIN_SELL_TRADES:
         return None
-    pct = _round(summary.reflection_rate)
+    pct = half_up_int(summary.reflection_rate)
     return Suggestion(
         id="no_reflection",
         severity=SEVERITY_INFO,
@@ -168,7 +163,7 @@ def _rule_holding_mismatch(inp: RuleInput) -> Suggestion | None:
         or scalping.avg_holding_days <= SCALPING_HOLDING_LIMIT_DAYS
     ):
         return None
-    days = _round(scalping.avg_holding_days)
+    days = half_up_int(scalping.avg_holding_days)
     return Suggestion(
         id="holding_mismatch",
         severity=SEVERITY_INFO,
@@ -194,7 +189,7 @@ def _rule_losing_strategy(inp: RuleInput) -> Suggestion | None:
     if not worst:
         return None
     label = _STRATEGY_LABELS.get(worst.type, worst.type)
-    pct = _round(worst.win_rate)
+    pct = half_up_int(worst.win_rate)
     return Suggestion(
         id="losing_strategy",
         severity=SEVERITY_CRITICAL,
@@ -209,7 +204,7 @@ def _rule_tag_missing(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
     if summary.missing_tag_rate < MISSING_TAG_RATE_HIGH or summary.total_trades < MIN_TOTAL_TRADES:
         return None
-    pct = _round(summary.missing_tag_rate)
+    pct = half_up_int(summary.missing_tag_rate)
     return Suggestion(
         id="tag_missing_rate_high",
         severity=SEVERITY_INFO,
@@ -224,7 +219,7 @@ def _rule_result_missing(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
     if summary.result_input_rate >= RESULT_INPUT_RATE_LOW or summary.sell_trades < MIN_SELL_TRADES:
         return None
-    pct = _round(100 - summary.result_input_rate)
+    pct = half_up_int(100 - summary.result_input_rate)
     return Suggestion(
         id="result_missing",
         severity=SEVERITY_INFO,
@@ -243,7 +238,7 @@ def _rule_high_winrate(inp: RuleInput) -> Suggestion | None:
         or summary.result_input_rate < RESULT_INPUT_RATE_LOW
     ):
         return None
-    pct = _round(summary.win_rate)
+    pct = half_up_int(summary.win_rate)
     return Suggestion(
         id="high_winrate",
         severity=SEVERITY_INFO,

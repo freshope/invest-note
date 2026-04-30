@@ -537,7 +537,7 @@ class TestEvaluateRules:
 
     def test_round_half_up(self):
         """Math.round HALF_UP — 0.5 -> 1, not 0."""
-        from invest_note_api.domain.analysis.rules import _round
-        assert _round(0.5) == 1
-        assert _round(1.5) == 2
-        assert _round(2.5) == 3
+        from invest_note_api.utils.numbers import half_up_int
+        assert half_up_int(0.5) == 1
+        assert half_up_int(1.5) == 2
+        assert half_up_int(2.5) == 3

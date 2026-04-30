@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-import math
 from typing import Literal
 
 from invest_note_api.domain.trade_types import (
@@ -21,6 +20,7 @@ from invest_note_api.domain.trade_types import (
     trade_identifier,
 )
 from invest_note_api.domain.trade_utils import MS_PER_DAY, to_kst_ms
+from invest_note_api.utils.numbers import half_up_int
 from invest_note_api.domain.trade_walker import (
     ConsumedLot,
     walk_trades,
@@ -128,7 +128,7 @@ def _holding_days_from_consumed(
     if total <= 0:
         return None
     weighted_ms = sum((sell_time_ms - c.lot.time_ms) * c.qty for c in consumed)
-    return math.floor(weighted_ms / total / MS_PER_DAY + 0.5)
+    return half_up_int(weighted_ms / total / MS_PER_DAY)
 
 
 def compute_group_pnl(trades: list[Trade], key: TradeGroupKey) -> dict[str, GroupPnLEntry]:

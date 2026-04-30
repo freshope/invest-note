@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 
 def strip_comma_number(value: object) -> object:
     """숫자 파싱 직전 정규화 헬퍼.
@@ -12,3 +14,8 @@ def strip_comma_number(value: object) -> object:
     if isinstance(value, str):
         return value.replace(",", "").strip()
     return value
+
+
+def half_up_int(x: float) -> int:
+    """JS Math.round 동작과 동일한 HALF_UP 정수 반올림."""
+    return math.floor(x + 0.5)
