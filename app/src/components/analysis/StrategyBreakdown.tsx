@@ -35,7 +35,7 @@ export function StrategyBreakdown({ data }: StrategyBreakdownProps) {
             </div>
             <span className="text-[11px] text-muted-foreground tabular-nums">
               {item.count}건
-              <PnLLine value={item.avgPnL} />
+              <PnLLine value={item.sumPnL} />
             </span>
           </div>
           <WinRateBar rate={item.winRate} hasData={item.resultCount > 0} />

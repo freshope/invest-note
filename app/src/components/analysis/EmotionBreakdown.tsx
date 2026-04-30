@@ -28,7 +28,7 @@ export function EmotionBreakdown({ data }: EmotionBreakdownProps) {
             </span>
             <span className="text-[11px] text-muted-foreground tabular-nums">
               {item.count}건
-              <PnLLine value={item.avgPnL} />
+              <PnLLine value={item.sumPnL} />
             </span>
           </div>
           <WinRateBar rate={item.winRate} hasData={item.resultCount > 0} emptyLabel="결과 미입력" />

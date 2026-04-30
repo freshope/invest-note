@@ -5,9 +5,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from invest_note_api.domain.trade_types import (
+    EMOTION_UNTAGGED,
     RESULT_SUCCESS,
     STRATEGY_UNKNOWN,
     TAG_FEELING,
+    TAG_UNTAGGED,
     TRADE_TYPE_BUY,
     TRADE_TYPE_SELL,
 )
@@ -23,7 +25,7 @@ class StrategyStats:
     count: int
     result_count: int
     win_rate: float
-    avg_pnl: float
+    sum_pnl: float
     avg_holding_days: float
 
 
@@ -33,7 +35,7 @@ class EmotionStats:
     count: int
     result_count: int
     win_rate: float
-    avg_pnl: float
+    sum_pnl: float
 
 
 @dataclass
@@ -41,7 +43,7 @@ class TagStats:
     tag: str
     count: int
     win_rate: float
-    avg_pnl: float
+    sum_pnl: float
 
 
 @dataclass
@@ -50,7 +52,7 @@ class StrategyAdherenceStats:
     count: int
     result_count: int
     win_rate: float
-    avg_pnl: float
+    sum_pnl: float
 
 
 @dataclass
@@ -111,7 +113,7 @@ def compute_summary(
                 count=len(s["pnls"]),
                 result_count=len(s["results"]),
                 win_rate=_win_rate(s["results"]),
-                avg_pnl=sum(s["pnls"]) / len(s["pnls"]) if s["pnls"] else 0.0,
+                sum_pnl=sum(s["pnls"]),
                 avg_holding_days=sum(s["days"]) / len(s["days"]) if s["days"] else 0.0,
             )
             for k, s in strat_map.items()
@@ -139,7 +141,7 @@ def compute_summary(
                 count=len(a["pnls"]),
                 result_count=len(a["results"]),
                 win_rate=_win_rate(a["results"]),
-                avg_pnl=sum(a["pnls"]) / len(a["pnls"]) if a["pnls"] else 0.0,
+                sum_pnl=sum(a["pnls"]),
             )
             for k, a in adherence_map.items()
         ],
@@ -154,14 +156,14 @@ def compute_summary(
     followed = sum(1 for e in judged if e.adherence == "FOLLOWED")
     strategy_adherence_rate = followed / len(judged) * 100 if judged else 0.0
 
-    # byEmotion — SELL의 저장된 emotion만 사용 (mutation 시 직전 BUY로부터 자동 산출됨)
+    # byEmotion — emotion 미입력 SELL은 EMOTION_UNTAGGED 버킷으로 모음.
+    # 합계가 totalProfitLoss와 일치하려면 누락 거래도 어딘가에는 포함되어야 함.
     emotion_map: dict[str, dict] = {}
     for t in sells:
-        if t.emotion is None:
-            continue
-        if t.emotion not in emotion_map:
-            emotion_map[t.emotion] = {"pnls": [], "results": []}
-        e = emotion_map[t.emotion]
+        key = t.emotion or EMOTION_UNTAGGED
+        if key not in emotion_map:
+            emotion_map[key] = {"pnls": [], "results": []}
+        e = emotion_map[key]
         e["pnls"].append(pnl_map.get(t.id, 0.0))
         if t.result:
             e["results"].append(t.result)
@@ -173,7 +175,7 @@ def compute_summary(
                 count=len(e["pnls"]),
                 result_count=len(e["results"]),
                 win_rate=_win_rate(e["results"]),
-                avg_pnl=sum(e["pnls"]) / len(e["pnls"]) if e["pnls"] else 0.0,
+                sum_pnl=sum(e["pnls"]),
             )
             for k, e in emotion_map.items()
         ],
@@ -181,10 +183,13 @@ def compute_summary(
         reverse=True,
     )
 
-    # byTag — SELL의 저장된 reasoning_tags만 사용 (mutation 시 직전 BUY로부터 자동 산출됨)
+    # byTag — reasoning_tags 미입력 SELL은 TAG_UNTAGGED 단일 버킷으로 모음.
+    # 다중 태그 거래는 각 태그 버킷에 PnL이 중복 합산되므로 byTag 합계는
+    # totalProfitLoss와 정확히 일치하지 않을 수 있음 (FE에서 안내 제공).
     tag_map: dict[str, dict] = {}
     for sell in sells:
-        for tag in sell.reasoning_tags or []:
+        tags = sell.reasoning_tags or [TAG_UNTAGGED]
+        for tag in tags:
             if tag not in tag_map:
                 tag_map[tag] = {"pnls": [], "results": []}
             tm = tag_map[tag]
@@ -198,7 +203,7 @@ def compute_summary(
                 tag=tag,
                 count=len(tm["pnls"]),
                 win_rate=_win_rate(tm["results"]),
-                avg_pnl=sum(tm["pnls"]) / len(tm["pnls"]) if tm["pnls"] else 0.0,
+                sum_pnl=sum(tm["pnls"]),
             )
             for tag, tm in tag_map.items()
         ],

@@ -40,7 +40,7 @@ function AdherenceSide({
           <span className="ml-1">· 승률 {Math.round(stats.winRate)}%</span>
         )}
       </p>
-      <AdherencePnL value={stats?.avgPnL ?? 0} />
+      <AdherencePnL value={stats?.sumPnL ?? 0} />
     </div>
   );
 }
