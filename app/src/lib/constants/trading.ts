@@ -4,6 +4,7 @@ import type {
   ReasoningTag,
   StrategyType,
   TradeResult,
+  TradeType,
 } from "@/types/database";
 import { PNL_COLORS } from "./colors";
 
@@ -11,6 +12,11 @@ export const MARKET_LABELS: Record<MarketType, string> = {
   STOCK: "주식",
   CRYPTO: "암호화폐",
   ETC: "기타",
+};
+
+export const TRADE_TYPE_LABELS: Record<TradeType, string> = {
+  BUY: "매수",
+  SELL: "매도",
 };
 
 // 거래 자동 계산용 수수료/세율 (정확한 부과 금액은 백엔드/증권사 책임)

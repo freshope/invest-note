@@ -1,3 +1,5 @@
+import type { TradeType } from "@/types/database";
+
 /**
  * PnL(상승/하강) 색상 클래스 토큰.
  *
@@ -22,3 +24,9 @@ export const PNL_COLORS = {
     dataActiveBg: "data-active:bg-[var(--fall)]",
   },
 } as const;
+
+export type PnlAccent = (typeof PNL_COLORS)[keyof typeof PNL_COLORS];
+
+export function getTradeTypeAccent(tradeType: TradeType): PnlAccent {
+  return tradeType === "BUY" ? PNL_COLORS.rise : PNL_COLORS.fall;
+}

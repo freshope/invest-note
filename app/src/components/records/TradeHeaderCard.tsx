@@ -3,21 +3,22 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { fmt } from "@/lib/format";
-import { PNL_COLORS } from "@/lib/constants/colors";
+import { getTradeTypeAccent } from "@/lib/constants/colors";
+import { TradeTypeBadge } from "@/components/shared/TradeTypeBadge";
 import {
   CountryBadge,
   ExchangeBadge,
   MarketTypeBadge,
   getQuantityUnit,
 } from "./trade-display";
-import type { Trade } from "@/types/database";
+import type { Trade, TradeType } from "@/types/database";
 
 interface TradeHeaderCardProps {
   trade: Pick<
     Trade,
     "asset_name" | "ticker_symbol" | "market_type" | "country_code" | "exchange"
   >;
-  isBuy: boolean;
+  tradeType: TradeType;
   totalAmount: number;
   price: number;
   quantity: number;
@@ -27,14 +28,14 @@ interface TradeHeaderCardProps {
 
 export function TradeHeaderCard({
   trade,
-  isBuy,
+  tradeType,
   totalAmount,
   price,
   quantity,
   onStockPress,
   stockHref,
 }: TradeHeaderCardProps) {
-  const accent = isBuy ? PNL_COLORS.rise : PNL_COLORS.fall;
+  const accent = getTradeTypeAccent(tradeType);
   const hasStock = !!trade.ticker_symbol;
   const interactive = onStockPress && hasStock;
 
@@ -61,15 +62,7 @@ export function TradeHeaderCard({
           ) : (
             <span className="text-[20px] font-bold text-foreground">{trade.asset_name}</span>
           )}
-          <span
-            className={cn(
-              "text-[12px] font-bold px-2 py-0.5 rounded-md",
-              accent.bgSoft,
-              accent.text,
-            )}
-          >
-            {isBuy ? "매수" : "매도"}
-          </span>
+          <TradeTypeBadge tradeType={tradeType} size="md" />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {trade.ticker_symbol && (
