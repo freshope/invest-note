@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
@@ -9,13 +8,14 @@ import { Button } from "@/components/base/Button";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
 import { TradeEditPanel } from "./TradeEditPanel";
-import { DeleteTradeDialog } from "./DeleteTradeDialog";
+import { TradeHeaderCard } from "./TradeHeaderCard";
+import { ConfirmDeleteDialog } from "@/components/shared/ConfirmDeleteDialog";
 import type { Account, TradeResult } from "@/types/database";
 import { formatTradedAtLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import { tradesApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { ChevronLeftIcon } from "lucide-react";
-import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
+import { CompactRow } from "./trade-display";
 import { STRATEGY_LABELS, EMOTION_LABELS, REASONING_TAG_LABELS } from "@/lib/constants/trading";
 import { PNL_COLORS } from "@/lib/constants/colors";
 import { fmt, formatPnL, signColor } from "@/lib/format";
@@ -61,6 +61,8 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletePending, setDeletePending] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const mountedAt = useMemo(() => Date.now(), []);
   const { data: trade = initialTrade } = useQuery({
@@ -71,6 +73,20 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
   });
 
   const handleDeleted = onDeleted ?? (() => router.push("/records"));
+
+  async function handleDeleteConfirm() {
+    setDeleteError(null);
+    setDeletePending(true);
+    try {
+      await tradesApi.delete(trade.id);
+      setDeleteOpen(false);
+      handleDeleted();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "삭제할 수 없습니다.");
+    } finally {
+      setDeletePending(false);
+    }
+  }
 
   const isBuy = trade.trade_type === "BUY";
 
@@ -85,9 +101,9 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
     : null;
 
   const tradedDate = formatTradedAtLabel(trade.traded_at);
-  const price = fmt(Number(trade.price));
+  const priceNum = Number(trade.price);
   const quantity = Number(trade.quantity);
-  const totalAmount = fmt(Number(trade.total_amount));
+  const totalAmountNum = Number(trade.total_amount);
   const commission = fmt(Number(trade.commission));
   const tax = fmt(Number(trade.tax));
 
@@ -114,71 +130,15 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5 space-y-5">
-        {/* 종목 헤더 카드 */}
-        <div className={cn(
-          "rounded-2xl overflow-hidden",
-          "bg-muted/60"
-        )}>
-          <div className={cn(
-            "h-1",
-            isBuy ? PNL_COLORS.rise.bg : PNL_COLORS.fall.bg
-          )} />
-          <div className="p-5">
-            <div className="flex items-center gap-2 mb-1">
-              {onStockPress && hasStock ? (
-                <button
-                  type="button"
-                  onClick={onStockPress}
-                  className="text-[20px] font-bold text-foreground underline-offset-2 hover:underline text-left"
-                >
-                  {trade.asset_name}
-                </button>
-              ) : stockHref ? (
-                <Link
-                  href={stockHref}
-                  className="text-[20px] font-bold text-foreground underline-offset-2 hover:underline"
-                >
-                  {trade.asset_name}
-                </Link>
-              ) : (
-                <span className="text-[20px] font-bold text-foreground">{trade.asset_name}</span>
-              )}
-              <span
-                className={cn(
-                  "text-[12px] font-bold px-2 py-0.5 rounded-md",
-                  isBuy
-                    ? cn(PNL_COLORS.rise.bgSoft, PNL_COLORS.rise.text)
-                    : cn(PNL_COLORS.fall.bgSoft, PNL_COLORS.fall.text)
-                )}
-              >
-                {isBuy ? "매수" : "매도"}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {trade.ticker_symbol && (
-                <span className="text-[13px] font-mono text-muted-foreground">{trade.ticker_symbol}</span>
-              )}
-              <MarketTypeBadge marketType={trade.market_type} />
-              {trade.market_type === "STOCK" && (
-                <>
-                  <CountryBadge countryCode={trade.country_code ?? "KR"} />
-                  <ExchangeBadge exchange={trade.exchange} />
-                </>
-              )}
-            </div>
-            <div className="mt-4 pt-4 border-t border-border/40">
-              <p className={cn(
-                "text-[24px] font-bold tabular-nums text-right",
-                isBuy ? PNL_COLORS.rise.text : PNL_COLORS.fall.text
-              )}>
-                {totalAmount}원
-              </p>
-              <p className="text-[12px] text-muted-foreground text-right mt-0.5 tabular-nums">
-                {price}원 × {quantity}{getQuantityUnit(trade.market_type)}
-              </p>
-            </div>
-          </div>
-        </div>
+        <TradeHeaderCard
+          trade={trade}
+          isBuy={isBuy}
+          totalAmount={totalAmountNum}
+          price={priceNum}
+          quantity={quantity}
+          onStockPress={onStockPress}
+          stockHref={stockHref}
+        />
 
         {/* 기본 거래 정보 */}
         <div className="rounded-2xl bg-muted/60 p-4">
@@ -334,12 +294,20 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
         onSaved={onSaved}
       />
 
-      <DeleteTradeDialog
+      <ConfirmDeleteDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        tradeId={trade.id}
-        assetName={trade.asset_name}
-        onDeleted={handleDeleted}
+        title="거래 삭제"
+        description={
+          <>
+            <strong>{trade.asset_name}</strong> 거래 기록을 삭제하시겠습니까?
+            <br />
+            이 작업은 되돌릴 수 없습니다.
+          </>
+        }
+        pending={deletePending}
+        error={deleteError}
+        onConfirm={handleDeleteConfirm}
       />
     </div>
   );

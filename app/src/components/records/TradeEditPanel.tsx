@@ -28,12 +28,13 @@ import {
   REASONING_TAG_VALUES,
   TRADE_RESULT_VALUES,
 } from "@/lib/constants/trading";
-import { PNL_COLORS } from "@/lib/constants/colors";
 import { AutoEmotionField, AutoReasoningTagsField } from "./AutoMetaField";
-import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
+import { TradeHeaderCard } from "./TradeHeaderCard";
+import { CompactRow } from "./trade-display";
+import { ToggleChipGrid } from "@/components/shared/ToggleChipGrid";
 import { fmt, fmtNumberInput, parseNumberInput } from "@/lib/format";
 import { cn, getFirstFormError } from "@/lib/utils";
-import type { Trade, Account, ReasoningTag } from "@/types/database";
+import type { Trade, Account, ReasoningTag, StrategyType, EmotionType } from "@/types/database";
 import { formatTradedAtLabel } from "@/lib/trade-utils";
 import { TradeFreeTextField } from "./TradeFreeTextField";
 
@@ -121,11 +122,6 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
   const liveTotal = livePrice * liveQty;
   const acc = accounts.find((a) => a.id === trade.account_id);
 
-  function toggleTag(tag: ReasoningTag) {
-    const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
-    setValue("reasoning_tags", next);
-  }
-
   async function onSubmit(values: FormValues) {
     try {
       await tradesApi.update(trade.id, {
@@ -165,46 +161,13 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
         <FullScreenPanelBody>
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">
             <div className="flex-1 px-5 pt-5 pb-4 space-y-5">
-              {/* 종목 헤더 카드 */}
-              <div className="rounded-2xl overflow-hidden bg-muted/60">
-                <div className={cn("h-1", isSell ? PNL_COLORS.fall.bg : PNL_COLORS.rise.bg)} />
-                <div className="p-5">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[20px] font-bold text-foreground">{trade.asset_name}</span>
-                    <span className={cn(
-                      "text-[12px] font-bold px-2 py-0.5 rounded-md",
-                      isSell
-                        ? cn(PNL_COLORS.fall.bgSoft, PNL_COLORS.fall.text)
-                        : cn(PNL_COLORS.rise.bgSoft, PNL_COLORS.rise.text)
-                    )}>
-                      {isSell ? "매도" : "매수"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {trade.ticker_symbol && (
-                      <span className="text-[13px] font-mono text-muted-foreground">{trade.ticker_symbol}</span>
-                    )}
-                    <MarketTypeBadge marketType={trade.market_type} />
-                    {trade.market_type === "STOCK" && (
-                      <>
-                        <CountryBadge countryCode={trade.country_code ?? "KR"} />
-                        <ExchangeBadge exchange={trade.exchange} />
-                      </>
-                    )}
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-border/40">
-                    <p className={cn(
-                      "text-[24px] font-bold tabular-nums text-right",
-                      isSell ? PNL_COLORS.fall.text : PNL_COLORS.rise.text
-                    )}>
-                      {fmt(liveTotal)}원
-                    </p>
-                    <p className="text-[12px] text-muted-foreground text-right mt-0.5 tabular-nums">
-                      {fmt(livePrice)}원 × {liveQty}{getQuantityUnit(trade.market_type)}
-                    </p>
-                  </div>
-                </div>
-              </div>
+              <TradeHeaderCard
+                trade={trade}
+                isBuy={!isSell}
+                totalAmount={liveTotal}
+                price={livePrice}
+                quantity={liveQty}
+              />
 
               {/* 기본 거래 정보 */}
               <div className="rounded-2xl bg-muted/60 p-4">
@@ -296,18 +259,13 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                     control={control}
                     name="strategy_type"
                     render={({ field }) => (
-                      <div className="grid grid-cols-4 gap-2">
-                        {STRATEGIES.map((s) => (
-                          <button key={s.value} type="button"
-                            onClick={() => field.onChange(field.value === s.value ? null : s.value)}
-                            className={`rounded-xl border py-2.5 text-[13px] font-semibold transition-colors ${
-                              field.value === s.value
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "border-border bg-muted/50 text-muted-foreground"
-                            }`}
-                          >{s.label}</button>
-                        ))}
-                      </div>
+                      <ToggleChipGrid<StrategyType>
+                        options={STRATEGIES}
+                        value={field.value}
+                        onChange={field.onChange}
+                        emptyValue={null}
+                        columns={4}
+                      />
                     )}
                   />
                 </div>
@@ -325,18 +283,13 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                       control={control}
                       name="emotion"
                       render={({ field }) => (
-                        <div className="grid grid-cols-3 gap-2">
-                          {EMOTIONS.map((e) => (
-                            <button key={e.value} type="button"
-                              onClick={() => field.onChange(field.value === e.value ? null : e.value)}
-                              className={`rounded-xl border py-2.5 text-[13px] font-semibold transition-colors ${
-                                field.value === e.value
-                                  ? "bg-primary text-primary-foreground border-primary"
-                                  : "border-border bg-muted/50 text-muted-foreground"
-                              }`}
-                            >{e.label}</button>
-                          ))}
-                        </div>
+                        <ToggleChipGrid<EmotionType>
+                          options={EMOTIONS}
+                          value={field.value}
+                          onChange={field.onChange}
+                          emptyValue={null}
+                          columns={3}
+                        />
                       )}
                     />
                   </div>
@@ -350,18 +303,13 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                 ) : (
                   <div className="space-y-2 mb-5">
                     <Label>분석 태그 <span className="text-[12px] font-normal text-muted-foreground">(복수 선택)</span></Label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {REASONING_TAGS.map((t) => (
-                        <button key={t.value} type="button"
-                          onClick={() => toggleTag(t.value)}
-                          className={`rounded-xl border py-2.5 text-[13px] font-semibold transition-colors ${
-                            tags.includes(t.value)
-                              ? "bg-primary text-primary-foreground border-primary"
-                              : "border-border bg-muted/50 text-muted-foreground"
-                          }`}
-                        >{t.label}</button>
-                      ))}
-                    </div>
+                    <ToggleChipGrid<ReasoningTag>
+                      multi
+                      options={REASONING_TAGS}
+                      value={tags}
+                      onChange={(next) => setValue("reasoning_tags", next)}
+                      columns={2}
+                    />
                   </div>
                 )}
 

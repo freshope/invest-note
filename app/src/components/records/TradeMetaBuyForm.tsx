@@ -17,8 +17,10 @@ import {
   REASONING_TAG_VALUES,
 } from "@/lib/constants/trading";
 import { StrategyEmotionFields } from "./StrategyEmotionFields";
+import { ToggleChipGrid } from "@/components/shared/ToggleChipGrid";
 import { TradeFreeTextField } from "./TradeFreeTextField";
 import { getFirstFormError } from "@/lib/utils";
+import type { ReasoningTag } from "@/types/database";
 
 const schema = z.object({
   strategy_type: z.enum(STRATEGY_VALUES).nullable(),
@@ -55,11 +57,6 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
 
   const tags = useWatch({ control, name: "reasoning_tags" });
   const buyReason = useWatch({ control, name: "buy_reason" }) ?? "";
-
-  function toggleTag(tag: FormValues["reasoning_tags"][number]) {
-    const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
-    setValue("reasoning_tags", next);
-  }
 
   async function onSubmit(values: FormValues) {
     try {
@@ -118,22 +115,13 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
             분석 태그{" "}
             <span className="text-[12px] font-normal text-muted-foreground">(복수 선택)</span>
           </Label>
-          <div className="grid grid-cols-2 gap-2">
-            {REASONING_TAGS.map((t) => (
-              <button
-                key={t.value}
-                type="button"
-                onClick={() => toggleTag(t.value)}
-                className={`rounded-xl border py-2.5 text-[13px] font-semibold transition-colors ${
-                  tags.includes(t.value)
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "border-border bg-muted/50 text-muted-foreground"
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
+          <ToggleChipGrid<ReasoningTag>
+            multi
+            options={REASONING_TAGS}
+            value={tags}
+            onChange={(next) => setValue("reasoning_tags", next)}
+            columns={2}
+          />
         </div>
 
         <TradeFreeTextField

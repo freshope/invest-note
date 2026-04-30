@@ -1,10 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/base/Button";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { AccountFormPanel } from "./AccountFormPanel";
-import { DeleteAccountDialog } from "./DeleteAccountDialog";
+import { ConfirmDeleteDialog } from "@/components/shared/ConfirmDeleteDialog";
+import { accountsApi } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 import { fmt } from "@/lib/format";
 import type { Account } from "@/types/database";
 
@@ -14,9 +17,30 @@ interface AccountCardProps {
 }
 
 export function AccountCard({ account, tradeCount }: AccountCardProps) {
+  const queryClient = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletePending, setDeletePending] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const cashBalance = Number(account.cash_balance);
+
+  async function handleDeleteConfirm() {
+    setDeleteError(null);
+    setDeletePending(true);
+    try {
+      await accountsApi.delete(account.id);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.accounts }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
+      ]);
+      setDeleteOpen(false);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "삭제할 수 없습니다.");
+    } finally {
+      setDeletePending(false);
+    }
+  }
 
   return (
     <>
@@ -75,11 +99,20 @@ export function AccountCard({ account, tradeCount }: AccountCardProps) {
       />
 
       {deleteOpen && (
-        <DeleteAccountDialog
+        <ConfirmDeleteDialog
           open={deleteOpen}
           onOpenChange={setDeleteOpen}
-          accountId={account.id}
-          accountName={account.name}
+          title="계좌 삭제"
+          description={
+            <>
+              <strong>{account.name}</strong>을(를) 삭제하시겠습니까?
+              <br />
+              이 작업은 되돌릴 수 없습니다.
+            </>
+          }
+          pending={deletePending}
+          error={deleteError}
+          onConfirm={handleDeleteConfirm}
         />
       )}
     </>
