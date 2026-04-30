@@ -80,7 +80,7 @@ export const ADHERENCE_CONFIG = {
     barClassName: "bg-orange-500",
   },
   UNKNOWN: {
-    label: "분류 불가",
+    label: "미입력",
     textClassName: "text-muted-foreground",
     bgClassName: "bg-muted border-border",
     barClassName: "bg-muted-foreground/40",
