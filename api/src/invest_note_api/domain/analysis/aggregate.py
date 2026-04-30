@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from invest_note_api.domain.analysis._math import _percent
+from invest_note_api.domain.analysis.strategy_adherence import build_strategy_evaluations
 from invest_note_api.domain.trade_types import (
     EMOTION_UNTAGGED,
     RESULT_SUCCESS,
@@ -13,7 +15,6 @@ from invest_note_api.domain.trade_types import (
     TRADE_TYPE_BUY,
     TRADE_TYPE_SELL,
 )
-from invest_note_api.domain.analysis.strategy_adherence import build_strategy_evaluations
 
 if TYPE_CHECKING:
     from invest_note_api.domain.trade_types import Trade
@@ -73,7 +74,7 @@ class AnalysisSummary:
 
 
 def _win_rate(results: list[str]) -> float:
-    return sum(1 for r in results if r == RESULT_SUCCESS) / len(results) * 100 if results else 0.0
+    return _percent(sum(1 for r in results if r == RESULT_SUCCESS), len(results))
 
 
 def compute_summary(
@@ -86,7 +87,7 @@ def compute_summary(
 
     sells_with_result = [t for t in sells if t.result is not None]
     win_count = sum(1 for t in sells_with_result if t.result == RESULT_SUCCESS)
-    win_rate = (win_count / len(sells_with_result) * 100) if sells_with_result else 0.0
+    win_rate = _percent(win_count, len(sells_with_result))
     total_profit_loss = sum(pnl_map.get(t.id, 0.0) for t in sells)
 
     strategy_evals = build_strategy_evaluations(trades, holding_days_map)
@@ -154,7 +155,7 @@ def compute_summary(
         if sell_id in period_sell_ids and e is not None and e.adherence != "UNKNOWN"
     ]
     followed = sum(1 for e in judged if e.adherence == "FOLLOWED")
-    strategy_adherence_rate = followed / len(judged) * 100 if judged else 0.0
+    strategy_adherence_rate = _percent(followed, len(judged))
 
     # byEmotion — emotion 미입력 SELL은 EMOTION_UNTAGGED 버킷으로 모음.
     # 합계가 totalProfitLoss와 일치하려면 누락 거래도 어딘가에는 포함되어야 함.
@@ -212,17 +213,16 @@ def compute_summary(
     )
 
     # 메타 지표
-    missing_tag_rate = (
-        sum(1 for t in buys if not t.reasoning_tags) / len(buys) * 100 if buys else 0.0
+    missing_tag_rate = _percent(
+        sum(1 for t in buys if not t.reasoning_tags), len(buys)
     )
-    feeling_rate = (
-        sum(1 for t in buys if TAG_FEELING in (t.reasoning_tags or [])) / len(buys) * 100 if buys else 0.0
+    feeling_rate = _percent(
+        sum(1 for t in buys if TAG_FEELING in (t.reasoning_tags or [])), len(buys)
     )
-    reflection_rate = (
-        sum(1 for t in sells if t.sell_reason and t.sell_reason.strip()) / len(sells) * 100
-        if sells else 0.0
+    reflection_rate = _percent(
+        sum(1 for t in sells if t.sell_reason and t.sell_reason.strip()), len(sells)
     )
-    result_input_rate = len(sells_with_result) / len(sells) * 100 if sells else 0.0
+    result_input_rate = _percent(len(sells_with_result), len(sells))
 
     return AnalysisSummary(
         total_trades=len(trades),
