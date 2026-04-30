@@ -46,7 +46,15 @@ def build_strategy_evaluations(
 ) -> dict[str, StrategyEvaluation]:
     """저장된 SELL strategy_type/holding_days로 전략 평가를 계산.
 
-    trades와 holding_days_map은 동일 범위(보통 period-filtered)여야 한다.
+    trades와 holding_days_map은 동일 범위(둘 다 period-filtered 또는 둘 다 전체)여야 한다.
+    입력 trades 의 범위(period-filtered vs 전체)는 호출자 책임이며, 호출지점마다 의도가 다르다:
+
+    - `compute_summary` 내부 호출: period-filtered trades — 기간별 strat_map/adherence_map
+      스냅샷용. 결과 키는 해당 기간의 SELL id 만 포함.
+    - `routers/analysis.compute_profile` 호출: 전체 trades — 누적 일관성 평가용
+      (`compute_profile` 의 input_rates / behavior 메트릭이 장기 추세를 보기 위함).
+
+    두 호출은 의도가 다르므로 통합하지 않는다 (decisions.md 2026-04-30 참고).
     """
     result: dict[str, StrategyEvaluation] = {}
     for trade in trades:

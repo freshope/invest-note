@@ -36,7 +36,24 @@ class Account:
 
 QuoteEntry = dict  # {"price": float, "currency": str, "as_of": str}
 QuoteMap = dict[str, QuoteEntry | None]  # key: "TICKER:COUNTRY"
-LotMap = dict[str, dict]  # lot_key → lot info dict (account_id 별 종목 잔량/원가 등)
+
+
+@dataclass(frozen=True)
+class Lot:
+    ticker: str
+    country: str
+    asset_name: str
+    account_id: str
+    exchange: str
+    running_qty: float
+    running_cost: float
+    realized_pnl: float
+    last_traded_at: str
+    last_note_type: str | None
+    last_note: str | None
+
+
+LotMap = dict[str, Lot]  # lot_key → Lot (account_id 별 종목 잔량/원가 등)
 
 
 @dataclass
@@ -91,7 +108,7 @@ def build_positions(trades: list["Trade"]) -> tuple[list[Position], LotMap]:
     """계좌별 lot 추적 → 종목별 포지션 집계.
 
     Returns:
-        (positions, lot_map): 보유 수량 > 0인 포지션 리스트와 lot_key → lot dict.
+        (positions, lot_map): 보유 수량 > 0인 포지션 리스트와 lot_key → Lot.
         `lot_map` 은 `build_account_snapshots` 등 후속 단계에서 재사용된다.
     """
     trades_by_lot: dict[str, list["Trade"]] = defaultdict(list)
@@ -101,19 +118,14 @@ def build_positions(trades: list["Trade"]) -> tuple[list[Position], LotMap]:
     lot_map: LotMap = {}
     for lot_key, lot_trades in trades_by_lot.items():
         first = lot_trades[0]
-        lot = {
-            "ticker": trade_identifier(first),
-            "country": trade_country(first),
-            "asset_name": first.asset_name,
-            "account_id": str(first.account_id),
-            "exchange": "",
-            "running_qty": 0.0,
-            "running_cost": 0.0,
-            "realized_pnl": 0.0,
-            "last_traded_at": first.traded_at.isoformat(),
-            "last_note_type": None,
-            "last_note": None,
-        }
+        # walk 루프 동안 가변 누산 — 종료 시점에 frozen Lot 인스턴스로 등록
+        exchange = ""
+        running_qty = 0.0
+        running_cost = 0.0
+        realized_pnl = 0.0
+        last_traded_at = first.traded_at.isoformat()
+        last_note_type: str | None = None
+        last_note: str | None = None
 
         for ev in walk_trades(
             lot_trades,
@@ -122,58 +134,70 @@ def build_positions(trades: list["Trade"]) -> tuple[list[Position], LotMap]:
             cost_deduction=stored_avg_cost_deduction,
             track_fifo_lots=False,
         ):
-            lot["last_traded_at"] = ev.trade.traded_at.isoformat()
+            last_traded_at = ev.trade.traded_at.isoformat()
             if ev.trade.exchange:
-                lot["exchange"] = ev.trade.exchange
+                exchange = ev.trade.exchange
             if ev.kind == "BUY":
                 reason = (ev.trade.buy_reason or "").strip()
                 if reason:
-                    lot["last_note_type"] = NOTE_TYPE_REASON
-                    lot["last_note"] = reason
+                    last_note_type = NOTE_TYPE_REASON
+                    last_note = reason
             else:
-                lot["realized_pnl"] += ev.trade.profit_loss or 0.0
+                realized_pnl += ev.trade.profit_loss or 0.0
                 note = (ev.trade.sell_reason or "").strip()
                 if note:
-                    lot["last_note_type"] = NOTE_TYPE_SELL
-                    lot["last_note"] = note
-            lot["running_qty"] = ev.state_after.running_qty
-            lot["running_cost"] = ev.state_after.running_cost
+                    last_note_type = NOTE_TYPE_SELL
+                    last_note = note
+            running_qty = ev.state_after.running_qty
+            running_cost = ev.state_after.running_cost
 
-        lot_map[lot_key] = lot
+        lot_map[lot_key] = Lot(
+            ticker=trade_identifier(first),
+            country=trade_country(first),
+            asset_name=first.asset_name,
+            account_id=str(first.account_id),
+            exchange=exchange,
+            running_qty=running_qty,
+            running_cost=running_cost,
+            realized_pnl=realized_pnl,
+            last_traded_at=last_traded_at,
+            last_note_type=last_note_type,
+            last_note=last_note,
+        )
 
     # lot → position 집계 (보유수량 > 0인 lot만)
     pos_map: dict[str, dict] = {}
 
     for lot in lot_map.values():
-        if lot["running_qty"] <= 0:
+        if lot.running_qty <= 0:
             continue
-        display_key = position_key(lot['ticker'], lot['country'])
+        display_key = position_key(lot.ticker, lot.country)
         if display_key not in pos_map:
             pos_map[display_key] = {
-                "ticker": lot["ticker"],
-                "country": lot["country"],
-                "asset_name": lot["asset_name"],
-                "exchange": lot["exchange"],
+                "ticker": lot.ticker,
+                "country": lot.country,
+                "asset_name": lot.asset_name,
+                "exchange": lot.exchange,
                 "running_qty": 0.0,
                 "running_cost": 0.0,
                 "realized_pnl": 0.0,
-                "last_traded_at": lot["last_traded_at"],
+                "last_traded_at": lot.last_traded_at,
                 "account_ids": set(),
                 "last_note_type": None,
                 "last_note": None,
             }
         pos = pos_map[display_key]
-        pos["running_qty"] += lot["running_qty"]
-        pos["running_cost"] += lot["running_cost"]
-        pos["realized_pnl"] += lot["realized_pnl"]
-        if lot["last_traded_at"] > pos["last_traded_at"]:
-            pos["last_traded_at"] = lot["last_traded_at"]
-        if lot["exchange"]:
-            pos["exchange"] = lot["exchange"]
-        pos["account_ids"].add(lot["account_id"])
-        if lot["last_note_type"]:
-            pos["last_note_type"] = lot["last_note_type"]
-            pos["last_note"] = lot["last_note"]
+        pos["running_qty"] += lot.running_qty
+        pos["running_cost"] += lot.running_cost
+        pos["realized_pnl"] += lot.realized_pnl
+        if lot.last_traded_at > pos["last_traded_at"]:
+            pos["last_traded_at"] = lot.last_traded_at
+        if lot.exchange:
+            pos["exchange"] = lot.exchange
+        pos["account_ids"].add(lot.account_id)
+        if lot.last_note_type:
+            pos["last_note_type"] = lot.last_note_type
+            pos["last_note"] = lot.last_note
 
     positions: list[Position] = []
     for key, pos in pos_map.items():
@@ -229,21 +253,21 @@ def build_account_snapshots(
 
     trades 풀스캔 없이 lot 의 running_qty 와 quote.price 만으로 평가액을 계산한다.
     """
-    by_account: dict[str, list[dict]] = defaultdict(list)
+    by_account: dict[str, list[Lot]] = defaultdict(list)
     for lot in lot_map.values():
-        by_account[str(lot["account_id"])].append(lot)
+        by_account[str(lot.account_id)].append(lot)
 
     snapshots = []
     for account in accounts:
         account_lots = by_account.get(str(account.id), [])
         stock_evaluation = 0.0
         for lot in account_lots:
-            if lot["running_qty"] <= 0:
+            if lot.running_qty <= 0:
                 continue
-            quote_key = position_key(lot['ticker'], lot['country'])
+            quote_key = position_key(lot.ticker, lot.country)
             quote = quotes.get(quote_key)
             if quote:
-                stock_evaluation += quote["price"] * lot["running_qty"]
+                stock_evaluation += quote["price"] * lot.running_qty
 
         snapshots.append(AccountSnapshot(
             account=account,

@@ -42,7 +42,12 @@ from invest_note_api.domain.realized_pnl import (
     validate_mutation,
 )
 from invest_note_api.domain.trade_utils import kst_date_to_utc
-from invest_note_api.domain.trade_import import make_signature, trade_to_signature
+from invest_note_api.domain.trade_import import (
+    make_preview_signature,
+    make_signature,
+    trade_to_preview_signature,
+    trade_to_signature,
+)
 from invest_note_api.domain.trade_types import (
     DEFAULT_COUNTRY,
     MARKET_TYPE_STOCK,
@@ -342,8 +347,7 @@ async def import_preview(
 
     # account_id 없이 ticker+날짜+거래유형+수량+가격으로 근사 dedup.
     # commit 시 정확한 account_id 기반 dedup이 재실행되므로 이는 참고용 카운트.
-    _PREVIEW_ACCT = "__preview__"
-    existing_sigs: set = {trade_to_signature(t, _PREVIEW_ACCT) for t in all_trades}
+    existing_sigs: set = {trade_to_preview_signature(t) for t in all_trades}
 
     rows_to_stage: list[dict] = []
     dup_count = 0
@@ -375,8 +379,7 @@ async def import_preview(
             parse_errors.append(ImportError(row_no=pt.source_row_no, reason="미래 일자 거래 등록 불가"))
             continue
 
-        preview_sig = make_signature(
-            account_id=_PREVIEW_ACCT,
+        preview_sig = make_preview_signature(
             trade_date=traded_date,
             ticker=ticker,
             asset_name=pt.asset_name,

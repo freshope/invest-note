@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class TradeSignature:
-    """중복 판단 키. traded_at은 날짜 단위만 비교한다."""
+    """중복 판단 키 (commit 경로). traded_at은 날짜 단위만 비교한다."""
 
     account_id: str
     trade_date: date          # date only (no time)
@@ -21,6 +21,21 @@ class TradeSignature:
     trade_type: str           # "BUY" | "SELL"
     quantity: Decimal
     price: Decimal            # 소수점 2자리로 정규화
+
+
+@dataclass(frozen=True)
+class PreviewSignature:
+    """import preview 경로 dedup 키. account_id 가 아직 결정되지 않은 단계에서 사용.
+
+    commit 시점에는 정확한 account_id 기반의 `TradeSignature` 로 dedup 이 재실행되므로
+    preview 의 dup_count 는 참고용 카운트.
+    """
+
+    trade_date: date
+    identifier: str
+    trade_type: str
+    quantity: Decimal
+    price: Decimal
 
 
 def _normalise_price(price: float | Decimal) -> Decimal:
@@ -47,10 +62,40 @@ def make_signature(
     )
 
 
+def make_preview_signature(
+    trade_date: date,
+    ticker: str | None,
+    asset_name: str,
+    trade_type: str,
+    quantity: float | Decimal,
+    price: float | Decimal,
+) -> PreviewSignature:
+    identifier = ticker if ticker else asset_name
+    return PreviewSignature(
+        trade_date=trade_date,
+        identifier=identifier,
+        trade_type=trade_type,
+        quantity=Decimal(str(quantity)),
+        price=_normalise_price(price),
+    )
+
+
 def trade_to_signature(trade: "Trade", account_id: str) -> TradeSignature:
-    """저장된 Trade row → 시그니처."""
+    """저장된 Trade row → commit 경로 시그니처."""
     return make_signature(
         account_id=account_id,
+        trade_date=trade.traded_at.date(),
+        ticker=trade.ticker_symbol,
+        asset_name=trade.asset_name,
+        trade_type=trade.trade_type,
+        quantity=trade.quantity,
+        price=trade.price,
+    )
+
+
+def trade_to_preview_signature(trade: "Trade") -> PreviewSignature:
+    """저장된 Trade row → preview 경로 시그니처 (account_id 무관)."""
+    return make_preview_signature(
         trade_date=trade.traded_at.date(),
         ticker=trade.ticker_symbol,
         asset_name=trade.asset_name,
