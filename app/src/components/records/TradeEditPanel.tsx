@@ -32,10 +32,9 @@ import { PNL_COLORS } from "@/lib/constants/colors";
 import { AutoEmotionField, AutoReasoningTagsField } from "./AutoMetaField";
 import { getQuantityUnit, CompactRow, CountryBadge, MarketTypeBadge, ExchangeBadge } from "./trade-display";
 import { fmt, fmtNumberInput, parseNumberInput } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { cn, getFirstFormError } from "@/lib/utils";
 import type { Trade, Account, ReasoningTag } from "@/types/database";
-import { format } from "date-fns";
-import { ko } from "date-fns/locale";
+import { formatTradedAtLabel } from "@/lib/trade-utils";
 import { TradeFreeTextField } from "./TradeFreeTextField";
 
 const schema = z.object({
@@ -157,7 +156,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
     }
   }
 
-  const firstError = errors.root?.message ?? (Object.values(errors)[0]?.message as string | undefined);
+  const firstError = getFirstFormError(errors);
 
   return (
     <FullScreenPanel open={open} onOpenChange={() => onOpenChange(false)}>
@@ -211,7 +210,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
               <div className="rounded-2xl bg-muted/60 p-4">
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3">
                   <CompactRow label="날짜">
-                    {format(new Date(trade.traded_at), "yyyy년 M월 d일 (EEE)", { locale: ko })}
+                    {formatTradedAtLabel(trade.traded_at)}
                   </CompactRow>
                   <CompactRow label="계좌">
                     <span className="inline-flex items-center gap-1">

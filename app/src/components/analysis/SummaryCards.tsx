@@ -30,18 +30,17 @@ interface SummaryCardsProps {
   summary: AnalysisSummary;
 }
 
+function classifyWinRate(winRate: number, resultInputRate: number): string {
+  if (resultInputRate < RESULT_INPUT_RATE_LOW) return "text-muted-foreground";
+  if (winRate >= WIN_THRESHOLD) return PNL_COLORS.rise.text;
+  if (winRate < LOSS_THRESHOLD) return PNL_COLORS.fall.text;
+  return "text-foreground";
+}
+
 export function SummaryCards({ summary }: SummaryCardsProps) {
   const { totalTrades, sellTrades, winRate, totalProfitLoss, resultInputRate } = summary;
 
-  const winRateClass =
-    resultInputRate < RESULT_INPUT_RATE_LOW
-      ? "text-muted-foreground"
-      : winRate >= WIN_THRESHOLD
-        ? PNL_COLORS.rise.text
-        : winRate < LOSS_THRESHOLD
-          ? PNL_COLORS.fall.text
-          : "text-foreground";
-
+  const winRateClass = classifyWinRate(winRate, resultInputRate);
   const pnlClass = signColor(totalProfitLoss, "foreground");
 
   return (

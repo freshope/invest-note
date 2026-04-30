@@ -26,3 +26,8 @@ export function formatDateLabel(dateStr: string): string {
   const date = new Date(y, m - 1, d);
   return format(date, "yyyy년 M월 d일 (EEE)", { locale: ko });
 }
+
+export function formatTradedAtLabel(input: Date | string): string {
+  const date = typeof input === "string" ? new Date(input) : input;
+  return format(date, "yyyy년 M월 d일 (EEE)", { locale: ko });
+}

@@ -30,11 +30,11 @@ import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
 import { HoldingSelectInput } from "./HoldingSelectInput";
 import { CountryBadge } from "./trade-display";
 import { fmt, fmtNumberInput, parseNumberInput } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { cn, getFirstFormError } from "@/lib/utils";
 import type { Account, TradeType } from "@/types/database";
 import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
-import { ko } from "date-fns/locale";
+import { formatTradedAtLabel } from "@/lib/trade-utils";
 
 const FUTURE_TRADE_MESSAGE = "미래 날짜의 거래는 등록할 수 없습니다.";
 
@@ -169,7 +169,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
   const total = (price || 0) * (quantity || 0);
   const totalDisplay = total > 0 ? fmt(total) : "-";
 
-  const firstError = errors.root?.message ?? (Object.values(errors)[0]?.message as string | undefined);
+  const firstError = getFirstFormError(errors);
 
   async function onSubmit(values: FormValues) {
     try {
@@ -261,7 +261,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
             render={({ field }) => (
               <Popover open={calOpen} onOpenChange={setCalOpen}>
                 <PopoverTrigger className="flex h-12 w-full items-center justify-between rounded-xl bg-muted px-4 text-[15px] text-foreground">
-                  <span>{format(field.value, "yyyy년 M월 d일 (EEE)", { locale: ko })}</span>
+                  <span>{formatTradedAtLabel(field.value)}</span>
                   <CalendarIcon className="h-4 w-4 text-muted-foreground" />
                 </PopoverTrigger>
                 <PopoverContent side="bottom" align="start" className="w-auto">
@@ -373,7 +373,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 {field.value ? (
                   <>
                     <span className="font-mono font-medium">{field.value}</span>
-                    <CountryBadge countryCode={watch("country_code")} />
+                    <CountryBadge countryCode={countryCode} />
                   </>
                 ) : (
                   <span className="text-muted-foreground font-normal">종목 선택 시 자동 입력</span>

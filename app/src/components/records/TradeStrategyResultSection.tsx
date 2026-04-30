@@ -1,10 +1,10 @@
 "use client";
 
 import { memo } from "react";
-import { format, subDays } from "date-fns";
-import { ko } from "date-fns/locale";
+import { subDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { STRATEGY_LABELS, ADHERENCE_CONFIG } from "@/lib/constants/trading";
+import { formatTradedAtLabel } from "@/lib/trade-utils";
 import type { ReactNode } from "react";
 import type { StrategyEvaluation } from "@/lib/analysis/strategy-adherence";
 
@@ -61,12 +61,12 @@ export const TradeStrategyResultSection = memo(function TradeStrategyResultSecti
           <div className="rounded-lg bg-background border border-border/60 px-3 py-2.5 space-y-1.5">
             <InfoRow
               label="매도일"
-              value={format(sellDate, "yyyy년 M월 d일 (EEE)", { locale: ko })}
+              value={formatTradedAtLabel(sellDate)}
             />
             <InfoRow
               label="평균 매수일"
               value={avgBuyDate
-                ? `${format(avgBuyDate, "yyyy년 M월 d일 (EEE)", { locale: ko })} · ${holdingDays}일 전`
+                ? `${formatTradedAtLabel(avgBuyDate)} · ${holdingDays}일 전`
                 : "–"}
             />
             {strategyEvaluation && (
