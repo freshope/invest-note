@@ -7,6 +7,8 @@ FastAPI는 acquire_for_user 트랜잭션 내 executemany → all-or-nothing.
 from __future__ import annotations
 
 import math
+import operator
+from collections.abc import Callable
 from typing import Any
 
 from invest_note_api.domain.realized_pnl import (
@@ -18,35 +20,32 @@ from invest_note_api.domain.trade_types import Trade
 from invest_note_api.errors import APIError
 
 
-def _is_changed(existing: Trade | None, entry: GroupPnLEntry) -> bool:
-    """기존 SELL row의 PnL 7필드와 신규 entry 비교.
-
-    DB round-trip 후의 부동소수 미세 오차로 false-positive UPDATE가 발생하지 않도록
-    숫자 필드는 math.isclose로 비교. None ↔ 값 전이는 항상 변경으로 간주.
-    """
-    if existing is None:
-        return True
-    if not _float_eq(existing.profit_loss, entry.profit_loss):
-        return True
-    if not _float_eq(existing.avg_buy_price, entry.avg_buy_price):
-        return True
-    if existing.holding_days != entry.holding_days:
-        return True
-    if existing.strategy_type != entry.strategy_type:
-        return True
-    if existing.reasoning_tags != entry.reasoning_tags:
-        return True
-    if existing.emotion != entry.emotion:
-        return True
-    if existing.result != entry.result:
-        return True
-    return False
-
-
 def _float_eq(a: float | None, b: float | None) -> bool:
     if a is None or b is None:
         return a is b
     return math.isclose(a, b, rel_tol=1e-9, abs_tol=1e-9)
+
+
+# (attr, equality 비교 함수) — _is_changed 가 순회한다.
+# 부동소수 두 필드는 DB round-trip 미세 오차 방지를 위해 _float_eq, 나머지는 ==.
+_COMPARE_FIELDS: list[tuple[str, Callable[[Any, Any], bool]]] = [
+    ("profit_loss", _float_eq),
+    ("avg_buy_price", _float_eq),
+    ("holding_days", operator.eq),
+    ("strategy_type", operator.eq),
+    ("reasoning_tags", operator.eq),
+    ("emotion", operator.eq),
+    ("result", operator.eq),
+]
+
+
+def _is_changed(existing: Trade | None, entry: GroupPnLEntry) -> bool:
+    if existing is None:
+        return True
+    return any(
+        not eq(getattr(existing, attr), getattr(entry, attr))
+        for attr, eq in _COMPARE_FIELDS
+    )
 
 
 async def recalc_group_pnl(
