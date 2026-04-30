@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import patch
+from uuid import uuid4
 
 import asyncpg
 import pytest
@@ -349,6 +350,72 @@ class TestCreateTrade:
             resp = trades_client.post("/api/trades", json=self._buy_payload())
         assert resp.status_code == 409
         assert "충돌" in resp.json()["error"]
+
+
+class TestImportCommit:
+    def _staged_row(
+        self,
+        ticker: str,
+        asset_name: str,
+        traded_at_kst: str = "2024-01-10",
+    ) -> dict:
+        return {
+            "asset_name": asset_name,
+            "ticker_symbol": ticker,
+            "market_type": "STOCK",
+            "trade_type": "BUY",
+            "price": 70000,
+            "quantity": 1,
+            "traded_at_kst": traded_at_kst,
+            "commission": 0,
+            "tax": 0,
+            "country_code": "KR",
+            "exchange": "KOSPI",
+        }
+
+    def test_commit_fetches_all_trades_once_for_multiple_groups(
+        self,
+        trades_client,
+        monkeypatch,
+    ):
+        sql_calls = _capture_sql(monkeypatch)
+        staging_id = str(uuid4())
+
+        from invest_note_api.routers import trades
+
+        trades._STAGING[staging_id] = {
+            "user_id": TEST_USER_ID,
+            "rows": [
+                self._staged_row("005930", "삼성전자"),
+                self._staged_row("000660", "SK하이닉스"),
+            ],
+            "parse_errors": [],
+            "usd_skip_count": 0,
+            "broker_key": "toss",
+            "account_hint": None,
+        }
+
+        conn = FakeConnection(
+            "a1",  # assert_account_exists
+            [],  # initial list_trades
+            [_to_record(_make_trade_row(id_="new-1", ticker="005930", asset_name="삼성전자"))],
+            [_to_record(_make_trade_row(id_="new-2", ticker="000660", asset_name="SK하이닉스"))],
+        )
+
+        with _patch_trades(conn):
+            resp = trades_client.post(
+                "/api/trades/import/commit",
+                json={"staging_id": staging_id, "account_id": "a1"},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["inserted_count"] == 2
+        list_trade_calls = [
+            q for q in sql_calls
+            if q.lower().startswith("select * from trades")
+            and "where user_id = $1" in q.lower()
+        ]
+        assert len(list_trade_calls) == 1
 
 
 class TestGetTrade:

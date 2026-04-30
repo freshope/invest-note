@@ -571,9 +571,10 @@ async def import_commit(
             try:
                 async with conn.transaction():
                     await acquire_trade_group_lock(conn, str(user.id), lock_key)
-                    inserted_count += await insert_trades_bulk(conn, str(user.id), to_insert)
-                    fresh_all = await list_trades(conn, user.id)
-                    await recalc_group_pnl(conn, fresh_all, lock_key)
+                    inserted_trades = await insert_trades_bulk(conn, str(user.id), to_insert)
+                    inserted_count += len(inserted_trades)
+                    all_trades.extend(inserted_trades)
+                    await recalc_group_pnl(conn, all_trades, lock_key)
             except asyncpg.LockNotAvailableError:
                 commit_errors.append(ImportError(row_no=0, reason=f"{to_insert[0]['asset_name']} 처리 중 충돌 — 잠시 후 다시 시도해주세요."))
             except asyncpg.UniqueViolationError:

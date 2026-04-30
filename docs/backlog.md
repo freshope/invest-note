@@ -16,9 +16,6 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 백엔드 코드 단순화 / 효율 (2026-04-29 simplify 리뷰)
 
-### HIGH — 성능
-- [ ] 임포트 commit 루프 N+1 제거 (`routers/trades.py:600`) — 그룹마다 `list_trades(conn, user.id)` 재호출. 30종목 import면 사용자 전체 거래를 30번 fetch. 루프 진입 전 1회 로드 → in-memory append → 그룹별 슬라이스로 `recalc_group_pnl` 호출하도록 재구성.
-
 ### 구조 개선 — 라우터 보일러플레이트
 - [ ] `body: dict` + `validate_body` 패턴 제거 — `routers/trades.py:130,272`, `routers/accounts.py:49,73`. FastAPI가 typed body로 422를 자동 처리하므로 `body: TradeCreate` 형태로 선언하면 `errors.validate_body` 함수 자체 제거 가능.
 - [ ] 수동 snake→camel dict 빌더를 Pydantic response_model로 대체 — `routers/portfolio.py:121-166`(`_pos_dict`/`_snap_dict`/`_totals_dict`), `routers/analysis.py:89-134,181-205,227-237`, `routers/trades.py:71-92`. `model_config = {"alias_generator": to_camel, "populate_by_name": True}` + `response_model`로 수십 줄 제거.

@@ -124,6 +124,8 @@ INSERT INTO trades (
 )
 """
 
+_TRADE_INSERT_PARAM_COUNT = 19
+
 
 def _trade_insert_params(user_id: str, data: dict) -> tuple:
     return (
@@ -236,14 +238,28 @@ async def delete_trade(conn: Any, trade_id: str, user_id: str) -> bool:
     return result != PG_DELETE_ZERO
 
 
-async def insert_trades_bulk(conn: Any, user_id: str, rows: list[dict]) -> int:
-    """거래 목록을 일괄 INSERT한다. 반환값: 삽입된 행 수."""
+async def insert_trades_bulk(conn: Any, user_id: str, rows: list[dict]) -> list[Trade]:
+    """거래 목록을 일괄 INSERT한다. 반환값: 삽입된 거래 목록."""
     if not rows:
-        return 0
+        return []
 
     params = [_trade_insert_params(user_id, data) for data in rows]
-    await conn.executemany(_TRADE_INSERT_SQL, params)
-    return len(rows)
+    flattened = [value for row_params in params for value in row_params]
+    values_sql = ", ".join(
+        "("
+        + ", ".join(
+            f"${i * _TRADE_INSERT_PARAM_COUNT + j + 1}"
+            for j in range(_TRADE_INSERT_PARAM_COUNT)
+        )
+        + ")"
+        for i in range(len(params))
+    )
+    insert_columns_sql = _TRADE_INSERT_SQL.split(" VALUES ", 1)[0]
+    rows_inserted = await conn.fetch(
+        f"{insert_columns_sql} VALUES {values_sql} RETURNING *",
+        *flattened,
+    )
+    return [_row_to_trade(row) for row in rows_inserted]
 
 
 async def list_trades_in_range(
