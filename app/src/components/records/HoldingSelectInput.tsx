@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useMemo } from "react";
 import { usePortfolioSummary } from "@/hooks/usePortfolioSummary";
+import { useClickOutside } from "@/hooks/useClickOutside";
 import { Input } from "@/components/base/Input";
 import { CountryBadge } from "./trade-display";
 import { fmt } from "@/lib/format";
@@ -20,16 +21,7 @@ export function HoldingSelectInput({ accountId, value, onChange, onSelect, onSel
   const containerRef = useRef<HTMLDivElement>(null);
   const { data, loading } = usePortfolioSummary();
 
-  const handleClickOutside = useCallback((e: MouseEvent) => {
-    if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-      setOpen(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [handleClickOutside]);
+  useClickOutside(containerRef, () => setOpen(false));
 
   const allPositions = useMemo(
     () => accountId
@@ -54,13 +46,13 @@ export function HoldingSelectInput({ accountId, value, onChange, onSelect, onSel
     onSelectComplete?.();
   };
 
-  const placeholder = !accountId
-    ? "계좌를 먼저 선택하세요"
-    : loading
-    ? "보유 종목 조회 중..."
-    : allPositions.length === 0
-    ? "보유 중인 종목이 없습니다"
-    : "보유 종목을 선택하세요";
+  function getPlaceholder(): string {
+    if (!accountId) return "계좌를 먼저 선택하세요";
+    if (loading) return "보유 종목 조회 중...";
+    if (allPositions.length === 0) return "보유 중인 종목이 없습니다";
+    return "보유 종목을 선택하세요";
+  }
+  const placeholder = getPlaceholder();
 
   return (
     <div ref={containerRef} className="relative">

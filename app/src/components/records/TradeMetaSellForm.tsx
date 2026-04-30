@@ -11,6 +11,7 @@ import { VALIDATION_LIMITS, TRADE_FREE_TEXT_ERROR } from "@/lib/constants/valida
 import { queryKeys } from "@/lib/query-keys";
 import { TradeFreeTextField } from "./TradeFreeTextField";
 import { AutoEmotionField } from "./AutoMetaField";
+import { getFirstFormError } from "@/lib/utils";
 
 const schema = z.object({
   sell_reason: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, TRADE_FREE_TEXT_ERROR),
@@ -67,7 +68,7 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
     }
   }
 
-  const errorMessage = errors.root?.message ?? Object.values(errors)[0]?.message;
+  const errorMessage = getFirstFormError(errors);
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">

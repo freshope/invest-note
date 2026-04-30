@@ -18,6 +18,7 @@ import {
 } from "@/lib/constants/trading";
 import { StrategyEmotionFields } from "./StrategyEmotionFields";
 import { TradeFreeTextField } from "./TradeFreeTextField";
+import { getFirstFormError } from "@/lib/utils";
 
 const schema = z.object({
   strategy_type: z.enum(STRATEGY_VALUES).nullable(),
@@ -78,7 +79,7 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
     }
   }
 
-  const errorMessage = errors.root?.message ?? Object.values(errors)[0]?.message;
+  const errorMessage = getFirstFormError(errors);
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">

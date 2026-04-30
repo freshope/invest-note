@@ -3,8 +3,6 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { format } from "date-fns";
-import { ko } from "date-fns/locale";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/base/Button";
@@ -12,8 +10,8 @@ import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
 import { TradeEditPanel } from "./TradeEditPanel";
 import { DeleteTradeDialog } from "./DeleteTradeDialog";
-import type { Account } from "@/types/database";
-import type { TradeWithAccount } from "@/lib/trade-utils";
+import type { Account, TradeResult } from "@/types/database";
+import { formatTradedAtLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import { tradesApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { ChevronLeftIcon } from "lucide-react";
@@ -33,6 +31,22 @@ interface TradeDetailProps {
 }
 
 
+
+const RESULT_BADGE: Record<TradeResult, { label: string; classes: string }> = {
+  SUCCESS: {
+    label: "수익 ✅",
+    classes: cn(PNL_COLORS.rise.bgSoft, PNL_COLORS.rise.text, PNL_COLORS.rise.borderSoft),
+  },
+  FAIL: {
+    label: "손실 ❌",
+    classes: cn(PNL_COLORS.fall.bgSoft, PNL_COLORS.fall.text, PNL_COLORS.fall.borderSoft),
+  },
+  BREAKEVEN: {
+    label: "본전 ➖",
+    classes: "bg-muted text-foreground border-border",
+  },
+};
+const RESULT_BADGE_FALLBACK = { label: "–", classes: "bg-muted text-muted-foreground border-border" };
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -70,7 +84,7 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
     ? `/stocks/${trade.country_code ?? "KR"}/${trade.ticker_symbol}`
     : null;
 
-  const tradedDate = format(new Date(trade.traded_at), "yyyy년 M월 d일 (EEE)", { locale: ko });
+  const tradedDate = formatTradedAtLabel(trade.traded_at);
   const price = fmt(Number(trade.price));
   const quantity = Number(trade.quantity);
   const totalAmount = fmt(Number(trade.total_amount));
@@ -184,18 +198,17 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
         </div>
 
         {/* 거래 결과 (매도 자동 계산) */}
-        {!isBuy && (
+        {!isBuy && (() => {
+          const badge = summary?.result ? RESULT_BADGE[summary.result] : RESULT_BADGE_FALLBACK;
+          return (
           <div className="rounded-2xl bg-muted/60 p-4 space-y-3">
             <p className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wide">거래 결과 (자동 계산)</p>
             <div className="flex items-center justify-between">
               <span className={cn(
                 "inline-flex items-center rounded-full px-2.5 py-0.5 text-[12px] font-bold border",
-                summary?.result === "SUCCESS" && cn(PNL_COLORS.rise.bgSoft, PNL_COLORS.rise.text, PNL_COLORS.rise.borderSoft),
-                summary?.result === "FAIL" && cn(PNL_COLORS.fall.bgSoft, PNL_COLORS.fall.text, PNL_COLORS.fall.borderSoft),
-                summary?.result === "BREAKEVEN" && "bg-muted text-foreground border-border",
-                !summary?.result && "bg-muted text-muted-foreground border-border",
+                badge.classes,
               )}>
-                {summary?.result === "SUCCESS" ? "수익 ✅" : summary?.result === "FAIL" ? "손실 ❌" : summary?.result === "BREAKEVEN" ? "본전 ➖" : "–"}
+                {badge.label}
               </span>
               {summary?.pnl != null && (
                 <span className={cn(
@@ -240,7 +253,8 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
               </div>
             )}
           </div>
-        )}
+          );
+        })()}
 
         {/* 전략 결과 (매도) */}
         {!isBuy && (
