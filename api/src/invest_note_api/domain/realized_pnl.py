@@ -47,7 +47,7 @@ def trade_to_group_key(trade: Trade) -> TradeGroupKey:
     )
 
 
-def _is_same_group(trade: Trade, key: TradeGroupKey) -> bool:
+def is_same_group(trade: Trade, key: TradeGroupKey) -> bool:
     if trade.account_id != key.account_id:
         return False
     if trade_country(trade) != key.country:
@@ -137,7 +137,7 @@ def compute_group_pnl(trades: list[Trade], key: TradeGroupKey) -> dict[str, Grou
 
     for ev in walk_trades(
         trades,
-        group_filter=lambda t: _is_same_group(t, key),
+        group_filter=lambda t: is_same_group(t, key),
         sort_fn=sort_for_calc,
     ):
         if ev.kind != "SELL":
@@ -196,7 +196,7 @@ def validate_mutation(
 
     for ev in walk_trades(
         virtual,
-        group_filter=lambda t: _is_same_group(t, key),
+        group_filter=lambda t: is_same_group(t, key),
         sort_fn=sort_for_calc,
         track_fifo_lots=False,
     ):

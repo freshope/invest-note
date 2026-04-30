@@ -16,7 +16,7 @@ MVP 이후 구현할 작업 후보 목록.
 ### 도메인 — 중복 회계 로직
 - [x] FIFO/WAC walker 통합 — `domain/trade_walker.py` 신설(generator + 정책 주입), `compute_group_pnl`/`validate_mutation`/`build_positions`가 모두 walker 위에 재구현됨 (2026-04-30).
 - [x] `compute_total_holding`+`compute_wac` 단일 함수로 병합 — `domain/holdings.py:83-128`. `routers/portfolio.py:66-79`에서 같은 trades 리스트를 두 번 정렬·필터링. `(qty, avg)` 한 번에 반환. (2026-04-30)
-- [ ] `_is_flexible_match` ↔ `_is_same_group` 통합 — `domain/holdings.py:35` vs `domain/realized_pnl.py:44`가 같은 의도, 다른 시그니처. `LotKey`/`TradeGroupKey` 타입을 단일화.
+- [ ] `routers/trades.py:106` 검색 박스 OR 일관성 검토 — `GET /api/trades?ticker=...` 에서 `t.ticker_symbol == ticker or t.asset_name == ticker` 로 ticker/asset_name 양쪽 매칭. `ticker_symbol` 항상 존재 invariant(2026-04-30 decisions.md) 와 의도적 검색 UX(사용자가 종목명 입력 허용) 중 어느 쪽인지 확정하고, 의도적이면 주석 명시 / 잉여면 strict 로 정리.
 
 ## 운영 / 어드민 도구
 
