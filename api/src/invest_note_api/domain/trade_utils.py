@@ -1,5 +1,11 @@
+from __future__ import annotations
+
 from datetime import date, datetime, time, timezone
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
+
+if TYPE_CHECKING:
+    from invest_note_api.domain.trade_types import Trade
 
 KST = ZoneInfo("Asia/Seoul")
 KST_OFFSET = "+09:00"
@@ -28,3 +34,8 @@ def kst_date_to_utc(d: date, t: time = _KST_MARKET_OPEN) -> datetime:
 def position_key(ticker: str | None, country: str) -> str:
     """티커+국가 기반 포지션 dict 키 (account 미포함)."""
     return f"{ticker}:{country}"
+
+
+def sort_by_traded_at(trades: list[Trade]) -> list[Trade]:
+    """traded_at 오름차순. 동시각 tiebreak 가 필요하면 realized_pnl.sort_for_calc 사용."""
+    return sorted(trades, key=lambda t: t.traded_at)

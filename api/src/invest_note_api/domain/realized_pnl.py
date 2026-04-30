@@ -172,8 +172,7 @@ def _apply_virtual(
     if mutation_type == "insert":
         return [*trades, trade]
     if mutation_type == "update":
-        patched_data = {**trade.model_dump(), **(patch or {})}
-        patched = Trade(**patched_data)
+        patched = trade.model_copy(update=patch or {})
         return [patched if t.id == trade.id else t for t in trades]
     return [t for t in trades if t.id != trade.id]
 

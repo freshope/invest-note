@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -10,7 +10,7 @@ from invest_note_api.domain.trade_types import (
     trade_country,
     trade_identifier,
 )
-from invest_note_api.domain.trade_utils import position_key, to_kst
+from invest_note_api.domain.trade_utils import position_key, sort_by_traded_at, to_kst
 from invest_note_api.domain.trade_walker import (
     stored_avg_cost_deduction,
     walk_trades,
@@ -100,10 +100,6 @@ def _lot_key_of(trade: "Trade") -> str:
     return f"{position_key(trade_identifier(trade), trade_country(trade))}:{trade.account_id}"
 
 
-def _by_traded_at(trades: list["Trade"]) -> list["Trade"]:
-    return sorted(trades, key=lambda t: t.traded_at)
-
-
 def build_positions(trades: list["Trade"]) -> tuple[list[Position], LotMap]:
     """계좌별 lot 추적 → 종목별 포지션 집계.
 
@@ -130,7 +126,7 @@ def build_positions(trades: list["Trade"]) -> tuple[list[Position], LotMap]:
         for ev in walk_trades(
             lot_trades,
             group_filter=lambda _t: True,
-            sort_fn=_by_traded_at,
+            sort_fn=sort_by_traded_at,
             cost_deduction=stored_avg_cost_deduction,
             track_fifo_lots=False,
         ):
@@ -233,13 +229,11 @@ def merge_quotes(positions: list[Position], quotes: QuoteMap) -> list[Position]:
             result.append(pos)
             continue
         evaluation = quote["price"] * pos.holding_quantity
-        result.append(Position(
-            **{
-                **pos.__dict__,
-                "current_price": quote["price"],
-                "evaluation": evaluation,
-                "unrealized_pnl": evaluation - pos.cost_basis,
-            }
+        result.append(replace(
+            pos,
+            current_price=quote["price"],
+            evaluation=evaluation,
+            unrealized_pnl=evaluation - pos.cost_basis,
         ))
     return result
 

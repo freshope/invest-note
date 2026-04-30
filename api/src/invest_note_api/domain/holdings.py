@@ -8,6 +8,7 @@ from invest_note_api.domain.realized_pnl import (
     is_same_group,
 )
 from invest_note_api.domain.trade_types import TRADE_TYPE_BUY
+from invest_note_api.domain.trade_utils import sort_by_traded_at
 
 if TYPE_CHECKING:
     from invest_note_api.domain.trade_types import Trade
@@ -32,15 +33,11 @@ class HoldingSummary:
     avg_buy_price: float | None
 
 
-def _sort_by_traded_at(trades: list["Trade"]) -> list["Trade"]:
-    return sorted(trades, key=lambda t: t.traded_at)
-
-
 def compute_holding_summary(trades: list["Trade"], key: TradeGroupKey) -> HoldingSummary:
     """보유 수량과 가중평균단가(WAC)를 한 번의 순회로 계산."""
     running_qty = 0.0
     running_cost = 0.0
-    for trade in _sort_by_traded_at(trades):
+    for trade in sort_by_traded_at(trades):
         if not is_same_group(trade, key):
             continue
         if trade.trade_type == TRADE_TYPE_BUY:
