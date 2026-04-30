@@ -11,13 +11,6 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 테스트 보강 — `period.ts` 경계값, `computeRealizedPnL` 멀티 종목, `byTag` FIFO 귀속
 - [ ] `recalc_group_pnl` 변경 row만 UPDATE 최적화 — `PNL_AFFECTING_FIELDS`에 `reasoning_tags`/`emotion` 추가로 BUY 메타 단독 변경에서도 그룹 advisory lock + `executemany`가 발동. `pnl_map` 결과를 기존 SELL row와 비교해 실제 변경된 row에만 UPDATE 발행. DB write 부하 절감.
 
-## 백엔드 코드 단순화 / 효율 (2026-04-29 simplify 리뷰)
-
-### 도메인 — 중복 회계 로직
-- [x] FIFO/WAC walker 통합 — `domain/trade_walker.py` 신설(generator + 정책 주입), `compute_group_pnl`/`validate_mutation`/`build_positions`가 모두 walker 위에 재구현됨 (2026-04-30).
-- [x] `compute_total_holding`+`compute_wac` 단일 함수로 병합 — `domain/holdings.py:83-128`. `routers/portfolio.py:66-79`에서 같은 trades 리스트를 두 번 정렬·필터링. `(qty, avg)` 한 번에 반환. (2026-04-30)
-- [x] `routers/trades.py:106` 검색 박스 OR 일관성 검토 — `ticker_symbol` invariant(2026-04-30 decisions.md) 신뢰 정책에 맞춰 `t.asset_name == ticker` 분기 제거, strict 로 통일 (2026-04-30).
-
 ## 운영 / 어드민 도구
 
 - [ ] PnL 저장값 검증 엔드포인트 (이슈 E) — `/api/admin/verify-pnl` 신설. SELL의 저장된 `profit_loss`/`avg_buy_price`/`holding_days`/`strategy_type`/`reasoning_tags`/`emotion`을 `compute_group_pnl()`로 재계산해 차이 검출. 사용자 단위 batch + 차이 리포트 + (옵션) 자동 보정. 권한은 admin scope. DB 직접 수정·마이그레이션 누락·mutation 경로 우회 시 분석 탭과 거래 기록 합계 불일치를 잡기 위함.
