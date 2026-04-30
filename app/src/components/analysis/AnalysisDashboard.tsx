@@ -76,11 +76,7 @@ export function AnalysisDashboard() {
             <SummaryCards summary={summary} />
 
             {/* 섹션 2: 투자 방향성 제안 */}
-            {suggestionsData && (
-              <SectionCard title="투자 방향성 제안">
-                <SuggestionList suggestions={suggestionsData.suggestions} />
-              </SectionCard>
-            )}
+            {suggestionsData && <SuggestionList suggestions={suggestionsData.suggestions} />}
 
             {/* 섹션 3: 투자 성향 프로필 */}
             {behavior && (
