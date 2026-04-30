@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Response
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.db import acquire_for_user, get_pool
+from invest_note_api.db_ops.accounts_repo import account_row_to_dict
 from invest_note_api.db_ops.trades_repo import PG_DELETE_ZERO
 from invest_note_api.errors import ERR_ACCOUNT_NOT_FOUND, APIError
 from invest_note_api.schemas.account import AccountCreate, AccountUpdate
@@ -14,13 +15,6 @@ from invest_note_api.schemas.account import AccountCreate, AccountUpdate
 router = APIRouter(prefix="/api/accounts")
 
 _UPDATABLE_COLS = frozenset({"name", "broker", "cash_balance"})
-
-
-def _row_to_dict(row: asyncpg.Record) -> dict:
-    d = dict(row)
-    if "cash_balance" in d and d["cash_balance"] is not None:
-        d["cash_balance"] = float(d["cash_balance"])
-    return d
 
 
 @router.get("")
@@ -41,7 +35,7 @@ async def list_accounts(
 
     count_map: dict[UUID, int] = {r["account_id"]: r["c"] for r in counts}
     return [
-        {**_row_to_dict(row), "trade_count": count_map.get(row["id"], 0)}
+        {**account_row_to_dict(row), "trade_count": count_map.get(row["id"], 0)}
         for row in accounts
     ]
 
@@ -64,7 +58,7 @@ async def create_account(
 
     if row is None:
         raise APIError("계좌를 추가할 수 없습니다. 다시 시도해주세요.", 500)
-    return _row_to_dict(row)
+    return account_row_to_dict(row)
 
 
 @router.patch("/{account_id}", responses={204: {"description": "No fields to update"}})
@@ -93,7 +87,7 @@ async def update_account(
 
     if row is None:
         raise APIError(ERR_ACCOUNT_NOT_FOUND, 404)
-    return _row_to_dict(row)
+    return account_row_to_dict(row)
 
 
 @router.delete("/{account_id}", status_code=204)

@@ -37,7 +37,16 @@ _HOLDING_BUCKETS: list[dict] = [
 ]
 _HOLDING_ORDER = [b["label"] for b in _HOLDING_BUCKETS]
 
-_SIZE_ORDER = ["50만 미만", "50~100만", "100~500만", "500만~1천만", "1천~5천만", "5천만 이상"]
+# 매수 금액 구간 — 임계값은 strict less-than (`amount < threshold`)
+_SIZE_BUCKETS: list[tuple[float, str]] = [
+    (500_000, "50만 미만"),
+    (1_000_000, "50~100만"),
+    (5_000_000, "100~500만"),
+    (10_000_000, "500만~1천만"),
+    (50_000_000, "1천~5천만"),
+    (float("inf"), "5천만 이상"),
+]
+_SIZE_ORDER = [label for _, label in _SIZE_BUCKETS]
 
 
 def _holding_bucket(days: int) -> str:
@@ -48,17 +57,10 @@ def _holding_bucket(days: int) -> str:
 
 
 def _size_bucket(amount: float) -> str:
-    if amount < 500_000:
-        return "50만 미만"
-    if amount < 1_000_000:
-        return "50~100만"
-    if amount < 5_000_000:
-        return "100~500만"
-    if amount < 10_000_000:
-        return "500만~1천만"
-    if amount < 50_000_000:
-        return "1천~5천만"
-    return "5천만 이상"
+    for threshold, label in _SIZE_BUCKETS:
+        if amount < threshold:
+            return label
+    return _SIZE_BUCKETS[-1][1]
 
 
 @router.get(

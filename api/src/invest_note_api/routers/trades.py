@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.db import acquire_for_user, get_pool
+from invest_note_api.db_ops.accounts_repo import account_row_to_dict
 from invest_note_api.db_ops.pnl_sync import recalc_group_pnl
 from invest_note_api.db_ops.trades_repo import (
     PNL_AFFECTING_FIELDS,
@@ -110,10 +111,7 @@ async def list_trades_endpoint(
             and t.ticker_symbol == ticker
         ]
 
-    accounts = [dict(r) for r in accounts_rows]
-    for a in accounts:
-        if "cash_balance" in a and a["cash_balance"] is not None:
-            a["cash_balance"] = float(a["cash_balance"])
+    accounts = [account_row_to_dict(r) for r in accounts_rows]
 
     return {"trades": [_trade_with_account_dict(t) for t in trades], "accounts": accounts}
 

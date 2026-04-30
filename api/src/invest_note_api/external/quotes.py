@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import TypedDict
 
@@ -41,42 +42,64 @@ class QuoteResult(TypedDict):
     as_of: str
 
 
-async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult | None:
+def _parse_realtime_price(data: dict) -> float:
+    item = (data.get("datas") or [{}])[0] if data.get("datas") else data.get("data") or data
+    raw = (
+        item.get("closePriceRaw")
+        or item.get("now")
+        or strip_comma_number(item.get("closePrice"))
+    )
+    return float(raw) if raw else 0.0
+
+
+def _parse_basic_price(data: dict) -> float:
+    raw = (
+        data.get("closePriceRaw")
+        or strip_comma_number(data.get("stockEndPrice"))
+        or strip_comma_number(data.get("closePrice"))
+    )
+    return float(raw) if raw else 0.0
+
+
+async def _try_endpoint(
+    client: httpx.AsyncClient,
+    url: str,
+    parse_price: Callable[[dict], float],
+    log_label: str,
+    code: str,
+) -> QuoteResult | None:
     try:
-        url = NAVER_REALTIME_URL.format(code=code)
         res = await client.get(url, headers=_HEADERS, timeout=HTTP_TIMEOUT_SECONDS)
         if res.status_code == 200:
-            data = res.json()
-            item = (data.get("datas") or [{}])[0] if data.get("datas") else data.get("data") or data
-            raw = (
-                item.get("closePriceRaw")
-                or item.get("now")
-                or strip_comma_number(item.get("closePrice"))
-            )
-            price = float(raw) if raw else 0.0
+            price = parse_price(res.json())
             if price > 0:
-                return {"price": price, "currency": CURRENCY_KRW, "as_of": datetime.now(timezone.utc).isoformat()}
+                return {
+                    "price": price,
+                    "currency": CURRENCY_KRW,
+                    "as_of": datetime.now(timezone.utc).isoformat(),
+                }
     except Exception:
-        logger.warning("naver realtime 시세 실패 code=%s", code, exc_info=True)
-
-    # 백업: stock basic API
-    try:
-        url = NAVER_BASIC_URL.format(code=code)
-        res = await client.get(url, headers=_HEADERS, timeout=HTTP_TIMEOUT_SECONDS)
-        if res.status_code == 200:
-            data = res.json()
-            raw = (
-                data.get("closePriceRaw")
-                or strip_comma_number(data.get("stockEndPrice"))
-                or strip_comma_number(data.get("closePrice"))
-            )
-            price = float(raw) if raw else 0.0
-            if price > 0:
-                return {"price": price, "currency": CURRENCY_KRW, "as_of": datetime.now(timezone.utc).isoformat()}
-    except Exception:
-        logger.warning("naver basic 시세 실패 code=%s", code, exc_info=True)
-
+        logger.warning("%s 시세 실패 code=%s", log_label, code, exc_info=True)
     return None
+
+
+async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult | None:
+    result = await _try_endpoint(
+        client,
+        NAVER_REALTIME_URL.format(code=code),
+        _parse_realtime_price,
+        "naver realtime",
+        code,
+    )
+    if result is not None:
+        return result
+    return await _try_endpoint(
+        client,
+        NAVER_BASIC_URL.format(code=code),
+        _parse_basic_price,
+        "naver basic",
+        code,
+    )
 
 
 async def _get_cached(key: str, fetch_fn) -> dict | None:
