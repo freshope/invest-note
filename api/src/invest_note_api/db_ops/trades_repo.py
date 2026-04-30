@@ -108,24 +108,25 @@ async def get_trade_with_account(conn: Any, trade_id: str, user_id: str) -> Trad
     return _row_to_trade_with_account(row)
 
 
-async def insert_trade(conn: Any, user_id: str, data: dict) -> dict:
-    row = await conn.fetchrow(
-        """
-        INSERT INTO trades (
-            user_id, account_id, asset_name, ticker_symbol, market_type,
-            trade_type, price, quantity, traded_at, commission, tax,
-            country_code, exchange,
-            strategy_type, reasoning_tags, buy_reason, sell_reason,
-            emotion, result
-        ) VALUES (
-            $1, $2, $3, $4, $5,
-            $6, $7, $8, $9, $10, $11,
-            $12, $13,
-            $14, $15, $16, $17,
-            $18, $19
-        )
-        RETURNING id, trade_type
-        """,
+_TRADE_INSERT_SQL = """
+INSERT INTO trades (
+    user_id, account_id, asset_name, ticker_symbol, market_type,
+    trade_type, price, quantity, traded_at, commission, tax,
+    country_code, exchange,
+    strategy_type, reasoning_tags, buy_reason, sell_reason,
+    emotion, result
+) VALUES (
+    $1, $2, $3, $4, $5,
+    $6, $7, $8, $9, $10, $11,
+    $12, $13,
+    $14, $15, $16, $17,
+    $18, $19
+)
+"""
+
+
+def _trade_insert_params(user_id: str, data: dict) -> tuple:
+    return (
         user_id,
         data["account_id"],
         data["asset_name"],
@@ -145,6 +146,13 @@ async def insert_trade(conn: Any, user_id: str, data: dict) -> dict:
         data.get("sell_reason"),
         data.get("emotion"),
         data.get("result"),
+    )
+
+
+async def insert_trade(conn: Any, user_id: str, data: dict) -> dict:
+    row = await conn.fetchrow(
+        f"{_TRADE_INSERT_SQL} RETURNING id, trade_type",
+        *_trade_insert_params(user_id, data),
     )
     return dict(row)
 
@@ -233,48 +241,8 @@ async def insert_trades_bulk(conn: Any, user_id: str, rows: list[dict]) -> int:
     if not rows:
         return 0
 
-    params = [
-        (
-            user_id,
-            data["account_id"],
-            data["asset_name"],
-            data["ticker_symbol"],
-            data.get("market_type", MARKET_TYPE_STOCK),
-            data["trade_type"],
-            data["price"],
-            data["quantity"],
-            data["traded_at"],
-            data.get("commission", 0),
-            data.get("tax", 0),
-            data.get("country_code", DEFAULT_COUNTRY),
-            data.get("exchange", ""),
-            data.get("strategy_type"),
-            data.get("reasoning_tags", []),
-            data.get("buy_reason"),
-            data.get("sell_reason"),
-            data.get("emotion"),
-            data.get("result"),
-        )
-        for data in rows
-    ]
-    await conn.executemany(
-        """
-        INSERT INTO trades (
-            user_id, account_id, asset_name, ticker_symbol, market_type,
-            trade_type, price, quantity, traded_at, commission, tax,
-            country_code, exchange,
-            strategy_type, reasoning_tags, buy_reason, sell_reason,
-            emotion, result
-        ) VALUES (
-            $1, $2, $3, $4, $5,
-            $6, $7, $8, $9, $10, $11,
-            $12, $13,
-            $14, $15, $16, $17,
-            $18, $19
-        )
-        """,
-        params,
-    )
+    params = [_trade_insert_params(user_id, data) for data in rows]
+    await conn.executemany(_TRADE_INSERT_SQL, params)
     return len(rows)
 
 
