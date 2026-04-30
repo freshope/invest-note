@@ -15,7 +15,7 @@ export const PERIODS_COMPACT: { value: Period; label: string }[] = [
   { value: "1m", label: "1M" },
   { value: "3m", label: "3M" },
   { value: "6m", label: "6M" },
-  { value: "ytd", label: "YTD" },
+  { value: "ytd", label: "올해" },
   { value: "all", label: "전체" },
 ];
 
