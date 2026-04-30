@@ -45,12 +45,11 @@ def compute_profile(
     hhi: float,
     holding_days_map: dict[str, int],
 ) -> tuple[BehaviorProfile, ProfileInputRates]:
+    """trades와 holding_days_map은 모두 동일 period 범위에서 빌드된 입력이어야 한다."""
     sells = [t for t in trades if t.trade_type == TRADE_TYPE_SELL]
     buys = [t for t in trades if t.trade_type == TRADE_TYPE_BUY]
 
-    # holding_days_map은 allTrades 기준이므로 기간 내 SELL id로 필터링
-    sell_ids = {t.id for t in sells}
-    all_days = [v for k, v in holding_days_map.items() if k in sell_ids]
+    all_days = list(holding_days_map.values())
     avg_days = sum(all_days) / len(all_days) if all_days else 0.0
     tempo = _clamp((avg_days / 60) * 100)
 

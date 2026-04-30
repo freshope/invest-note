@@ -10,7 +10,6 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 수수료 현황 별도 패널 — BUY commission·세금 합계, 순실현손익 vs 총비용 비교
 - [ ] 테스트 보강 — `period.ts` 경계값, `computeRealizedPnL` 멀티 종목, `byTag` FIFO 귀속
 - [ ] `recalc_group_pnl` 변경 row만 UPDATE 최적화 — `PNL_AFFECTING_FIELDS`에 `reasoning_tags`/`emotion` 추가로 BUY 메타 단독 변경에서도 그룹 advisory lock + `executemany`가 발동. `pnl_map` 결과를 기존 SELL row와 비교해 실제 변경된 row에만 UPDATE 발행. DB write 부하 절감.
-- [ ] `compute_summary` 인자 시그니처 정리 — 현재 `pnl_map`/`holding_days_map`은 `routers/analysis.py`에서 `all_trades` 기반으로 빌드되어 전달되지만, 함수 내부의 sells가 이미 period 필터링되어 있어 lookup만 일치하면 결과는 정확함. 다만 시그니처가 "전체 vs 필터링" 데이터 혼용을 암시해 오해 소지. period-필터링된 trades에서 직접 빌드하도록 통일하거나 docstring으로 의도 명시 필요.
 
 ## 백엔드 코드 단순화 / 효율 (2026-04-29 simplify 리뷰)
 

@@ -37,12 +37,15 @@ def infer_actual_strategy(holding_days: int) -> "StrategyType":
 
 
 def build_strategy_evaluations(
-    all_trades: list["Trade"],
+    trades: list["Trade"],
     holding_days_map: dict[str, int] | None = None,
 ) -> dict[str, StrategyEvaluation]:
-    """저장된 SELL strategy_type/holding_days로 전략 평가를 계산."""
+    """저장된 SELL strategy_type/holding_days로 전략 평가를 계산.
+
+    trades와 holding_days_map은 동일 범위(보통 period-filtered)여야 한다.
+    """
     result: dict[str, StrategyEvaluation] = {}
-    for trade in all_trades:
+    for trade in trades:
         if trade.trade_type != TRADE_TYPE_SELL:
             continue
 
