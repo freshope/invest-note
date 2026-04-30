@@ -13,7 +13,6 @@ import {
   FullScreenPanelFooter,
 } from "@/components/base/FullScreenPanel";
 import { Button } from "@/components/base/Button";
-import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
 import { tradesApi } from "@/lib/api-client";
@@ -32,6 +31,7 @@ import { AutoEmotionField, AutoReasoningTagsField } from "./AutoMetaField";
 import { TradeHeaderCard } from "./TradeHeaderCard";
 import { CompactRow } from "./trade-display";
 import { ToggleChipGrid } from "@/components/shared/ToggleChipGrid";
+import { AccountChip } from "@/components/shared/AccountChip";
 import { fmt, fmtNumberInput, parseNumberInput } from "@/lib/format";
 import { cn, getFirstFormError } from "@/lib/utils";
 import type { Trade, Account, ReasoningTag, StrategyType, EmotionType } from "@/types/database";
@@ -176,10 +176,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                     {formatTradedAtLabel(trade.traded_at)}
                   </CompactRow>
                   <CompactRow label="계좌">
-                    <span className="inline-flex items-center gap-1">
-                      {acc?.broker && <BrokerLogo broker={acc.broker} size={16} />}
-                      {acc?.name ?? "알 수 없는 계좌"}
-                    </span>
+                    {acc ? <AccountChip account={acc} size="md" /> : "알 수 없는 계좌"}
                   </CompactRow>
                 </div>
               </div>

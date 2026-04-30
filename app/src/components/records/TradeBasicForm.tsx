@@ -7,7 +7,7 @@ import { z } from "zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/base/Button";
 import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
-import { BrokerLogo } from "@/components/base/BrokerLogo";
+import { AccountChip } from "@/components/shared/AccountChip";
 import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/base/Tabs";
@@ -292,29 +292,13 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                   {(() => {
                     const acc = accounts.find((a) => a.id === field.value);
                     if (!acc) return <span className="text-muted-foreground">계좌를 선택하세요</span>;
-                    return (
-                      <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-                        {acc.broker && (
-                          <span className="shrink-0">
-                            <BrokerLogo broker={acc.broker} size={16} />
-                          </span>
-                        )}
-                        <span className="min-w-0 truncate">{acc.name}</span>
-                      </span>
-                    );
+                    return <AccountChip account={acc} size="md" className="flex-1 overflow-hidden" />;
                   })()}
                 </SelectTrigger>
                 <SelectContent>
                   {accounts.map((acc) => (
                     <SelectItem key={acc.id} value={acc.id}>
-                      <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-                        {acc.broker && (
-                          <span className="shrink-0">
-                            <BrokerLogo broker={acc.broker} size={16} />
-                          </span>
-                        )}
-                        <span className="min-w-0 truncate">{acc.name}</span>
-                      </span>
+                      <AccountChip account={acc} size="md" className="overflow-hidden" />
                     </SelectItem>
                   ))}
                 </SelectContent>

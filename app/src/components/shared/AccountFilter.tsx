@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { BrokerLogo } from "@/components/base/BrokerLogo";
+import { AccountChip } from "@/components/shared/AccountChip";
 import { ACCOUNT_FILTER_ALL } from "@/components/providers/AccountFilterProvider";
 import type { Account } from "@/types/database";
 
@@ -34,10 +34,9 @@ export function AccountFilter({ accounts, value, onChange }: AccountFilterProps)
           key={acc.id}
           type="button"
           onClick={() => onChange(acc.id)}
-          className={chipClass(value === acc.id, "inline-flex items-center gap-1.5 pl-1.5 pr-3.5 py-1")}
+          className={chipClass(value === acc.id, "pl-1.5 pr-3.5 py-1")}
         >
-          {acc.broker && <BrokerLogo broker={acc.broker} size={18} />}
-          {acc.name}
+          <AccountChip account={acc} size="md" />
         </button>
       ))}
     </div>

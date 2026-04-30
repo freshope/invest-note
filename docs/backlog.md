@@ -15,9 +15,8 @@ Round 1 (`docs/spec-history/...`) 에서 처리된 6 개 외에 도출된 후속
 
 ### 컴포넌트 추출 (중복 제거)
 
-> Round 2 (2026-04-30) 에서 `ConfirmDeleteDialog` / `TradeHeaderCard` / `ToggleChipGrid` 3 개 처리 완료. 나머지 항목은 Round 3+ 후보.
+> Round 2 (2026-04-30) 에서 `ConfirmDeleteDialog` / `TradeHeaderCard` / `ToggleChipGrid` 3 개 처리 완료. Round 3 (2026-04-30) 에서 `AccountChip` 처리 완료. 나머지 항목은 Round 4+ 후보.
 
-- [ ] `AccountChip` 추출 — `BrokerLogo + 계좌명` inline-flex 7 곳 (TradeDetail / TradeEditPanel / TradeBasicForm Select / TradeCard / AccountCard / AccountFilter)
 - [ ] `TradeTypeBadge` 추출 — 매수/매도 라벨 + PNL_COLORS 인라인 분기 3 곳 (TradeDetail / TradeCard / TradeEditPanel). `TRADE_TYPE_LABELS: Record<TradeType, string>` 상수 + bgSoft/text 통합
 - [ ] `BreakdownList<T>` 통합 — `EmotionBreakdown` / `StrategyBreakdown` / `ReasoningBreakdown` 동일 구조 (정렬·라벨·count + PnLLine·WinRateBar). getKey/getLabel/getStats/isUntagged 콜백 받는 일반 컴포넌트
 - [ ] `ProgressTrack` 추출 — `WinRateBar` / `WeightBar` / `QualityBar` 의 `h-1.5 rounded-full bg-muted overflow-hidden` 트랙 동일 마크업. `pickRateColor(rate)` 임계치 헬퍼 함께 추출
