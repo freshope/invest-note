@@ -72,8 +72,9 @@ export function BehaviorRadar({ profile, inputRates }: BehaviorRadarProps) {
     <div className="space-y-4">
       <p className="text-[10px] text-muted-foreground">* 분산도는 현재 보유 포트폴리오 기준</p>
 
-      <ResponsiveContainer width="100%" height={208}>
-        <RadarChart data={data} margin={{ top: 8, right: 24, bottom: 8, left: 24 }}>
+      <div className="[&_*:focus]:outline-none">
+        <ResponsiveContainer width="100%" height={208}>
+          <RadarChart data={data} margin={{ top: 8, right: 24, bottom: 8, left: 24 }}>
             <PolarGrid gridType="polygon" stroke="var(--border)" />
             <PolarAngleAxis
               dataKey="subject"
@@ -85,9 +86,11 @@ export function BehaviorRadar({ profile, inputRates }: BehaviorRadarProps) {
               fill="var(--chart-1)"
               fillOpacity={0.25}
               strokeWidth={2}
+              activeDot={false}
             />
           </RadarChart>
-      </ResponsiveContainer>
+        </ResponsiveContainer>
+      </div>
 
       <div className="grid grid-cols-5 gap-1">
         {DIMENSIONS.map((d) => (
