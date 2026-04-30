@@ -378,9 +378,12 @@ class TestComputeConcentration:
 
 class TestComputeProfile:
     def test_empty(self):
-        profile, rates = compute_profile([], 0.0, {})
-        assert profile.diversification == 50.0
+        profile, rates = compute_profile([], {})
+        assert profile.tempo == 0.0
+        assert profile.emotion_stability == 0.0
+        assert profile.strategy_consistency == 0.0
         assert rates.holding_days == 0.0
+        assert rates.strategy == 0.0
 
     def test_tempo_long_term(self):
         sells = [
@@ -388,19 +391,28 @@ class TestComputeProfile:
             for i in range(5)
         ]
         holding_map = {f"s{i}": 120 for i in range(5)}
-        profile, _ = compute_profile(sells, 0.3, holding_map)
+        profile, _ = compute_profile(sells, holding_map)
         assert profile.tempo == 100.0
 
     def test_tempo_half_score_at_30_days(self):
         sells = [make_trade(id=f"s{i}", trade_type="SELL") for i in range(4)]
         holding_map = {f"s{i}": 30 for i in range(4)}
-        profile, _ = compute_profile(sells, 0.3, holding_map)
+        profile, _ = compute_profile(sells, holding_map)
         assert profile.tempo == 50.0
 
     def test_tempo_short_holding_low_score(self):
         sells = [make_trade(id=f"s{i}", trade_type="SELL") for i in range(4)]
         holding_map = {f"s{i}": 1 for i in range(4)}
-        profile, _ = compute_profile(sells, 0.3, holding_map)
+        profile, _ = compute_profile(sells, holding_map)
+        assert profile.tempo == pytest.approx((1 / 60) * 100)
+
+    def test_tempo_uses_median_not_mean(self):
+        # 1일 보유 9건 + 600일 보유 1건 — 평균 60.9 → tempo 100점이지만
+        # 중앙값 1 → tempo (1/60)*100. 이상치에 강한 중앙값 채택
+        sells = [make_trade(id=f"s{i}", trade_type="SELL") for i in range(10)]
+        holding_map = {f"s{i}": 1 for i in range(9)}
+        holding_map["s9"] = 600
+        profile, _ = compute_profile(sells, holding_map)
         assert profile.tempo == pytest.approx((1 / 60) * 100)
 
     def test_emotion_stability_unstable(self):
@@ -410,8 +422,42 @@ class TestComputeProfile:
             make_trade(id="t3", emotion="CALM"),
             make_trade(id="t4", emotion="CALM"),
         ]
-        profile, _ = compute_profile(trades, 0.0, {})
+        profile, _ = compute_profile(trades, {})
         assert profile.emotion_stability == 50.0
+
+    def test_emotion_stability_no_data_is_zero(self):
+        # 감정 입력이 전혀 없으면 50점 fallback이 아닌 0점 + 입력률 0%
+        trades = [make_trade(id=f"t{i}") for i in range(3)]
+        profile, rates = compute_profile(trades, {})
+        assert profile.emotion_stability == 0.0
+        assert rates.emotion == 0.0
+
+    def test_strategy_consistency_followed(self):
+        from invest_note_api.domain.analysis.strategy_adherence import (
+            build_strategy_evaluations,
+        )
+
+        # 2건 SWING(planned) + 보유일 7일 → SWING(actual) → FOLLOWED
+        # 1건 SWING(planned) + 보유일 60일 → LONG_TERM(actual) → DEVIATED
+        # 1건 strategy 없음 → UNKNOWN (judged 제외)
+        sells = [
+            make_trade(id="s1", trade_type="SELL", strategy_type="SWING", holding_days=7),
+            make_trade(id="s2", trade_type="SELL", strategy_type="SWING", holding_days=7),
+            make_trade(id="s3", trade_type="SELL", strategy_type="SWING", holding_days=60),
+            make_trade(id="s4", trade_type="SELL", holding_days=10),
+        ]
+        evals = build_strategy_evaluations(sells)
+        profile, rates = compute_profile(sells, {}, evals)
+        # 판정 가능 3건 중 2건 FOLLOWED → 66.67%
+        assert profile.strategy_consistency == pytest.approx(2 / 3 * 100)
+        # 4건 SELL 중 3건이 judged → 75%
+        assert rates.strategy == 75.0
+
+    def test_strategy_consistency_no_evals(self):
+        sells = [make_trade(id="s1", trade_type="SELL", holding_days=5)]
+        profile, rates = compute_profile(sells, {"s1": 5})
+        assert profile.strategy_consistency == 0.0
+        assert rates.strategy == 0.0
 
 
 # --- rules ---

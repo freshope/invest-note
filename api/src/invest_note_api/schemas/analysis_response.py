@@ -55,10 +55,10 @@ class AnalysisSummaryResponse(CamelModel):
 
 class BehaviorProfileResponse(CamelModel):
     tempo: float
-    diversification: float
     emotion_stability: float
     reasoning_quality: float
     review_habit: float
+    strategy_consistency: float
 
 
 class ProfileInputRatesResponse(CamelModel):
@@ -67,6 +67,7 @@ class ProfileInputRatesResponse(CamelModel):
     reasoning_tag: float
     result: float
     reflection: float
+    strategy: float
 
 
 class HistogramBucket(CamelModel):
