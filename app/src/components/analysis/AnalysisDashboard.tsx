@@ -4,7 +4,6 @@ import { useState } from "react";
 import { PeriodFilterTabs } from "./PeriodFilterTabs";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SummaryCards } from "./SummaryCards";
-import { InsightHighlights } from "./InsightHighlights";
 import { EmotionBreakdown } from "./EmotionBreakdown";
 import { StrategyBreakdown } from "./StrategyBreakdown";
 import { StrategyAdherencePanel } from "./StrategyAdherencePanel";
@@ -16,7 +15,6 @@ import { DrilldownHistograms } from "./DrilldownHistograms";
 import { SuggestionList } from "./SuggestionList";
 import { AnalysisEmptyState } from "./AnalysisEmptyState";
 import { DEFAULT_ANALYSIS_PERIOD, type Period } from "@/lib/analysis/period";
-import type { SuggestionsData } from "@/hooks/useAnalysisData";
 import { useAnalysisData } from "@/hooks/useAnalysisData";
 import { ErrorState } from "@/components/shared/ErrorState";
 
@@ -31,15 +29,6 @@ function SectionCard({ title, children }: { title: string; children: React.React
 
 function SkeletonCard({ h = "h-28" }: { h?: string }) {
   return <div className={`rounded-2xl bg-muted/60 ${h} animate-pulse`} />;
-}
-
-function InsightSection({
-  suggestionsData,
-}: {
-  suggestionsData: SuggestionsData | null;
-}) {
-  const top3 = (suggestionsData?.suggestions ?? []).slice(0, 3);
-  return top3.length > 0 ? <InsightHighlights insights={top3} /> : null;
 }
 
 export function AnalysisDashboard() {
@@ -86,8 +75,12 @@ export function AnalysisDashboard() {
             {/* 섹션 1: 핵심 성과 */}
             <SummaryCards summary={summary} />
 
-            {/* 섹션 2: 오늘의 인사이트 — BE suggestions 응답 상위 3개 */}
-            <InsightSection suggestionsData={suggestionsData} />
+            {/* 섹션 2: 투자 방향성 제안 */}
+            {suggestionsData && (
+              <SectionCard title="투자 방향성 제안">
+                <SuggestionList suggestions={suggestionsData.suggestions} />
+              </SectionCard>
+            )}
 
             {/* 섹션 3: 투자 성향 프로필 */}
             {behavior && (
@@ -157,13 +150,6 @@ export function AnalysisDashboard() {
                   />
                 </SectionCard>
               )}
-
-            {/* 섹션 10: 방향성 제안 */}
-            {suggestionsData && (
-              <SectionCard title="투자 방향성 제안">
-                <SuggestionList suggestions={suggestionsData.suggestions} />
-              </SectionCard>
-            )}
 
             {summary.sellTrades === 0 && (
               <AnalysisEmptyState hasTrades={summary.totalTrades > 0} hasSells={summary.sellTrades > 0} />
