@@ -23,6 +23,7 @@ from invest_note_api.external.constants import (
     QUOTE_CACHE_TTL,
     USER_AGENT,
 )
+from invest_note_api.utils.numbers import strip_comma_number
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +47,10 @@ async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult |
         if res.status_code == 200:
             data = res.json()
             item = (data.get("datas") or [{}])[0] if data.get("datas") else data.get("data") or data
-            raw = item.get("closePriceRaw") or item.get("now") or (
-                str(item.get("closePrice", "")).replace(",", "") if item.get("closePrice") else None
+            raw = (
+                item.get("closePriceRaw")
+                or item.get("now")
+                or strip_comma_number(item.get("closePrice"))
             )
             price = float(raw) if raw else 0.0
             if price > 0:
@@ -63,8 +66,8 @@ async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult |
             data = res.json()
             raw = (
                 data.get("closePriceRaw")
-                or str(data.get("stockEndPrice", "")).replace(",", "")
-                or str(data.get("closePrice", "")).replace(",", "")
+                or strip_comma_number(data.get("stockEndPrice"))
+                or strip_comma_number(data.get("closePrice"))
             )
             price = float(raw) if raw else 0.0
             if price > 0:
