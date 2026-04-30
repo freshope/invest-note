@@ -1,6 +1,7 @@
 """asyncpg 쿼리 묶음 — trades 테이블 CRUD."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from invest_note_api.domain.realized_pnl import TradeGroupKey
@@ -148,25 +149,45 @@ async def insert_trade(conn: Any, user_id: str, data: dict) -> dict:
     return dict(row)
 
 
-_PATCH_ALLOWED = {
-    "market_type", "price", "quantity", "commission", "tax",
-    "strategy_type", "emotion", "reasoning_tags",
-    "buy_reason", "sell_reason", "result",
+@dataclass(frozen=True)
+class TradeFieldMeta:
+    """trade patch 필드 속성 — 단일 source of truth.
+
+    - patchable: PATCH /trades/{id}에서 사용자가 직접 수정 가능
+    - pnl_affecting: 변경 시 PnL 재계산 필요
+    - sell_auto_derived: SELL row에 자동 산출되어 사용자 patch 무시 대상
+    """
+
+    patchable: bool = False
+    pnl_affecting: bool = False
+    sell_auto_derived: bool = False
+
+
+# 새 patch 필드 추가 시 이 dict 한 곳에만 등록한다.
+# 아래 세 frozenset은 이 dict에서 자동 파생.
+TRADE_FIELD_META: dict[str, TradeFieldMeta] = {
+    "market_type":    TradeFieldMeta(patchable=True),
+    "price":          TradeFieldMeta(patchable=True, pnl_affecting=True),
+    "quantity":       TradeFieldMeta(patchable=True, pnl_affecting=True),
+    "commission":     TradeFieldMeta(patchable=True, pnl_affecting=True),
+    "tax":            TradeFieldMeta(patchable=True, pnl_affecting=True),
+    "strategy_type":  TradeFieldMeta(patchable=True, pnl_affecting=True),
+    "emotion":        TradeFieldMeta(patchable=True, pnl_affecting=True, sell_auto_derived=True),
+    "reasoning_tags": TradeFieldMeta(patchable=True, pnl_affecting=True, sell_auto_derived=True),
+    "buy_reason":     TradeFieldMeta(patchable=True),
+    "sell_reason":    TradeFieldMeta(patchable=True),
+    "result":         TradeFieldMeta(patchable=True, sell_auto_derived=True),
 }
 
-PNL_AFFECTING_FIELDS = {
-    "price",
-    "quantity",
-    "commission",
-    "tax",
-    "strategy_type",
-    "reasoning_tags",
-    "emotion",
-}
-
-# SELL row에 자동 산출되어 저장되는 메타 필드 — 사용자 patch 무시 대상.
-# 새 자동 산출 필드 추가 시 여기에 등록.
-SELL_AUTO_DERIVED_FIELDS = frozenset({"reasoning_tags", "emotion", "result"})
+_PATCH_ALLOWED: frozenset[str] = frozenset(
+    name for name, meta in TRADE_FIELD_META.items() if meta.patchable
+)
+PNL_AFFECTING_FIELDS: frozenset[str] = frozenset(
+    name for name, meta in TRADE_FIELD_META.items() if meta.pnl_affecting
+)
+SELL_AUTO_DERIVED_FIELDS: frozenset[str] = frozenset(
+    name for name, meta in TRADE_FIELD_META.items() if meta.sell_auto_derived
+)
 
 
 def strip_sell_auto_derived(
