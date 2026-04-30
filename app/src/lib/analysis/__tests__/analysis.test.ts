@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import { computeRealizedPnL, sellPnL, sortForCalc, computeGroupPnL, validateMutation, buildPnlMap } from "../realized-pnl";
 import { computeHoldingDays } from "../holding-period";
 import { computeConcentration } from "../concentration";
-import { parsePeriod, filterByPeriod } from "../period";
 import type { Trade } from "@/types/database";
 import type { Position } from "@/lib/portfolio";
 
@@ -93,6 +92,55 @@ describe("computeRealizedPnL", () => {
     // runningQty=0 → matchedQty=min(5,0)=0 → pnl = 80000*0 - 0*0 - 0 - 0 = 0
     // oversell 없이는 매칭된 수량만 실현손익으로 계산
     expect(map.get("s1")).toBe(0);
+  });
+
+  it("멀티 종목: 같은 배열에 두 종목이 섞여 있어도 각자 WAC 독립 계산", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "b_ss", trade_type: "BUY", ticker_symbol: "005930", asset_name: "삼성전자", price: 70000, quantity: 10, traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "b_sk", trade_type: "BUY", ticker_symbol: "000660", asset_name: "SK하이닉스", price: 50000, quantity: 5, traded_at: "2024-01-02T09:00:00+09:00" }),
+      makeTrade({ id: "s_ss", trade_type: "SELL", ticker_symbol: "005930", asset_name: "삼성전자", price: 80000, quantity: 10, traded_at: "2024-02-01T09:00:00+09:00" }),
+      makeTrade({ id: "s_sk", trade_type: "SELL", ticker_symbol: "000660", asset_name: "SK하이닉스", price: 60000, quantity: 5, traded_at: "2024-02-02T09:00:00+09:00" }),
+    ];
+    const map = computeRealizedPnL(trades);
+    // 005930: (80000-70000)*10 = 100000 — SK하이닉스 BUY가 평단에 영향 X
+    expect(map.get("s_ss")).toBe(100000);
+    // 000660: (60000-50000)*5 = 50000 — 삼성전자 BUY가 평단에 영향 X
+    expect(map.get("s_sk")).toBe(50000);
+  });
+
+  it("멀티 계좌: 같은 종목이라도 account_id가 다르면 독립 계산", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "b_a1", trade_type: "BUY", account_id: "a1", price: 70000, quantity: 10, traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "b_a2", trade_type: "BUY", account_id: "a2", price: 90000, quantity: 10, traded_at: "2024-01-02T09:00:00+09:00" }),
+      makeTrade({ id: "s_a1", trade_type: "SELL", account_id: "a1", price: 80000, quantity: 10, traded_at: "2024-02-01T09:00:00+09:00" }),
+    ];
+    const map = computeRealizedPnL(trades);
+    // a1만 자기 평단(70000) 사용. a2 BUY(90000)가 평단을 (70000+90000)/2 같은 식으로 흐려놓지 않음
+    expect(map.get("s_a1")).toBe(100000);
+  });
+
+  it("멀티 country: 같은 ticker라도 country_code가 다르면 독립 계산", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "b_kr", trade_type: "BUY", ticker_symbol: "AAPL", country_code: "KR", price: 100, quantity: 10, traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "b_us", trade_type: "BUY", ticker_symbol: "AAPL", country_code: "US", price: 200, quantity: 10, traded_at: "2024-01-02T09:00:00+09:00" }),
+      makeTrade({ id: "s_kr", trade_type: "SELL", ticker_symbol: "AAPL", country_code: "KR", price: 150, quantity: 10, traded_at: "2024-02-01T09:00:00+09:00" }),
+    ];
+    const map = computeRealizedPnL(trades);
+    // KR 그룹의 평단(100)만 사용 — US BUY(200)가 평단을 끌어올리지 않음
+    expect(map.get("s_kr")).toBe(500);
+  });
+
+  it("타 그룹 BUY는 본 그룹 oversell을 메우지 않음 (매칭 수량 = 본 그룹 BUY로 한정)", () => {
+    const trades: Trade[] = [
+      // 005930 BUY 5주만 보유, SK하이닉스(000660)는 충분히 보유
+      makeTrade({ id: "b_ss", trade_type: "BUY", ticker_symbol: "005930", asset_name: "삼성전자", price: 50000, quantity: 5, traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "b_sk", trade_type: "BUY", ticker_symbol: "000660", asset_name: "SK하이닉스", price: 30000, quantity: 100, traded_at: "2024-01-02T09:00:00+09:00" }),
+      // 005930 SELL 10주 시도 — 본 그룹 BUY 5주만 매칭, SK 재고는 무관
+      makeTrade({ id: "s_ss", trade_type: "SELL", ticker_symbol: "005930", asset_name: "삼성전자", price: 60000, quantity: 10, traded_at: "2024-02-01T09:00:00+09:00" }),
+    ];
+    const map = computeRealizedPnL(trades);
+    // matchedQty = min(10, 5) = 5 → pnl = 60000*5 - 50000*5 = 50000
+    expect(map.get("s_ss")).toBe(50000);
   });
 });
 
@@ -212,68 +260,7 @@ describe("computeHoldingDays — 저장된 연속 매도", () => {
 });
 
 
-describe("parsePeriod", () => {
-  it("유효한 period 값은 그대로 반환", () => {
-    expect(parsePeriod("1m")).toBe("1m");
-    expect(parsePeriod("3m")).toBe("3m");
-    expect(parsePeriod("6m")).toBe("6m");
-    expect(parsePeriod("ytd")).toBe("ytd");
-    expect(parsePeriod("all")).toBe("all");
-  });
-
-  it("잘못된 값은 all로 fallback", () => {
-    expect(parsePeriod("invalid")).toBe("all");
-    expect(parsePeriod(null)).toBe("all");
-    expect(parsePeriod("")).toBe("all");
-  });
-});
-
-// ── filterByPeriod ─────────────────────────────────────────────
-
-describe("filterByPeriod", () => {
-  function makeTradeLite(id: string, traded_at: string): Trade {
-    return makeTrade({ id, trade_type: "BUY", traded_at });
-  }
-
-  it("all: 모든 거래 반환", () => {
-    const trades = [
-      makeTradeLite("t1", "2020-01-01T09:00:00+09:00"),
-      makeTradeLite("t2", "2024-06-01T09:00:00+09:00"),
-    ];
-    const result = filterByPeriod(trades, "all");
-    expect(result).toHaveLength(2);
-  });
-
-  it("3m: 3개월 이전 거래 제외", () => {
-    const now = new Date();
-    const recentDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // 30일 전
-    const oldDate = new Date(now.getTime() - 200 * 24 * 60 * 60 * 1000);  // 200일 전
-    const recentIso = recentDate.toISOString().replace("Z", "+09:00");
-    const oldIso = oldDate.toISOString().replace("Z", "+09:00");
-
-    const trades = [
-      makeTradeLite("recent", recentIso),
-      makeTradeLite("old", oldIso),
-    ];
-    const result = filterByPeriod(trades, "3m");
-    expect(result.map((t) => t.id)).toContain("recent");
-    expect(result.map((t) => t.id)).not.toContain("old");
-  });
-
-  it("ytd: 올해 1월 1일 이전 거래 제외", () => {
-    const year = new Date().getFullYear();
-    const thisYear = `${year}-01-15T09:00:00+09:00`;  // 올해 1월 15일 (과거)
-    const lastYear = `${year - 1}-12-31T09:00:00+09:00`;
-
-    const trades = [
-      makeTradeLite("this", thisYear),
-      makeTradeLite("last", lastYear),
-    ];
-    const result = filterByPeriod(trades, "ytd");
-    expect(result.map((t) => t.id)).toContain("this");
-    expect(result.map((t) => t.id)).not.toContain("last");
-  });
-});
+// parsePeriod / filterByPeriod 테스트는 period.test.ts로 분리
 
 // ── sellPnL ────────────────────────────────────────────────────
 
@@ -452,6 +439,63 @@ describe("computeGroupPnL", () => {
     const keyA1 = { ticker: "005930", assetName: "삼성전자", country: "KR", accountId: "a1" };
     const result = computeGroupPnL(trades, keyA1);
     expect(result.get("s1")?.reasoning_tags).toEqual(["FUNDAMENTAL"]);
+  });
+
+  it("부분 소비: SELL이 일부 BUY만 소비하면 그 BUY의 tags만 반영, 다음 SELL은 다음 lot의 tags", () => {
+    // BUY1(qty=8, FUNDAMENTAL) → BUY2(qty=2, TECHNICAL) → SELL1(qty=5) → SELL2(qty=5)
+    // FIFO: SELL1는 BUY1 5 소비 → tags=BUY1. SELL2는 BUY1 잔여 3 + BUY2 2 소비 → 최신 BUY2 tags 선택
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY", quantity: 8, reasoning_tags: ["FUNDAMENTAL"], emotion: "CALM", traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "b2", trade_type: "BUY", quantity: 2, reasoning_tags: ["TECHNICAL"], emotion: "FOMO", traded_at: "2024-01-10T09:00:00+09:00" }),
+      makeTrade({ id: "s1", trade_type: "SELL", quantity: 5, traded_at: "2024-02-01T09:00:00+09:00" }),
+      makeTrade({ id: "s2", trade_type: "SELL", quantity: 5, traded_at: "2024-03-01T09:00:00+09:00" }),
+    ];
+    const key = { ticker: "005930", assetName: "삼성전자", country: "KR", accountId: "a1" };
+    const result = computeGroupPnL(trades, key);
+    expect(result.get("s1")?.reasoning_tags).toEqual(["FUNDAMENTAL"]);
+    expect(result.get("s1")?.emotion).toBe("CALM");
+    expect(result.get("s2")?.reasoning_tags).toEqual(["TECHNICAL"]);
+    expect(result.get("s2")?.emotion).toBe("FOMO");
+  });
+
+  it("tie-break: traded_at이 같은 두 BUY를 모두 소비하면 created_at 늦은 쪽(order 큰 lot)의 tags 선택", () => {
+    // 같은 timeMs → metaFromConsumedLatest는 order가 큰 쪽 선택. order는 sortForCalc(BUY 우선, 같은 type이면 created_at 오름차순) 결과 push 순서
+    const sameTradedAt = "2024-01-01T09:00:00+09:00";
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY", quantity: 5, reasoning_tags: ["FUNDAMENTAL"], emotion: "CALM", traded_at: sameTradedAt, created_at: "2024-01-01T01:00:00Z" }),
+      makeTrade({ id: "b2", trade_type: "BUY", quantity: 5, reasoning_tags: ["TECHNICAL"], emotion: "CONFIDENT", traded_at: sameTradedAt, created_at: "2024-01-01T02:00:00Z" }),
+      makeTrade({ id: "s1", trade_type: "SELL", quantity: 10, traded_at: "2024-02-01T09:00:00+09:00" }),
+    ];
+    const key = { ticker: "005930", assetName: "삼성전자", country: "KR", accountId: "a1" };
+    const result = computeGroupPnL(trades, key);
+    expect(result.get("s1")?.reasoning_tags).toEqual(["TECHNICAL"]);
+    expect(result.get("s1")?.emotion).toBe("CONFIDENT");
+  });
+
+  it("모든 소비 BUY의 reasoning_tags가 빈 배열이면 SELL.reasoning_tags=[]", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "b1", trade_type: "BUY", quantity: 5, reasoning_tags: [], emotion: null, traded_at: "2024-01-01T09:00:00+09:00" }),
+      makeTrade({ id: "b2", trade_type: "BUY", quantity: 5, reasoning_tags: [], emotion: null, traded_at: "2024-01-05T09:00:00+09:00" }),
+      makeTrade({ id: "s1", trade_type: "SELL", quantity: 10, traded_at: "2024-02-01T09:00:00+09:00" }),
+    ];
+    const key = { ticker: "005930", assetName: "삼성전자", country: "KR", accountId: "a1" };
+    const result = computeGroupPnL(trades, key);
+    expect(result.get("s1")?.reasoning_tags).toEqual([]);
+    expect(result.get("s1")?.emotion).toBeNull();
+  });
+
+  it("BUY 없이 SELL만 있으면 consumed=[] → 메타데이터는 모두 비어 있고 matched_qty=0", () => {
+    const trades: Trade[] = [
+      makeTrade({ id: "s1", trade_type: "SELL", quantity: 5, reasoning_tags: ["NEWS"], emotion: "FOMO", traded_at: "2024-02-01T09:00:00+09:00" }),
+    ];
+    const key = { ticker: "005930", assetName: "삼성전자", country: "KR", accountId: "a1" };
+    const result = computeGroupPnL(trades, key);
+    // consumed=[] → metaFromConsumedLatest 빈 lot 분기. SELL 자체의 reasoning_tags/emotion은 무시됨
+    expect(result.get("s1")?.reasoning_tags).toEqual([]);
+    expect(result.get("s1")?.emotion).toBeNull();
+    expect(result.get("s1")?.strategy_type).toBeNull();
+    expect(result.get("s1")?.matched_qty).toBe(0);
+    expect(result.get("s1")?.holding_days).toBeNull();
   });
 });
 
