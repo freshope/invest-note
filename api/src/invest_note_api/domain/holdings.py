@@ -1,19 +1,16 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from invest_note_api.domain.realized_pnl import (
     TradeGroupKey,
     is_same_group,
-    trade_to_group_key,
 )
 from invest_note_api.domain.trade_types import TRADE_TYPE_BUY
-from invest_note_api.domain.trade_utils import MS_PER_DAY, to_kst
 
 if TYPE_CHECKING:
-    from invest_note_api.domain.trade_types import Trade, StrategyType
+    from invest_note_api.domain.trade_types import Trade
 
 
 @dataclass
@@ -37,30 +34,6 @@ class HoldingSummary:
 
 def _sort_by_traded_at(trades: list["Trade"]) -> list["Trade"]:
     return sorted(trades, key=lambda t: t.traded_at)
-
-
-def compute_lot_quantity(trades: list["Trade"], key: TradeGroupKey) -> float:
-    running_qty = 0.0
-
-    for trade in _sort_by_traded_at(trades):
-        if not is_same_group(trade, key):
-            continue
-        if trade.trade_type == TRADE_TYPE_BUY:
-            running_qty += trade.quantity
-        else:
-            running_qty = max(0.0, running_qty - trade.quantity)
-
-    return running_qty
-
-
-def find_latest_buy_strategy(trades: list["Trade"], key: TradeGroupKey) -> "StrategyType | None":
-    buys = [
-        t
-        for t in trades
-        if t.trade_type == TRADE_TYPE_BUY and is_same_group(t, key)
-    ]
-    buys.sort(key=lambda t: t.traded_at, reverse=True)
-    return buys[0].strategy_type if buys else None
 
 
 def compute_holding_summary(trades: list["Trade"], key: TradeGroupKey) -> HoldingSummary:
@@ -99,45 +72,3 @@ def compute_flexible_breakdown(sell: "Trade") -> SellBreakdown:
         pnl=sell.profit_loss or 0.0,
         is_manual_input=False,
     )
-
-
-def compute_flexible_holding_days(sell: "Trade", all_trades: list["Trade"]) -> int | None:
-    """FIFO 가중평균 보유일수 계산."""
-    key = trade_to_group_key(sell)
-    sell_time_ms = int(to_kst(sell.traded_at).timestamp() * 1000)
-
-    queue: list[dict] = []  # [{qty, time_ms}]
-
-    for trade in _sort_by_traded_at(all_trades):
-        if trade.id == sell.id:
-            remaining = sell.quantity
-            weighted_ms = 0.0
-            total_consumed = 0.0
-
-            for slot in queue:
-                if remaining <= 0:
-                    break
-                consume = min(slot["qty"], remaining)
-                weighted_ms += (sell_time_ms - slot["time_ms"]) * consume
-                total_consumed += consume
-                remaining -= consume
-
-            if total_consumed > 0:
-                return math.floor(weighted_ms / total_consumed / MS_PER_DAY + 0.5)
-            return None
-
-        if not is_same_group(trade, key):
-            continue
-
-        if trade.trade_type == TRADE_TYPE_BUY:
-            queue.append({"qty": trade.quantity, "time_ms": int(to_kst(trade.traded_at).timestamp() * 1000)})
-        else:
-            rem = trade.quantity
-            while rem > 0 and queue:
-                consume = min(queue[0]["qty"], rem)
-                queue[0]["qty"] -= consume
-                rem -= consume
-                if queue[0]["qty"] <= 0:
-                    queue.pop(0)
-
-    return None

@@ -5,11 +5,8 @@ from datetime import datetime, timezone
 from invest_note_api.domain.trade_types import Trade
 from invest_note_api.domain.realized_pnl import TradeGroupKey
 from invest_note_api.domain.holdings import (
-    compute_lot_quantity,
     compute_holding_summary,
     compute_flexible_breakdown,
-    compute_flexible_holding_days,
-    find_latest_buy_strategy,
 )
 
 
@@ -52,21 +49,6 @@ def make_trade(**kwargs) -> Trade:
     )
     defaults.update(kwargs)
     return Trade(**defaults)
-
-
-class TestComputeLotQuantity:
-    def test_buy_increases_qty(self):
-        buy = make_trade(id="b1", trade_type="BUY", quantity=10)
-        assert compute_lot_quantity([buy], _key()) == 10.0
-
-    def test_sell_decreases_qty(self):
-        buy = make_trade(id="b1", trade_type="BUY", quantity=10, traded_at=_dt("2024-01-01T09:00:00+09:00"))
-        sell = make_trade(id="s1", trade_type="SELL", quantity=4, traded_at=_dt("2024-02-01T09:00:00+09:00"))
-        assert compute_lot_quantity([buy, sell], _key()) == 6.0
-
-    def test_different_account_excluded(self):
-        other = make_trade(id="b2", trade_type="BUY", quantity=10, account_id="a2")
-        assert compute_lot_quantity([other], _key()) == 0.0
 
 
 class TestComputeHoldingSummary:
@@ -123,55 +105,3 @@ class TestComputeFlexibleBreakdown:
         assert bd.pnl == 0.0
 
 
-class TestComputeFlexibleHoldingDays:
-    def test_simple_10_days(self):
-        buy = make_trade(id="b1", trade_type="BUY", quantity=10, traded_at=_dt("2024-01-01T09:00:00+09:00"))
-        sell = make_trade(id="s1", trade_type="SELL", quantity=10, traded_at=_dt("2024-01-11T09:00:00+09:00"))
-        days = compute_flexible_holding_days(sell, [buy, sell])
-        assert days == 10
-
-    def test_fifo_weighted_avg_15_days(self):
-        b1 = make_trade(id="b1", trade_type="BUY", quantity=5, traded_at=_dt("2024-01-01T09:00:00+09:00"))
-        b2 = make_trade(id="b2", trade_type="BUY", quantity=5, traded_at=_dt("2024-01-11T09:00:00+09:00"))
-        sell = make_trade(id="s1", trade_type="SELL", quantity=10, traded_at=_dt("2024-01-21T09:00:00+09:00"))
-        # b1: 20일 * 5주, b2: 10일 * 5주 → 가중평균 15일
-        days = compute_flexible_holding_days(sell, [b1, b2, sell])
-        assert days == 15
-
-    def test_fifo_multi_lot_13_days(self):
-        b1 = make_trade(id="b1", trade_type="BUY", quantity=3, traded_at=_dt("2024-01-01T09:00:00+09:00"))
-        b2 = make_trade(id="b2", trade_type="BUY", quantity=7, traded_at=_dt("2024-01-11T09:00:00+09:00"))
-        sell = make_trade(id="s1", trade_type="SELL", quantity=10, traded_at=_dt("2024-01-21T09:00:00+09:00"))
-        # (3*20 + 7*10) / 10 = 13
-        days = compute_flexible_holding_days(sell, [b1, b2, sell])
-        assert days == 13
-
-    def test_no_buy_returns_none(self):
-        sell = make_trade(id="s1", trade_type="SELL", quantity=5)
-        days = compute_flexible_holding_days(sell, [sell])
-        assert days is None
-
-    def test_sequential_sells_each_consumes_correct_lot(self):
-        b1 = make_trade(id="b1", trade_type="BUY", quantity=5, traded_at=_dt("2024-01-01T09:00:00+09:00"))
-        b2 = make_trade(id="b2", trade_type="BUY", quantity=5, traded_at=_dt("2024-01-11T09:00:00+09:00"))
-        s1 = make_trade(id="s1", trade_type="SELL", quantity=5, traded_at=_dt("2024-01-21T09:00:00+09:00"))
-        s2 = make_trade(id="s2", trade_type="SELL", quantity=5, traded_at=_dt("2024-01-21T09:00:00+09:00"),
-                        created_at=_dt("2024-01-02T00:00:00Z"))
-        all_trades = [b1, b2, s1, s2]
-        d1 = compute_flexible_holding_days(s1, all_trades)
-        d2 = compute_flexible_holding_days(s2, all_trades)
-        assert d1 == 20  # b1 소비
-        assert d2 == 10  # b2 소비
-
-
-class TestFindLatestBuyStrategy:
-    def test_returns_most_recent_buy_strategy(self):
-        b1 = make_trade(id="b1", trade_type="BUY", strategy_type="SWING", traded_at=_dt("2024-01-01T09:00:00+09:00"))
-        b2 = make_trade(id="b2", trade_type="BUY", strategy_type="LONG_TERM", traded_at=_dt("2024-02-01T09:00:00+09:00"))
-        result = find_latest_buy_strategy([b1, b2], _key())
-        assert result == "LONG_TERM"
-
-    def test_no_buy_returns_none(self):
-        sell = make_trade(id="s1", trade_type="SELL")
-        result = find_latest_buy_strategy([sell], _key())
-        assert result is None

@@ -285,22 +285,3 @@ async def insert_trades_bulk(conn: Any, user_id: str, rows: list[dict]) -> list[
         *flattened,
     )
     return [_row_to_trade(row) for row in rows_inserted]
-
-
-async def list_trades_in_range(
-    conn: Any, user_id: str, start_date: str, end_date: str
-) -> list[Trade]:
-    """traded_at 이 [start_date, end_date] (날짜 기준) 범위인 거래를 반환한다."""
-    rows = await conn.fetch(
-        """
-        SELECT * FROM trades
-        WHERE user_id = $1
-          AND traded_at::date >= $2::date
-          AND traded_at::date <= $3::date
-        ORDER BY traded_at ASC
-        """,
-        user_id,
-        start_date,
-        end_date,
-    )
-    return [_row_to_trade(r) for r in rows]
