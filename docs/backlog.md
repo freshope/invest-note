@@ -15,10 +15,9 @@ Round 1 (`docs/spec-history/...`) 에서 처리된 6 개 외에 도출된 후속
 
 ### 컴포넌트 추출 (중복 제거)
 
-> Round 2 (2026-04-30) 에서 `ConfirmDeleteDialog` / `TradeHeaderCard` / `ToggleChipGrid` 3 개 처리 완료. Round 3 (2026-04-30) 에서 `AccountChip` 처리 완료. Round 4 (2026-04-30) 에서 `TradeTypeBadge` 처리 완료. 나머지 항목은 Round 5+ 후보.
+> Round 2 (2026-04-30) 에서 `ConfirmDeleteDialog` / `TradeHeaderCard` / `ToggleChipGrid` 3 개 처리 완료. Round 3 (2026-04-30) 에서 `AccountChip` 처리 완료. Round 4 (2026-04-30) 에서 `TradeTypeBadge` 처리 완료. Round 5 (2026-05-01) 에서 `ProgressTrack` 처리 완료. 나머지 항목은 Round 6+ 후보.
 
 - [ ] `BreakdownList<T>` 통합 — `EmotionBreakdown` / `StrategyBreakdown` / `ReasoningBreakdown` 동일 구조 (정렬·라벨·count + PnLLine·WinRateBar). getKey/getLabel/getStats/isUntagged 콜백 받는 일반 컴포넌트
-- [ ] `ProgressTrack` 추출 — `WinRateBar` / `WeightBar` / `QualityBar` 의 `h-1.5 rounded-full bg-muted overflow-hidden` 트랙 동일 마크업. `pickRateColor(rate)` 임계치 헬퍼 함께 추출
 - [ ] `EmptyCard` 일반화 — `home/EmptyState` 를 일반화하거나 `shared/EmptyCard` 신규. `TradeList` / `AccountList` / `StockDetail` 의 "데이터 없음" 카드 패턴 통합
 - [ ] `Card` primitive 30+ 곳 — `rounded-2xl bg-muted/60` 카드 셸. padding sm/md/lg 변종 흡수. 대규모 변경이라 디자인 토큰화 가치 검증 필요
 

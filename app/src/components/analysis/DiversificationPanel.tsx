@@ -5,6 +5,7 @@ import { HHI_HIGH, HHI_MID } from "@/lib/constants/analysis";
 import { COUNTRY_LABEL, isCountryCode } from "@/lib/constants/market";
 import { MARKET_LABELS } from "@/lib/constants/trading";
 import { PNL_COLORS } from "@/lib/constants/colors";
+import { ProgressTrack } from "@/components/shared/ProgressTrack";
 
 function WeightBar({ label, weight }: { label: string; weight: number }) {
   const pct = Math.round(weight * 100);
@@ -14,12 +15,7 @@ function WeightBar({ label, weight }: { label: string; weight: number }) {
         <span className="text-foreground">{label}</span>
         <span className="tabular-nums text-muted-foreground">{pct}%</span>
       </div>
-      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-        <div
-          className="h-full rounded-full bg-[var(--chart-1)]"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
+      <ProgressTrack pct={pct} colorClass="bg-[var(--chart-1)]" />
     </div>
   );
 }
