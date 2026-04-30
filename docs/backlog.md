@@ -9,11 +9,9 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 분석 API 쿼리 `.limit(1000)` 가드 — 거래 수 급증 시 메모리/응답 보호
 - [ ] 수수료 현황 별도 패널 — BUY commission·세금 합계, 순실현손익 vs 총비용 비교
 
-## BE simplify Tier 3 (Round 2 이후 deferred)
+## BE simplify Tier 3 (Round 3 이후 deferred)
 
 - [ ] 모듈 레벨 글로벌 상태 → `app.state` 이전 — `external/quotes.py` `_cache`/`_inflight`, `routers/trades.py` `_STAGING`. 테스트 격리 + 멀티 워커 대비.
-- [ ] `domain/portfolio.py` `Lot` 데이터클래스화 — 현재 `LotMap = dict[str, dict]` 가변 상태를 frozen dataclass(`Position` 미러)로 교체.
-- [ ] `routers/trades.py` `_PREVIEW_ACCT = "__preview__"` placeholder 제거 — `TradeSignature.account_id`를 Optional로 변경하거나 dedupe-only signature 분리.
 
 ## 운영 / 어드민 도구
 
