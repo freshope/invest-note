@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from statistics import median
 from typing import TYPE_CHECKING
 
 from invest_note_api.domain.analysis._math import _percent
@@ -15,16 +16,17 @@ from invest_note_api.domain.trade_types import (
 )
 
 if TYPE_CHECKING:
+    from invest_note_api.domain.analysis.strategy_adherence import StrategyEvaluation
     from invest_note_api.domain.trade_types import Trade
 
 
 @dataclass
 class BehaviorProfile:
     tempo: float
-    diversification: float
     emotion_stability: float
     reasoning_quality: float
     review_habit: float
+    strategy_consistency: float
 
 
 @dataclass
@@ -34,6 +36,7 @@ class ProfileInputRates:
     reasoning_tag: float
     result: float
     reflection: float
+    strategy: float
 
 
 def _clamp(v: float) -> float:
@@ -42,28 +45,27 @@ def _clamp(v: float) -> float:
 
 def compute_profile(
     trades: list[Trade],
-    hhi: float,
     holding_days_map: dict[str, int],
+    strategy_evals: dict[str, StrategyEvaluation] | None = None,
 ) -> tuple[BehaviorProfile, ProfileInputRates]:
     sells = [t for t in trades if t.trade_type == TRADE_TYPE_SELL]
     buys = [t for t in trades if t.trade_type == TRADE_TYPE_BUY]
 
-    # holding_days_map은 allTrades 기준이므로 기간 내 SELL id로 필터링
+    # 기간 내 SELL 기준 보유일만 사용 (이상치에 강하도록 중앙값 사용)
     sell_ids = {t.id for t in sells}
-    all_days = [v for k, v in holding_days_map.items() if k in sell_ids]
-    avg_days = sum(all_days) / len(all_days) if all_days else 0.0
-    tempo = _clamp((avg_days / 60) * 100)
-
-    if not sells and not buys:
-        diversification = 50.0
-    else:
-        diversification = _clamp((1 - hhi) * 100)
+    period_days = [v for k, v in holding_days_map.items() if k in sell_ids]
+    median_days = median(period_days) if period_days else 0.0
+    tempo = _clamp((median_days / 60) * 100)
 
     emotion_tagged = [t for t in trades if t.emotion is not None]
-    unstable = sum(1 for t in emotion_tagged if t.emotion in (EMOTION_FOMO, EMOTION_IMPULSIVE, EMOTION_ANXIOUS))
-    emotion_stability = (
-        _clamp((1 - unstable / len(emotion_tagged)) * 100) if emotion_tagged else 50.0
-    )
+    if emotion_tagged:
+        unstable = sum(
+            1 for t in emotion_tagged if t.emotion in (EMOTION_FOMO, EMOTION_IMPULSIVE, EMOTION_ANXIOUS)
+        )
+        emotion_stability = _clamp((1 - unstable / len(emotion_tagged)) * 100)
+    else:
+        # 입력 없을 때 50점 부여는 misleading → 0점 + 입력률 경고로 표시
+        emotion_stability = 0.0
 
     buys_with_feeling = sum(1 for t in buys if TAG_FEELING in (t.reasoning_tags or []))
     buys_with_no_tag = sum(1 for t in buys if not t.reasoning_tags)
@@ -76,19 +78,33 @@ def compute_profile(
     )
     review_habit = _percent(with_sell_reason, len(sells))
 
+    # 전략 일관성: 기간 내 SELL 중 UNKNOWN 제외 평가에서 FOLLOWED 비율
+    if strategy_evals:
+        period_evals = [
+            e for sid, e in strategy_evals.items() if sid in sell_ids
+        ]
+        judged = [e for e in period_evals if e.adherence != "UNKNOWN"]
+        followed = sum(1 for e in judged if e.adherence == "FOLLOWED")
+        strategy_consistency = _percent(followed, len(judged))
+        strategy_input_rate = _percent(len(judged), len(sells))
+    else:
+        strategy_consistency = 0.0
+        strategy_input_rate = 0.0
+
     input_rates = ProfileInputRates(
-        holding_days=_percent(len(all_days), len(sells)),
+        holding_days=_percent(len(period_days), len(sells)),
         emotion=_percent(len(emotion_tagged), len(trades)),
         reasoning_tag=_percent(len(buys) - buys_with_no_tag, len(buys)),
         result=_percent(sum(1 for t in sells if t.result is not None), len(sells)),
         reflection=review_habit,
+        strategy=strategy_input_rate,
     )
 
     profile = BehaviorProfile(
         tempo=tempo,
-        diversification=diversification,
         emotion_stability=emotion_stability,
         reasoning_quality=reasoning_quality,
         review_habit=review_habit,
+        strategy_consistency=strategy_consistency,
     )
     return profile, input_rates

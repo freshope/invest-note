@@ -12,10 +12,10 @@ import type { BehaviorProfile, ProfileInputRates } from "@/lib/analysis/profile"
 
 const DIMENSIONS = [
   { key: "tempo" as const, label: "거래 템포", lowLabel: "스캘퍼", highLabel: "장기" },
-  { key: "diversification" as const, label: "분산도*", lowLabel: "집중형", highLabel: "분산형" },
-  { key: "emotionStability" as const, label: "감정 안정성", lowLabel: "충동형", highLabel: "차분형" },
-  { key: "reasoningQuality" as const, label: "근거 품질", lowLabel: "감각형", highLabel: "분석형" },
+  { key: "emotionStability" as const, label: "감정 안정도", lowLabel: "불안정", highLabel: "안정" },
+  { key: "reasoningQuality" as const, label: "근거 체계성", lowLabel: "감각형", highLabel: "분석형" },
   { key: "reviewHabit" as const, label: "복기 습관", lowLabel: "무복기", highLabel: "복기형" },
+  { key: "strategyConsistency" as const, label: "전략 일관성", lowLabel: "이탈형", highLabel: "준수형" },
 ];
 
 function ProfileBadge({
@@ -60,18 +60,16 @@ export function BehaviorRadar({ profile, inputRates }: BehaviorRadarProps) {
   const dimInputRates = useMemo<Record<string, number>>(
     () => ({
       tempo: inputRates.holdingDays,
-      diversification: 100,
       emotionStability: inputRates.emotion,
       reasoningQuality: inputRates.reasoningTag,
       reviewHabit: inputRates.reflection,
+      strategyConsistency: inputRates.strategy,
     }),
     [inputRates],
   );
 
   return (
     <div className="space-y-4">
-      <p className="text-[10px] text-muted-foreground">* 분산도는 현재 보유 포트폴리오 기준</p>
-
       <div className="[&_*:focus]:outline-none">
         <ResponsiveContainer width="100%" height={208}>
           <RadarChart data={data} margin={{ top: 8, right: 24, bottom: 8, left: 24 }}>

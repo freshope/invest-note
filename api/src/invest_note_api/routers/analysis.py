@@ -15,6 +15,7 @@ from invest_note_api.domain.analysis.holding_period import compute_holding_days_
 from invest_note_api.domain.analysis.period import DEFAULT_PERIOD, filter_by_period, parse_period
 from invest_note_api.domain.analysis.profile import compute_profile
 from invest_note_api.domain.analysis.rules import evaluate_rules
+from invest_note_api.domain.analysis.strategy_adherence import build_strategy_evaluations
 from invest_note_api.domain.portfolio import build_positions, merge_quotes
 from invest_note_api.domain.realized_pnl import build_pnl_map
 from invest_note_api.domain.trade_types import TRADE_TYPE_BUY, TRADE_TYPE_SELL
@@ -88,7 +89,8 @@ async def get_analysis_dashboard(
 
     concentration = compute_concentration(positions, all_trades)
     summary = compute_summary(trades, pnl_map, holding_days_map)
-    profile, input_rates = compute_profile(trades, concentration.hhi, holding_days_map)
+    strategy_evals = build_strategy_evaluations(all_trades, holding_days_map)
+    profile, input_rates = compute_profile(trades, holding_days_map, strategy_evals)
     suggestions = evaluate_rules(
         {"summary": summary, "profile": profile, "concentration": concentration}
     )

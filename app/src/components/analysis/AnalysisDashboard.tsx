@@ -78,9 +78,9 @@ export function AnalysisDashboard() {
             {/* 섹션 2: 투자 방향성 제안 */}
             {suggestionsData && <SuggestionList suggestions={suggestionsData.suggestions} />}
 
-            {/* 섹션 3: 투자 성향 프로필 */}
+            {/* 섹션 3: 투자 행동 프로필 */}
             {behavior && (
-              <SectionCard title="투자 성향 프로필">
+              <SectionCard title="투자 행동 프로필">
                 <BehaviorRadar profile={behavior.profile} inputRates={behavior.inputRates} />
               </SectionCard>
             )}
