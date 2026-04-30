@@ -102,22 +102,22 @@ type MultiProps<T extends string> = {
 
 ## 구현 체크리스트
 
-- [ ] `shared/ConfirmDeleteDialog.tsx` 신규
-- [ ] `DeleteTradeDialog` 제거 + `TradeDetail.tsx` 호출부 치환
-- [ ] `DeleteAccountDialog` 제거 + `AccountCard.tsx` 호출부 치환
-- [ ] (커밋 1) `refactor(fe): ConfirmDeleteDialog 통합`
-- [ ] `records/TradeHeaderCard.tsx` 신규
-- [ ] `TradeDetail.tsx` 헤더 카드 치환
-- [ ] `TradeEditPanel.tsx` 헤더 카드 치환
-- [ ] (커밋 2) `refactor(fe): TradeHeaderCard 추출`
-- [ ] `shared/ToggleChipGrid.tsx` 신규
-- [ ] `StrategyEmotionFields.tsx` 2 곳 치환
-- [ ] `TradeEditPanel.tsx` 3 곳 치환
-- [ ] `TradeMetaBuyForm.tsx` 1 곳 치환
-- [ ] (커밋 3) `refactor(fe): ToggleChipGrid 추출`
-- [ ] `pnpm -C app exec tsc --noEmit` 그린
-- [ ] `pnpm -C app test` 그린
-- [ ] `docs/backlog.md` 처리 완료 3 항목 제거
+- [x] `shared/ConfirmDeleteDialog.tsx` 신규
+- [x] `DeleteTradeDialog` 제거 + `TradeDetail.tsx` 호출부 치환
+- [x] `DeleteAccountDialog` 제거 + `AccountCard.tsx` 호출부 치환
+- [x] (커밋 1) `refactor(fe): ConfirmDeleteDialog 통합`
+- [x] `records/TradeHeaderCard.tsx` 신규
+- [x] `TradeDetail.tsx` 헤더 카드 치환
+- [x] `TradeEditPanel.tsx` 헤더 카드 치환
+- [x] (커밋 2) `refactor(fe): TradeHeaderCard 추출`
+- [x] `shared/ToggleChipGrid.tsx` 신규
+- [x] `StrategyEmotionFields.tsx` 2 곳 치환
+- [x] `TradeEditPanel.tsx` 3 곳 치환
+- [x] `TradeMetaBuyForm.tsx` 1 곳 치환
+- [x] (커밋 3) `refactor(fe): ToggleChipGrid 추출`
+- [x] `pnpm -C app exec tsc --noEmit` 그린
+- [x] `pnpm -C app test` 그린 (110/110)
+- [x] `docs/backlog.md` 처리 완료 3 항목 제거
 
 ## 우려사항 / 리스크
 
