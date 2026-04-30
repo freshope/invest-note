@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.db import acquire_for_user, get_pool
+from invest_note_api.db_ops.accounts_repo import account_row_to_dict
 from invest_note_api.db_ops.trades_repo import (
     list_trades_in_group,
     list_trades_with_account,
@@ -32,12 +33,10 @@ router = APIRouter(prefix="/api/portfolio")
 
 
 def _account_from_row(row) -> Account:
-    d = dict(row)
+    d = account_row_to_dict(row)
     for field in ("id", "user_id"):
         if field in d and d[field] is not None:
             d[field] = str(d[field])
-    if "cash_balance" in d and d["cash_balance"] is not None:
-        d["cash_balance"] = float(d["cash_balance"])
     return Account(**d)
 
 
