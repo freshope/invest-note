@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/base/Button";
-import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
 import { TradeEditPanel } from "./TradeEditPanel";
 import { TradeHeaderCard } from "./TradeHeaderCard";
+import { AccountChip } from "@/components/shared/AccountChip";
 import { ConfirmDeleteDialog } from "@/components/shared/ConfirmDeleteDialog";
 import type { Account, TradeResult } from "@/types/database";
 import { formatTradedAtLabel, type TradeWithAccount } from "@/lib/trade-utils";
@@ -145,12 +145,7 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
           <div className="grid grid-cols-2 gap-x-4 gap-y-3">
             <CompactRow label="날짜">{tradedDate}</CompactRow>
             <CompactRow label="계좌">
-              {trade.account ? (
-                <span className="inline-flex items-center gap-1">
-                  {trade.account.broker && <BrokerLogo broker={trade.account.broker} size={16} />}
-                  {trade.account.name}
-                </span>
-              ) : "-"}
+              {trade.account ? <AccountChip account={trade.account} size="md" /> : "-"}
             </CompactRow>
             <CompactRow label="수수료">{commission}원</CompactRow>
             {!isBuy && <CompactRow label="제세금">{tax}원</CompactRow>}

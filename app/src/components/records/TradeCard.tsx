@@ -2,7 +2,7 @@
 
 import type { Trade, Account } from "@/types/database";
 import { cn } from "@/lib/utils";
-import { BrokerLogo } from "@/components/base/BrokerLogo";
+import { AccountChip } from "@/components/shared/AccountChip";
 import { STRATEGY_LABELS, EMOTION_LABELS, RESULT_LABELS } from "@/lib/constants/trading";
 import { PNL_COLORS } from "@/lib/constants/colors";
 import { fmt, formatPnL } from "@/lib/format";
@@ -78,10 +78,11 @@ export function TradeCard({ trade, onPress }: TradeCardProps) {
           </div>
 
           {trade.account && (
-            <div className="mt-1 flex items-center gap-1 text-[12px] text-muted-foreground">
-              {trade.account.broker && <BrokerLogo broker={trade.account.broker} size={14} />}
-              {trade.account.name}
-            </div>
+            <AccountChip
+              account={trade.account}
+              size="sm"
+              className="mt-1 text-[12px] text-muted-foreground"
+            />
           )}
 
           {/* 메타데이터 뱃지들 */}

@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/base/Button";
-import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { AccountFormPanel } from "./AccountFormPanel";
+import { AccountChip } from "@/components/shared/AccountChip";
 import { ConfirmDeleteDialog } from "@/components/shared/ConfirmDeleteDialog";
 import { accountsApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
@@ -47,12 +47,11 @@ export function AccountCard({ account, tradeCount }: AccountCardProps) {
       <div className="rounded-2xl bg-muted/60 p-5 space-y-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              {account.broker && <BrokerLogo broker={account.broker} size={20} />}
-              <p className="min-w-0 text-[17px] font-bold text-foreground truncate leading-tight">
-                {account.name}
-              </p>
-            </div>
+            <AccountChip
+              account={account}
+              size="lg"
+              className="text-[17px] font-bold text-foreground leading-tight"
+            />
           </div>
           <div className="flex gap-1 shrink-0">
             <Button
