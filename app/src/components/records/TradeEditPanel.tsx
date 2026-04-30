@@ -31,9 +31,10 @@ import {
 import { AutoEmotionField, AutoReasoningTagsField } from "./AutoMetaField";
 import { TradeHeaderCard } from "./TradeHeaderCard";
 import { CompactRow } from "./trade-display";
+import { ToggleChipGrid } from "@/components/shared/ToggleChipGrid";
 import { fmt, fmtNumberInput, parseNumberInput } from "@/lib/format";
 import { cn, getFirstFormError } from "@/lib/utils";
-import type { Trade, Account, ReasoningTag } from "@/types/database";
+import type { Trade, Account, ReasoningTag, StrategyType, EmotionType } from "@/types/database";
 import { formatTradedAtLabel } from "@/lib/trade-utils";
 import { TradeFreeTextField } from "./TradeFreeTextField";
 
@@ -120,11 +121,6 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
   } = watch();
   const liveTotal = livePrice * liveQty;
   const acc = accounts.find((a) => a.id === trade.account_id);
-
-  function toggleTag(tag: ReasoningTag) {
-    const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
-    setValue("reasoning_tags", next);
-  }
 
   async function onSubmit(values: FormValues) {
     try {
@@ -263,18 +259,13 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                     control={control}
                     name="strategy_type"
                     render={({ field }) => (
-                      <div className="grid grid-cols-4 gap-2">
-                        {STRATEGIES.map((s) => (
-                          <button key={s.value} type="button"
-                            onClick={() => field.onChange(field.value === s.value ? null : s.value)}
-                            className={`rounded-xl border py-2.5 text-[13px] font-semibold transition-colors ${
-                              field.value === s.value
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "border-border bg-muted/50 text-muted-foreground"
-                            }`}
-                          >{s.label}</button>
-                        ))}
-                      </div>
+                      <ToggleChipGrid<StrategyType>
+                        options={STRATEGIES}
+                        value={field.value}
+                        onChange={field.onChange}
+                        emptyValue={null}
+                        columns={4}
+                      />
                     )}
                   />
                 </div>
@@ -292,18 +283,13 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                       control={control}
                       name="emotion"
                       render={({ field }) => (
-                        <div className="grid grid-cols-3 gap-2">
-                          {EMOTIONS.map((e) => (
-                            <button key={e.value} type="button"
-                              onClick={() => field.onChange(field.value === e.value ? null : e.value)}
-                              className={`rounded-xl border py-2.5 text-[13px] font-semibold transition-colors ${
-                                field.value === e.value
-                                  ? "bg-primary text-primary-foreground border-primary"
-                                  : "border-border bg-muted/50 text-muted-foreground"
-                              }`}
-                            >{e.label}</button>
-                          ))}
-                        </div>
+                        <ToggleChipGrid<EmotionType>
+                          options={EMOTIONS}
+                          value={field.value}
+                          onChange={field.onChange}
+                          emptyValue={null}
+                          columns={3}
+                        />
                       )}
                     />
                   </div>
@@ -317,18 +303,13 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                 ) : (
                   <div className="space-y-2 mb-5">
                     <Label>분석 태그 <span className="text-[12px] font-normal text-muted-foreground">(복수 선택)</span></Label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {REASONING_TAGS.map((t) => (
-                        <button key={t.value} type="button"
-                          onClick={() => toggleTag(t.value)}
-                          className={`rounded-xl border py-2.5 text-[13px] font-semibold transition-colors ${
-                            tags.includes(t.value)
-                              ? "bg-primary text-primary-foreground border-primary"
-                              : "border-border bg-muted/50 text-muted-foreground"
-                          }`}
-                        >{t.label}</button>
-                      ))}
-                    </div>
+                    <ToggleChipGrid<ReasoningTag>
+                      multi
+                      options={REASONING_TAGS}
+                      value={tags}
+                      onChange={(next) => setValue("reasoning_tags", next)}
+                      columns={2}
+                    />
                   </div>
                 )}
 
