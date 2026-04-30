@@ -17,7 +17,7 @@ from invest_note_api.domain.analysis.profile import compute_profile
 from invest_note_api.domain.analysis.rules import evaluate_rules
 from invest_note_api.domain.portfolio import build_positions, merge_quotes
 from invest_note_api.domain.realized_pnl import build_pnl_map
-from invest_note_api.domain.trade_types import TRADE_TYPE_BUY, TRADE_TYPE_SELL
+from invest_note_api.domain.trade_types import TRADE_TYPE_BUY
 from invest_note_api.external.quotes import fetch_quotes_by_keys
 from invest_note_api.schemas.analysis_response import AnalysisDashboardResponse
 
@@ -75,8 +75,8 @@ async def get_analysis_dashboard(
     period_val = parse_period(period)
     trades = filter_by_period(all_trades, period_val)
 
-    pnl_map = build_pnl_map(all_trades)
-    holding_days_map = compute_holding_days_map(all_trades)
+    pnl_map = build_pnl_map(trades)
+    holding_days_map = compute_holding_days_map(trades)
     positions0 = build_positions(all_trades)
 
     positions = positions0
@@ -93,11 +93,8 @@ async def get_analysis_dashboard(
         {"summary": summary, "profile": profile, "concentration": concentration}
     )
 
-    period_sell_ids = {t.id for t in trades if t.trade_type == TRADE_TYPE_SELL}
     holding_dist: dict[str, int] = {}
-    for tid, days in holding_days_map.items():
-        if tid not in period_sell_ids:
-            continue
+    for days in holding_days_map.values():
         b = _holding_bucket(days)
         holding_dist[b] = holding_dist.get(b, 0) + 1
     holding_period_dist = [

@@ -82,6 +82,7 @@ def compute_summary(
     pnl_map: dict[str, float],
     holding_days_map: dict[str, int],
 ) -> AnalysisSummary:
+    """trades, pnl_map, holding_days_map은 모두 동일 period 범위에서 빌드된 입력이어야 한다."""
     sells = [t for t in trades if t.trade_type == TRADE_TYPE_SELL]
     buys = [t for t in trades if t.trade_type == TRADE_TYPE_BUY]
 
