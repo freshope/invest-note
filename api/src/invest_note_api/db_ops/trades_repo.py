@@ -54,6 +54,31 @@ async def list_trades(conn: Any, user_id: str) -> list[Trade]:
     return [_row_to_trade(r) for r in rows]
 
 
+async def list_trades_in_group(
+    conn: Any, user_id: str, key: TradeGroupKey
+) -> list[Trade]:
+    """단일 (account_id, ticker_or_name, country) 그룹의 거래만 반환.
+
+    walk_trades / compute_group_pnl / validate_mutation 의 인자로 그대로 사용 가능 —
+    내부에서 is_same_group 으로 다시 필터하지만 이미 그룹 단위라 no-op.
+    """
+    rows = await conn.fetch(
+        """
+        SELECT * FROM trades
+        WHERE user_id = $1
+          AND account_id = $2
+          AND COALESCE(NULLIF(ticker_symbol, ''), asset_name) = $3
+          AND COALESCE(NULLIF(country_code, ''), 'KR') = $4
+        ORDER BY traded_at ASC
+        """,
+        user_id,
+        key.account_id,
+        key.ticker or key.asset_name,
+        key.country,
+    )
+    return [_row_to_trade(r) for r in rows]
+
+
 async def list_trades_with_account(conn: Any, user_id: str) -> list[TradeWithAccount]:
     rows = await conn.fetch(
         """
