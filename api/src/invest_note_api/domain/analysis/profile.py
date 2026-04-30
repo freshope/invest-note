@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from invest_note_api.domain.analysis._math import _percent
 from invest_note_api.domain.trade_types import (
     EMOTION_ANXIOUS,
     EMOTION_FOMO,
@@ -37,10 +38,6 @@ class ProfileInputRates:
 
 def _clamp(v: float) -> float:
     return min(100.0, max(0.0, v))
-
-
-def _percent(numer: float, denom: int) -> float:
-    return numer / denom * 100 if denom else 0.0
 
 
 def compute_profile(
