@@ -18,7 +18,7 @@ from invest_note_api.domain.portfolio import (
     build_totals,
     merge_quotes,
 )
-from invest_note_api.domain.realized_pnl import TradeGroupKey
+from invest_note_api.domain.realized_pnl import TradeGroupKey, build_pnl_map
 from invest_note_api.domain.trade_types import Trade
 from invest_note_api.errors import APIError
 from invest_note_api.external.quotes import fetch_quotes_by_keys
@@ -95,7 +95,8 @@ async def get_portfolio_summary(
 
     accounts = [_account_from_row(r) for r in account_rows]
 
-    positions0 = build_positions(trades)
+    positions0, lot_map = build_positions(trades)
+    pnl_map = build_pnl_map(trades)
 
     quotes = {}
     try:
@@ -104,8 +105,8 @@ async def get_portfolio_summary(
         logger.warning("fetch_quotes_by_keys 실패 user_id=%s", user.id, exc_info=True)
 
     positions = merge_quotes(positions0, quotes)
-    snapshots = build_account_snapshots(accounts, trades, quotes)
-    totals = build_totals(positions, accounts, trades)
+    snapshots = build_account_snapshots(accounts, lot_map, quotes)
+    totals = build_totals(positions, accounts, trades, pnl_map)
 
     return PortfolioSummaryResponse.model_validate({
         "totals": totals,
