@@ -132,7 +132,7 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
       <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5 space-y-5">
         <TradeHeaderCard
           trade={trade}
-          isBuy={isBuy}
+          tradeType={trade.trade_type}
           totalAmount={totalAmountNum}
           price={priceNum}
           quantity={quantity}

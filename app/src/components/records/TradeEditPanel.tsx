@@ -163,7 +163,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
             <div className="flex-1 px-5 pt-5 pb-4 space-y-5">
               <TradeHeaderCard
                 trade={trade}
-                isBuy={!isSell}
+                tradeType={trade.trade_type}
                 totalAmount={liveTotal}
                 price={livePrice}
                 quantity={liveQty}

@@ -3,8 +3,9 @@
 import type { Trade, Account } from "@/types/database";
 import { cn } from "@/lib/utils";
 import { AccountChip } from "@/components/shared/AccountChip";
+import { TradeTypeBadge } from "@/components/shared/TradeTypeBadge";
 import { STRATEGY_LABELS, EMOTION_LABELS, RESULT_LABELS } from "@/lib/constants/trading";
-import { PNL_COLORS } from "@/lib/constants/colors";
+import { PNL_COLORS, getTradeTypeAccent } from "@/lib/constants/colors";
 import { fmt, formatPnL } from "@/lib/format";
 
 interface TradeCardProps {
@@ -30,7 +31,7 @@ export function TradeCard({ trade, onPress }: TradeCardProps) {
         <div
           className={cn(
             "w-1 flex-shrink-0 rounded-l-2xl",
-            isBuy ? PNL_COLORS.rise.bg : PNL_COLORS.fall.bg
+            getTradeTypeAccent(trade.trade_type).bg,
           )}
         />
 
@@ -39,16 +40,7 @@ export function TradeCard({ trade, onPress }: TradeCardProps) {
             {/* 종목명 + 매수/매도 뱃지 */}
             <div className="flex items-center gap-2 min-w-0">
               <span className="text-[16px] font-bold text-foreground truncate">{trade.asset_name}</span>
-              <span
-                className={cn(
-                  "text-[11px] font-bold px-1.5 py-0.5 rounded-md flex-shrink-0",
-                  isBuy
-                    ? cn(PNL_COLORS.rise.bgSoft, PNL_COLORS.rise.text)
-                    : cn(PNL_COLORS.fall.bgSoft, PNL_COLORS.fall.text)
-                )}
-              >
-                {isBuy ? "매수" : "매도"}
-              </span>
+              <TradeTypeBadge tradeType={trade.trade_type} size="sm" />
             </div>
 
             {/* 매도 수익/손실 (우측) */}
