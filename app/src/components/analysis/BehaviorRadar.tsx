@@ -70,6 +70,8 @@ export function BehaviorRadar({ profile, inputRates }: BehaviorRadarProps) {
 
   return (
     <div className="space-y-4">
+      <p className="text-[10px] text-muted-foreground">* 분산도는 현재 보유 포트폴리오 기준</p>
+
       <ResponsiveContainer width="100%" height={208}>
         <RadarChart data={data} margin={{ top: 8, right: 24, bottom: 8, left: 24 }}>
             <PolarGrid gridType="polygon" stroke="var(--border)" />
@@ -97,7 +99,6 @@ export function BehaviorRadar({ profile, inputRates }: BehaviorRadarProps) {
           />
         ))}
       </div>
-      <p className="text-[10px] text-muted-foreground">* 분산도는 현재 보유 포트폴리오 기준</p>
     </div>
   );
 }
