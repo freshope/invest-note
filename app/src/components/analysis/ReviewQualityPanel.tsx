@@ -2,7 +2,10 @@
 
 import { cn } from "@/lib/utils";
 import type { ProfileInputRates } from "@/lib/analysis/profile";
-import { PNL_COLORS } from "@/lib/constants/colors";
+import { ProgressTrack } from "@/components/shared/ProgressTrack";
+import { pickRateColor } from "@/lib/analysis/rate-color";
+
+const QUALITY_THRESHOLDS = { win: 70, loss: 40 };
 
 function QualityBar({
   label,
@@ -14,14 +17,7 @@ function QualityBar({
   description: string;
 }) {
   const pct = Math.round(rate);
-  const color =
-    pct >= 70 ? PNL_COLORS.rise.bg : pct >= 40 ? "bg-amber-400" : PNL_COLORS.fall.bg;
-  const textColor =
-    pct >= 70
-      ? PNL_COLORS.rise.text
-      : pct >= 40
-        ? "text-amber-500"
-        : PNL_COLORS.fall.text;
+  const { bg, text } = pickRateColor(pct, QUALITY_THRESHOLDS);
 
   return (
     <div className="space-y-1.5">
@@ -30,11 +26,9 @@ function QualityBar({
           <span className="text-[13px] font-medium text-foreground">{label}</span>
           <p className="text-[11px] text-muted-foreground">{description}</p>
         </div>
-        <span className={cn("text-[15px] font-bold tabular-nums", textColor)}>{pct}%</span>
+        <span className={cn("text-[15px] font-bold tabular-nums", text)}>{pct}%</span>
       </div>
-      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-        <div className={cn("h-full rounded-full", color)} style={{ width: `${pct}%` }} />
-      </div>
+      <ProgressTrack pct={pct} colorClass={bg} />
     </div>
   );
 }
