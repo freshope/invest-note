@@ -87,7 +87,7 @@ class TestBuildPositions:
         # lot 은 lot_map 에 남아있되 running_qty 가 0 — build_account_snapshots 가
         # `<= 0` 필터로 거른다는 invariant. 향후 refactor 가 zero-qty lot 을 제거하면 깨짐.
         assert len(lot_map) == 1
-        assert next(iter(lot_map.values()))["running_qty"] == 0.0
+        assert next(iter(lot_map.values())).running_qty == 0.0
 
     def test_two_accounts_separate_lots(self):
         b1 = make_trade(id="b1", trade_type="BUY", quantity=5, account_id="a1")
@@ -119,8 +119,8 @@ class TestBuildPositions:
         _, lot_map = build_positions([b1, b2])
         assert len(lot_map) == 2
         # 모든 lot 의 account_id 는 str 로 보관되어 account.id (str 강제) 와 매칭 가능
-        assert all(isinstance(lot["account_id"], str) for lot in lot_map.values())
-        running_qtys = sorted(lot["running_qty"] for lot in lot_map.values())
+        assert all(isinstance(lot.account_id, str) for lot in lot_map.values())
+        running_qtys = sorted(lot.running_qty for lot in lot_map.values())
         assert running_qtys == [3.0, 10.0]
 
 
