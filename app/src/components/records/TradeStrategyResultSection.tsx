@@ -72,7 +72,7 @@ export const TradeStrategyResultSection = memo(function TradeStrategyResultSecti
             {strategyEvaluation && (
               <>
                 <InfoRow
-                  label="계획 전략"
+                  label="전략"
                   value={strategyEvaluation.planned
                     ? (STRATEGY_LABELS[strategyEvaluation.planned] ?? strategyEvaluation.planned)
                     : "–"}

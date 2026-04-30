@@ -91,7 +91,7 @@ def compute_summary(
 
     strategy_evals = build_strategy_evaluations(trades, holding_days_map)
 
-    # byStrategy — SELL에 저장된 계획 전략 기준
+    # byStrategy — SELL에 저장된 전략 기준
     strat_map: dict[str, dict] = {}
     for t in sells:
         evaluation = strategy_evals.get(t.id)

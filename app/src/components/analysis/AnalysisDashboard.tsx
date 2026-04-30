@@ -105,7 +105,7 @@ export function AnalysisDashboard() {
 
             {/* 섹션 5: 전략별 성과 */}
             {summary.byStrategy.length > 0 && (
-              <SectionCard title="계획 전략별 성과">
+              <SectionCard title="전략별 성과">
                 <StrategyBreakdown data={summary.byStrategy} />
               </SectionCard>
             )}

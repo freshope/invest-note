@@ -64,7 +64,7 @@ export function StrategyAdherencePanel({ rate, data }: StrategyAdherencePanelPro
       <div className="flex items-center justify-between">
         <div>
           <p className="text-[12px] text-muted-foreground">전략 준수율</p>
-          <p className="text-[11px] text-muted-foreground mt-0.5">계획 전략과 실제 보유일 기준</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">전략과 실제 보유일 기준</p>
         </div>
         <div className="text-right">
           <p className="text-[20px] font-bold tabular-nums text-foreground">
@@ -77,7 +77,7 @@ export function StrategyAdherencePanel({ rate, data }: StrategyAdherencePanelPro
       {judged === 0 ? (
         <div className="text-[13px] text-muted-foreground text-center py-4">
           {unknownCount > 0
-            ? `전략 준수 판정이 가능한 거래가 없습니다 (분류 불가 ${unknownCount}건)`
+            ? `전략 준수 판정이 가능한 거래가 없습니다 (미입력 ${unknownCount}건)`
             : "전략 준수 데이터가 없습니다"}
         </div>
       ) : (
@@ -113,9 +113,9 @@ export function StrategyAdherencePanel({ rate, data }: StrategyAdherencePanelPro
         <div className="rounded-xl bg-amber-50 border border-amber-200 p-2.5 flex gap-2 items-start">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
           <p className="text-[12px] text-amber-700 leading-snug">
-            분류 불가 {unknownCount}건
+            미입력 {unknownCount}건
             {unknownPnL !== 0 && ` (${formatPnL(unknownPnL)})`}
-            은 통계에서 제외 — 두 금액 합이 총 실현손익과 다를 수 있습니다.
+            은 통계에서 제외
           </p>
         </div>
       )}
