@@ -1,4 +1,4 @@
-"""분석 응답 스키마 — /api/analysis/{summary,behavior,suggestions}."""
+"""분석 응답 스키마 — /api/analysis/dashboard."""
 from __future__ import annotations
 
 from invest_note_api.schemas._base import CamelModel
@@ -102,3 +102,10 @@ class SuggestionResponse(CamelModel):
 class SuggestionsResponse(CamelModel):
     period: str
     suggestions: list[SuggestionResponse]
+
+
+class AnalysisDashboardResponse(CamelModel):
+    period: str
+    summary: AnalysisSummaryResponse
+    behavior: BehaviorResponse
+    suggestions: SuggestionsResponse
