@@ -10,7 +10,7 @@ from invest_note_api.domain.trade_types import (
     trade_country,
     trade_identifier,
 )
-from invest_note_api.domain.trade_utils import to_kst
+from invest_note_api.domain.trade_utils import position_key, to_kst
 from invest_note_api.domain.trade_walker import (
     stored_avg_cost_deduction,
     walk_trades,
@@ -147,7 +147,7 @@ def build_positions(trades: list["Trade"]) -> tuple[list[Position], LotMap]:
     for lot in lot_map.values():
         if lot["running_qty"] <= 0:
             continue
-        display_key = f"{lot['ticker']}:{lot['country']}"
+        display_key = position_key(lot['ticker'], lot['country'])
         if display_key not in pos_map:
             pos_map[display_key] = {
                 "ticker": lot["ticker"],
@@ -240,7 +240,7 @@ def build_account_snapshots(
         for lot in account_lots:
             if lot["running_qty"] <= 0:
                 continue
-            quote_key = f"{lot['ticker']}:{lot['country']}"
+            quote_key = position_key(lot['ticker'], lot['country'])
             quote = quotes.get(quote_key)
             if quote:
                 stock_evaluation += quote["price"] * lot["running_qty"]
