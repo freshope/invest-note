@@ -28,7 +28,6 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] `_is_flexible_match` ↔ `_is_same_group` 통합 — `domain/holdings.py:35` vs `domain/realized_pnl.py:44`가 같은 의도, 다른 시그니처. `LotKey`/`TradeGroupKey` 타입을 단일화.
 
 ### 스키마 / DB
-- [ ] 콤마 숫자 파싱 헬퍼 통합 — `schemas/trade.py:29-48`(`_comma_positive`/`_comma_non_negative`), `broker_import/base.py:9` `parse_number`, `schemas/account.py:10` `_parse_cash`가 동일한 `replace(",", "")` 변환 코어를 각자 보유. `utils/numbers.py` 같은 공용 모듈로 통합.
 - [ ] `insert_trade` ↔ `insert_trades_bulk` SQL 중복 제거 (`db_ops/trades_repo.py:89` vs `:185-235`) — 19개 컬럼이 두 번 나열됨. `insert_trade`가 bulk를 `[data]`로 호출하고 `RETURNING id`만 추가하도록 통합.
 - [ ] patch 필드 메타데이터 통합 — `db_ops/trades_repo.py`의 `_PATCH_ALLOWED`/`PNL_AFFECTING_FIELDS`/`SELL_AUTO_DERIVED_FIELDS` 세 셋이 같은 파일에서 drift 위험. 단일 메타 dict (`{name: {patchable, pnl_affecting, auto_derived}}`)로 통합.
 

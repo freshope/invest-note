@@ -22,30 +22,25 @@ from ..domain.trade_types import (
     TradeType,
 )
 from ..domain.trade_utils import KST_OFFSET
+from ..utils.numbers import strip_comma_number
 
 TRADE_FREE_TEXT_MAX_LEN = 5000
 
 
 def _comma_positive(v: object) -> float:
     """쉼표 포함 문자열/숫자 → 양수 float."""
-    if isinstance(v, str):
-        v = float(v.replace(",", "").strip())
-    else:
-        v = float(v)  # type: ignore[arg-type]
-    if v <= 0:
+    f = float(strip_comma_number(v))  # type: ignore[arg-type]
+    if f <= 0:
         raise ValueError("양수여야 합니다.")
-    return v
+    return f
 
 
 def _comma_non_negative(v: object) -> float:
     """쉼표 포함 문자열/숫자 → 0 이상 float."""
-    if isinstance(v, str):
-        v = float(v.replace(",", "").strip())
-    else:
-        v = float(v)  # type: ignore[arg-type]
-    if v < 0:
+    f = float(strip_comma_number(v))  # type: ignore[arg-type]
+    if f < 0:
         raise ValueError("0 이상이어야 합니다.")
-    return v
+    return f
 
 
 def _traded_at_transform(raw: object) -> datetime:

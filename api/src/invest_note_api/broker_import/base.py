@@ -5,13 +5,15 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
+from ..utils.numbers import strip_comma_number
+
 
 def parse_number(s: object) -> float:
     """쉼표가 포함된 숫자 문자열을 float으로 변환한다. 변환 실패 시 0.0 반환."""
     if not s:
         return 0.0
     try:
-        return float(str(s).replace(",", "").strip())
+        return float(str(strip_comma_number(s)))
     except ValueError:
         return 0.0
 
