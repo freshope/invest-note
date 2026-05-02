@@ -13,14 +13,6 @@ MVP 이후 구현할 작업 후보 목록.
 
 Round 1 (`docs/spec-history/...`) 에서 처리된 6 개 외에 도출된 후속 항목. 위험도/가치 평가 후 Round 2+ 에서 분할 처리.
 
-### 컴포넌트 추출 (중복 제거)
-
-> Round 2 (2026-04-30) 에서 `ConfirmDeleteDialog` / `TradeHeaderCard` / `ToggleChipGrid` 3 개 처리 완료. Round 3 (2026-04-30) 에서 `AccountChip` 처리 완료. Round 4 (2026-04-30) 에서 `TradeTypeBadge` 처리 완료. Round 5 (2026-05-01) 에서 `ProgressTrack` 처리 완료. Round 6 (2026-05-01) 에서 `BreakdownList<T>` 처리 완료. Round 7 (2026-05-03) 에서 `EmptyCard` 처리 완료. 나머지 항목은 Round 8+ 후보.
-
-- [x] `BreakdownList<T>` 통합 — `EmotionBreakdown` / `StrategyBreakdown` / `ReasoningBreakdown` 동일 구조 (정렬·라벨·count + PnLLine·WinRateBar). getKey/getLabel/getStats/isUntagged 콜백 받는 일반 컴포넌트
-- [x] `EmptyCard` 일반화 — `shared/EmptyCard` 신규 (`title`/`description`/`action`/`compact`). `home/EmptyState` 가 위임. `TradeList` / `AccountList` / `StockDetail` 4건 인라인 마크업 치환. `AccountStep`(dashed 톤) / `AllocationTabs`(차트 placeholder) 는 의도적으로 제외
-- [ ] `Card` primitive 30+ 곳 — `rounded-2xl bg-muted/60` 카드 셸. padding sm/md/lg 변종 흡수. 대규모 변경이라 디자인 토큰화 가치 검증 필요
-
 ### 상태/구조 리팩터
 
 - [ ] `DetailPanelProvider` 5 중 상태 단순화 — open/payload/key/payloadRef/closeTimer 를 trade·stock 각 5 개씩 관리. 슬라이드 lifecycle 을 `FullScreenPanel` 내부 `useStaggeredPanel(payload)` 훅으로 추출, Provider 는 setPayload 만
