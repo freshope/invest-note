@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/base/Button";
+import { EmptyCard } from "@/components/shared/EmptyCard";
 import { AccountCard } from "./AccountCard";
 import { AccountFormPanel } from "./AccountFormPanel";
 import type { Account } from "@/types/database";
@@ -17,19 +18,23 @@ export function AccountList({ accounts }: AccountListProps) {
     <>
       <div className="space-y-3">
         {accounts.length === 0 ? (
-          <div className="rounded-2xl bg-muted/60 p-8 text-center space-y-4">
-            <p className="text-[15px] font-semibold text-foreground">등록된 계좌가 없어요</p>
-            <p className="text-[13px] text-muted-foreground leading-relaxed">
-              계좌를 추가하면 거래 기록을<br />계좌별로 관리할 수 있어요
-            </p>
-            <Button
-              variant="default"
-              onClick={() => setAddOpen(true)}
-              className="mt-2 px-5"
-            >
-              첫 계좌 추가하기
-            </Button>
-          </div>
+          <EmptyCard
+            title="등록된 계좌가 없어요"
+            description={
+              <>
+                계좌를 추가하면 거래 기록을<br />계좌별로 관리할 수 있어요
+              </>
+            }
+            action={
+              <Button
+                variant="default"
+                onClick={() => setAddOpen(true)}
+                className="mt-2 px-5"
+              >
+                첫 계좌 추가하기
+              </Button>
+            }
+          />
         ) : (
           <>
             {accounts.map((account) => (

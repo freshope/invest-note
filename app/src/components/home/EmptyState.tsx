@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { buttonVariants } from "@/components/base/Button";
+import { EmptyCard } from "@/components/shared/EmptyCard";
 import { cn } from "@/lib/utils";
 
 interface EmptyStateProps {
@@ -29,20 +30,18 @@ export function EmptyState({ variant }: EmptyStateProps) {
 
   return (
     <div className="px-5">
-      <div className="rounded-2xl bg-muted/60 p-8 text-center space-y-4">
-        <div className="space-y-1">
-          <p className="text-[15px] font-semibold text-foreground">{content.title}</p>
-          <p className="text-[13px] text-muted-foreground">
-            {content.description}
-          </p>
-        </div>
-        <Link
-          href={content.href}
-          className={cn(buttonVariants({ variant: "outline", size: "sm" }), "rounded-xl font-semibold")}
-        >
-          {content.action}
-        </Link>
-      </div>
+      <EmptyCard
+        title={content.title}
+        description={content.description}
+        action={
+          <Link
+            href={content.href}
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "rounded-xl font-semibold")}
+          >
+            {content.action}
+          </Link>
+        }
+      />
     </div>
   );
 }

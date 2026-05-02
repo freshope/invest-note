@@ -7,6 +7,7 @@ import { useDetailPanel } from "@/components/panels/DetailPanelProvider";
 import { CsvUploadButton } from "./CsvUploadButton";
 import { ImportTradesPanel } from "./ImportTradesPanel";
 import { AccountFilter } from "@/components/shared/AccountFilter";
+import { EmptyCard } from "@/components/shared/EmptyCard";
 import { ACCOUNT_FILTER_ALL, useAccountFilter, useEnsureValidAccount } from "@/components/providers/AccountFilterProvider";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import type { Account } from "@/types/database";
@@ -50,19 +51,25 @@ export function TradeList({ trades, accounts }: TradeListProps) {
 
       <div className="px-5 pb-6">
         {trades.length === 0 ? (
-          <div className="rounded-2xl bg-muted/60 p-8 text-center space-y-4 mt-2">
-            <p className="text-[15px] font-semibold text-foreground">거래 기록이 없어요</p>
-            <p className="text-[13px] text-muted-foreground leading-relaxed">
-              우측 하단 버튼을 눌러<br />첫 거래를 기록해보세요
-            </p>
-          </div>
+          <EmptyCard
+            className="mt-2"
+            title="거래 기록이 없어요"
+            description={
+              <>
+                우측 하단 버튼을 눌러<br />첫 거래를 기록해보세요
+              </>
+            }
+          />
         ) : filteredTrades.length === 0 ? (
-          <div className="rounded-2xl bg-muted/60 p-8 text-center space-y-4 mt-2">
-            <p className="text-[15px] font-semibold text-foreground">해당 계좌의 기록이 없어요</p>
-            <p className="text-[13px] text-muted-foreground leading-relaxed">
-              다른 계좌를 선택하거나<br />새 거래를 기록해보세요
-            </p>
-          </div>
+          <EmptyCard
+            className="mt-2"
+            title="해당 계좌의 기록이 없어요"
+            description={
+              <>
+                다른 계좌를 선택하거나<br />새 거래를 기록해보세요
+              </>
+            }
+          />
         ) : (
           <div className="space-y-6">
             {grouped.map(([dateKey, dayTrades]) => (

@@ -9,6 +9,7 @@ import { TradeCard } from "@/components/records/TradeCard";
 import { ChevronLeftIcon } from "lucide-react";
 import { CountryBadge } from "@/components/records/trade-display";
 import { AccountFilter } from "@/components/shared/AccountFilter";
+import { EmptyCard } from "@/components/shared/EmptyCard";
 import { ACCOUNT_FILTER_ALL, useAccountFilter } from "@/components/providers/AccountFilterProvider";
 import type { Account } from "@/types/database";
 
@@ -107,14 +108,11 @@ export function StockDetail({ assetName, ticker, country, trades, stats, account
         <div>
           <p className="text-[13px] font-semibold text-muted-foreground mb-2">거래 히스토리</p>
           {trades.length === 0 ? (
-            <div className="rounded-2xl bg-muted/60 p-8 text-center space-y-1">
-              <p className="text-[14px] font-semibold text-foreground">
-                {isFiltered ? "해당 계좌의 거래 기록이 없어요" : "거래 기록이 없습니다"}
-              </p>
-              {isFiltered && (
-                <p className="text-[13px] text-muted-foreground">다른 계좌를 선택해보세요</p>
-              )}
-            </div>
+            <EmptyCard
+              compact
+              title={isFiltered ? "해당 계좌의 거래 기록이 없어요" : "거래 기록이 없습니다"}
+              description={isFiltered ? "다른 계좌를 선택해보세요" : undefined}
+            />
           ) : (
             <div className="space-y-6">
               {grouped.map(([dateKey, dayTrades]) => (
