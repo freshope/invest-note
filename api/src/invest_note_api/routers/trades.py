@@ -150,21 +150,10 @@ async def create_trade(
         new_trade = Trade(
             id="__new__",
             user_id=str(user.id),
-            account_id=data.account_id,
-            asset_name=data.asset_name,
-            ticker_symbol=data.ticker_symbol,
-            market_type=data.market_type,
-            trade_type=data.trade_type,
-            price=data.price,
-            quantity=data.quantity,
             total_amount=data.price * data.quantity,
-            traded_at=data.traded_at,
-            country_code=data.country_code or DEFAULT_COUNTRY,
-            exchange=data.exchange or "",
-            commission=data.commission,
-            tax=data.tax,
             created_at=now,
             updated_at=now,
+            **data.model_dump(),
         )
 
         # BUY도 lock — recalc_group_pnl이 같은 그룹 SELL들을 UPDATE하므로 BUY/SELL 모두 직렬화 필요

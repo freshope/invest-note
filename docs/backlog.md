@@ -54,15 +54,9 @@ Round 1 (`docs/spec-history/...`) 에서 처리된 6 개 외에 도출된 후속
 
 ## BE simplify (Round 1 이후 deferred — 2026-05-01 `/simplify` 결과)
 
-Round 1 (`docs/spec-history/2026-05-01-be-simplify-round1-quick-wins.md`) 에서 처리된 3 개 (`model_copy(update=)` / `dataclasses.replace` / `sort_by_traded_at` 통합) 외에 도출된 후속 항목. 위험도/가치 평가 후 Round 2+ 에서 분할 처리.
+Round 1 (`docs/spec-history/2026-05-01-be-simplify-round1-quick-wins.md`) 에서 처리된 3 개 (`model_copy(update=)` / `dataclasses.replace` / `sort_by_traded_at` 통합) + Round 2 (`docs/spec-history/2026-05-03-be-simplify-round2-response-mapping.md`) 에서 처리된 4 개 외에 도출된 후속 항목. 위험도/가치 평가 후 Round 3+ 에서 분할 처리.
 
-### 응답 매핑 / 라우터 청소
-
-- [ ] `routers/analysis.py` 응답 31줄 손-매핑 → `model_validate(dataclass)` — `AnalysisSummary` 에 `period` 필드 추가하여 spread
-- [ ] `routers/portfolio._account_from_row` UUID→str 누수 → `account_row_to_dict` 흡수 또는 `Account` 생성자 변환
-- [ ] `routers/trades._trade_with_account_dict` `pop` 으로 dict reshape → `TradeWithAccountResponse` 스키마 + `response_model` 위임
-- [ ] `routers/accounts.update_account` SET-clause 손-빌드 → `db_ops/accounts_repo.patch_account` 추출 (`patch_trade` 와 동형)
-- [ ] `routers/trades.create_trade` `TradeCreate` → `Trade` 매핑 17줄 단순화
+> Round 2 (2026-05-03) 에서 응답 매핑 카테고리 4 개 처리 완료 (`asdict` spread / `account_row_to_dict` UUID 흡수 / `patch_account` 추출 / `create_trade` `model_dump` spread). `_trade_with_account_dict` 스키마화는 [decisions.md 2026-05-03](decisions.md) 으로 **미진행 확정**.
 
 ### 효율 / 핫패스
 

@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-05-03 | BE simplify Round 2 — TradeWithAccountResponse 스키마화 미진행
+
+- **맥락:** Round 2 backlog 의 "응답 매핑 / 라우터 청소" 5 개 항목 중 5번째 (`routers/trades._trade_with_account_dict` 의 `pop` 기반 dict reshape → `TradeWithAccountResponse` 스키마 + `response_model` 위임) 의 진행 여부를 평가. 현재 helper 는 7 줄 (`d.pop("account_name", None)` / `d.pop("account_broker", None)` 로 nested `account` dict 빌드).
+- **결정:** **진행하지 않는다.** Round 2 는 위험도 낮은 4 개 (analysis 31줄 매핑, portfolio UUID 누수, accounts SET-clause, trades 17줄 매핑) 만 묶고 본 항목은 backlog 에서 제거.
+- **이유:**
+  - **LOC 중립~증가** — 현재 7줄 helper 를 제거하려면 `TradeWithAccountResponse` 스키마 + 중첩 `AccountInfo` 스키마 + `model_validator` 변환 로직 ~30줄을 신규 정의해야 함. 단순화 효과 없음.
+  - **FE 계약 보존 비용** — FE (`app/src/types/database.ts:27` Trade interface) 가 snake_case 필드 (`account_name`, `ticker_symbol`, `country_code`, `created_at` 등) 를 사용 중. 다른 응답 스키마는 `CamelModel` (`schemas/_base.py`) 로 camelCase 변환되지만, `_trade_with_account_dict` 가 통과하는 `_trade_dict(trade) → trade.model_dump(mode="json")` 은 snake_case 그대로. `TradeWithAccountResponse` 를 `CamelModel` 로 정의하면 wire format 이 camelCase 로 바뀌어 FE 가 깨짐. snake_case 보존하려면 `BaseModel` 직접 상속 + alias generator 회피 필요 → 코드베이스 컨벤션 (`CamelModel` 일원화) 과 충돌.
+  - **OpenAPI 가치 < 비용** — response_model 위임의 주된 이점인 OpenAPI docs 정확도는 본 프로젝트가 internal-only API 라 가치가 낮음.
+- **트레이드오프:** 향후 trades 응답 wire format 을 camelCase 로 일원화하기로 결정한다면 (FE 도 동시에 camelCase 로 마이그레이션), 본 항목과 함께 재평가. 현재 helper 의 `pop` 기반 reshape 가 visually-noisy 해 보일 수 있으나 7 줄 / 단일 호출 패턴이라 유지 비용 낮음. 본 결정은 2026-04-30 Tier 3 결정 ("다르게 보이지만 단순화 비용이 더 큰 사례") 과 동일 패턴.
+
+---
+
 ## 2026-04-30 | BE simplify Tier 3 — aggregate.py 3-bucket loop / build_strategy_evaluations 호출 통합 미진행
 
 - **맥락:** Tier 3 backlog 의 항목 E (`aggregate.py` 의 `strat_map` / `adherence_map` / `emotion_map` 3 개 버킷 루프를 `_bucketize(sells, key_fn)` 헬퍼로 통합) 와 F (`build_strategy_evaluations` 가 router 에서는 `all_trades` 입력, `compute_summary` 내부에서는 period-filtered `trades` 입력으로 2 번 빌드되는 것을 1 회로 통합) 가 deferred 상태였음. Round 2 진행 전 두 항목의 실현 가능성을 재평가.

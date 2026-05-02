@@ -37,11 +37,7 @@ router = APIRouter(prefix="/api/portfolio")
 
 
 def _account_from_row(row) -> Account:
-    d = account_row_to_dict(row)
-    for field in ("id", "user_id"):
-        if field in d and d[field] is not None:
-            d[field] = str(d[field])
-    return Account(**d)
+    return Account(**account_row_to_dict(row))
 
 
 @router.get("/holding")
