@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-05-03 | FE simplify — Card primitive 추출 미진행
+
+- **맥락:** `docs/backlog.md` 의 "FE simplify · 컴포넌트 추출" 섹션에 남아 있던 `Card` primitive 30+ 곳 (`rounded-2xl bg-muted/60` 카드 셸) 처리 여부 평가. 탐색 결과 사용처는 32 곳 / 18 파일로 충분히 넓었으나 (`grep "rounded-2xl bg-muted" app/src`), 셸 마크업은 단 2 개 유틸 클래스에 불과하고 padding 변종이 백로그 메모(sm/md/lg) 보다 훨씬 다양 (`p-3.5×6`, `p-4×10`, `p-5×2`, `p-8×1`, `px-4 py-1×1`, `px-4 py-3×1`, 스켈레톤 padding 없음 ×5 + `overflow-hidden`, `active:scale-[0.99]`, `cursor-pointer`, div/button 혼합) 한 것으로 확인됨.
+- **결정:** **`<Card>` 컴포넌트도 CSS 유틸 (`.card-shell` 등) 도 도입하지 않는다.** 현 인라인 클래스 (`rounded-2xl bg-muted/60 ...`) 를 그대로 유지. `docs/backlog.md` 의 해당 항목은 `[x]` 로 종결.
+- **이유:** ① 셸 마크업이 단 2 개 유틸 클래스라 `<Card className="...">{children}</Card>` 가 `<div className="rounded-2xl bg-muted/60 ...">` 대비 토큰 절감 가치 미미. ② 변종이 7 가지 padding + interaction/overflow/element 혼합으로 다양해 단순 prop API (size sm/md/lg 등) 로 흡수 시 escape-hatch `className` 이 만연 — 추상화가 passthrough 로 전락. ③ Round 2~7 의 추출은 모두 시맨틱 콘텐츠 (EmptyCard 의 title/description/action, BreakdownList 의 items, ConfirmDeleteDialog 의 prompt 등) 가 있어 prop API 가 자연스러웠음. 시맨틱 콘텐츠 없는 순수 시각 셸은 같은 패턴이 적용되지 않음.
+- **트레이드오프:** 향후 셸 디자인 변경 (예: `rounded-2xl` → `rounded-3xl`, `bg-muted/60` → `bg-card`) 시 32 곳을 동시 수정해야 함. **재검토 트리거** — ① 셸 클래스 변경 PR 이 6 개월 내 2 회 이상 발생, ② 인터랙티브 카드 (active:scale, cursor-pointer 등) 가 5 곳 이상으로 증가, ③ 셸 시맨틱 props (`as`, `interactive` 등) 가 절반 이상 사용처에서 요구되는 경우. 트리거 미발생 상태에서의 선제 추출은 비용 대비 가치 낮음.
+
+---
+
 ## 2026-04-30 | BE simplify Tier 3 — aggregate.py 3-bucket loop / build_strategy_evaluations 호출 통합 미진행
 
 - **맥락:** Tier 3 backlog 의 항목 E (`aggregate.py` 의 `strat_map` / `adherence_map` / `emotion_map` 3 개 버킷 루프를 `_bucketize(sells, key_fn)` 헬퍼로 통합) 와 F (`build_strategy_evaluations` 가 router 에서는 `all_trades` 입력, `compute_summary` 내부에서는 period-filtered `trades` 입력으로 2 번 빌드되는 것을 1 회로 통합) 가 deferred 상태였음. Round 2 진행 전 두 항목의 실현 가능성을 재평가.

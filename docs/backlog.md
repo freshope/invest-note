@@ -15,11 +15,11 @@ Round 1 (`docs/spec-history/...`) 에서 처리된 6 개 외에 도출된 후속
 
 ### 컴포넌트 추출 (중복 제거)
 
-> Round 2 (2026-04-30) 에서 `ConfirmDeleteDialog` / `TradeHeaderCard` / `ToggleChipGrid` 3 개 처리 완료. Round 3 (2026-04-30) 에서 `AccountChip` 처리 완료. Round 4 (2026-04-30) 에서 `TradeTypeBadge` 처리 완료. Round 5 (2026-05-01) 에서 `ProgressTrack` 처리 완료. Round 6 (2026-05-01) 에서 `BreakdownList<T>` 처리 완료. Round 7 (2026-05-03) 에서 `EmptyCard` 처리 완료. 나머지 항목은 Round 8+ 후보.
+> Round 2 (2026-04-30) 에서 `ConfirmDeleteDialog` / `TradeHeaderCard` / `ToggleChipGrid` 3 개 처리 완료. Round 3 (2026-04-30) 에서 `AccountChip` 처리 완료. Round 4 (2026-04-30) 에서 `TradeTypeBadge` 처리 완료. Round 5 (2026-05-01) 에서 `ProgressTrack` 처리 완료. Round 6 (2026-05-01) 에서 `BreakdownList<T>` 처리 완료. Round 7 (2026-05-03) 에서 `EmptyCard` 처리 완료. `Card` primitive 항목은 [2026-05-03 미진행 결정](decisions.md) — 컴포넌트 추출 섹션 종결.
 
 - [x] `BreakdownList<T>` 통합 — `EmotionBreakdown` / `StrategyBreakdown` / `ReasoningBreakdown` 동일 구조 (정렬·라벨·count + PnLLine·WinRateBar). getKey/getLabel/getStats/isUntagged 콜백 받는 일반 컴포넌트
 - [x] `EmptyCard` 일반화 — `shared/EmptyCard` 신규 (`title`/`description`/`action`/`compact`). `home/EmptyState` 가 위임. `TradeList` / `AccountList` / `StockDetail` 4건 인라인 마크업 치환. `AccountStep`(dashed 톤) / `AllocationTabs`(차트 placeholder) 는 의도적으로 제외
-- [ ] `Card` primitive 30+ 곳 — `rounded-2xl bg-muted/60` 카드 셸. padding sm/md/lg 변종 흡수. 대규모 변경이라 디자인 토큰화 가치 검증 필요
+- [x] `Card` primitive 30+ 곳 — `rounded-2xl bg-muted/60` 카드 셸. **미진행 결정** ([decisions.md 2026-05-03](decisions.md)). 사용처 32 곳 / 18 파일 확인했으나 셸 마크업이 단 2 개 유틸 클래스 + padding 7 변종 + 시맨틱 콘텐츠 없는 순수 시각 셸이라 추상화 가치 < 마이그레이션 비용. 재검토 트리거: 셸 클래스 변경 PR 이 6 개월 내 2 회 이상 / 인터랙티브 카드 5 곳 이상 / 시맨틱 props 절반 이상 요구
 
 ### 상태/구조 리팩터
 
