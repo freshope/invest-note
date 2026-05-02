@@ -1,4 +1,3 @@
-from typing import Any
 from uuid import UUID
 
 import asyncpg
@@ -7,14 +6,16 @@ from fastapi import APIRouter, Depends, Response
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.db import acquire_for_user, get_pool
-from invest_note_api.db_ops.accounts_repo import account_row_to_dict
+from invest_note_api.db_ops.accounts_repo import (
+    UPDATABLE_COLS,
+    account_row_to_dict,
+    patch_account,
+)
 from invest_note_api.db_ops.trades_repo import PG_DELETE_ZERO
 from invest_note_api.errors import ERR_ACCOUNT_NOT_FOUND, APIError
 from invest_note_api.schemas.account import AccountCreate, AccountUpdate
 
 router = APIRouter(prefix="/api/accounts")
-
-_UPDATABLE_COLS = frozenset({"name", "broker", "cash_balance"})
 
 
 @router.get("")
@@ -68,26 +69,16 @@ async def update_account(
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
 ):
-    fields = data.model_fields_set & _UPDATABLE_COLS
+    fields = data.model_fields_set & UPDATABLE_COLS
     if not fields:
         return Response(status_code=204)
 
-    values = data.model_dump(include=fields)
-    cols = list(fields)
-    set_clause = ", ".join(f"{col} = ${i + 2}" for i, col in enumerate(cols))
-    params: list[Any] = [account_id] + [values[col] for col in cols]
-
     async with acquire_for_user(pool, user.id) as conn:
-        row = await conn.fetchrow(
-            f"UPDATE accounts SET {set_clause}, updated_at = now()"
-            " WHERE id = $1"
-            " RETURNING id, user_id, name, broker, cash_balance, created_at, updated_at",
-            *params,
-        )
+        result = await patch_account(conn, account_id, data.model_dump(include=fields))
 
-    if row is None:
+    if result is None:
         raise APIError(ERR_ACCOUNT_NOT_FOUND, 404)
-    return account_row_to_dict(row)
+    return result
 
 
 @router.delete("/{account_id}", status_code=204)

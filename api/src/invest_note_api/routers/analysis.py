@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import asdict
 
 import asyncpg
 from fastapi import APIRouter, Depends, Query
@@ -126,22 +127,7 @@ async def get_analysis_dashboard(
 
     return AnalysisDashboardResponse.model_validate({
         "period": period_val,
-        "summary": {
-            "period": period_val,
-            "total_trades": summary.total_trades,
-            "sell_trades": summary.sell_trades,
-            "win_rate": summary.win_rate,
-            "total_profit_loss": summary.total_profit_loss,
-            "by_strategy": summary.by_strategy,
-            "by_emotion": summary.by_emotion,
-            "by_tag": summary.by_tag,
-            "strategy_adherence_rate": summary.strategy_adherence_rate,
-            "by_strategy_adherence": summary.by_strategy_adherence,
-            "missing_tag_rate": summary.missing_tag_rate,
-            "feeling_rate": summary.feeling_rate,
-            "reflection_rate": summary.reflection_rate,
-            "result_input_rate": summary.result_input_rate,
-        },
+        "summary": {"period": period_val, **asdict(summary)},
         "behavior": {
             "period": period_val,
             "profile": profile,
