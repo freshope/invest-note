@@ -230,6 +230,54 @@ export function useSnapshotWhileOpen<T>(open: boolean, value: T): T {
   return ref.current;
 }
 
+// 외부 payload state 를 받아 슬라이드 lifecycle (open / 재마운트 key / close 후 정리) 을 캡슐화한다.
+// payload 가 null 이 되어도 슬라이드 아웃 애니메이션 동안 이전 payload 를 살려두기 위해 internal state 를 사용한다.
+export function useStaggeredPanel<T>(externalPayload: T | null): {
+  open: boolean;
+  payload: T | null;
+  remountKey: number;
+} {
+  const [open, setOpen] = React.useState(false);
+  const [payload, setPayload] = React.useState<T | null>(null);
+  const [remountKey, setRemountKey] = React.useState(0);
+
+  // useEffect 클로저에서 "이미 열린 상태였는지" 체크용 — state 직접 읽기는 stale closure 위험
+  const internalPayloadRef = React.useRef<T | null>(null);
+  internalPayloadRef.current = payload;
+
+  const closeTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => {
+    if (closeTimer.current !== null) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+    if (externalPayload !== null) {
+      // 이미 열린 상태에서 새 payload → content remount (애니메이션 cancel 효과)
+      if (internalPayloadRef.current !== null) {
+        setRemountKey((k) => k + 1);
+      }
+      setPayload(externalPayload);
+      setOpen(true);
+    } else if (internalPayloadRef.current !== null) {
+      setOpen(false);
+      closeTimer.current = setTimeout(() => {
+        closeTimer.current = null;
+        setPayload(null);
+      }, PANEL_ANIMATION_MS + 50);
+    }
+  }, [externalPayload]);
+
+  // unmount 시 timer leak 방지 (라우트 이동 등으로 Provider 자체가 사라질 때 대비)
+  React.useEffect(() => {
+    return () => {
+      if (closeTimer.current !== null) clearTimeout(closeTimer.current);
+    };
+  }, []);
+
+  return { open, payload, remountKey };
+}
+
 export {
   FullScreenPanel,
   FullScreenPanelContent,
