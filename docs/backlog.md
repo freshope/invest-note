@@ -15,7 +15,6 @@ Round 1 (`docs/spec-history/...`) 에서 처리된 6 개 외에 도출된 후속
 
 ### 상태/구조 리팩터
 
-- [ ] `DetailPanelProvider` 5 중 상태 단순화 — open/payload/key/payloadRef/closeTimer 를 trade·stock 각 5 개씩 관리. 슬라이드 lifecycle 을 `FullScreenPanel` 내부 `useStaggeredPanel(payload)` 훅으로 추출, Provider 는 setPayload 만
 - [ ] `StrategyEmotionFields` 강제 분리 사용 정리 — `TradeMetaBuyForm` 에서 같은 컴포넌트를 `hideEmotion`/`hideStrategy` 로 두 번 렌더하고 빈 콜백 채움. `StrategyField` / `EmotionField` 분리 또는 `ToggleChipGrid` 로 일원화
 - [ ] `HoldingCard` pressing state CSS 화 (재시도) — Round 1 에서 시도했으나 inner note 의 `onPointerDown` `stopPropagation` 으로 outer pressing 을 차단하는 원본 UX (note 탭 시 outer 카드 scale 안 함) 가 CSS `:active` 로는 보존 불가능 (`:active` 는 stopPropagation 미준수). 해결안: ① `data-pressing` 속성 + JS 토글 + CSS attr selector 로 selective 적용, ② note 영역만 별도 stop layer 두기, ③ TradeCard 처럼 button 으로 변경하고 nested 클릭 영역을 별도 button 으로 분리, ④ 원본 UX 가 의도적이지 않다면 그냥 CSS active 채택. 디자인 검증 필요해 backlog 로
 
