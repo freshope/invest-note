@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from invest_note_api.domain.realized_pnl import TradeGroupKey
@@ -42,14 +43,28 @@ def _row_to_trade_with_account(row: Any) -> TradeWithAccount:
     return TradeWithAccount(**d)
 
 
-async def list_trades(conn: Any, user_id: str) -> list[Trade]:
+async def list_trades(
+    conn: Any,
+    user_id: str,
+    *,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> list[Trade]:
+    """user 의 거래 목록. `date_from` / `date_to` 가 지정되면 `traded_at` 으로 SQL push.
+
+    `date_to` 는 exclusive 상한 권장 (`< date_to`) — 호출자가 [from, to) 형태로 전달.
+    """
+    where = ["user_id = $1"]
+    params: list[Any] = [user_id]
+    if date_from is not None:
+        params.append(date_from)
+        where.append(f"traded_at >= ${len(params)}")
+    if date_to is not None:
+        params.append(date_to)
+        where.append(f"traded_at < ${len(params)}")
     rows = await conn.fetch(
-        """
-        SELECT * FROM trades
-        WHERE user_id = $1
-        ORDER BY traded_at DESC
-        """,
-        user_id,
+        f"SELECT * FROM trades WHERE {' AND '.join(where)} ORDER BY traded_at DESC",
+        *params,
     )
     return [_row_to_trade(r) for r in rows]
 

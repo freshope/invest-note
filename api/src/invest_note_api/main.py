@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import create_pool
 from invest_note_api.errors import APIError, ERR_LOCK_BUSY, api_error_handler, validation_error_handler
+from invest_note_api.external.http_client import create_http_client
 from invest_note_api.external.quotes import QuoteCacheState
 from invest_note_api.routers import accounts, health, me
 from invest_note_api.routers import trades, portfolio, stocks, analysis
@@ -27,12 +28,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         app.state.quote_cache = QuoteCacheState()
         app.state.trade_staging = TradeStagingState()
+        app.state.http_client = create_http_client()
         # database_url이 비어 있으면 풀 생성 생략 (테스트 환경)
         if settings.database_url:
             app.state.pool = await create_pool(settings.database_url)
         else:
             app.state.pool = None
         yield
+        await app.state.http_client.aclose()
         if app.state.pool is not None:
             await app.state.pool.close()
 

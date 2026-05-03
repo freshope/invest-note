@@ -150,9 +150,15 @@ async def _get_cached(state: QuoteCacheState, key: str, fetch_fn) -> dict | None
 
 
 async def fetch_quotes_by_keys(
-    state: QuoteCacheState, keys: list[str]
+    state: QuoteCacheState,
+    keys: list[str],
+    *,
+    client: httpx.AsyncClient,
 ) -> dict[str, QuoteResult | None]:
-    """keys 형식: "종목코드:국가" (예: "005930:KR"). KR 외 국가는 MVP에서 null."""
+    """keys 형식: "종목코드:국가" (예: "005930:KR"). KR 외 국가는 MVP에서 null.
+
+    `client` 는 라우터의 `Depends(get_http_client)` 로 주입받은 lifespan-managed 공유 인스턴스.
+    """
     if not keys:
         return {}
 
@@ -164,18 +170,17 @@ async def fetch_quotes_by_keys(
         if code:
             entries.append({"code": code, "country": country, "key": key})
 
-    async with httpx.AsyncClient() as client:
-        kr_entries = [e for e in entries if e["country"] == DEFAULT_COUNTRY]
-        tasks = [
-            _get_cached(
-                state,
-                position_key(e["code"], DEFAULT_COUNTRY),
-                lambda c=client, code=e["code"]: _fetch_kr_price(c, code),
-            )
-            for e in kr_entries
-        ]
+    kr_entries = [e for e in entries if e["country"] == DEFAULT_COUNTRY]
+    tasks = [
+        _get_cached(
+            state,
+            position_key(e["code"], DEFAULT_COUNTRY),
+            lambda code=e["code"]: _fetch_kr_price(client, code),
+        )
+        for e in kr_entries
+    ]
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
     out: dict[str, QuoteResult | None] = {e["key"]: None for e in entries}
     for e, result in zip(kr_entries, results):

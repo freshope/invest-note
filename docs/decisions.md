@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-05-03 | BE simplify Round 3 — analysis period SQL push 미진행
+
+- **맥락:** `docs/backlog.md` 의 "BE simplify · 효율 / 핫패스" 섹션 5 번째 항목 (`routers/analysis` period 파라미터 SQL push — 1m/3m/6m 선택 시 전체 fetch 회피) 의 Round 3 진행 여부를 평가. 의도는 `list_trades(date_from, date_to)` 로 SQL `WHERE traded_at` 푸시, `filter_by_period` 메모리 필터 호출 제거.
+- **결정:** **진행하지 않는다.** Round 3 는 효율/핫패스 6 개 중 4 개 (httpx 공유 client / parser threadpool / `list_trades` date 옵션 import_preview 적용 / `delete_account` round-trip 통합) 만 묶고 본 항목은 backlog 에서 제거.
+- **이유:**
+  - **`all_trades` 가 의도적으로 전체 거래** — `routers/analysis.py:89, 98, 101` 가 `build_positions(all_trades)`, `compute_concentration(positions, all_trades)`, `build_strategy_evaluations(all_trades, holding_days_map)` 에 모두 unfiltered `all_trades` 를 전달. 특히 line 100 의 inline 주석 ("compute_profile 의 누적 일관성 평가용") 이 period-filter 비대칭을 의도적으로 명시. `trades = filter_by_period(all_trades, period_val)` 는 그 외 부분 (`pnl_map`, `holding_days_map`, `summary`) 에서만 사용.
+  - **SQL push = 1 round-trip → 2 round-trip** — `all_trades` 가 어쨌든 필요하므로 period 가 'all' 이 아닐 때 별도 fetch 가 필수. 개인 투자자 데이터 양 (수십~수백 거래) 에서 round-trip 비용 (~10ms) 이 메모리 필터 비용 (<1ms) 보다 큼. **net negative**.
+  - **branching workaround 도 거부** — `period == "all"` 일 때만 1 회 fetch, 그 외 2 회 fetch 같은 분기 도입은 marginal benefit 대비 코드 복잡도 증가. 2026-04-30 Tier 3 결정과 2026-05-03 TradeWithAccountResponse 결정과 동일한 "다르게 보이지만 단순화 비용이 더 큰 사례" 패턴.
+- **트레이드오프:** 향후 거래 데이터가 천 단위 이상으로 증가하거나 (페이지네이션 도입 시 fetch 양 자연 감소), `all_trades` invariant 가 변경 (예: `compute_profile` 도 period-filtered 로 변경 결정) 되면 재평가. 그 외에는 backlog 에서 영구 종결. `domain/analysis/period.py:filter_by_period` 는 그대로 유지.
+
+---
+
 ## 2026-05-03 | FE simplify — Card primitive 추출 미진행
 
 - **맥락:** `docs/backlog.md` 의 "FE simplify · 컴포넌트 추출" 섹션에 남아 있던 `Card` primitive 30+ 곳 (`rounded-2xl bg-muted/60` 카드 셸) 처리 여부 평가. 탐색 결과 사용처는 32 곳 / 18 파일로 충분히 넓었으나 (`grep "rounded-2xl bg-muted" app/src`), 셸 마크업은 단 2 개 유틸 클래스에 불과하고 padding 변종이 백로그 메모(sm/md/lg) 보다 훨씬 다양 (`p-3.5×6`, `p-4×10`, `p-5×2`, `p-8×1`, `px-4 py-1×1`, `px-4 py-3×1`, 스켈레톤 padding 없음 ×5 + `overflow-hidden`, `active:scale-[0.99]`, `cursor-pointer`, div/button 혼합) 한 것으로 확인됨.

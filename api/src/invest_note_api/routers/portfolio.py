@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 
 import asyncpg
+import httpx
 from fastapi import APIRouter, Depends, Query
 
 from invest_note_api.auth.dependency import get_current_user
@@ -24,6 +25,7 @@ from invest_note_api.domain.portfolio import (
 )
 from invest_note_api.domain.realized_pnl import TradeGroupKey, build_pnl_map
 from invest_note_api.errors import APIError
+from invest_note_api.external.http_client import get_http_client
 from invest_note_api.external.quotes import (
     QuoteCacheState,
     fetch_quotes_by_keys,
@@ -72,6 +74,7 @@ async def get_portfolio_summary(
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
     quote_state: QuoteCacheState = Depends(get_quote_cache_state),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
 ) -> PortfolioSummaryResponse:
     async with acquire_for_user(pool, user.id) as conn:
         trades = await list_trades_with_account(conn, user.id)
@@ -86,7 +89,9 @@ async def get_portfolio_summary(
 
     quotes = {}
     try:
-        quotes = await fetch_quotes_by_keys(quote_state, [p.key for p in positions0])
+        quotes = await fetch_quotes_by_keys(
+            quote_state, [p.key for p in positions0], client=http_client
+        )
     except Exception:
         logger.warning("fetch_quotes_by_keys 실패 user_id=%s", user.id, exc_info=True)
 

@@ -6,16 +6,19 @@ import re
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 import asyncpg
 import cachetools
+import httpx
 from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.db import acquire_for_user, get_pool
 from invest_note_api.db_ops.accounts_repo import account_row_to_dict
+from invest_note_api.external.http_client import get_http_client
 from invest_note_api.db_ops.pnl_sync import recalc_group_pnl
 from invest_note_api.db_ops.trades_repo import (
     PNL_AFFECTING_FIELDS,
@@ -318,6 +321,7 @@ async def import_preview(
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
     staging: TradeStagingState = Depends(get_trade_staging_state),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
 ) -> ImportPreviewResponse:
     """파일을 파싱해 중복 체크 후 staging cache에 저장한다. commit 전에 호출."""
     filename = file.filename or ""
@@ -337,19 +341,38 @@ async def import_preview(
         raise APIError("증권사를 자동으로 감지하지 못했습니다. broker_key를 명시해주세요.", 400)
 
     parser = PARSERS[detected_key]
-    parse_result = parser.parse(file_bytes, filename)
+    # 동기 pdfplumber/openpyxl 파싱은 threadpool 로 — async 이벤트 루프 비차단
+    parse_result = await run_in_threadpool(parser.parse, file_bytes, filename)
 
     now_utc = datetime.now(timezone.utc)
 
-    # ticker 해결
+    # ticker 해결 (lifespan-managed 공유 httpx client 사용)
     asset_names = {t.asset_name for t in parse_result.trades}
     ticker_hints = {t.asset_name: t.ticker_hint for t in parse_result.trades if t.ticker_hint}
 
-    ticker_map = await resolve_tickers(asset_names, ticker_hints)
+    ticker_map = await resolve_tickers(asset_names, ticker_hints, client=http_client)
 
-    async with acquire_for_user(pool, user.id) as conn:
-        # 기존 거래에서 시그니처 셋 구성 (중복 판단용 — 날짜 범위는 파싱 결과 기간으로 한정)
-        all_trades = await list_trades(conn, user.id)
+    # 기존 거래에서 시그니처 셋 구성 (중복 판단용)
+    # 파싱 결과의 KST 일자 min/max 범위로만 fetch — 사용자 전체 trades fetch 회피.
+    parsed_kst_dates: list[date] = []
+    for pt in parse_result.trades:
+        try:
+            parsed_kst_dates.append(date.fromisoformat(pt.traded_at_kst[:10]))
+        except ValueError:
+            continue
+
+    if parsed_kst_dates:
+        # KST 일자 범위 [min 00:00, max+1 00:00) 로 변환 — 사용자가 KST 어느 시각에 등록한 거래든 포함
+        midnight = time(0, 0)
+        date_from_utc = kst_date_to_utc(min(parsed_kst_dates), midnight)
+        date_to_utc = kst_date_to_utc(max(parsed_kst_dates) + timedelta(days=1), midnight)
+
+        async with acquire_for_user(pool, user.id) as conn:
+            all_trades = await list_trades(
+                conn, user.id, date_from=date_from_utc, date_to=date_to_utc
+            )
+    else:
+        all_trades = []
 
     # account_id 없이 ticker+날짜+거래유형+수량+가격으로 근사 dedup.
     # commit 시 정확한 account_id 기반 dedup이 재실행되므로 이는 참고용 카운트.

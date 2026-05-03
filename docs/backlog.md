@@ -56,8 +56,9 @@ Round 1 (`docs/spec-history/2026-05-01-be-simplify-round1-quick-wins.md`) 에서
 - [ ] broker parser threadpool 화 — `routers/trades.py:351` 동기 `pdfplumber` / `openpyxl` 호출이 async 라우터 이벤트 루프 차단 → `run_in_threadpool` 래핑
 - [ ] `GET /api/trades` 페이지네이션 + `ticker` 필터 SQL push — 현재 전량 fetch 후 Python 필터 (FE backlog `tradesApi.list()` 와 동반)
 - [ ] `import_preview` 사용자 전체 trades fetch 축소 — 날짜·티커 범위 SQL 좁히기 (참고용 dup_count 단순화)
-- [ ] `routers/analysis` period 파라미터 SQL push — 1m/3m/6m 선택 시 전체 fetch 회피
 - [ ] `routers/accounts.delete_account` `exists` + `count` 두 round-trip 통합 (또는 RLS + IntegrityError 활용)
+
+> `routers/analysis` period 파라미터 SQL push 는 [decisions.md 2026-05-03](decisions.md) 으로 **미진행 확정** (`all_trades` 가 의도적 unfiltered 입력, SQL push 가 1→2 round-trip net negative).
 
 ### 도메인 정리
 

@@ -132,14 +132,16 @@ def test_update_account_not_found(accounts_client):
 # ─── DELETE /api/accounts/{id} ───────────────────────────────────────────────
 
 def test_delete_account_success(accounts_client):
-    conn = FakeConnection(0, "DELETE 1")
+    # DELETE ... RETURNING id 가 row id 반환 → 삭제 성공
+    conn = FakeConnection(ACC_ID)
     with _patch(conn):
         r = accounts_client.delete(f"/api/accounts/{ACC_ID}")
     assert r.status_code == 204
 
 
 def test_delete_account_has_trades_returns_409(accounts_client):
-    conn = FakeConnection(3)  # trade_count > 0
+    # DELETE 가 NOT EXISTS 가드로 0행 → fallback SELECT 가 account 존재 확인 → 409
+    conn = FakeConnection(None, ACC_ID)
     with _patch(conn):
         r = accounts_client.delete(f"/api/accounts/{ACC_ID}")
     assert r.status_code == 409
@@ -147,7 +149,8 @@ def test_delete_account_has_trades_returns_409(accounts_client):
 
 
 def test_delete_account_not_found(accounts_client):
-    conn = FakeConnection(0, "DELETE 0")  # no trades, but DELETE hits 0 rows (RLS)
+    # DELETE 0행 + SELECT 도 None → 404
+    conn = FakeConnection(None, None)
     with _patch(conn):
         r = accounts_client.delete(f"/api/accounts/{ACC_ID}")
     assert r.status_code == 404

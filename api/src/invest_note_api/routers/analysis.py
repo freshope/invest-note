@@ -5,6 +5,7 @@ import logging
 from dataclasses import asdict
 
 import asyncpg
+import httpx
 from fastapi import APIRouter, Depends, Query
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
@@ -20,6 +21,7 @@ from invest_note_api.domain.analysis.strategy_adherence import build_strategy_ev
 from invest_note_api.domain.portfolio import build_positions, merge_quotes
 from invest_note_api.domain.realized_pnl import build_pnl_map
 from invest_note_api.domain.trade_types import TRADE_TYPE_BUY
+from invest_note_api.external.http_client import get_http_client
 from invest_note_api.external.quotes import (
     QuoteCacheState,
     fetch_quotes_by_keys,
@@ -78,6 +80,7 @@ async def get_analysis_dashboard(
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
     quote_state: QuoteCacheState = Depends(get_quote_cache_state),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
 ) -> AnalysisDashboardResponse:
     async with acquire_for_user(pool, user.id) as conn:
         all_trades = await list_trades(conn, user.id)
@@ -90,7 +93,9 @@ async def get_analysis_dashboard(
 
     positions = positions0
     try:
-        quotes = await fetch_quotes_by_keys(quote_state, [p.key for p in positions0])
+        quotes = await fetch_quotes_by_keys(
+            quote_state, [p.key for p in positions0], client=http_client
+        )
         positions = merge_quotes(positions0, quotes)
     except Exception as e:
         logger.warning("시세 fetch 실패, cost_basis fallback: %s", e)

@@ -11,7 +11,6 @@ from invest_note_api.db_ops.accounts_repo import (
     account_row_to_dict,
     patch_account,
 )
-from invest_note_api.db_ops.trades_repo import PG_DELETE_ZERO
 from invest_note_api.errors import ERR_ACCOUNT_NOT_FOUND, APIError
 from invest_note_api.schemas.account import AccountCreate, AccountUpdate
 
@@ -88,18 +87,28 @@ async def delete_account(
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> Response:
     async with acquire_for_user(pool, user.id) as conn:
-        trade_count = await conn.fetchval(
-            "SELECT count(*)::int FROM trades WHERE account_id = $1",
+        # RLS 가 격리하지만 `delete_trade` 와의 일관성을 위해 user_id 필터 명시 (defense-in-depth)
+        deleted = await conn.fetchval(
+            "DELETE FROM accounts"
+            " WHERE id = $1 AND user_id = $2"
+            " AND NOT EXISTS (SELECT 1 FROM trades WHERE account_id = $1)"
+            " RETURNING id",
             account_id,
+            user.id,
         )
-        if trade_count > 0:
-            raise APIError("거래 기록이 있는 계좌는 삭제할 수 없습니다.", 409)
+        if deleted is not None:
+            return Response(status_code=204)
 
-        result = await conn.execute("DELETE FROM accounts WHERE id = $1", account_id)
+        # 삭제 실패 — account 미존재 vs 거래 잔존 분기
+        exists = await conn.fetchval(
+            "SELECT id FROM accounts WHERE id = $1 AND user_id = $2",
+            account_id,
+            user.id,
+        )
 
-    if result == PG_DELETE_ZERO:
+    if exists is None:
         raise APIError(ERR_ACCOUNT_NOT_FOUND, 404)
-    return Response(status_code=204)
+    raise APIError("거래 기록이 있는 계좌는 삭제할 수 없습니다.", 409)
 
 
 @router.get("/{account_id}/trade-count")
