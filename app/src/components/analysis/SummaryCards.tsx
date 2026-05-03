@@ -1,30 +1,10 @@
 "use client";
 
-import { cn } from "@/lib/utils";
 import { formatPnL, signColor } from "@/lib/format";
 import type { AnalysisSummary } from "@/lib/analysis/aggregate";
 import { LOSS_THRESHOLD, RESULT_INPUT_RATE_LOW, WIN_THRESHOLD } from "@/lib/constants/analysis";
 import { PNL_COLORS } from "@/lib/constants/colors";
-
-function StatCard({
-  label,
-  value,
-  sub,
-  valueClass,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  valueClass?: string;
-}) {
-  return (
-    <div className="rounded-2xl bg-muted/60 p-3.5 space-y-0.5">
-      <p className="text-[11px] font-semibold text-muted-foreground">{label}</p>
-      <p className={cn("text-[15px] font-bold tabular-nums leading-snug", valueClass)}>{value}</p>
-      {sub && <p className="text-[10px] text-muted-foreground">{sub}</p>}
-    </div>
-  );
-}
+import { StatCard } from "@/components/shared/StatCard";
 
 interface SummaryCardsProps {
   summary: AnalysisSummary;

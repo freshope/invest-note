@@ -9,6 +9,7 @@ import { stocksApi, type StockSearchResult } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { QUERY_STOCK_SEARCH_STALE_TIME_MS } from "@/lib/constants/query";
 import { CountryBadge } from "./trade-display";
+import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 
 export interface SelectedStock {
   name: string;
@@ -44,7 +45,7 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
     staleTime: QUERY_STOCK_SEARCH_STALE_TIME_MS,
   });
   const krSuggestions = useMemo(
-    () => suggestions.filter((stock) => stock.market === "KR"),
+    () => suggestions.filter((stock) => stock.market === DEFAULT_COUNTRY_CODE),
     [suggestions],
   );
 

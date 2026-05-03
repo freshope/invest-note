@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { fmtNumberInput, formatNumberInput, formatPctSigned, formatPnL, parseNumberInput } from "../format";
+import {
+  calcChangePercent,
+  calcPercent,
+  fmtNumberInput,
+  formatNumberInput,
+  formatPctSigned,
+  formatPnL,
+  parseNumberInput,
+} from "../format";
 
 describe("fmtNumberInput", () => {
   it("양수를 천단위 콤마 문자열로 반환한다", () => {
@@ -136,5 +144,39 @@ describe("formatPctSigned", () => {
     expect(formatPctSigned(1.236)).toBe("+1.24%");
     expect(formatPctSigned(1.234)).toBe("+1.23%");
     expect(formatPctSigned(-1.236)).toBe("-1.24%");
+  });
+});
+
+describe("calcPercent", () => {
+  it("part/total을 정수 백분율로 반환", () => {
+    expect(calcPercent(1, 4)).toBe(25);
+    expect(calcPercent(2, 3)).toBe(67);
+  });
+
+  it("total이 0 이하이면 0", () => {
+    expect(calcPercent(5, 0)).toBe(0);
+    expect(calcPercent(5, -1)).toBe(0);
+  });
+
+  it("part가 0이면 0", () => {
+    expect(calcPercent(0, 100)).toBe(0);
+  });
+});
+
+describe("calcChangePercent", () => {
+  it("(current - prev)/prev 백분율을 소수 2자리로 반환", () => {
+    expect(calcChangePercent(110, 100)).toBe(10);
+    expect(calcChangePercent(105.5, 100)).toBe(5.5);
+    expect(calcChangePercent(90, 100)).toBe(-10);
+  });
+
+  it("prev가 0 이하이면 0", () => {
+    expect(calcChangePercent(100, 0)).toBe(0);
+    expect(calcChangePercent(100, -1)).toBe(0);
+  });
+
+  it("소수 2자리 초과는 반올림", () => {
+    expect(calcChangePercent(101.236, 100)).toBe(1.24);
+    expect(calcChangePercent(101.234, 100)).toBe(1.23);
   });
 });

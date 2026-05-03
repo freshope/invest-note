@@ -76,7 +76,10 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
       const res = await importApi.commit(preview.staging_id, selectedAccountId);
       setResult(res);
       setStep("result");
-      await queryClient.invalidateQueries({ queryKey: queryKeys.trades });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.portfolioSummary }),
+      ]);
       if (res.inserted_count > 0) {
         toast.success(`${res.inserted_count}건의 거래가 등록되었습니다.`);
       }

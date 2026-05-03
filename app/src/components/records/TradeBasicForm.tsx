@@ -23,10 +23,10 @@ import { tradesApi, portfolioApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { QUERY_HOLDING_STALE_TIME_MS } from "@/lib/constants/query";
 import { VALIDATION_LIMITS } from "@/lib/constants/validation";
-import { COMMISSION_RATE, SELL_TAX_RATE } from "@/lib/constants/trading";
+import { COMMISSION_RATE, SELL_TAX_RATE, TRADE_TYPE } from "@/lib/constants/trading";
 import { PNL_COLORS } from "@/lib/constants/colors";
 import { STORAGE_KEYS } from "@/lib/constants/storage";
-import { COUNTRY_CODES } from "@/lib/constants/market";
+import { COUNTRY_CODES, DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
 import { HoldingSelectInput } from "./HoldingSelectInput";
 import { CountryBadge } from "./trade-display";
@@ -88,7 +88,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      trade_type: "BUY",
+      trade_type: TRADE_TYPE.BUY,
       account_id: getInitialAccountId(accounts),
       asset_name: "",
       ticker_symbol: "",
@@ -127,16 +127,16 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
   }, [clearStockSelection]);
 
   // 매도 시 계좌별 보유 수량 조회 (계좌 + flexible ticker 기준)
-  const holdingEnabled = tradeType === "SELL" && !!accountId && !!assetName;
+  const holdingEnabled = tradeType === TRADE_TYPE.SELL && !!accountId && !!assetName;
   const { data: holdingData, isPending: holdingPending } = useQuery({
-    queryKey: queryKeys.holding(accountId, tickerSymbol, assetName, countryCode ?? "KR"),
+    queryKey: queryKeys.holding(accountId, tickerSymbol, assetName, countryCode ?? DEFAULT_COUNTRY_CODE),
     queryFn: async () => {
       try {
         return await portfolioApi.holding({
           accountId,
           assetName,
           ticker: tickerSymbol,
-          country: countryCode ?? "KR",
+          country: countryCode ?? DEFAULT_COUNTRY_CODE,
         });
       } catch {
         return { quantity: 0, avgBuyPrice: null };
@@ -158,7 +158,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
     if (!getFieldState("commission").isDirty) {
       setValue("commission", total > 0 ? calcCommission(total) : 0);
     }
-    if (nextType === "SELL") {
+    if (nextType === TRADE_TYPE.SELL) {
       if (!getFieldState("tax").isDirty) {
         setValue("tax", total > 0 ? calcTax(total) : 0);
       }
@@ -176,7 +176,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
   async function onSubmit(values: FormValues) {
     try {
       // 클라 사전 검증 — 로딩 중이거나 보유 없으면 차단 (정확한 계좌별 검증은 서버에서 담당)
-      if (values.trade_type === "SELL" && values.asset_name) {
+      if (values.trade_type === TRADE_TYPE.SELL && values.asset_name) {
         if (holdingLoading) return; // 아직 데이터 미도착 — 버튼이 disabled이므로 여기 도달하지 않음
         if (holdingQty === 0) {
           setError("root", { message: "보유하지 않은 종목입니다." });
@@ -200,7 +200,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
       });
       window.localStorage.setItem(STORAGE_KEYS.LAST_ACCOUNT_ID, values.account_id);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.portfolioSummary }),
         queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
       ]);
       onTradeCreated(result.id, result.trade_type);
@@ -231,7 +231,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
             >
               <TabsList className="group-data-horizontal/tabs:h-12 p-1">
                 <TabsTrigger
-                  value="BUY"
+                  value={TRADE_TYPE.BUY}
                   className={cn(
                     "flex-1 text-[16px] font-bold data-active:text-white",
                     PNL_COLORS.rise.text,
@@ -241,7 +241,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                   매수
                 </TabsTrigger>
                 <TabsTrigger
-                  value="SELL"
+                  value={TRADE_TYPE.SELL}
                   className={cn(
                     "flex-1 text-[16px] font-bold data-active:text-white",
                     PNL_COLORS.fall.text,
@@ -325,7 +325,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 setValue("exchange", stock.exchange);
               };
 
-              if (tradeType === "SELL") {
+              if (tradeType === TRADE_TYPE.SELL) {
                 return (
                   <HoldingSelectInput
                     accountId={accountId}
@@ -398,7 +398,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <Label htmlFor="quantity">수량 <span className="text-destructive">*</span></Label>
-            {tradeType === "SELL" && holdingQty > 0 && (
+            {tradeType === TRADE_TYPE.SELL && holdingQty > 0 && (
               <button
                 type="button"
                 onClick={() => {
@@ -429,7 +429,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
               />
             )}
           />
-          {tradeType === "SELL" && assetName && (
+          {tradeType === TRADE_TYPE.SELL && assetName && (
             <p className={cn(
               "text-[12px]",
               holdingLoading ? "text-muted-foreground" : holdingQty === 0 ? "text-destructive" : "text-muted-foreground"
@@ -471,7 +471,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         </div>
 
         {/* 제세금 (매도) */}
-        {tradeType === "SELL" && (
+        {tradeType === TRADE_TYPE.SELL && (
           <div className="space-y-1.5">
             <Label htmlFor="tax">제세금 (원)</Label>
             <Controller
@@ -496,7 +496,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         <Button
           type="submit"
           size="xl"
-          disabled={isSubmitting || holdingLoading || (tradeType === "SELL" && !!assetName && !holdingLoading && holdingQty === 0)}
+          disabled={isSubmitting || holdingLoading || (tradeType === TRADE_TYPE.SELL && !!assetName && !holdingLoading && holdingQty === 0)}
           className="w-full"
         >
           {isSubmitting ? "저장 중..." : "다음"}

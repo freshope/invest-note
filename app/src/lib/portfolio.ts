@@ -1,5 +1,7 @@
 import { toKST } from "@/lib/trade-utils";
 import { buildPnlMap } from "@/lib/analysis/realized-pnl";
+import { TRADE_TYPE } from "@/lib/constants/trading";
+import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import type { Trade, Account } from "@/types/database";
 
 export type QuoteMap = Record<string, { price: number; currency: string; asOf: string } | null>;
@@ -61,7 +63,7 @@ export function buildPositions(trades: Trade[]): Position[] {
 
   for (const trade of sorted) {
     const ticker = trade.ticker_symbol ?? trade.asset_name;
-    const country = trade.country_code ?? "KR";
+    const country = trade.country_code ?? DEFAULT_COUNTRY_CODE;
     const lotKey = `${ticker}:${country}:${trade.account_id}`;
 
     if (!lotMap.has(lotKey)) {
@@ -83,7 +85,7 @@ export function buildPositions(trades: Trade[]): Position[] {
     // 빈 문자열이면 이전 lot의 거래소 값을 보존 (자동완성 없이 입력된 거래 방어)
     if (trade.exchange) lot.exchange = trade.exchange;
 
-    if (trade.trade_type === "BUY") {
+    if (trade.trade_type === TRADE_TYPE.BUY) {
       lot.runningQty += trade.quantity;
       lot.runningCost += trade.price * trade.quantity;
       const reason = trade.buy_reason?.trim();
@@ -192,10 +194,10 @@ export function buildAccountSnapshots(
 
     for (const trade of accountTrades) {
       const ticker = trade.ticker_symbol ?? trade.asset_name;
-      const key = `${ticker}:${trade.country_code ?? "KR"}`;
+      const key = `${ticker}:${trade.country_code ?? DEFAULT_COUNTRY_CODE}`;
       if (!posMap.has(key)) posMap.set(key, { qty: 0, costBasis: 0 });
       const p = posMap.get(key)!;
-      if (trade.trade_type === "BUY") {
+      if (trade.trade_type === TRADE_TYPE.BUY) {
         p.qty += trade.quantity;
         p.costBasis += trade.price * trade.quantity;
       } else {
@@ -240,13 +242,13 @@ export function buildTotals(
   let monthRealizedPnL = 0;
   let monthTradeCount = 0;
   for (const trade of trades) {
-    if (trade.trade_type === "SELL") {
+    if (trade.trade_type === TRADE_TYPE.SELL) {
       totalRealizedPnL += pnlMap.get(trade.id) ?? 0;
     }
     const kst = toKST(new Date(trade.traded_at));
     if (kst.getFullYear() === thisYear && kst.getMonth() === thisMonth) {
       monthTradeCount++;
-      if (trade.trade_type === "SELL") {
+      if (trade.trade_type === TRADE_TYPE.SELL) {
         monthRealizedPnL += pnlMap.get(trade.id) ?? 0;
       }
     }

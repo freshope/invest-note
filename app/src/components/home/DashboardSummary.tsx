@@ -1,20 +1,15 @@
 import { cn } from "@/lib/utils";
 import { fmt, fmtCompact, signColor } from "@/lib/format";
+import { StatCard } from "@/components/shared/StatCard";
 import type { DashboardTotals } from "@/lib/portfolio";
 
-function PnLText({ value, className }: { value: number; className?: string }) {
+function PnLText({ value }: { value: number }) {
   const rounded = Math.round(value);
   const abs = Math.abs(rounded);
   const sign = rounded > 0 ? "+" : rounded < 0 ? "-" : "";
   const amount = abs >= 10_000_000 ? fmtCompact(abs) : fmt(abs);
   return (
-    <span
-      className={cn(
-        "tabular-nums whitespace-nowrap",
-        signColor(rounded, "foreground"),
-        className,
-      )}
-    >
+    <span className={cn("whitespace-nowrap", signColor(rounded, "foreground"))}>
       {sign}{amount}원
     </span>
   );
@@ -52,18 +47,9 @@ export function DashboardBody({ totals }: DashboardProps) {
   return (
     <div className="px-5 space-y-4">
       <div className="grid grid-cols-3 gap-2">
-        <div className="rounded-2xl bg-muted/60 p-3.5 space-y-0.5">
-          <p className="text-[11px] font-semibold text-muted-foreground">평가손익</p>
-          <PnLText value={totalUnrealizedPnL} className="text-[15px] font-bold" />
-        </div>
-        <div className="rounded-2xl bg-muted/60 p-3.5 space-y-0.5">
-          <p className="text-[11px] font-semibold text-muted-foreground">확정손익</p>
-          <PnLText value={totalRealizedPnL} className="text-[15px] font-bold" />
-        </div>
-        <div className="rounded-2xl bg-muted/60 p-3.5 space-y-0.5">
-          <p className="text-[11px] font-semibold text-muted-foreground">이달 확정</p>
-          <PnLText value={monthRealizedPnL} className="text-[15px] font-bold" />
-        </div>
+        <StatCard label="평가손익" value={<PnLText value={totalUnrealizedPnL} />} />
+        <StatCard label="확정손익" value={<PnLText value={totalRealizedPnL} />} />
+        <StatCard label="이달 확정" value={<PnLText value={monthRealizedPnL} />} />
       </div>
 
       {monthTradeCount > 0 && (

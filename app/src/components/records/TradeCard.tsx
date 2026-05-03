@@ -4,7 +4,7 @@ import { memo } from "react";
 import { cn } from "@/lib/utils";
 import { AccountChip } from "@/components/shared/AccountChip";
 import { TradeTypeBadge } from "@/components/shared/TradeTypeBadge";
-import { STRATEGY_LABELS, EMOTION_LABELS, RESULT_LABELS } from "@/lib/constants/trading";
+import { STRATEGY_LABELS, EMOTION_LABELS, RESULT_LABELS, TRADE_TYPE } from "@/lib/constants/trading";
 import { PNL_COLORS, getTradeTypeAccent } from "@/lib/constants/colors";
 import { fmt, formatPnL } from "@/lib/format";
 import type { TradeWithAccount } from "@/lib/trade-utils";
@@ -16,7 +16,7 @@ interface TradeCardProps {
 }
 
 export const TradeCard = memo(function TradeCard({ trade, onPress }: TradeCardProps) {
-  const isBuy = trade.trade_type === "BUY";
+  const isBuy = trade.trade_type === TRADE_TYPE.BUY;
 
   const price = fmt(Number(trade.price));
   const quantity = Number(trade.quantity);

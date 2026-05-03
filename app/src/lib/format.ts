@@ -4,6 +4,16 @@ export function fmt(n: number): string {
   return n.toLocaleString("ko-KR");
 }
 
+/** part/total 백분율(정수). total<=0이면 0. */
+export function calcPercent(part: number, total: number): number {
+  return total > 0 ? Math.round((part / total) * 100) : 0;
+}
+
+/** (current - prev) / prev 백분율, 소수점 2자리. prev<=0이면 0. */
+export function calcChangePercent(current: number, prev: number): number {
+  return prev > 0 ? Math.round(((current - prev) / prev) * 10000) / 100 : 0;
+}
+
 export function formatPnL(value: number): string {
   const rounded = Math.round(value);
   if (rounded === 0) return "0원";

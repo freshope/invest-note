@@ -9,6 +9,7 @@ import { ConfirmDeleteDialog } from "@/components/shared/ConfirmDeleteDialog";
 import { accountsApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { fmt } from "@/lib/format";
+import { useDialogState } from "@/hooks/useDialogState";
 import type { Account } from "@/types/database";
 
 interface AccountCardProps {
@@ -19,26 +20,17 @@ interface AccountCardProps {
 export function AccountCard({ account, tradeCount }: AccountCardProps) {
   const queryClient = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deletePending, setDeletePending] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deleteDialog = useDialogState();
   const cashBalance = Number(account.cash_balance);
 
-  async function handleDeleteConfirm() {
-    setDeleteError(null);
-    setDeletePending(true);
-    try {
+  function handleDeleteConfirm() {
+    return deleteDialog.run(async () => {
       await accountsApi.delete(account.id);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
         queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
       ]);
-      setDeleteOpen(false);
-    } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "삭제할 수 없습니다.");
-    } finally {
-      setDeletePending(false);
-    }
+    }, "삭제할 수 없습니다.");
   }
 
   return (
@@ -64,7 +56,7 @@ export function AccountCard({ account, tradeCount }: AccountCardProps) {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setDeleteOpen(true)}
+              onClick={() => deleteDialog.setOpen(true)}
               disabled={tradeCount > 0}
               title={tradeCount > 0 ? "거래 기록이 있는 계좌는 삭제할 수 없습니다" : undefined}
               className={
@@ -96,10 +88,10 @@ export function AccountCard({ account, tradeCount }: AccountCardProps) {
         account={account}
       />
 
-      {deleteOpen && (
+      {deleteDialog.open && (
         <ConfirmDeleteDialog
-          open={deleteOpen}
-          onOpenChange={setDeleteOpen}
+          open={deleteDialog.open}
+          onOpenChange={deleteDialog.setOpen}
           title="계좌 삭제"
           description={
             <>
@@ -108,8 +100,8 @@ export function AccountCard({ account, tradeCount }: AccountCardProps) {
               이 작업은 되돌릴 수 없습니다.
             </>
           }
-          pending={deletePending}
-          error={deleteError}
+          pending={deleteDialog.pending}
+          error={deleteDialog.error}
           onConfirm={handleDeleteConfirm}
         />
       )}

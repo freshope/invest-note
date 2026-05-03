@@ -6,6 +6,7 @@ import { useClickOutside } from "@/hooks/useClickOutside";
 import { Input } from "@/components/base/Input";
 import { CountryBadge } from "./trade-display";
 import { fmt } from "@/lib/format";
+import { isCountryCode } from "@/lib/constants/market";
 import type { SelectedStock } from "./StockSearchInput";
 
 interface HoldingSelectInputProps {
@@ -40,7 +41,7 @@ export function HoldingSelectInput({ accountId, value, onChange, onSelect, onSel
   }, [allPositions, value]);
 
   const handleSelect = (pos: typeof allPositions[number]) => {
-    const market = pos.country === "KR" ? "KR" : pos.country === "US" ? "US" : "OTHER";
+    const market = isCountryCode(pos.country) ? pos.country : "OTHER";
     onSelect({ name: pos.assetName, code: pos.ticker, market, exchange: pos.exchange });
     setOpen(false);
     onSelectComplete?.();
