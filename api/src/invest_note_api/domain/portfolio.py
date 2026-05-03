@@ -100,12 +100,11 @@ def _lot_key_of(trade: "Trade") -> str:
     return f"{position_key(trade_identifier(trade), trade_country(trade))}:{trade.account_id}"
 
 
-def build_positions(trades: list["Trade"]) -> tuple[list[Position], LotMap]:
-    """계좌별 lot 추적 → 종목별 포지션 집계.
+def _build_lot_map(trades: list["Trade"]) -> LotMap:
+    """trades → lot_map: 계좌별 종목 lot 의 walker 누산.
 
-    Returns:
-        (positions, lot_map): 보유 수량 > 0인 포지션 리스트와 lot_key → Lot.
-        `lot_map` 은 `build_account_snapshots` 등 후속 단계에서 재사용된다.
+    각 lot 그룹마다 walker 를 돌려 terminal 누산값과 BUY/SELL 메타(마지막 note,
+    실현손익 합계) 를 frozen `Lot` 으로 등록한다.
     """
     trades_by_lot: dict[str, list["Trade"]] = defaultdict(list)
     for trade in trades:
@@ -160,10 +159,12 @@ def build_positions(trades: list["Trade"]) -> tuple[list[Position], LotMap]:
             last_note_type=last_note_type,
             last_note=last_note,
         )
+    return lot_map
 
-    # lot → position 집계 (보유수량 > 0인 lot만)
+
+def _lot_to_positions(lot_map: LotMap) -> list[Position]:
+    """lot_map → positions: 보유수량 > 0 lot 을 종목별(`TICKER:COUNTRY`) 로 집계."""
     pos_map: dict[str, dict] = {}
-
     for lot in lot_map.values():
         if lot.running_qty <= 0:
             continue
@@ -217,7 +218,18 @@ def build_positions(trades: list["Trade"]) -> tuple[list[Position], LotMap]:
             last_traded_at=pos["last_traded_at"],
             account_ids=list(pos["account_ids"]),
         ))
+    return positions
 
+
+def build_positions(trades: list["Trade"]) -> tuple[list[Position], LotMap]:
+    """계좌별 lot 추적 → 종목별 포지션 집계.
+
+    Returns:
+        (positions, lot_map): 보유 수량 > 0인 포지션 리스트와 lot_key → Lot.
+        `lot_map` 은 `build_account_snapshots` 등 후속 단계에서 재사용된다.
+    """
+    lot_map = _build_lot_map(trades)
+    positions = _lot_to_positions(lot_map)
     return positions, lot_map
 
 

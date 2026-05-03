@@ -7,8 +7,8 @@ from invest_note_api.domain.realized_pnl import (
     TradeGroupKey,
     is_same_group,
 )
-from invest_note_api.domain.trade_types import TRADE_TYPE_BUY
 from invest_note_api.domain.trade_utils import sort_by_traded_at
+from invest_note_api.domain.trade_walker import WalkerState, walk_trades
 
 if TYPE_CHECKING:
     from invest_note_api.domain.trade_types import Trade
@@ -35,22 +35,24 @@ class HoldingSummary:
 
 def compute_holding_summary(trades: list["Trade"], key: TradeGroupKey) -> HoldingSummary:
     """보유 수량과 가중평균단가(WAC)를 한 번의 순회로 계산."""
-    running_qty = 0.0
-    running_cost = 0.0
-    for trade in sort_by_traded_at(trades):
-        if not is_same_group(trade, key):
-            continue
-        if trade.trade_type == TRADE_TYPE_BUY:
-            running_qty += trade.quantity
-            running_cost += trade.price * trade.quantity
-        else:
-            avg_cost = running_cost / running_qty if running_qty > 0 else 0.0
-            matched = min(trade.quantity, running_qty)
-            running_cost = max(0.0, running_cost - avg_cost * matched)
-            running_qty = max(0.0, running_qty - matched)
+    final_state = WalkerState(running_qty=0.0, running_cost=0.0)
+    for ev in walk_trades(
+        trades,
+        group_filter=lambda t: is_same_group(t, key),
+        sort_fn=sort_by_traded_at,
+        track_fifo_lots=False,
+    ):
+        final_state = ev.state_after
 
-    avg_buy_price = running_cost / running_qty if running_qty > 0 else None
-    return HoldingSummary(quantity=running_qty, avg_buy_price=avg_buy_price)
+    avg_buy_price = (
+        final_state.running_cost / final_state.running_qty
+        if final_state.running_qty > 0
+        else None
+    )
+    return HoldingSummary(
+        quantity=final_state.running_qty,
+        avg_buy_price=avg_buy_price,
+    )
 
 
 def compute_flexible_breakdown(sell: "Trade") -> SellBreakdown:
