@@ -10,7 +10,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "cap": "cap",
-    "build:mobile": "NEXT_PUBLIC_API_BASE_URL=https://invest-note-api.onrender.com next build"
+    "build:mobile": "NEXT_PUBLIC_API_BASE_URL=https://invest-note-api.onrender.com next build",
+    "device:ios": "pnpm build:mobile && cap sync ios && cap run ios",
+    "device:android": "pnpm build:mobile && cap sync android && cap run android"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",

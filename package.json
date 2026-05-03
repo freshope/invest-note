@@ -8,6 +8,8 @@
     "build": "pnpm -C app build",
     "lint": "pnpm -C app lint",
     "test": "pnpm -C app test",
-    "tsc": "pnpm -C app exec tsc --noEmit"
+    "tsc": "pnpm -C app exec tsc --noEmit",
+    "device:ios": "pnpm -C app device:ios",
+    "device:android": "pnpm -C app device:android"
   }
 }
