@@ -8,7 +8,7 @@ import { CsvUploadButton } from "./CsvUploadButton";
 import { ImportTradesPanel } from "./ImportTradesPanel";
 import { AccountFilter } from "@/components/shared/AccountFilter";
 import { EmptyCard } from "@/components/shared/EmptyCard";
-import { ACCOUNT_FILTER_ALL, useAccountFilter, useEffectiveAccountId } from "@/components/providers/AccountFilterProvider";
+import { useAccountFilter, useEffectiveAccountId } from "@/components/providers/AccountFilterProvider";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import type { Account } from "@/types/database";
 import { PlusIcon } from "lucide-react";
@@ -42,7 +42,7 @@ export function TradeList({ trades, accounts }: TradeListProps) {
 
   const filteredTrades = useMemo(
     () =>
-      effectiveAccountId === ACCOUNT_FILTER_ALL
+      effectiveAccountId === null
         ? trades
         : trades.filter((t) => t.account_id === effectiveAccountId),
     [trades, effectiveAccountId],

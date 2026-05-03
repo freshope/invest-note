@@ -10,7 +10,7 @@ import { ChevronLeftIcon } from "lucide-react";
 import { CountryBadge } from "@/components/records/trade-display";
 import { AccountFilter } from "@/components/shared/AccountFilter";
 import { EmptyCard } from "@/components/shared/EmptyCard";
-import { ACCOUNT_FILTER_ALL, useAccountFilter, useEffectiveAccountId } from "@/components/providers/AccountFilterProvider";
+import { useAccountFilter, useEffectiveAccountId } from "@/components/providers/AccountFilterProvider";
 import type { Account } from "@/types/database";
 
 interface StockStats {
@@ -35,7 +35,7 @@ export function StockDetail({ assetName, ticker, country, trades, stats, account
   const router = useRouter();
   const { setSelectedAccountId } = useAccountFilter();
   const effectiveAccountId = useEffectiveAccountId(accounts);
-  const isFiltered = effectiveAccountId !== ACCOUNT_FILTER_ALL;
+  const isFiltered = effectiveAccountId !== null;
   const grouped = useMemo(() => groupByDate(trades), [trades]);
 
   const winRate = stats.sellCount > 0
