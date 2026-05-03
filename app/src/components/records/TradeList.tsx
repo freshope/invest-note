@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { TradeCard } from "./TradeCard";
 import { TradeFormPanel } from "./TradeFormPanel";
 import { useDetailPanel } from "@/components/panels/DetailPanelProvider";
@@ -20,11 +20,19 @@ interface TradeListProps {
 }
 
 export function TradeList({ trades, accounts }: TradeListProps) {
+  // 패널을 닫을 때 같은 인스턴스가 슬라이드 아웃 애니메이션을 끝까지 유지하도록
+  // open 자체로 unmount 하지 않고, 다시 열 때만 key 를 ++ 해 새 인스턴스를 마운트한다.
   const [formOpen, setFormOpen] = useState(false);
+  const [formKey, setFormKey] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
   const { selectedAccountId, setSelectedAccountId } = useAccountFilter();
   const { openTrade } = useDetailPanel();
   useEnsureValidAccount(accounts);
+
+  const openForm = useCallback(() => {
+    setFormKey((k) => k + 1);
+    setFormOpen(true);
+  }, []);
 
   const filteredTrades = useMemo(
     () =>
@@ -95,7 +103,7 @@ export function TradeList({ trades, accounts }: TradeListProps) {
       {/* FAB */}
       <button
         type="button"
-        onClick={() => setFormOpen(true)}
+        onClick={openForm}
         className="fixed bottom-28 right-5 z-20 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg active:scale-95 transition-transform"
         aria-label="거래 등록"
       >
@@ -104,6 +112,7 @@ export function TradeList({ trades, accounts }: TradeListProps) {
 
       {/* 거래 등록 패널 */}
       <TradeFormPanel
+        key={formKey}
         open={formOpen}
         onOpenChange={setFormOpen}
         accounts={accounts}

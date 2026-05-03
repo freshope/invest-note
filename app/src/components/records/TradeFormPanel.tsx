@@ -26,19 +26,12 @@ const TITLES: Record<Step, Record<TradeType, string>> = {
 };
 
 export function TradeFormPanel({ open, onOpenChange, accounts }: TradeFormPanelProps) {
+  // 매 오픈마다 부모(TradeList) 가 key 를 ++ 하여 새 인스턴스를 마운트하므로
+  // useState 초기값이 곧 reset 동작이 된다. 닫는 동안에는 같은 인스턴스가 유지되어
+  // FullScreenPanel 슬라이드 아웃 lifecycle 이 정상 진행된다.
   const [step, setStep] = useState<Step>("basic");
   const [tradeId, setTradeId] = useState<string>("");
   const [tradeType, setTradeType] = useState<TradeType>("BUY");
-
-  // 패널이 열릴 때 항상 리셋 — 빠른 재오픈 시 이전 step/tradeId가 남지 않도록.
-  useEffect(() => {
-    if (open) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setStep("basic");
-      setTradeId("");
-      setTradeType("BUY");
-    }
-  }, [open]);
 
   const handleClose = useCallback(() => {
     onOpenChange(false);
