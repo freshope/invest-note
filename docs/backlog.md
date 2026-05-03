@@ -40,20 +40,17 @@ Round 1 (`docs/spec-history/...`) 에서 처리된 6 개 외에 도출된 후속
 
 ## BE simplify (Round 1 이후 deferred — 2026-05-01 `/simplify` 결과)
 
-Round 1 (`docs/spec-history/2026-05-01-be-simplify-round1-quick-wins.md`) 에서 처리된 3 개 (`model_copy(update=)` / `dataclasses.replace` / `sort_by_traded_at` 통합) + Round 2 (`docs/spec-history/2026-05-03-be-simplify-round2-response-mapping.md`) 에서 처리된 4 개 + Round 3 (`docs/spec-history/2026-05-03-be-simplify-round3-hot-path.md`) 에서 처리된 4 개 외에 도출된 후속 항목. 위험도/가치 평가 후 Round 4+ 에서 분할 처리.
+Round 1 (`docs/spec-history/2026-05-01-be-simplify-round1-quick-wins.md`) 에서 처리된 3 개 (`model_copy(update=)` / `dataclasses.replace` / `sort_by_traded_at` 통합) + Round 2 (`docs/spec-history/2026-05-03-be-simplify-round2-response-mapping.md`) 에서 처리된 4 개 + Round 3 (`docs/spec-history/2026-05-03-be-simplify-round3-hot-path.md`) 에서 처리된 4 개 + Round 4 (`docs/spec-history/2026-05-03-be-simplify-round4-domain-cleanup.md`) 에서 처리된 2 개 외에 도출된 후속 항목. 위험도/가치 평가 후 Round 5+ 에서 분할 처리.
 
 > Round 2 (2026-05-03) 에서 응답 매핑 카테고리 4 개 처리 완료 (`asdict` spread / `account_row_to_dict` UUID 흡수 / `patch_account` 추출 / `create_trade` `model_dump` spread). `_trade_with_account_dict` 스키마화는 [decisions.md 2026-05-03](decisions.md) 으로 **미진행 확정**.
 
 > Round 3 (2026-05-03) 에서 효율/핫패스 4 개 처리 완료 (`httpx.AsyncClient` lifespan 공유 / broker parser `run_in_threadpool` / `import_preview` date 범위 좁히기 / `delete_account` round-trip 통합). `routers/analysis` period SQL push 는 [decisions.md 2026-05-03](decisions.md) 으로 **미진행 확정** (`all_trades` 가 의도적 unfiltered 입력, SQL push 가 1→2 round-trip net negative).
 
+> Round 4 (2026-05-03) 에서 도메인 정리 2 개 처리 완료 (`compute_holding_summary` 를 `walk_trades` terminal state 기반으로 재구성 / `build_positions` 119 줄을 `_build_lot_map` + `_lot_to_positions` 헬퍼로 분리).
+
 ### 효율 / 핫패스
 
 - [ ] `GET /api/trades` 페이지네이션 + `ticker` 필터 SQL push — 현재 전량 fetch 후 Python 필터 (FE backlog `tradesApi.list()` 와 동반)
-
-### 도메인 정리
-
-- [ ] `domain/holdings.compute_holding_summary` → `walk_trades` 위에 재구성 — WAC 누산 인라인 재구현 제거, 마지막 walker state 만 취하기
-- [ ] `domain/portfolio.build_positions` 105줄 함수 분리 — `_build_lot_map` + `_lot_to_positions`
 
 ### 재사용 / 잔여
 
