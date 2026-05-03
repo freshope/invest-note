@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 class TestStocksQuote:
     def test_quote_ok(self, trades_client):
-        async def mock_quotes(state, keys):
+        async def mock_quotes(state, keys, *, client=None):
             return {"005930:KR": {"price": 75000.0, "currency": "KRW", "as_of": "2024-01-15"}}
 
         with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
@@ -18,7 +18,7 @@ class TestStocksQuote:
         assert body["005930:KR"]["price"] == 75000.0
 
     def test_quote_empty_returns_empty(self, trades_client):
-        async def mock_quotes(state, keys):
+        async def mock_quotes(state, keys, *, client=None):
             return {}
 
         with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
@@ -28,7 +28,7 @@ class TestStocksQuote:
         assert resp.json() == {}
 
     def test_quote_us_returns_null_in_mvp(self, trades_client):
-        async def mock_quotes(state, keys):
+        async def mock_quotes(state, keys, *, client=None):
             return {"AAPL:US": None}
 
         with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
@@ -38,7 +38,7 @@ class TestStocksQuote:
         assert resp.json()["AAPL:US"] is None
 
     def test_quote_mixed(self, trades_client):
-        async def mock_quotes(state, keys):
+        async def mock_quotes(state, keys, *, client=None):
             return {
                 "005930:KR": {"price": 75000.0, "currency": "KRW", "as_of": ""},
                 "AAPL:US": None,
@@ -59,7 +59,7 @@ class TestStocksQuote:
 
 class TestStocksSearch:
     def test_search_kr_by_korean(self, trades_client):
-        async def mock_search_kr(q):
+        async def mock_search_kr(q, *, client=None):
             return [{"code": "005930", "name": "삼성전자", "market": "KR", "exchange": "KOSPI"}]
 
         with patch("invest_note_api.routers.stocks.search_kr", mock_search_kr):
@@ -70,7 +70,7 @@ class TestStocksSearch:
         assert resp.json()[0]["market"] == "KR"
 
     def test_search_kr_by_6digit_code(self, trades_client):
-        async def mock_search_kr(q):
+        async def mock_search_kr(q, *, client=None):
             return [{"code": "005930", "name": "삼성전자", "market": "KR", "exchange": ""}]
 
         with patch("invest_note_api.routers.stocks.search_kr", mock_search_kr):
@@ -80,7 +80,7 @@ class TestStocksSearch:
         assert resp.json()[0]["market"] == "KR"
 
     def test_search_english_returns_empty_in_mvp(self, trades_client):
-        async def mock_search_kr(q):
+        async def mock_search_kr(q, *, client=None):
             return []
 
         with patch("invest_note_api.routers.stocks.search_kr", mock_search_kr):

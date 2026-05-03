@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-05-03 | BE simplify Round 3 — analysis period SQL push 미진행
+
+- **맥락:** `docs/backlog.md` 의 "BE simplify · 효율 / 핫패스" 섹션 5 번째 항목 (`routers/analysis` period 파라미터 SQL push — 1m/3m/6m 선택 시 전체 fetch 회피) 의 Round 3 진행 여부를 평가. 의도는 `list_trades(date_from, date_to)` 로 SQL `WHERE traded_at` 푸시, `filter_by_period` 메모리 필터 호출 제거.
+- **결정:** **진행하지 않는다.** Round 3 는 효율/핫패스 6 개 중 4 개 (httpx 공유 client / parser threadpool / `list_trades` date 옵션 import_preview 적용 / `delete_account` round-trip 통합) 만 묶고 본 항목은 backlog 에서 제거.
+- **이유:**
+  - **`all_trades` 가 의도적으로 전체 거래** — `routers/analysis.py:89, 98, 101` 가 `build_positions(all_trades)`, `compute_concentration(positions, all_trades)`, `build_strategy_evaluations(all_trades, holding_days_map)` 에 모두 unfiltered `all_trades` 를 전달. 특히 line 100 의 inline 주석 ("compute_profile 의 누적 일관성 평가용") 이 period-filter 비대칭을 의도적으로 명시. `trades = filter_by_period(all_trades, period_val)` 는 그 외 부분 (`pnl_map`, `holding_days_map`, `summary`) 에서만 사용.
+  - **SQL push = 1 round-trip → 2 round-trip** — `all_trades` 가 어쨌든 필요하므로 period 가 'all' 이 아닐 때 별도 fetch 가 필수. 개인 투자자 데이터 양 (수십~수백 거래) 에서 round-trip 비용 (~10ms) 이 메모리 필터 비용 (<1ms) 보다 큼. **net negative**.
+  - **branching workaround 도 거부** — `period == "all"` 일 때만 1 회 fetch, 그 외 2 회 fetch 같은 분기 도입은 marginal benefit 대비 코드 복잡도 증가. 2026-04-30 Tier 3 결정과 2026-05-03 TradeWithAccountResponse 결정과 동일한 "다르게 보이지만 단순화 비용이 더 큰 사례" 패턴.
+- **트레이드오프:** 향후 거래 데이터가 천 단위 이상으로 증가하거나 (페이지네이션 도입 시 fetch 양 자연 감소), `all_trades` invariant 가 변경 (예: `compute_profile` 도 period-filtered 로 변경 결정) 되면 재평가. 그 외에는 backlog 에서 영구 종결. `domain/analysis/period.py:filter_by_period` 는 그대로 유지.
+
+---
+
 ## 2026-05-03 | FE simplify Round 3 — HoldingCard pressing state 표현 (data attribute + JS state 유지)
 
 - **맥락:** Round 1 에서 `pressing` `useState` + 4개 pointer 핸들러 (`onPointerDown/Up/Leave/Cancel`) 를 CSS `:active:scale-[0.98]` 로 단순화 시도했으나, inner note 영역의 `onPointerDown` `stopPropagation()` 이 outer `:active` 발동을 차단하지 못해 원본 UX (멀티라인 note 탭 시 outer 카드 scale 미발동) 이 깨져 복원됨 (커밋 `9e494ce`). Round 3 에서 4 가지 대안 (① `data-pressing` 속성 + JS 토글 + CSS attr variant, ② note 영역만 별도 stop layer, ③ TradeCard 처럼 native `<button>` 변환, ④ 원본 UX 가 의도적이지 않다면 CSS `:active` 채택) 을 평가하고 사용자 확인 결과 원본 UX 는 의도된 동작으로 확정.
