@@ -25,6 +25,7 @@ export function TradeList({ trades, accounts }: TradeListProps) {
   const [formOpen, setFormOpen] = useState(false);
   const [formKey, setFormKey] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
+  const [importKey, setImportKey] = useState(0);
   const { selectedAccountId, setSelectedAccountId } = useAccountFilter();
   const { openTrade } = useDetailPanel();
   useEnsureValidAccount(accounts);
@@ -32,6 +33,11 @@ export function TradeList({ trades, accounts }: TradeListProps) {
   const openForm = useCallback(() => {
     setFormKey((k) => k + 1);
     setFormOpen(true);
+  }, []);
+
+  const openImport = useCallback(() => {
+    setImportKey((k) => k + 1);
+    setImportOpen(true);
   }, []);
 
   const filteredTrades = useMemo(
@@ -47,7 +53,7 @@ export function TradeList({ trades, accounts }: TradeListProps) {
   return (
     <>
       <div className="sticky top-0 z-10 bg-background">
-        <PageHeader title="기록" actions={<CsvUploadButton onClick={() => setImportOpen(true)} />} sticky={false} />
+        <PageHeader title="기록" actions={<CsvUploadButton onClick={openImport} />} sticky={false} />
         {accounts.length >= 2 && (
           <AccountFilter
             accounts={accounts}
@@ -120,6 +126,7 @@ export function TradeList({ trades, accounts }: TradeListProps) {
 
       {/* 거래내역서 일괄 import 패널 */}
       <ImportTradesPanel
+        key={importKey}
         open={importOpen}
         onOpenChange={setImportOpen}
         accounts={accounts}

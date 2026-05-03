@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -39,17 +39,9 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
   const effectiveBrokerKey = findBrokerKeyByAccountBroker(selectedAccount?.broker);
   const effectiveBroker = BROKER_OPTIONS.find((b) => b.key === effectiveBrokerKey);
 
-  useEffect(() => {
-    if (!open) {
-      const timer = setTimeout(() => {
-        setStep("account");
-        setSelectedAccountId("");
-        setPreview(null);
-        setResult(null);
-      }, 300);
-      return () => clearTimeout(timer);
-    }
-  }, [open]);
+  // reset 은 부모(TradeList) 가 importKey 를 ++ 해 새 인스턴스를 마운트하는 방식으로 처리.
+  // 닫힘 애니메이션 중 step 깜박임 방지(이전 setTimeout 의 의도)는, 닫는 동안 같은 인스턴스가
+  // 자기 state 를 유지한 채 슬라이드 아웃하는 lifecycle 로 자연 보존된다.
 
   const handleFileSelect = async (file: File) => {
     if (!effectiveBrokerKey) return;
