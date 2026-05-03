@@ -118,7 +118,7 @@ export function TradeList({ trades, accounts }: TradeListProps) {
 
       {/* 거래 등록 패널 */}
       <TradeFormPanel
-        key={formKey}
+        key={`form-${formKey}`}
         open={formOpen}
         onOpenChange={setFormOpen}
         accounts={accounts}
@@ -126,7 +126,7 @@ export function TradeList({ trades, accounts }: TradeListProps) {
 
       {/* 거래내역서 일괄 import 패널 */}
       <ImportTradesPanel
-        key={importKey}
+        key={`import-${importKey}`}
         open={importOpen}
         onOpenChange={setImportOpen}
         accounts={accounts}
