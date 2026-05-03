@@ -37,6 +37,7 @@ export const HoldingCard = memo(function HoldingCard({ position, onPress }: Hold
     <div
       role="button"
       tabIndex={0}
+      aria-label={`${assetName} 보유 종목 상세`}
       onClick={() => onPress?.(position)}
       onPointerDown={() => setPressing(true)}
       onPointerUp={() => setPressing(false)}
