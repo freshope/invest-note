@@ -1,6 +1,7 @@
 """분석 응답 스키마 — /api/analysis/dashboard."""
 from __future__ import annotations
 
+from invest_note_api.domain.trade_types import EmotionBucket, ReasoningTagBucket
 from invest_note_api.schemas._base import CamelModel
 
 
@@ -14,7 +15,7 @@ class StrategyStatsResponse(CamelModel):
 
 
 class EmotionStatsResponse(CamelModel):
-    type: str
+    type: EmotionBucket
     count: int
     result_count: int
     win_rate: float
@@ -22,7 +23,7 @@ class EmotionStatsResponse(CamelModel):
 
 
 class TagStatsResponse(CamelModel):
-    tag: str
+    tag: ReasoningTagBucket
     count: int
     win_rate: float
     sum_pnl: float

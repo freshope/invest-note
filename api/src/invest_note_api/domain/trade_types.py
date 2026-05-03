@@ -15,6 +15,9 @@ EmotionType = Literal["CONFIDENT", "ANXIOUS", "FOMO", "IMPULSIVE", "CALM"]
 ReasoningTag = Literal["TECHNICAL", "FUNDAMENTAL", "NEWS", "FEELING"]
 TradeResult = Literal["SUCCESS", "FAIL", "BREAKEVEN"]
 CountryCode = Literal["KR", "US", "OTHER"]
+UntaggedLiteral = Literal["UNTAGGED"]
+EmotionBucket = EmotionType | UntaggedLiteral
+ReasoningTagBucket = ReasoningTag | UntaggedLiteral
 
 # 명명 상수 — 비교/기본값에 문자열 리터럴 직접 사용 방지
 TRADE_TYPE_BUY: TradeType = "BUY"
@@ -34,8 +37,8 @@ EMOTION_CALM: EmotionType = "CALM"
 TAG_FEELING: ReasoningTag = "FEELING"
 # 분석 집계에서 emotion/reasoning_tags 미입력 SELL을 묶기 위한 표시 전용 키.
 # 사용자가 직접 선택할 수 없는 값이므로 폼 옵션 배열에는 포함하지 않는다.
-EMOTION_UNTAGGED = "UNTAGGED"
-TAG_UNTAGGED = "UNTAGGED"
+EMOTION_UNTAGGED: UntaggedLiteral = "UNTAGGED"
+TAG_UNTAGGED: UntaggedLiteral = "UNTAGGED"
 RESULT_SUCCESS: TradeResult = "SUCCESS"
 RESULT_FAIL: TradeResult = "FAIL"
 RESULT_BREAKEVEN: TradeResult = "BREAKEVEN"

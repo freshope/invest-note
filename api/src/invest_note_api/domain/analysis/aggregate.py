@@ -19,6 +19,8 @@ from invest_note_api.domain.trade_types import (
     TAG_UNTAGGED,
     TRADE_TYPE_BUY,
     TRADE_TYPE_SELL,
+    EmotionBucket,
+    ReasoningTagBucket,
 )
 
 if TYPE_CHECKING:
@@ -37,7 +39,7 @@ class StrategyStats:
 
 @dataclass
 class EmotionStats:
-    type: str
+    type: EmotionBucket
     count: int
     result_count: int
     win_rate: float
@@ -46,7 +48,7 @@ class EmotionStats:
 
 @dataclass
 class TagStats:
-    tag: str
+    tag: ReasoningTagBucket
     count: int
     win_rate: float
     sum_pnl: float
@@ -166,9 +168,9 @@ def compute_summary(
 
     # byEmotion — emotion 미입력 SELL은 EMOTION_UNTAGGED 버킷으로 모음.
     # 합계가 totalProfitLoss와 일치하려면 누락 거래도 어딘가에는 포함되어야 함.
-    emotion_map: dict[str, dict] = {}
+    emotion_map: dict[EmotionBucket, dict] = {}
     for t in sells:
-        key = t.emotion or EMOTION_UNTAGGED
+        key: EmotionBucket = t.emotion or EMOTION_UNTAGGED
         if key not in emotion_map:
             emotion_map[key] = {"pnls": [], "results": []}
         e = emotion_map[key]
@@ -194,9 +196,9 @@ def compute_summary(
     # byTag — reasoning_tags 미입력 SELL은 TAG_UNTAGGED 단일 버킷으로 모음.
     # 다중 태그 거래는 각 태그 버킷에 PnL이 중복 합산되므로 byTag 합계는
     # totalProfitLoss와 정확히 일치하지 않을 수 있음 (FE에서 안내 제공).
-    tag_map: dict[str, dict] = {}
+    tag_map: dict[ReasoningTagBucket, dict] = {}
     for sell in sells:
-        tags = sell.reasoning_tags or [TAG_UNTAGGED]
+        tags: list[ReasoningTagBucket] = list(sell.reasoning_tags) or [TAG_UNTAGGED]
         for tag in tags:
             if tag not in tag_map:
                 tag_map[tag] = {"pnls": [], "results": []}
