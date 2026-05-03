@@ -304,31 +304,31 @@ export function useEffectiveAccountId(accounts: Account[]): string {
 
 ## 구현 체크리스트 (항목별 작은 커밋)
 
-- [ ] **(커밋 1) 항목 1 — commission/tax 자동계산을 이벤트 핸들러 + dirty 가드로 이전**
-  - [ ] `TradeBasicForm.tsx` commission/tax effect 삭제, `recalcFees` 헬퍼 추가
-  - [ ] 가격/수량/trade_type 핸들러에서 `recalcFees` 호출
-  - [ ] `useForm` destructure 에 `getFieldState` 추가
-  - [ ] 수동 QA: 자동 계산, 수동 수정 보호, BUY↔SELL 전환 시 tax 처리
-- [ ] **(커밋 2) 항목 2 — localStorage 복원 effect 제거**
-  - [ ] `getInitialAccountId(accounts)` 헬퍼 추가, `defaultValues.account_id` 에 사용
-  - [ ] mount useEffect + `eslint-disable-next-line react-hooks/exhaustive-deps` 삭제
-  - [ ] (선택) 테스트 추가: localStorage 에 유효 ID 있을 때 pre-select
-  - [ ] 수동 QA: localStorage 빈 상태 / 유효 / 무효 ID 케이스
-- [ ] **(커밋 3) 항목 3 — TradeFormPanel reset effect 제거 + 부모 key bump**
-  - [ ] `TradeFormPanel.tsx` reset useEffect 삭제 (`openRef` 동기화는 유지)
-  - [ ] `TradeList.tsx` 에 `formKey` state + `openForm` 콜백 추가, `<TradeFormPanel key={formKey} />` 적용
-  - [ ] 수동 QA: 닫기 후 재오픈 시 step 초기화, rapid reopen 시 jump cut 인지 가능 여부
-- [ ] **(커밋 4) 항목 4 — ImportTradesPanel setTimeout 제거 + 부모 key bump**
-  - [ ] `ImportTradesPanel/index.tsx` setTimeout useEffect 삭제
-  - [ ] `TradeList.tsx` 에 `importKey` state + `openImport` 콜백 추가, `<ImportTradesPanel key={importKey} />` 적용
-  - [ ] 수동 QA: 결과 단계 도달 후 닫기/재오픈 시 첫 단계로 초기화, rapid reopen
-- [ ] **(커밋 5) 항목 5 — useEnsureValidAccount → useEffectiveAccountId**
-  - [ ] `AccountFilterProvider.tsx` 에 `useEffectiveAccountId` 추가, `useEnsureValidAccount` 삭제
-  - [ ] `TradeList.tsx`, `DetailPanelProvider.tsx::StockPanelContent`, `StockDetail.tsx` 컨슈머 교체
-  - [ ] 수동 QA: 계좌 삭제 후 records / stock 패널에서 "전체" 폴백
-- [ ] **(공통)** `pnpm -C app exec tsc --noEmit` 통과
-- [ ] **(공통)** `pnpm -C app test` 통과
-- [ ] **(공통)** `docs/backlog.md` 의 useEffect 안티패턴 5 개 항목 체크 / 제거 + Round 4 spec 링크 추가
+- [x] **(커밋 1) 항목 1 — commission/tax 자동계산을 이벤트 핸들러 + dirty 가드로 이전**
+  - [x] `TradeBasicForm.tsx` commission/tax effect 삭제, `recalcFees` 헬퍼 추가
+  - [x] 가격/수량/trade_type 핸들러에서 `recalcFees` 호출
+  - [x] `useForm` destructure 에 `getFieldState` 추가
+  - [x] 수동 QA: 자동 계산, 수동 수정 보호, BUY↔SELL 전환 시 tax 처리
+- [x] **(커밋 2) 항목 2 — localStorage 복원 effect 제거**
+  - [x] `getInitialAccountId(accounts)` 헬퍼 추가, `defaultValues.account_id` 에 사용
+  - [x] mount useEffect + `eslint-disable-next-line react-hooks/exhaustive-deps` 삭제
+  - [x] (선택) 테스트 추가: localStorage 에 유효 ID 있을 때 pre-select
+  - [x] 수동 QA: localStorage 빈 상태 / 유효 / 무효 ID 케이스
+- [x] **(커밋 3) 항목 3 — TradeFormPanel reset effect 제거 + 부모 key bump**
+  - [x] `TradeFormPanel.tsx` reset useEffect 삭제 (`openRef` 동기화는 유지)
+  - [x] `TradeList.tsx` 에 `formKey` state + `openForm` 콜백 추가, `<TradeFormPanel key={formKey} />` 적용
+  - [x] 수동 QA: 닫기 후 재오픈 시 step 초기화, rapid reopen 시 jump cut 인지 가능 여부
+- [x] **(커밋 4) 항목 4 — ImportTradesPanel setTimeout 제거 + 부모 key bump**
+  - [x] `ImportTradesPanel/index.tsx` setTimeout useEffect 삭제
+  - [x] `TradeList.tsx` 에 `importKey` state + `openImport` 콜백 추가, `<ImportTradesPanel key={importKey} />` 적용
+  - [x] 수동 QA: 결과 단계 도달 후 닫기/재오픈 시 첫 단계로 초기화, rapid reopen
+- [x] **(커밋 5) 항목 5 — useEnsureValidAccount → useEffectiveAccountId**
+  - [x] `AccountFilterProvider.tsx` 에 `useEffectiveAccountId` 추가, `useEnsureValidAccount` 삭제
+  - [x] `TradeList.tsx`, `DetailPanelProvider.tsx::StockPanelContent`, `StockDetail.tsx` 컨슈머 교체
+  - [x] 수동 QA: 계좌 삭제 후 records / stock 패널에서 "전체" 폴백
+- [x] **(공통)** `pnpm -C app exec tsc --noEmit` 통과
+- [x] **(공통)** `pnpm -C app test` 통과
+- [x] **(공통)** `docs/backlog.md` 의 useEffect 안티패턴 5 개 항목 체크 / 제거 + Round 4 spec 링크 추가
 
 ## 우려사항 / 리스크
 
