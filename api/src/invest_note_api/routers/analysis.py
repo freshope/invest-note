@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from dataclasses import asdict
 
 import asyncpg
@@ -33,17 +34,16 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/analysis")
 
-_HOLDING_BUCKETS: list[dict] = [
-    {"label": "1일 이내", "max_days": 1},
-    {"label": "1주 이내", "max_days": 7},
-    {"label": "1개월 이내", "max_days": 30},
-    {"label": "3개월 이내", "max_days": 90},
-    {"label": "6개월 이내", "max_days": 180},
-    {"label": "1년 이내", "max_days": 365},
-    {"label": "1년 이상", "max_days": float("inf")},
+# 보유 기간 구간 — 임계값은 inclusive (`days <= threshold`)
+_HOLDING_BUCKETS: list[tuple[float, str]] = [
+    (1, "1일 이내"),
+    (7, "1주 이내"),
+    (30, "1개월 이내"),
+    (90, "3개월 이내"),
+    (180, "6개월 이내"),
+    (365, "1년 이내"),
+    (float("inf"), "1년 이상"),
 ]
-_HOLDING_ORDER = [b["label"] for b in _HOLDING_BUCKETS]
-
 # 매수 금액 구간 — 임계값은 strict less-than (`amount < threshold`)
 _SIZE_BUCKETS: list[tuple[float, str]] = [
     (500_000, "50만 미만"),
@@ -53,21 +53,25 @@ _SIZE_BUCKETS: list[tuple[float, str]] = [
     (50_000_000, "1천~5천만"),
     (float("inf"), "5천만 이상"),
 ]
+_HOLDING_ORDER = [label for _, label in _HOLDING_BUCKETS]
 _SIZE_ORDER = [label for _, label in _SIZE_BUCKETS]
 
 
+def _first_bucket_label(
+    value: float, buckets: list[tuple[float, str]], *, inclusive: bool
+) -> str:
+    for threshold, label in buckets:
+        if (value <= threshold) if inclusive else (value < threshold):
+            return label
+    return buckets[-1][1]
+
+
 def _holding_bucket(days: int) -> str:
-    for b in _HOLDING_BUCKETS:
-        if days <= b["max_days"]:
-            return b["label"]
-    return _HOLDING_BUCKETS[-1]["label"]
+    return _first_bucket_label(days, _HOLDING_BUCKETS, inclusive=True)
 
 
 def _size_bucket(amount: float) -> str:
-    for threshold, label in _SIZE_BUCKETS:
-        if amount < threshold:
-            return label
-    return _SIZE_BUCKETS[-1][1]
+    return _first_bucket_label(amount, _SIZE_BUCKETS, inclusive=False)
 
 
 @router.get(
@@ -109,21 +113,16 @@ async def get_analysis_dashboard(
         {"summary": summary, "profile": profile, "concentration": concentration}
     )
 
-    holding_dist: dict[str, int] = {}
-    for days in holding_days_map.values():
-        b = _holding_bucket(days)
-        holding_dist[b] = holding_dist.get(b, 0) + 1
+    holding_dist = Counter(_holding_bucket(d) for d in holding_days_map.values())
     holding_period_dist = [
         {"bucket": b, "count": holding_dist[b]}
         for b in _HOLDING_ORDER
         if b in holding_dist
     ]
 
-    size_dist: dict[str, int] = {}
-    for t in trades:
-        if t.trade_type == TRADE_TYPE_BUY:
-            b = _size_bucket(t.total_amount)
-            size_dist[b] = size_dist.get(b, 0) + 1
+    size_dist = Counter(
+        _size_bucket(t.total_amount) for t in trades if t.trade_type == TRADE_TYPE_BUY
+    )
     position_size_dist = [
         {"bucket": b, "count": size_dist[b]}
         for b in _SIZE_ORDER
