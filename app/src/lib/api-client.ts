@@ -351,6 +351,7 @@ export interface AnalysisDashboardData {
   summary: AnalysisSummary;
   behavior: BehaviorData;
   suggestions: SuggestionsData;
+  missingQuoteTickers: string[];
 }
 
 export const analysisApi = {

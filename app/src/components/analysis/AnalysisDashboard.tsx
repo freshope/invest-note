@@ -17,6 +17,7 @@ import { AnalysisEmptyState } from "./AnalysisEmptyState";
 import { DEFAULT_ANALYSIS_PERIOD, type Period } from "@/lib/analysis/period";
 import { useAnalysisData } from "@/hooks/useAnalysisData";
 import { ErrorState } from "@/components/shared/ErrorState";
+import { MissingQuoteBadge } from "@/components/shared/MissingQuoteBadge";
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -33,7 +34,7 @@ function SkeletonCard({ h = "h-28" }: { h?: string }) {
 
 export function AnalysisDashboard() {
   const [period, setPeriod] = useState<Period>(DEFAULT_ANALYSIS_PERIOD);
-  const { summary, behavior, suggestionsData, loading, isError, refetch } = useAnalysisData(period);
+  const { summary, behavior, suggestionsData, missingQuoteTickers, loading, isError, refetch } = useAnalysisData(period);
 
   const isEmpty = summary && summary.totalTrades === 0;
   const isEmptyPeriod = !!isEmpty && period !== "all";
@@ -72,6 +73,8 @@ export function AnalysisDashboard() {
           <AnalysisEmptyState hasTrades={isEmptyPeriod} hasSells={isEmptyPeriod} />
         ) : summary ? (
           <>
+            <MissingQuoteBadge tickers={missingQuoteTickers} />
+
             {/* 섹션 1: 핵심 성과 */}
             <SummaryCards summary={summary} />
 

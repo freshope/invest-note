@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
 import { fmt, fmtCompact, signColor } from "@/lib/format";
 import { StatCard } from "@/components/shared/StatCard";
+import { MissingQuoteBadge } from "@/components/shared/MissingQuoteBadge";
 import type { DashboardTotals } from "@/lib/portfolio";
 
 function PnLText({ value }: { value: number }) {
@@ -58,12 +59,8 @@ export function DashboardBody({ totals }: DashboardProps) {
         </p>
       )}
 
-      {missingQuoteTickers.length > 0 && (
-        <p className="text-[11px] text-muted-foreground">
-          시세 미조회: {missingQuoteTickers.slice(0, 3).join(", ")}
-          {missingQuoteTickers.length > 3 && ` 외 ${missingQuoteTickers.length - 3}개`} — 평가금액 제외됨
-        </p>
-      )}
+      <MissingQuoteBadge tickers={missingQuoteTickers} />
+
     </div>
   );
 }

@@ -19,6 +19,7 @@ export function useAnalysisData(period: Period) {
     summary: data?.summary ?? null,
     behavior: data?.behavior ?? null,
     suggestionsData: data?.suggestions ?? null,
+    missingQuoteTickers: data?.missingQuoteTickers ?? [],
     loading: isPending,
     isError,
     refetch,
