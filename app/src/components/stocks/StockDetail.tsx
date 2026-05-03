@@ -10,7 +10,7 @@ import { ChevronLeftIcon } from "lucide-react";
 import { CountryBadge } from "@/components/records/trade-display";
 import { AccountFilter } from "@/components/shared/AccountFilter";
 import { EmptyCard } from "@/components/shared/EmptyCard";
-import { ACCOUNT_FILTER_ALL, useAccountFilter } from "@/components/providers/AccountFilterProvider";
+import { ACCOUNT_FILTER_ALL, useAccountFilter, useEffectiveAccountId } from "@/components/providers/AccountFilterProvider";
 import type { Account } from "@/types/database";
 
 interface StockStats {
@@ -33,8 +33,9 @@ interface StockDetailProps {
 
 export function StockDetail({ assetName, ticker, country, trades, stats, accounts, onBack, onTradePress }: StockDetailProps) {
   const router = useRouter();
-  const { selectedAccountId, setSelectedAccountId } = useAccountFilter();
-  const isFiltered = selectedAccountId !== ACCOUNT_FILTER_ALL;
+  const { setSelectedAccountId } = useAccountFilter();
+  const effectiveAccountId = useEffectiveAccountId(accounts);
+  const isFiltered = effectiveAccountId !== ACCOUNT_FILTER_ALL;
   const grouped = useMemo(() => groupByDate(trades), [trades]);
 
   const winRate = stats.sellCount > 0
@@ -62,7 +63,7 @@ export function StockDetail({ assetName, ticker, country, trades, stats, account
           </span>
         </div>
         {accounts.length >= 2 && (
-          <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} />
+          <AccountFilter accounts={accounts} value={effectiveAccountId} onChange={setSelectedAccountId} />
         )}
       </div>
 
