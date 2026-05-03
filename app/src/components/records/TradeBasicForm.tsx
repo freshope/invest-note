@@ -74,6 +74,8 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
     watch,
     setValue,
     setError,
+    getValues,
+    getFieldState,
     formState: { isSubmitting, errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -154,17 +156,22 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
   const holdingQty = holdingEnabled ? (holdingData?.quantity ?? 0) : 0;
   const avgBuyPrice = holdingData?.avgBuyPrice ?? null;
 
-  // 가격·수량 변경 시 수수료/제세금 자동 계산
-  useEffect(() => {
-    const total = (price || 0) * (quantity || 0);
-    if (total > 0) {
-      setValue("commission", calcCommission(total));
-      setValue("tax", tradeType === "SELL" ? calcTax(total) : 0);
+  // 가격·수량·trade_type 변경 시 수수료/제세금 자동 계산.
+  // 사용자가 수수료/제세금을 직접 수정한 경우(getFieldState().isDirty=true) 자동 계산을 건너뛴다.
+  const recalcFees = useCallback((nextPrice: number, nextQty: number, nextType: TradeType) => {
+    const total = (nextPrice || 0) * (nextQty || 0);
+    if (!getFieldState("commission").isDirty) {
+      setValue("commission", total > 0 ? calcCommission(total) : 0);
+    }
+    if (nextType === "SELL") {
+      if (!getFieldState("tax").isDirty) {
+        setValue("tax", total > 0 ? calcTax(total) : 0);
+      }
     } else {
-      setValue("commission", 0);
+      // BUY 전환 시 SELL에서 수동 입력한 stale 값이 다음 SELL에 노출되지 않도록 dirty 무시.
       setValue("tax", 0);
     }
-  }, [price, quantity, tradeType, setValue]);
+  }, [getFieldState, setValue]);
 
   const total = (price || 0) * (quantity || 0);
   const totalDisplay = total > 0 ? fmt(total) : "-";
@@ -223,6 +230,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                   setValue("asset_name", "");
                   clearStockSelection();
                   field.onChange(v);
+                  recalcFees(getValues("price"), getValues("quantity"), v);
                 }
               }}
             >
@@ -381,7 +389,11 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 inputMode="numeric"
                 placeholder="0"
                 value={fmtNumberInput(field.value)}
-                onChange={(e) => field.onChange(parseNumberInput(e.target.value))}
+                onChange={(e) => {
+                  const next = parseNumberInput(e.target.value);
+                  field.onChange(next);
+                  recalcFees(next, getValues("quantity"), getValues("trade_type"));
+                }}
               />
             )}
           />
@@ -394,7 +406,10 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
             {tradeType === "SELL" && holdingQty > 0 && (
               <button
                 type="button"
-                onClick={() => setValue("quantity", holdingQty, { shouldValidate: true })}
+                onClick={() => {
+                  setValue("quantity", holdingQty, { shouldValidate: true });
+                  recalcFees(getValues("price"), holdingQty, getValues("trade_type"));
+                }}
                 className="text-[12px] font-medium text-primary underline underline-offset-2"
               >
                 전량 ({fmt(holdingQty)}주)
@@ -411,7 +426,11 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 inputMode="decimal"
                 placeholder="0"
                 value={fmtNumberInput(field.value)}
-                onChange={(e) => field.onChange(parseNumberInput(e.target.value))}
+                onChange={(e) => {
+                  const next = parseNumberInput(e.target.value);
+                  field.onChange(next);
+                  recalcFees(getValues("price"), next, getValues("trade_type"));
+                }}
               />
             )}
           />
