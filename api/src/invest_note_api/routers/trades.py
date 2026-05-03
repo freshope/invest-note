@@ -59,7 +59,6 @@ from invest_note_api.domain.trade_types import (
     TRADE_TYPE_BUY,
     TRADE_TYPE_SELL,
     Trade,
-    trade_country,
 )
 from invest_note_api.errors import ERR_TRADE_NOT_FOUND, APIError
 from invest_note_api.schemas.trade import TradeCreate, TradeUpdate
@@ -124,15 +123,13 @@ async def list_trades_endpoint(
             raise APIError("잘못된 ticker 형식입니다.", 400)
 
     async with acquire_for_user(pool, user.id) as conn:
-        trades = await list_trades_with_account(conn, user.id)
+        trades = await list_trades_with_account(
+            conn,
+            user.id,
+            ticker=ticker,
+            country=country if ticker else None,
+        )
         accounts = await repo_list_accounts(conn)
-
-    if ticker:
-        trades = [
-            t for t in trades
-            if trade_country(t) == country
-            and t.ticker_symbol == ticker
-        ]
 
     return {"trades": [_trade_with_account_dict(t) for t in trades], "accounts": accounts}
 

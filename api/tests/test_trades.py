@@ -171,19 +171,32 @@ class TestListTrades:
             resp = trades_client.get("/api/trades", params={"ticker": "005930", "country": "KR"})
         assert resp.status_code == 200
 
-    def test_list_ticker_filter_strict_ticker_symbol_only(self, trades_client):
-        # ticker_symbol invariant(2026-04-30 decisions.md) — asset_name 매칭 분기는 dead branch.
-        match_row = _make_trade_row(id_="match", ticker="005930", asset_name="삼성전자")
-        name_only_row = _make_trade_row(id_="name-only", ticker="000660", asset_name="005930")
-        conn = FakeConnection(
-            [_to_record(match_row), _to_record(name_only_row)],
-            [],
-        )
+    def test_list_ticker_pushed_to_sql(self, trades_client, monkeypatch):
+        """ticker/country 가 SQL fetch 인자로 전달되는지 검증 (Python 후처리 X)."""
+        captured: list[tuple[str, tuple[Any, ...]]] = []
+        orig_fetch = FakeConnection.fetch
+
+        async def spy_fetch(self: Any, query: str, *args: Any) -> list:
+            captured.append((query, args))
+            return await orig_fetch(self, query, *args)
+
+        monkeypatch.setattr(FakeConnection, "fetch", spy_fetch)
+
+        conn = FakeConnection([_to_record(_make_trade_row())], [])
         with _patch_trades(conn):
             resp = trades_client.get("/api/trades", params={"ticker": "005930", "country": "KR"})
         assert resp.status_code == 200
-        ids = [t["id"] for t in resp.json()["trades"]]
-        assert ids == ["match"]
+
+        list_calls = [
+            (q, a) for q, a in captured
+            if "from trades t" in q.lower() and "left join accounts" in q.lower()
+        ]
+        assert len(list_calls) == 1, f"trades+accounts list 쿼리가 1회 실행되어야 함: {list_calls}"
+        q, args = list_calls[0]
+        assert "t.ticker_symbol = $2" in q
+        assert "country_code" in q and "$3" in q
+        assert str(args[0]) == str(TEST_USER_ID)
+        assert args[1:] == ("005930", "KR")
 
     def test_list_invalid_ticker_400(self, trades_client):
         resp = trades_client.get("/api/trades", params={"ticker": "/../etc/passwd"})

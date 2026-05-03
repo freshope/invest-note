@@ -94,18 +94,37 @@ async def list_trades_in_group(
     return [_row_to_trade(r) for r in rows]
 
 
-async def list_trades_with_account(conn: Any, user_id: str) -> list[TradeWithAccount]:
+async def list_trades_with_account(
+    conn: Any,
+    user_id: str,
+    *,
+    ticker: str | None = None,
+    country: str | None = None,
+) -> list[TradeWithAccount]:
+    """user 의 거래 + 계좌 join. `ticker` / `country` 가 지정되면 SQL WHERE 로 push.
+
+    `country` 정규화는 `domain.trade_types.trade_country` 와 같은 의미의
+    `COALESCE(NULLIF(country_code, ''), 'KR')` 사용.
+    """
+    where = ["t.user_id = $1"]
+    params: list[Any] = [user_id]
+    if ticker is not None:
+        params.append(ticker)
+        where.append(f"t.ticker_symbol = ${len(params)}")
+    if country is not None:
+        params.append(country)
+        where.append(f"COALESCE(NULLIF(t.country_code, ''), 'KR') = ${len(params)}")
     rows = await conn.fetch(
-        """
+        f"""
         SELECT t.*,
                a.name  AS account_name,
                a.broker AS account_broker
         FROM trades t
         LEFT JOIN accounts a ON a.id = t.account_id
-        WHERE t.user_id = $1
+        WHERE {' AND '.join(where)}
         ORDER BY t.traded_at DESC
         """,
-        user_id,
+        *params,
     )
     return [_row_to_trade_with_account(r) for r in rows]
 

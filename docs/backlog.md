@@ -25,7 +25,9 @@ Round 1 (`docs/spec-history/...`) 에서 처리된 6 개 외에 도출된 후속
 
 > 2026-05-03 cleanup-trio: `accountsApi.list` ↔ `portfolioApi.summary` 캐시 키 통일은 `queryKeys.accounts = ["portfolio", "accounts"]` 로 트리 흡수하는 방식으로 처리 — `queryKeys.portfolio` invalidate 한 번이 prefix 매칭으로 accounts/summary 모두 무효화. selector 대체(snapshots[].account 재사용) 는 `trade_count` enrich 누락 때문에 BE 변경 없이는 불가, 따로 spec 필요 시 BE 협조.
 
-- [ ] `tradesApi.list()` 페이지네이션 — 현재 전량 fetch (records/HoldingsList). 무한스크롤/limit + cursor 도입 (BE 협조 필요)
+> 2026-05-03 ticker SQL push 처리됨: BE `list_trades_with_account` 가 ticker/country WHERE 를 SQL 로 push → HoldingsList(`tradesApi.list({ ticker, country })`) 가 더 이상 사용자 전체 trades 를 가져오지 않음. records 화면 무한스크롤은 별개 — 거래 수 분포 검증 후 결정.
+
+- [ ] `tradesApi.list()` 페이지네이션 — 현재 전량 fetch (records/HoldingsList 의 records 측). 무한스크롤/limit + cursor 도입 검토 (BE 협조 필요)
 
 ### 타입/구조 (선택적)
 
@@ -45,7 +47,9 @@ Round 1 (`docs/spec-history/2026-05-01-be-simplify-round1-quick-wins.md`) 에서
 
 ### 효율 / 핫패스
 
-- [ ] `GET /api/trades` 페이지네이션 + `ticker` 필터 SQL push — 현재 전량 fetch 후 Python 필터 (FE backlog `tradesApi.list()` 와 동반)
+> 2026-05-03 ticker SQL push: `list_trades_with_account` 에 `ticker`/`country` keyword-only 인자 추가, 라우터 Python 후처리 제거. HoldingsList 호출이 종목 행만 fetch. 페이지네이션은 별도 검증 후 결정 (records 화면이 전량 fetch + 메모리 group-by-date 구조라 BE+FE 동반 큰 작업).
+
+- [ ] `GET /api/trades` 페이지네이션 — 현재 전량 fetch. 거래 수 분포·체감 성능 검증 후 cursor/limit 도입 결정 (FE backlog `tradesApi.list()` 와 동반)
 
 ### 재사용 / 잔여
 
