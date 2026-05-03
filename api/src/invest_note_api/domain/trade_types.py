@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Callable, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, field_validator
@@ -59,6 +59,12 @@ def trade_country(trade: "Trade") -> str:
     return trade.country_code or DEFAULT_COUNTRY
 
 
+def _decimal_to_number(v: object, conv: Callable[[Decimal], float | int]) -> object:
+    if isinstance(v, Decimal):
+        return conv(v)
+    return v
+
+
 class Trade(BaseModel):
     id: str
     user_id: str
@@ -105,27 +111,17 @@ class Trade(BaseModel):
     @field_validator("price", "quantity", "total_amount", "commission", "tax", mode="before")
     @classmethod
     def _decimal_to_float(cls, v: object) -> float:
-        if isinstance(v, Decimal):
-            return float(v)
-        return v  # type: ignore[return-value]
+        return _decimal_to_number(v, float)  # type: ignore[return-value]
 
     @field_validator("profit_loss", "avg_buy_price", mode="before")
     @classmethod
     def _decimal_to_float_optional(cls, v: object) -> float | None:
-        if v is None:
-            return None
-        if isinstance(v, Decimal):
-            return float(v)
-        return v  # type: ignore[return-value]
+        return _decimal_to_number(v, float)  # type: ignore[return-value]
 
     @field_validator("holding_days", mode="before")
     @classmethod
     def _decimal_to_int_optional(cls, v: object) -> int | None:
-        if v is None:
-            return None
-        if isinstance(v, Decimal):
-            return int(v)
-        return v  # type: ignore[return-value]
+        return _decimal_to_number(v, int)  # type: ignore[return-value]
 
     model_config = {"from_attributes": True}
 
