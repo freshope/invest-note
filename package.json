@@ -11,6 +11,6 @@
     "tsc": "pnpm -C app exec tsc --noEmit",
     "device:ios": "pnpm -C app device:ios",
     "device:android": "pnpm -C app device:android",
-    "bundle:android": "pnpm -C app build:mobile && pnpm -C app cap sync android && cd app/android && ./gradlew bundleRelease"
+    "bundle:android": "sh app/scripts/bundle-android.sh"
   }
 }
