@@ -1,9 +1,7 @@
 """domain/trade_import.py 단위 테스트."""
 
 from datetime import date
-from decimal import Decimal
 
-import pytest
 
 from invest_note_api.domain.trade_import import (
     ImportSummary,

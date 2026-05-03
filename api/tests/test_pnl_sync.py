@@ -2,7 +2,6 @@
 from datetime import datetime, timezone
 from typing import Any
 
-import pytest
 
 from invest_note_api.db_ops.pnl_sync import recalc_group_pnl
 from invest_note_api.domain.realized_pnl import TradeGroupKey

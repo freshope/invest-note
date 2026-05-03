@@ -1,7 +1,6 @@
 """증권사 파서 단위 테스트 (synthetic in-memory 파일 사용)."""
 
 import io
-from datetime import date
 
 import openpyxl
 import pytest
