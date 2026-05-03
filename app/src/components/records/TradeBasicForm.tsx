@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -60,6 +60,14 @@ type FormValues = z.infer<typeof schema>;
 function calcCommission(total: number) { return Math.round(total * COMMISSION_RATE); }
 function calcTax(total: number) { return Math.round(total * SELL_TAX_RATE); }
 
+// 마운트 직전 동기 초기화 — useEffect 로 setValue 하면 mount → effect → 재렌더 사이클이 발생하므로
+// defaultValues 단계에서 미리 결정한다.
+function getInitialAccountId(accounts: Account[]): string {
+  if (typeof window === "undefined") return "";
+  const stored = window.localStorage.getItem(STORAGE_KEYS.LAST_ACCOUNT_ID);
+  return stored && accounts.some((a) => a.id === stored) ? stored : "";
+}
+
 interface TradeBasicFormProps {
   accounts: Account[];
   onTradeCreated: (tradeId: string, tradeType: TradeType) => void;
@@ -81,7 +89,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
     resolver: zodResolver(schema),
     defaultValues: {
       trade_type: "BUY",
-      account_id: "",
+      account_id: getInitialAccountId(accounts),
       asset_name: "",
       ticker_symbol: "",
       country_code: "OTHER",
@@ -121,15 +129,6 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
       clearStockSelection();
     }
   }, [clearStockSelection]);
-
-  // 마운트 후 localStorage에서 마지막 사용 계좌 복원
-  useEffect(() => {
-    const stored = window.localStorage.getItem(STORAGE_KEYS.LAST_ACCOUNT_ID);
-    if (stored && accounts.some((a) => a.id === stored)) {
-      setValue("account_id", stored);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // 매도 시 계좌별 보유 수량 조회 (계좌 + flexible ticker 기준)
   const holdingEnabled = tradeType === "SELL" && !!accountId && !!assetName;
