@@ -8,7 +8,7 @@ import { CsvUploadButton } from "./CsvUploadButton";
 import { ImportTradesPanel } from "./ImportTradesPanel";
 import { AccountFilter } from "@/components/shared/AccountFilter";
 import { EmptyCard } from "@/components/shared/EmptyCard";
-import { ACCOUNT_FILTER_ALL, useAccountFilter, useEnsureValidAccount } from "@/components/providers/AccountFilterProvider";
+import { ACCOUNT_FILTER_ALL, useAccountFilter, useEffectiveAccountId } from "@/components/providers/AccountFilterProvider";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import type { Account } from "@/types/database";
 import { PlusIcon } from "lucide-react";
@@ -26,9 +26,9 @@ export function TradeList({ trades, accounts }: TradeListProps) {
   const [formKey, setFormKey] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
   const [importKey, setImportKey] = useState(0);
-  const { selectedAccountId, setSelectedAccountId } = useAccountFilter();
+  const { setSelectedAccountId } = useAccountFilter();
+  const effectiveAccountId = useEffectiveAccountId(accounts);
   const { openTrade } = useDetailPanel();
-  useEnsureValidAccount(accounts);
 
   const openForm = useCallback(() => {
     setFormKey((k) => k + 1);
@@ -42,10 +42,10 @@ export function TradeList({ trades, accounts }: TradeListProps) {
 
   const filteredTrades = useMemo(
     () =>
-      selectedAccountId === ACCOUNT_FILTER_ALL
+      effectiveAccountId === ACCOUNT_FILTER_ALL
         ? trades
-        : trades.filter((t) => t.account_id === selectedAccountId),
-    [trades, selectedAccountId],
+        : trades.filter((t) => t.account_id === effectiveAccountId),
+    [trades, effectiveAccountId],
   );
 
   const grouped = useMemo(() => groupByDate(filteredTrades), [filteredTrades]);
@@ -57,7 +57,7 @@ export function TradeList({ trades, accounts }: TradeListProps) {
         {accounts.length >= 2 && (
           <AccountFilter
             accounts={accounts}
-            value={selectedAccountId}
+            value={effectiveAccountId}
             onChange={setSelectedAccountId}
           />
         )}

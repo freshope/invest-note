@@ -19,7 +19,7 @@ import { TradeDetail } from "@/components/records/TradeDetail";
 import { StockDetail } from "@/components/stocks/StockDetail";
 import { buildPnlMap } from "@/lib/analysis/realized-pnl";
 import { queryKeys } from "@/lib/query-keys";
-import { ACCOUNT_FILTER_ALL, useAccountFilter, useEnsureValidAccount } from "@/components/providers/AccountFilterProvider";
+import { ACCOUNT_FILTER_ALL, useEffectiveAccountId } from "@/components/providers/AccountFilterProvider";
 import type { Account } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
 
@@ -200,8 +200,7 @@ interface StockPanelContentProps {
 
 function StockPanelContent({ open, payload, onClose, openTrade }: StockPanelContentProps) {
   const { assetName, ticker, country, allTrades, accounts } = payload;
-  const { selectedAccountId } = useAccountFilter();
-  useEnsureValidAccount(accounts);
+  const effectiveAccountId = useEffectiveAccountId(accounts);
 
   const filteredTrades = useMemo(
     () =>
@@ -209,9 +208,9 @@ function StockPanelContent({ open, payload, onClose, openTrade }: StockPanelCont
         (t) =>
           (t.ticker_symbol ?? t.asset_name) === ticker &&
           (t.country_code ?? "KR") === country &&
-          (selectedAccountId === ACCOUNT_FILTER_ALL || t.account_id === selectedAccountId),
+          (effectiveAccountId === ACCOUNT_FILTER_ALL || t.account_id === effectiveAccountId),
       ),
-    [allTrades, ticker, country, selectedAccountId],
+    [allTrades, ticker, country, effectiveAccountId],
   );
 
   const pnlMap = useMemo(() => buildPnlMap(allTrades), [allTrades]);
