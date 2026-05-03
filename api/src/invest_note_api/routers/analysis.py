@@ -129,6 +129,8 @@ async def get_analysis_dashboard(
         if b in size_dist
     ]
 
+    missing_quote_tickers = [p.asset_name for p in positions if p.current_price is None]
+
     return AnalysisDashboardResponse.model_validate({
         "period": period_val,
         "summary": {"period": period_val, **asdict(summary)},
@@ -144,4 +146,5 @@ async def get_analysis_dashboard(
             "period": period_val,
             "suggestions": suggestions,
         },
+        "missing_quote_tickers": missing_quote_tickers,
     })

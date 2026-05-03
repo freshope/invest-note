@@ -111,3 +111,4 @@ class AnalysisDashboardResponse(CamelModel):
     summary: AnalysisSummaryResponse
     behavior: BehaviorResponse
     suggestions: SuggestionsResponse
+    missing_quote_tickers: list[str]
