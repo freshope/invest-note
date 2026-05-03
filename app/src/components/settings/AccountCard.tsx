@@ -31,7 +31,6 @@ export function AccountCard({ account, tradeCount }: AccountCardProps) {
       await accountsApi.delete(account.id);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.accounts }),
         queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
       ]);
       setDeleteOpen(false);

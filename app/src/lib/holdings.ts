@@ -17,7 +17,6 @@ export interface SellBreakdown {
   commission: number;
   tax: number;
   pnl: number;
-  isManualInput: boolean;
 }
 
 // ─────────────────────────────────────────────
@@ -118,7 +117,6 @@ export function computeFlexibleBreakdown(sell: Trade): SellBreakdown {
     commission: sell.commission,
     tax: sell.tax,
     pnl: Number(sell.profit_loss ?? 0),
-    isManualInput: false,
   };
 }
 

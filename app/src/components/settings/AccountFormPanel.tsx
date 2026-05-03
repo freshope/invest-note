@@ -89,10 +89,7 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
       } else {
         await accountsApi.create(input);
       }
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.accounts }),
-      ]);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.portfolio });
       onOpenChange(false);
     } catch (err) {
       setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });

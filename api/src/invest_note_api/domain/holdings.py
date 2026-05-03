@@ -24,7 +24,6 @@ class SellBreakdown:
     commission: float
     tax: float
     pnl: float
-    is_manual_input: bool = False
 
 
 @dataclass
@@ -69,5 +68,4 @@ def compute_flexible_breakdown(sell: "Trade") -> SellBreakdown:
         commission=sell.commission,
         tax=sell.tax,
         pnl=sell.profit_loss or 0.0,
-        is_manual_input=False,
     )
