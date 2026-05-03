@@ -13,7 +13,6 @@ class SellBreakdownResponse(CamelModel):
     commission: float
     tax: float
     pnl: float
-    is_manual_input: bool
 
 
 class StrategyEvaluationResponse(CamelModel):

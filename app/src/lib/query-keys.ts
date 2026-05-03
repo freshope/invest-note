@@ -4,7 +4,8 @@ export const queryKeys = {
   portfolio: ["portfolio"] as const,
   portfolioSummary: ["portfolio", "summary"] as const,
 
-  accounts: ["accounts"] as const,
+  // portfolio 트리 하위로 묶어서 portfolio invalidate 한 번으로 함께 무효화되도록 함
+  accounts: ["portfolio", "accounts"] as const,
 
   trades: ["trades"] as const,
   trade: (id: string) => ["trade", id] as const,

@@ -174,7 +174,7 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
                 </span>
               )}
             </div>
-            {summary?.breakdown && !summary.breakdown.isManualInput && (
+            {summary?.breakdown && (
               <div className="rounded-lg bg-background border border-border/60 px-3 py-2.5 space-y-1.5">
                 <div className="flex justify-between items-center">
                   <span className="text-[11px] text-muted-foreground">{`매도금액 (${fmt(summary.breakdown.sellPrice)}원 × ${summary.breakdown.quantity}주)`}</span>

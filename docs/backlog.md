@@ -23,8 +23,9 @@ Round 1 (`docs/spec-history/...`) 에서 처리된 6 개 외에 도출된 후속
 
 > Round 5 (2026-05-03) 에서 6 개 항목 처리 완료 — `docs/spec-history/2026-05-03-fe-simplify-round5-performance.md` 참고. recharts dynamic import / `TradeBasicForm` `useWatch` / `TradeCard`·`HoldingCard` `React.memo` + 부모 콜백 안정화 / 무거운 쿼리 staleTime 명시 (analysis 5min, portfolio 2min) / `holding` staleTime 10초 / `groupByDate` 정렬 명시. backlog 메모의 `refetchOnWindowFocus false 검토` 는 [decisions.md 2026-05-03](decisions.md) 으로 **글로벌 default 유지 확정** (per-query staleTime 만 조정).
 
+> 2026-05-03 cleanup-trio: `accountsApi.list` ↔ `portfolioApi.summary` 캐시 키 통일은 `queryKeys.accounts = ["portfolio", "accounts"]` 로 트리 흡수하는 방식으로 처리 — `queryKeys.portfolio` invalidate 한 번이 prefix 매칭으로 accounts/summary 모두 무효화. selector 대체(snapshots[].account 재사용) 는 `trade_count` enrich 누락 때문에 BE 변경 없이는 불가, 따로 spec 필요 시 BE 협조.
+
 - [ ] `tradesApi.list()` 페이지네이션 — 현재 전량 fetch (records/HoldingsList). 무한스크롤/limit + cursor 도입 (BE 협조 필요)
-- [ ] `accountsApi.list` ↔ `portfolioApi.summary` 캐시 키 통일 — settings 페이지 별도 fetch, 공유 안 됨. queryKey 통합 또는 `setQueryData` 미러
 
 ### 타입/구조 (선택적)
 
@@ -48,7 +49,7 @@ Round 1 (`docs/spec-history/2026-05-01-be-simplify-round1-quick-wins.md`) 에서
 
 ### 재사용 / 잔여
 
-- [ ] `SellBreakdown.is_manual_input` 필드 폐기 또는 명세화 — BE/FE 모두 항상 `false` 만 송수신, FE `TradeDetail.tsx:177` 가 분기 사용. 진짜 manual input 케이스 명세 후 제거 결정 (BE+FE 동기 변경 필요 → 별도 spec)
+> 2026-05-03 cleanup-trio: `SellBreakdown.is_manual_input` 폐기 처리 완료 — BE dataclass/응답 스키마/FE 타입/UI 분기/단위 테스트 동기 제거. "진짜 manual input 케이스" 명세 안 됨이 확인되어 재도입 트리거 없으면 다시 추가하지 않음.
 
 > 참고: `aggregate.py` 4 누산 패턴 (`strat_map`/`adherence_map`/`emotion_map`/`tag_map`) 헬퍼화는 [Tier 3 결정 (2026-04-30)](decisions.md) 으로 **미진행 확정**. 향후 재제기 시 `decisions.md` 의 도메인 시맨틱 비대칭 근거 참조.
 

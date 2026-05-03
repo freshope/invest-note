@@ -45,7 +45,6 @@ describe("computeFlexibleBreakdown", () => {
     expect(bd.sellAmount).toBe(800000);
     expect(bd.costBasis).toBe(700000);
     expect(bd.quantity).toBe(10);
-    expect(bd.isManualInput).toBe(false);
   });
 
   it("avg_buy_price null이면 avgCostPrice=0", () => {
