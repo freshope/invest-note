@@ -22,6 +22,14 @@ def account_row_to_dict(row: Any) -> dict:
     return d
 
 
+async def list_accounts(conn: Any) -> list[dict]:
+    """RLS-scoped 사용자 계좌 목록 — 응답 직렬화 가능한 dict 형태로 반환."""
+    rows = await conn.fetch(
+        f"SELECT {RETURNING_COLS} FROM accounts ORDER BY created_at ASC"
+    )
+    return [account_row_to_dict(row) for row in rows]
+
+
 async def patch_account(conn: Any, account_id: UUID, patch: dict) -> dict | None:
     safe_patch = {k: v for k, v in patch.items() if k in UPDATABLE_COLS}
     # 호출자 (routers/accounts.update_account) 가 빈 fields 를 사전 차단하므로 unreachable.

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.db import acquire_for_user, get_pool
-from invest_note_api.db_ops.accounts_repo import account_row_to_dict
+from invest_note_api.db_ops.accounts_repo import list_accounts
 from invest_note_api.db_ops.trades_repo import (
     list_trades_in_group,
     list_trades_with_account,
@@ -36,10 +36,6 @@ from invest_note_api.schemas.portfolio_response import PortfolioSummaryResponse
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/portfolio")
-
-
-def _account_from_row(row) -> Account:
-    return Account(**account_row_to_dict(row))
 
 
 @router.get("/holding")
@@ -78,11 +74,9 @@ async def get_portfolio_summary(
 ) -> PortfolioSummaryResponse:
     async with acquire_for_user(pool, user.id) as conn:
         trades = await list_trades_with_account(conn, user.id)
-        account_rows = await conn.fetch(
-            "SELECT * FROM accounts ORDER BY created_at ASC"
-        )
+        account_dicts = await list_accounts(conn)
 
-    accounts = [_account_from_row(r) for r in account_rows]
+    accounts = [Account(**d) for d in account_dicts]
 
     positions0, lot_map = build_positions(trades)
     pnl_map = build_pnl_map(trades)

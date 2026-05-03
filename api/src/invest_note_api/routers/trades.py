@@ -17,7 +17,7 @@ from fastapi.concurrency import run_in_threadpool
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.db import acquire_for_user, get_pool
-from invest_note_api.db_ops.accounts_repo import account_row_to_dict
+from invest_note_api.db_ops.accounts_repo import list_accounts as repo_list_accounts
 from invest_note_api.external.http_client import get_http_client
 from invest_note_api.db_ops.pnl_sync import recalc_group_pnl
 from invest_note_api.db_ops.trades_repo import (
@@ -125,9 +125,7 @@ async def list_trades_endpoint(
 
     async with acquire_for_user(pool, user.id) as conn:
         trades = await list_trades_with_account(conn, user.id)
-        accounts_rows = await conn.fetch(
-            "SELECT * FROM accounts ORDER BY created_at ASC"
-        )
+        accounts = await repo_list_accounts(conn)
 
     if ticker:
         trades = [
@@ -135,8 +133,6 @@ async def list_trades_endpoint(
             if trade_country(t) == country
             and t.ticker_symbol == ticker
         ]
-
-    accounts = [account_row_to_dict(r) for r in accounts_rows]
 
     return {"trades": [_trade_with_account_dict(t) for t in trades], "accounts": accounts}
 

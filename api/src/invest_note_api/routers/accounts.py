@@ -9,6 +9,7 @@ from invest_note_api.db import acquire_for_user, get_pool
 from invest_note_api.db_ops.accounts_repo import (
     UPDATABLE_COLS,
     account_row_to_dict,
+    list_accounts as repo_list_accounts,
     patch_account,
 )
 from invest_note_api.errors import ERR_ACCOUNT_NOT_FOUND, APIError
@@ -23,20 +24,17 @@ async def list_accounts(
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> list[dict]:
     async with acquire_for_user(pool, user.id) as conn:
-        accounts = await conn.fetch(
-            "SELECT id, user_id, name, broker, cash_balance, created_at, updated_at"
-            " FROM accounts ORDER BY created_at ASC"
-        )
+        accounts = await repo_list_accounts(conn)
         counts = await conn.fetch(
             "SELECT account_id, count(*)::int AS c FROM trades"
             " WHERE user_id = $1 GROUP BY account_id",
             user.id,
         )
 
-    count_map: dict[UUID, int] = {r["account_id"]: r["c"] for r in counts}
+    count_map: dict[str, int] = {str(r["account_id"]): r["c"] for r in counts}
     return [
-        {**account_row_to_dict(row), "trade_count": count_map.get(row["id"], 0)}
-        for row in accounts
+        {**a, "trade_count": count_map.get(a["id"], 0)}
+        for a in accounts
     ]
 
 
