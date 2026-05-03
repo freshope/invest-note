@@ -27,7 +27,7 @@ Round 1 (`docs/spec-history/...`) 에서 처리된 6 개 외에 도출된 후속
 
 > 2026-05-03 ticker SQL push 처리됨: BE `list_trades_with_account` 가 ticker/country WHERE 를 SQL 로 push → HoldingsList(`tradesApi.list({ ticker, country })`) 가 더 이상 사용자 전체 trades 를 가져오지 않음. records 화면 무한스크롤은 별개 — 거래 수 분포 검증 후 결정.
 
-- [ ] `tradesApi.list()` 페이지네이션 — 현재 전량 fetch (records/HoldingsList 의 records 측). 무한스크롤/limit + cursor 도입 검토 (BE 협조 필요)
+> 2026-05-03 `tradesApi.list()` 페이지네이션 항목은 **v2 — 성능 / 스케일** 로 이관 (BE 페이지네이션 항목과 동반).
 
 ### 타입/구조 (선택적)
 
@@ -47,9 +47,9 @@ Round 1 (`docs/spec-history/2026-05-01-be-simplify-round1-quick-wins.md`) 에서
 
 ### 효율 / 핫패스
 
-> 2026-05-03 ticker SQL push: `list_trades_with_account` 에 `ticker`/`country` keyword-only 인자 추가, 라우터 Python 후처리 제거. HoldingsList 호출이 종목 행만 fetch. 페이지네이션은 별도 검증 후 결정 (records 화면이 전량 fetch + 메모리 group-by-date 구조라 BE+FE 동반 큰 작업).
+> 2026-05-03 ticker SQL push: `list_trades_with_account` 에 `ticker`/`country` keyword-only 인자 추가, 라우터 Python 후처리 제거. HoldingsList 호출이 종목 행만 fetch.
 
-- [ ] `GET /api/trades` 페이지네이션 — 현재 전량 fetch. 거래 수 분포·체감 성능 검증 후 cursor/limit 도입 결정 (FE backlog `tradesApi.list()` 와 동반)
+> 2026-05-03 `GET /api/trades` 페이지네이션 항목은 **v2 — 성능 / 스케일** 로 이관 (FE 페이지네이션 항목과 동반).
 
 ### 재사용 / 잔여
 
@@ -91,6 +91,10 @@ Round 1 (`docs/spec-history/2026-05-01-be-simplify-round1-quick-wins.md`) 에서
 ## v2 — UX
 
 - [ ] 홈 위젯 커스터마이징
+
+## v2 — 성능 / 스케일
+
+- [ ] trades 페이지네이션 (BE+FE 동반) — `GET /api/trades` 에 cursor/limit 도입 + records 화면 `useInfiniteQuery` 무한스크롤. records 가 현재 전량 fetch 후 메모리 group-by-date / account filter 구조라, 페이지네이션 시 그룹핑·`allTrades` (상세 패널) ·`accounts` 응답 분리까지 함께 재설계 필요. 트리거: 거래 수 분포 측정에서 첫 페인트/메모리 영향이 체감되면 도입. ticker SQL push (2026-05-03 `docs/spec-history/2026-05-03-be-simplify-trades-ticker-sql-push.md`) 로 HoldingsList 측은 이미 행 수만 fetch 중.
 
 ## v3 — AI 분석
 
