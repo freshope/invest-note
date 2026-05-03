@@ -42,6 +42,35 @@ def _normalise_price(price: float | Decimal) -> Decimal:
     return Decimal(str(price)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+def _signature_fields(
+    *,
+    trade_date: date,
+    ticker: str | None,
+    asset_name: str,
+    trade_type: str,
+    quantity: float | Decimal,
+    price: float | Decimal,
+) -> dict:
+    return {
+        "trade_date": trade_date,
+        "identifier": ticker if ticker else asset_name,
+        "trade_type": trade_type,
+        "quantity": Decimal(str(quantity)),
+        "price": _normalise_price(price),
+    }
+
+
+def _trade_signature_kwargs(trade: "Trade") -> dict:
+    return {
+        "trade_date": trade.traded_at.date(),
+        "ticker": trade.ticker_symbol,
+        "asset_name": trade.asset_name,
+        "trade_type": trade.trade_type,
+        "quantity": trade.quantity,
+        "price": trade.price,
+    }
+
+
 def make_signature(
     account_id: str,
     trade_date: date,
@@ -51,14 +80,16 @@ def make_signature(
     quantity: float | Decimal,
     price: float | Decimal,
 ) -> TradeSignature:
-    identifier = ticker if ticker else asset_name
     return TradeSignature(
         account_id=account_id,
-        trade_date=trade_date,
-        identifier=identifier,
-        trade_type=trade_type,
-        quantity=Decimal(str(quantity)),
-        price=_normalise_price(price),
+        **_signature_fields(
+            trade_date=trade_date,
+            ticker=ticker,
+            asset_name=asset_name,
+            trade_type=trade_type,
+            quantity=quantity,
+            price=price,
+        ),
     )
 
 
@@ -70,39 +101,34 @@ def make_preview_signature(
     quantity: float | Decimal,
     price: float | Decimal,
 ) -> PreviewSignature:
-    identifier = ticker if ticker else asset_name
     return PreviewSignature(
-        trade_date=trade_date,
-        identifier=identifier,
-        trade_type=trade_type,
-        quantity=Decimal(str(quantity)),
-        price=_normalise_price(price),
+        **_signature_fields(
+            trade_date=trade_date,
+            ticker=ticker,
+            asset_name=asset_name,
+            trade_type=trade_type,
+            quantity=quantity,
+            price=price,
+        ),
     )
 
 
 def trade_to_signature(trade: "Trade", account_id: str) -> TradeSignature:
     """저장된 Trade row → commit 경로 시그니처."""
-    return make_signature(
-        account_id=account_id,
-        trade_date=trade.traded_at.date(),
-        ticker=trade.ticker_symbol,
-        asset_name=trade.asset_name,
-        trade_type=trade.trade_type,
-        quantity=trade.quantity,
-        price=trade.price,
-    )
+    return make_signature(account_id=account_id, **_trade_signature_kwargs(trade))
 
 
 def trade_to_preview_signature(trade: "Trade") -> PreviewSignature:
     """저장된 Trade row → preview 경로 시그니처 (account_id 무관)."""
-    return make_preview_signature(
-        trade_date=trade.traded_at.date(),
-        ticker=trade.ticker_symbol,
-        asset_name=trade.asset_name,
-        trade_type=trade.trade_type,
-        quantity=trade.quantity,
-        price=trade.price,
-    )
+    return make_preview_signature(**_trade_signature_kwargs(trade))
+
+
+def parse_kst_date(s: str) -> date | None:
+    """KST ISO 문자열의 앞 10자(YYYY-MM-DD)를 date 로 파싱. 실패 시 None."""
+    try:
+        return date.fromisoformat(s[:10])
+    except ValueError:
+        return None
 
 
 @dataclass

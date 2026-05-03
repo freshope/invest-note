@@ -49,6 +49,7 @@ from invest_note_api.domain.trade_utils import kst_date_to_utc
 from invest_note_api.domain.trade_import import (
     make_preview_signature,
     make_signature,
+    parse_kst_date,
     trade_to_preview_signature,
     trade_to_signature,
 )
@@ -354,12 +355,11 @@ async def import_preview(
 
     # 기존 거래에서 시그니처 셋 구성 (중복 판단용)
     # 파싱 결과의 KST 일자 min/max 범위로만 fetch — 사용자 전체 trades fetch 회피.
-    parsed_kst_dates: list[date] = []
-    for pt in parse_result.trades:
-        try:
-            parsed_kst_dates.append(date.fromisoformat(pt.traded_at_kst[:10]))
-        except ValueError:
-            continue
+    parsed_kst_dates: list[date] = [
+        d
+        for pt in parse_result.trades
+        if (d := parse_kst_date(pt.traded_at_kst)) is not None
+    ]
 
     if parsed_kst_dates:
         # KST 일자 범위 [min 00:00, max+1 00:00) 로 변환 — 사용자가 KST 어느 시각에 등록한 거래든 포함
@@ -397,12 +397,11 @@ async def import_preview(
             continue
 
         # traded_at 파싱 (KST → UTC)
-        try:
-            kst_str = pt.traded_at_kst[:10]  # "YYYY-MM-DD"
-            traded_date = date.fromisoformat(kst_str)
-        except ValueError:
+        traded_date = parse_kst_date(pt.traded_at_kst)
+        if traded_date is None:
             parse_errors.append(ImportError(row_no=pt.source_row_no, reason=f"날짜 파싱 오류: {pt.traded_at_kst}"))
             continue
+        kst_str = pt.traded_at_kst[:10]  # "YYYY-MM-DD" — staging 시 commit 경로에서 재사용
 
         if traded_date > now_utc.date():
             parse_errors.append(ImportError(row_no=pt.source_row_no, reason="미래 일자 거래 등록 불가"))
