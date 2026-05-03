@@ -1,19 +1,21 @@
 "use client";
 
-import type { Trade, Account } from "@/types/database";
+import { memo } from "react";
 import { cn } from "@/lib/utils";
 import { AccountChip } from "@/components/shared/AccountChip";
 import { TradeTypeBadge } from "@/components/shared/TradeTypeBadge";
 import { STRATEGY_LABELS, EMOTION_LABELS, RESULT_LABELS } from "@/lib/constants/trading";
 import { PNL_COLORS, getTradeTypeAccent } from "@/lib/constants/colors";
 import { fmt, formatPnL } from "@/lib/format";
+import type { TradeWithAccount } from "@/lib/trade-utils";
 
 interface TradeCardProps {
-  trade: Trade & { account?: Pick<Account, "name" | "broker"> };
-  onPress?: () => void;
+  trade: TradeWithAccount;
+  // 부모가 카드마다 새 클로저를 만들지 않도록 trade 자체를 인자로 전달한다.
+  onPress?: (trade: TradeWithAccount) => void;
 }
 
-export function TradeCard({ trade, onPress }: TradeCardProps) {
+export const TradeCard = memo(function TradeCard({ trade, onPress }: TradeCardProps) {
   const isBuy = trade.trade_type === "BUY";
 
   const price = fmt(Number(trade.price));
@@ -23,7 +25,7 @@ export function TradeCard({ trade, onPress }: TradeCardProps) {
   return (
     <button
       type="button"
-      onClick={() => onPress?.()}
+      onClick={() => onPress?.(trade)}
       className="w-full text-left rounded-2xl bg-muted/60 overflow-hidden active:scale-[0.99] transition-transform"
     >
       <div className="flex">
@@ -103,4 +105,4 @@ export function TradeCard({ trade, onPress }: TradeCardProps) {
       </div>
     </button>
   );
-}
+});

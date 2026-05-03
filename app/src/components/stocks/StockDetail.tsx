@@ -123,11 +123,7 @@ export function StockDetail({ assetName, ticker, country, trades, stats, account
                   </p>
                   <div className="space-y-2">
                     {dayTrades.map((trade) => (
-                      <TradeCard
-                        key={trade.id}
-                        trade={trade}
-                        onPress={onTradePress ? () => onTradePress(trade) : undefined}
-                      />
+                      <TradeCard key={trade.id} trade={trade} onPress={onTradePress} />
                     ))}
                   </div>
                 </div>
