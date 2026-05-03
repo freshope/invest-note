@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-05-03 | FE simplify Round 3 — HoldingCard pressing state 표현 (data attribute + JS state 유지)
+
+- **맥락:** Round 1 에서 `pressing` `useState` + 4개 pointer 핸들러 (`onPointerDown/Up/Leave/Cancel`) 를 CSS `:active:scale-[0.98]` 로 단순화 시도했으나, inner note 영역의 `onPointerDown` `stopPropagation()` 이 outer `:active` 발동을 차단하지 못해 원본 UX (멀티라인 note 탭 시 outer 카드 scale 미발동) 이 깨져 복원됨 (커밋 `9e494ce`). Round 3 에서 4 가지 대안 (① `data-pressing` 속성 + JS 토글 + CSS attr variant, ② note 영역만 별도 stop layer, ③ TradeCard 처럼 native `<button>` 변환, ④ 원본 UX 가 의도적이지 않다면 CSS `:active` 채택) 을 평가하고 사용자 확인 결과 원본 UX 는 의도된 동작으로 확정.
+- **결정:** **① 안 채택** — `useState<boolean>` (`pressing`/`setPressing`) 과 4 개 pointer 핸들러는 그대로 유지하되, outer `<div>` 의 className 조건부 분기 (`pressing && "scale-[0.98]"`) 만 `data-pressing={pressing ? "true" : undefined}` 속성 + Tailwind v4 `data-[pressing=true]:scale-[0.98]` variant 로 교체. TradeCard 처럼 nested clickable 영역이 없는 카드는 기존 CSS `:active` 그대로 유지 (본 결정은 HoldingCard 한정).
+- **이유:** ① inner note `stopPropagation()` 으로 outer pressing 이 차단되는 동작은 의도된 UX (note 탭과 카드 탭의 시각적 구분) — CSS `:active` 는 React synthetic event 단계의 stopPropagation 을 우회해 발동하므로 보존 불가능. ② native `<button>` 변환 (③안) 은 nested clickable note 영역과 충돌 (HTML spec: `<button>` 내부 `<button>` 금지, workaround 인 `role="button"` 은 결국 ①안과 동등). ③ note 영역 별도 stop layer (②안) 는 레이아웃 미세변경 검증 비용 발생. ④ data attribute 방식은 JS 가 "현재 pressing 인가?" 만 표현하고 시각 변화는 CSS 가 선언적으로 책임지는 구조 — 추후 다른 시각 변화 (shadow/opacity 등) 추가 시 className 분기를 늘리지 않고 CSS variant 만 추가하면 됨.
+- **트레이드오프:** useState/핸들러 코드량 자체는 줄지 않음 (className 분기 1줄 → data attribute 1줄, LOC 중립). Round 1 단순화의 동기였던 "JS state 제거" 는 달성하지 못했지만, 의도된 UX 보존이 우선 가치. **재검토 트리거** — ① HoldingCard 의 inner clickable note 영역이 향후 제거되면 ④ (CSS `:active`) 로 전환 가치 재발생, ② nested stop layer 패턴이 다른 카드에서도 필요해지면 ②안 (별도 stop layer wrapper) 의 재사용 가치 재평가.
+
+---
+
 ## 2026-05-03 | FE simplify — Card primitive 추출 미진행
 
 - **맥락:** `docs/backlog.md` 의 "FE simplify · 컴포넌트 추출" 섹션에 남아 있던 `Card` primitive 30+ 곳 (`rounded-2xl bg-muted/60` 카드 셸) 처리 여부 평가. 탐색 결과 사용처는 32 곳 / 18 파일로 충분히 넓었으나 (`grep "rounded-2xl bg-muted" app/src`), 셸 마크업은 단 2 개 유틸 클래스에 불과하고 padding 변종이 백로그 메모(sm/md/lg) 보다 훨씬 다양 (`p-3.5×6`, `p-4×10`, `p-5×2`, `p-8×1`, `px-4 py-1×1`, `px-4 py-3×1`, 스켈레톤 padding 없음 ×5 + `overflow-hidden`, `active:scale-[0.99]`, `cursor-pointer`, div/button 혼합) 한 것으로 확인됨.

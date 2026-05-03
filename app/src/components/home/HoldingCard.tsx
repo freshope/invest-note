@@ -49,10 +49,8 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
           onPress?.();
         }
       }}
-      className={cn(
-        "w-full text-left rounded-2xl bg-muted/60 p-4 space-y-3 transition-transform cursor-pointer",
-        pressing && "scale-[0.98]",
-      )}
+      data-pressing={pressing ? "true" : undefined}
+      className="w-full text-left rounded-2xl bg-muted/60 p-4 space-y-3 transition-transform cursor-pointer data-[pressing=true]:scale-[0.98]"
     >
       {/* 헤더 */}
       <div className="flex items-start justify-between gap-2">
