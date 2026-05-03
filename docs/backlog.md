@@ -21,15 +21,10 @@ Round 1 (`docs/spec-history/...`) 에서 처리된 6 개 외에 도출된 후속
 
 ### 성능
 
-- [ ] recharts dynamic import — `AllocationTabs`, `BehaviorRadar` 의 `import { PieChart, ... }` 정적 → `next/dynamic` lazy. 모바일 콜드스타트 TTI 직접적
+> Round 5 (2026-05-03) 에서 6 개 항목 처리 완료 — `docs/spec-history/2026-05-03-fe-simplify-round5-performance.md` 참고. recharts dynamic import / `TradeBasicForm` `useWatch` / `TradeCard`·`HoldingCard` `React.memo` + 부모 콜백 안정화 / 무거운 쿼리 staleTime 명시 (analysis 5min, portfolio 2min) / `holding` staleTime 10초 / `groupByDate` 정렬 명시. backlog 메모의 `refetchOnWindowFocus false 검토` 는 [decisions.md 2026-05-03](decisions.md) 으로 **글로벌 default 유지 확정** (per-query staleTime 만 조정).
+
 - [ ] `tradesApi.list()` 페이지네이션 — 현재 전량 fetch (records/HoldingsList). 무한스크롤/limit + cursor 도입 (BE 협조 필요)
-- [ ] `TradeBasicForm` `watch()` 7 회 → `useWatch` 일괄 구독 — 입력 시 전체 폼 리렌더 폭증 (Calendar/StockSearch 포함). 모바일 입력 지연 직접
-- [ ] `TradeCard` / `HoldingCard` `React.memo` — 큰 리스트(거래/보유) 부모 리렌더 시 N 개 카드 재렌더. 부모 onPress 콜백 안정화 동반
 - [ ] `accountsApi.list` ↔ `portfolioApi.summary` 캐시 키 통일 — settings 페이지 별도 fetch, 공유 안 됨. queryKey 통합 또는 `setQueryData` 미러
-- [ ] 무거운 쿼리 staleTime 상향 — 분석/포트폴리오 5 분+, refetchOnWindowFocus false 검토
-- [ ] `holding` 쿼리 staleTime 0 → 짧은 staleTime — 매도 폼 종목 입력 변경마다 항상 fetch
-- [ ] `groupByDate` 정렬 명시 — Map insertion order 의존, 백엔드 정렬 깨질 시 화면 순서 깨짐
-- [ ] `HoldingCard` / `TradeCard` 부모 콜백 안정화 — `useCallback` deps 에 `fetching` 같은 변동값으로 매번 새 함수 생성 → memo 무력화
 
 ### 타입/구조 (선택적)
 

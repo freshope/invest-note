@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { useForm, Controller } from "react-hook-form";
+import { useForm, useWatch, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -21,6 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/base/Popov
 import { Calendar } from "@/components/base/Calendar";
 import { tradesApi, portfolioApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
+import { QUERY_HOLDING_STALE_TIME_MS } from "@/lib/constants/query";
 import { VALIDATION_LIMITS } from "@/lib/constants/validation";
 import { COMMISSION_RATE, SELL_TAX_RATE } from "@/lib/constants/trading";
 import { PNL_COLORS } from "@/lib/constants/colors";
@@ -79,7 +80,6 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
   const {
     control,
     handleSubmit,
-    watch,
     setValue,
     setError,
     getValues,
@@ -102,15 +102,11 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
     },
   });
 
-  const [tradeType, price, quantity, accountId, assetName, tickerSymbol, countryCode] = [
-    watch("trade_type"),
-    watch("price"),
-    watch("quantity"),
-    watch("account_id"),
-    watch("asset_name"),
-    watch("ticker_symbol"),
-    watch("country_code"),
-  ];
+  // 폼 상태를 한 번에 일괄 구독해 입력 시 form 전역 리렌더 횟수를 줄인다.
+  const [tradeType, price, quantity, accountId, assetName, tickerSymbol, countryCode] = useWatch({
+    control,
+    name: ["trade_type", "price", "quantity", "account_id", "asset_name", "ticker_symbol", "country_code"],
+  });
   const [calOpen, setCalOpen] = useState(false);
   const priceInputRef = useRef<HTMLInputElement>(null);
   const selectedAssetNameRef = useRef("");
@@ -147,7 +143,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
       }
     },
     enabled: holdingEnabled,
-    staleTime: 0,
+    staleTime: QUERY_HOLDING_STALE_TIME_MS,
   });
 
   // holdingPending: 쿼리가 활성화됐으나 아직 데이터를 받지 못한 상태

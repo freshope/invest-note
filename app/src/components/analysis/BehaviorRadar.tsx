@@ -1,14 +1,13 @@
 "use client";
 
 import { useMemo } from "react";
-import {
-  Radar,
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  ResponsiveContainer,
-} from "recharts";
+import dynamic from "next/dynamic";
 import type { BehaviorProfile, ProfileInputRates } from "@/lib/analysis/profile";
+
+const BehaviorRadarChart = dynamic(() => import("./BehaviorRadarChart"), {
+  ssr: false,
+  loading: () => <div style={{ height: 208 }} aria-hidden />,
+});
 
 const DIMENSIONS = [
   { key: "tempo" as const, label: "거래 템포", lowLabel: "스캘퍼", highLabel: "장기" },
@@ -71,23 +70,7 @@ export function BehaviorRadar({ profile, inputRates }: BehaviorRadarProps) {
   return (
     <div className="space-y-4">
       <div className="[&_*:focus]:outline-none">
-        <ResponsiveContainer width="100%" height={208}>
-          <RadarChart data={data} margin={{ top: 8, right: 24, bottom: 8, left: 24 }}>
-            <PolarGrid gridType="polygon" stroke="var(--border)" />
-            <PolarAngleAxis
-              dataKey="subject"
-              tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
-            />
-            <Radar
-              dataKey="value"
-              stroke="var(--chart-1)"
-              fill="var(--chart-1)"
-              fillOpacity={0.25}
-              strokeWidth={2}
-              activeDot={false}
-            />
-          </RadarChart>
-        </ResponsiveContainer>
+        <BehaviorRadarChart data={data} />
       </div>
 
       <div className="grid grid-cols-5 gap-1">

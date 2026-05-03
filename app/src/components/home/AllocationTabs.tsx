@@ -1,10 +1,16 @@
 "use client";
 
 import { useMemo } from "react";
-import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import dynamic from "next/dynamic";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/base/Tabs";
 import { fmtCompact } from "@/lib/format";
 import type { Position, AccountSnapshot } from "@/lib/portfolio";
+import type { DonutEntry } from "./AllocationPieChart";
+
+const AllocationPieChart = dynamic(() => import("./AllocationPieChart"), {
+  ssr: false,
+  loading: () => <div style={{ height: 176 }} aria-hidden />,
+});
 
 const CHART_COLORS = [
   "var(--chart-1)",
@@ -16,12 +22,6 @@ const CHART_COLORS = [
   "#34D399",
   "#FB923C",
 ];
-
-interface DonutEntry {
-  name: string;
-  value: number;
-  color?: string;
-}
 
 interface AllocationDonutProps {
   data: DonutEntry[];
@@ -41,24 +41,7 @@ function AllocationDonut({ data, total, label }: AllocationDonutProps) {
   return (
     <div className="space-y-4">
       <div className="relative h-44 [&_*:focus]:outline-none">
-        <ResponsiveContainer width="100%" height={176}>
-          <PieChart>
-            <Pie
-              data={data}
-              cx="50%"
-              cy="50%"
-              innerRadius="58%"
-              outerRadius="85%"
-              paddingAngle={2}
-              dataKey="value"
-              strokeWidth={0}
-            >
-              {data.map((entry, i) => (
-                <Cell key={entry.name} fill={entry.color ?? CHART_COLORS[i % CHART_COLORS.length]} />
-              ))}
-            </Pie>
-          </PieChart>
-        </ResponsiveContainer>
+        <AllocationPieChart data={data} fallbackColors={CHART_COLORS} />
         {/* 중앙 텍스트 */}
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
           <p className="text-[11px] text-muted-foreground">{label}</p>

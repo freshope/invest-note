@@ -50,6 +50,11 @@ export function TradeList({ trades, accounts }: TradeListProps) {
 
   const grouped = useMemo(() => groupByDate(filteredTrades), [filteredTrades]);
 
+  const handleTradePress = useCallback(
+    (trade: TradeWithAccount) => openTrade({ trade, accounts, allTrades: trades }),
+    [openTrade, accounts, trades],
+  );
+
   return (
     <>
       <div className="sticky top-0 z-10 bg-background">
@@ -93,11 +98,7 @@ export function TradeList({ trades, accounts }: TradeListProps) {
                 </p>
                 <div className="space-y-2">
                   {dayTrades.map((trade) => (
-                    <TradeCard
-                      key={trade.id}
-                      trade={trade}
-                      onPress={() => openTrade({ trade, accounts, allTrades: trades })}
-                    />
+                    <TradeCard key={trade.id} trade={trade} onPress={handleTradePress} />
                   ))}
                 </div>
               </div>

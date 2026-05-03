@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-05-03 | FE simplify Round 5 — refetchOnWindowFocus 글로벌 default 유지 (per-query staleTime 만 조정)
+
+- **맥락:** `docs/backlog.md` 의 "FE simplify · 성능" 섹션 6 번째 항목 (`무거운 쿼리 staleTime 상향 — 분석/포트폴리오 5 분+, refetchOnWindowFocus false 검토`) 의 Round 5 진행 시, 글로벌 `refetchOnWindowFocus: false` 도입 여부를 평가. 현재 `QueryProvider` 는 default 인 `true` 사용 중.
+- **결정:** **글로벌 `refetchOnWindowFocus` default 는 변경하지 않는다.** 대신 per-query staleTime 만 명시 (`useAnalysisData` 5min / `usePortfolioSummary` 2min / `TradeBasicForm` holding 10s). 백로그 메모의 "refetchOnWindowFocus false 검토" 는 본 결정으로 종결.
+- **이유:**
+  - **글로벌 default 변경의 blast radius** — `QueryProvider` 의 default 변경은 모든 useQuery (accounts / trades / portfolio / analysis / stockSearch / holding 등) 에 영향. 로그인 리다이렉트 직후, 백그라운드 → 포그라운드 복귀 (특히 모바일 Capacitor resume), tab visibility 변경 등 전반적 동작에 회귀 위험.
+  - **stale 노출 시간이 사실상 짧다** — `refetchOnWindowFocus: true` 가 살아 있으면 staleTime 이 5 분이라도 사용자가 다른 앱에서 돌아오면 자동 refetch. analysis 5min / portfolio 2min 이 의미를 가지는 구간은 "탭 안에서 머무는 동안" 만이고, 이때는 사용자가 직접 거래/계좌 변경 시 명시적 invalidate 가 보장됨 (`queryKeys.portfolio` 5 곳, `queryKeys.trades` invalidate 등).
+  - **per-query 단위 명시가 의도 표현에 더 적합** — "분석 대시보드는 거래 등록 invalidate 가 보장되므로 5 분 stale 허용" 같은 도메인 시맨틱은 글로벌 default 가 아닌 query 정의 옆 `staleTime` 으로 표현해야 의도가 살아남음.
+- **트레이드오프:** 모바일에서 백그라운드 → 포그라운드 복귀 시 visible query 수만큼 refetch 가 동시 발생할 수 있음 (Capacitor 환경 부하 우려). 해당 우려가 실측으로 확인되면 ① mobile 전용 `refetchOnWindowFocus: false` 분기, ② focus refetch 를 lightweight summary 쿼리로 대체, ③ React Query `focusManager` 커스터마이즈 등 옵션 재평가. 현재로서는 측정 데이터 없이 글로벌 변경하지 않음.
+
+---
+
 ## 2026-05-03 | BE simplify Round 5 — `external/quotes._parse_*` 통합 미진행
 
 - **맥락:** `docs/backlog.md` 의 "BE simplify · 재사용 / 잔여" 섹션 마지막 항목 (`external/quotes._parse_realtime_price` / `_parse_basic_price` 통합) 의 Round 5 진행 여부 평가. 두 함수는 모두 Naver 시세 API 응답에서 종가를 추출하지만 endpoint 마다 응답 구조가 다름.

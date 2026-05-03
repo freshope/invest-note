@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fmt, formatPctSigned, formatPnL, signColor } from "@/lib/format";
@@ -7,10 +7,11 @@ import { CountryBadge } from "@/components/records/trade-display";
 
 interface HoldingCardProps {
   position: Position;
-  onPress?: () => void;
+  // 부모가 카드마다 새 클로저를 만들지 않도록 position 자체를 인자로 전달한다.
+  onPress?: (position: Position) => void;
 }
 
-export function HoldingCard({ position, onPress }: HoldingCardProps) {
+export const HoldingCard = memo(function HoldingCard({ position, onPress }: HoldingCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [pressing, setPressing] = useState(false);
 
@@ -38,7 +39,7 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
     <div
       role="button"
       tabIndex={0}
-      onClick={onPress}
+      onClick={() => onPress?.(position)}
       onPointerDown={() => setPressing(true)}
       onPointerUp={() => setPressing(false)}
       onPointerLeave={() => setPressing(false)}
@@ -46,7 +47,7 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          onPress?.();
+          onPress?.(position);
         }
       }}
       data-pressing={pressing ? "true" : undefined}
@@ -155,4 +156,4 @@ export function HoldingCard({ position, onPress }: HoldingCardProps) {
       )}
     </div>
   );
-}
+});
