@@ -1,7 +1,6 @@
 """순수 함수 단위 테스트 — domain/trade_walker.py"""
 from datetime import datetime, timezone
 
-import pytest
 
 from invest_note_api.domain.trade_types import Trade
 from invest_note_api.domain.trade_walker import (
