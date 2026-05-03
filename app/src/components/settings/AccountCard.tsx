@@ -46,7 +46,7 @@ export function AccountCard({ account, tradeCount }: AccountCardProps) {
     <>
       <div className="rounded-2xl bg-muted/60 p-5 space-y-3">
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <AccountChip
               account={account}
               size="lg"

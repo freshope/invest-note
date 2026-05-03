@@ -8,9 +8,9 @@ export { getQuantityUnit, getCountryLabel, MARKET_LABELS } from "./trade-formatt
 
 export function CompactRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className="flex flex-col gap-0.5 min-w-0">
       <span className="text-[11px] text-muted-foreground">{label}</span>
-      <span className="text-[13px] text-foreground">{children}</span>
+      <div className="text-[13px] text-foreground min-w-0">{children}</div>
     </div>
   );
 }
