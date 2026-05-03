@@ -65,8 +65,13 @@
 
 - **B (trade_import 통합)** — 4함수 시그니처/반환 타입(TradeSignature vs PreviewSignature)이 달라 통합 후 가독성 저하 시 보수적 형태(공통 헬퍼만 추출)로 후퇴.
 - **D (decimal validator)** — Pydantic 2.x `field_validator` 가 헬퍼 등록을 받아주는지 검증 필요. 안되면 함수 본문만 공통화.
-- **E (Literal 타입)** — wire 호환은 동일 문자열이라 깨지지 않음. FE 타입 동기는 별도 후속.
+- **E (Literal 타입)** — wire 호환은 동일 문자열이라 깨지지 않음. FE 타입 (`app/src/lib/analysis/aggregate.ts:17-22` 의 `type: string` / `tag: string`) 좁힘은 본 라운드 범위 외 — 별도 FE 후속 작업으로 둠.
 - 모든 변경은 동작 불변 — 기존 251 pytest 케이스가 회귀 검증 책임.
+
+## 후속 작업 (별도 spec)
+
+- `SellBreakdown.is_manual_input` 필드 폐기 (BE+FE 동기 변경) — backlog 에 남아 있음.
+- FE `app/src/lib/analysis/aggregate.ts` 의 `EmotionStats.type`, `TagStats.tag` 를 `EmotionType | "UNTAGGED"` / `ReasoningTag | "UNTAGGED"` 로 좁히기 — Round 5 BE 변경의 wire format 자체는 동일하므로 비차단 후속.
 
 ## 검증
 
