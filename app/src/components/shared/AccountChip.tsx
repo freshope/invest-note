@@ -26,9 +26,9 @@ interface AccountChipProps {
 
 export function AccountChip({ account, size = "md", className }: AccountChipProps) {
   return (
-    <span className={cn("inline-flex min-w-0 items-center", GAP[size], className)}>
+    <span className={cn("inline-flex max-w-full min-w-0 items-center", GAP[size], className)}>
       {account.broker && <BrokerLogo broker={account.broker} size={SIZE_PX[size]} />}
-      <span className="truncate">{account.name}</span>
+      <span className="min-w-0 truncate">{account.name}</span>
     </span>
   );
 }
