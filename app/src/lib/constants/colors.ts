@@ -28,5 +28,6 @@ export const PNL_COLORS = {
 export type PnlAccent = (typeof PNL_COLORS)[keyof typeof PNL_COLORS];
 
 export function getTradeTypeAccent(tradeType: TradeType): PnlAccent {
+  // colors.ts는 trading.ts에서 PNL_COLORS를 역참조 받으므로 TRADE_TYPE.BUY를 import하면 순환. 리터럴 유지.
   return tradeType === "BUY" ? PNL_COLORS.rise : PNL_COLORS.fall;
 }

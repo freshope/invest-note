@@ -1,4 +1,6 @@
 import type { EmotionType, ReasoningTag, StrategyType, Trade } from "@/types/database";
+import { TRADE_TYPE } from "@/lib/constants/trading";
+import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 
 export type TradeGroupKey = {
   ticker: string | null;
@@ -30,14 +32,14 @@ export type ValidateMutationResult =
   | { ok: true; affectedSellIds: string[]; newPnL: Map<string, number> };
 
 export function groupKey(trade: Pick<Trade, "ticker_symbol" | "asset_name" | "country_code" | "account_id">): string {
-  return `${trade.ticker_symbol ?? trade.asset_name}:${trade.country_code ?? "KR"}:${trade.account_id}`;
+  return `${trade.ticker_symbol ?? trade.asset_name}:${trade.country_code ?? DEFAULT_COUNTRY_CODE}:${trade.account_id}`;
 }
 
 export function tradeToGroupKey(trade: Pick<Trade, "ticker_symbol" | "asset_name" | "country_code" | "account_id">): TradeGroupKey {
   return {
     ticker: trade.ticker_symbol,
     assetName: trade.asset_name,
-    country: trade.country_code ?? "KR",
+    country: trade.country_code ?? DEFAULT_COUNTRY_CODE,
     accountId: trade.account_id,
   };
 }
@@ -45,7 +47,7 @@ export function tradeToGroupKey(trade: Pick<Trade, "ticker_symbol" | "asset_name
 // migration 006에서 모든 레코드의 ticker_symbol이 보장됨
 function isSameGroup(trade: Trade, key: TradeGroupKey): boolean {
   if (trade.account_id !== key.accountId) return false;
-  if ((trade.country_code ?? "KR") !== key.country) return false;
+  if ((trade.country_code ?? DEFAULT_COUNTRY_CODE) !== key.country) return false;
   const tradeTicker = trade.ticker_symbol ?? trade.asset_name;
   const targetTicker = key.ticker ?? key.assetName;
   return tradeTicker === targetTicker;
@@ -55,7 +57,7 @@ export function sortForCalc(trades: Trade[]): Trade[] {
   return [...trades].sort((a, b) => {
     const tDiff = new Date(a.traded_at).getTime() - new Date(b.traded_at).getTime();
     if (tDiff !== 0) return tDiff;
-    if (a.trade_type !== b.trade_type) return a.trade_type === "BUY" ? -1 : 1;
+    if (a.trade_type !== b.trade_type) return a.trade_type === TRADE_TYPE.BUY ? -1 : 1;
     return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
   });
 }
@@ -128,7 +130,7 @@ export function computeGroupPnL(
   let buyOrder = 0;
 
   for (const trade of group) {
-    if (trade.trade_type === "BUY") {
+    if (trade.trade_type === TRADE_TYPE.BUY) {
       runningQty += trade.quantity;
       runningCost += trade.price * trade.quantity;
       fifoLots.push({
@@ -209,7 +211,7 @@ export function validateMutation(trades: Trade[], mutation: Mutation): ValidateM
   const newPnL = new Map<string, number>();
 
   for (const trade of group) {
-    if (trade.trade_type === "BUY") {
+    if (trade.trade_type === TRADE_TYPE.BUY) {
       runningQty += trade.quantity;
       runningCost += trade.price * trade.quantity;
     } else {
@@ -234,7 +236,7 @@ export function validateMutation(trades: Trade[], mutation: Mutation): ValidateM
 
 // 저장된 profit_loss 사용 — 정합성은 recalcGroupPnL이 보장
 export function buildPnlMap(trades: Trade[]): Map<string, number> {
-  const sells = trades.filter((t) => t.trade_type === "SELL");
+  const sells = trades.filter((t) => t.trade_type === TRADE_TYPE.SELL);
   return new Map(sells.map((t) => [t.id, Number(t.profit_loss ?? 0)]));
 }
 
@@ -249,7 +251,7 @@ export function computeRealizedPnL(trades: Trade[]): Map<string, number> {
     if (!posMap.has(key)) posMap.set(key, { runningQty: 0, runningCost: 0 });
     const pos = posMap.get(key)!;
 
-    if (trade.trade_type === "BUY") {
+    if (trade.trade_type === TRADE_TYPE.BUY) {
       pos.runningQty += trade.quantity;
       pos.runningCost += trade.price * trade.quantity;
     } else {

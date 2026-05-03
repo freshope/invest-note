@@ -1,5 +1,7 @@
 import type { Trade } from "@/types/database";
 import type { Position } from "@/lib/portfolio";
+import { TRADE_TYPE } from "@/lib/constants/trading";
+import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 export interface ConcentrationData {
   hhi: number;
   top3: { asset: string; weight: number }[];
@@ -46,9 +48,9 @@ export function computeConcentration(positions: Position[], trades: Trade[]): Co
   // byMarket: trades에서 종목별 market_type 추출 (가장 최근 BUY 기준)
   const marketByKey = new Map<string, string>();
   for (const t of trades
-    .filter((t) => t.trade_type === "BUY")
+    .filter((t) => t.trade_type === TRADE_TYPE.BUY)
     .sort((a, b) => new Date(a.traded_at).getTime() - new Date(b.traded_at).getTime())) {
-    const key = `${t.ticker_symbol ?? t.asset_name}:${t.country_code ?? "KR"}`;
+    const key = `${t.ticker_symbol ?? t.asset_name}:${t.country_code ?? DEFAULT_COUNTRY_CODE}`;
     marketByKey.set(key, t.market_type);
   }
 

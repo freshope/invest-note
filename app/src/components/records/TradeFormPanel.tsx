@@ -10,6 +10,7 @@ import {
 import { TradeBasicForm } from "./TradeBasicForm";
 import { TradeMetaBuyForm } from "./TradeMetaBuyForm";
 import { TradeMetaSellForm } from "./TradeMetaSellForm";
+import { TRADE_TYPE } from "@/lib/constants/trading";
 import type { Account, TradeType } from "@/types/database";
 
 interface TradeFormPanelProps {
@@ -31,7 +32,7 @@ export function TradeFormPanel({ open, onOpenChange, accounts }: TradeFormPanelP
   // FullScreenPanel 슬라이드 아웃 lifecycle 이 정상 진행된다.
   const [step, setStep] = useState<Step>("basic");
   const [tradeId, setTradeId] = useState<string>("");
-  const [tradeType, setTradeType] = useState<TradeType>("BUY");
+  const [tradeType, setTradeType] = useState<TradeType>(TRADE_TYPE.BUY);
 
   const handleClose = useCallback(() => {
     onOpenChange(false);
@@ -61,13 +62,13 @@ export function TradeFormPanel({ open, onOpenChange, accounts }: TradeFormPanelP
               onTradeCreated={handleTradeCreated}
             />
           )}
-          {step === "meta" && tradeType === "BUY" && (
+          {step === "meta" && tradeType === TRADE_TYPE.BUY && (
             <TradeMetaBuyForm
               tradeId={tradeId}
               onDone={handleClose}
             />
           )}
-          {step === "meta" && tradeType === "SELL" && (
+          {step === "meta" && tradeType === TRADE_TYPE.SELL && (
             <TradeMetaSellForm
               tradeId={tradeId}
               onDone={handleClose}

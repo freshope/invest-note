@@ -19,6 +19,8 @@ import { TradeDetail } from "@/components/records/TradeDetail";
 import { StockDetail } from "@/components/stocks/StockDetail";
 import { buildPnlMap } from "@/lib/analysis/realized-pnl";
 import { queryKeys } from "@/lib/query-keys";
+import { TRADE_TYPE } from "@/lib/constants/trading";
+import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import { useEffectiveAccountId } from "@/components/providers/AccountFilterProvider";
 import type { Account } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
@@ -71,12 +73,12 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
 
   const handleTradeMutated = useCallback(() => {
     setTradePayload(null);
-    queryClient.invalidateQueries({ queryKey: queryKeys.portfolio });
+    queryClient.invalidateQueries({ queryKey: queryKeys.portfolioSummary });
     queryClient.invalidateQueries({ queryKey: queryKeys.trades });
   }, [queryClient]);
 
   const handleTradeSaved = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: queryKeys.portfolio });
+    queryClient.invalidateQueries({ queryKey: queryKeys.portfolioSummary });
     queryClient.invalidateQueries({ queryKey: queryKeys.trades });
   }, [queryClient]);
 
@@ -147,7 +149,7 @@ function TradePanelContent({ open, payload, onClose, onMutated, onSaved, openSto
             openStock({
               assetName: trade.asset_name,
               ticker: trade.ticker_symbol!,
-              country: trade.country_code ?? "KR",
+              country: trade.country_code ?? DEFAULT_COUNTRY_CODE,
               allTrades,
               accounts,
             })
@@ -207,7 +209,7 @@ function StockPanelContent({ open, payload, onClose, openTrade }: StockPanelCont
       allTrades.filter(
         (t) =>
           (t.ticker_symbol ?? t.asset_name) === ticker &&
-          (t.country_code ?? "KR") === country &&
+          (t.country_code ?? DEFAULT_COUNTRY_CODE) === country &&
           (effectiveAccountId === null || t.account_id === effectiveAccountId),
       ),
     [allTrades, ticker, country, effectiveAccountId],
@@ -216,7 +218,7 @@ function StockPanelContent({ open, payload, onClose, openTrade }: StockPanelCont
   const pnlMap = useMemo(() => buildPnlMap(allTrades), [allTrades]);
 
   const stats = useMemo(() => {
-    const sellTrades = filteredTrades.filter((t) => t.trade_type === "SELL");
+    const sellTrades = filteredTrades.filter((t) => t.trade_type === TRADE_TYPE.SELL);
     const winCount = sellTrades.filter((t) => t.result === "SUCCESS").length;
     const totalProfitLoss = sellTrades.reduce(
       (sum, t) => sum + (pnlMap.get(t.id) ?? 0),

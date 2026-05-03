@@ -26,6 +26,7 @@ import {
   EMOTION_VALUES,
   REASONING_TAG_VALUES,
   TRADE_RESULT_VALUES,
+  TRADE_TYPE,
 } from "@/lib/constants/trading";
 import { AutoEmotionField, AutoReasoningTagsField } from "./AutoMetaField";
 import { TradeHeaderCard } from "./TradeHeaderCard";
@@ -78,7 +79,7 @@ interface TradeEditPanelProps {
 
 export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }: TradeEditPanelProps) {
   const queryClient = useQueryClient();
-  const isSell = trade.trade_type === "SELL";
+  const isSell = trade.trade_type === TRADE_TYPE.SELL;
 
   const {
     control,
@@ -142,7 +143,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.trade(trade.id) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.tradeSummary(trade.id) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.portfolioSummary }),
         queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
       ]);
       onOpenChange(false);

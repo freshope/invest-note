@@ -1,5 +1,7 @@
 import type { Trade, StrategyType } from "@/types/database";
 import { toKST } from "@/lib/trade-utils";
+import { TRADE_TYPE } from "@/lib/constants/trading";
+import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 
 export interface LotKey {
   ticker: string;
@@ -34,7 +36,7 @@ function isFlexibleMatch(
   targetAccountId: string,
 ): boolean {
   if (trade.account_id !== targetAccountId) return false;
-  const tradeCountry = trade.country_code ?? "KR";
+  const tradeCountry = trade.country_code ?? DEFAULT_COUNTRY_CODE;
   if (tradeCountry !== targetCountry) return false;
   const tradeTicker = trade.ticker_symbol ?? trade.asset_name;
   return tradeTicker === targetTicker || trade.asset_name === targetAsset;
@@ -55,9 +57,9 @@ export function computeLotQuantity(trades: Trade[], key: LotKey): number {
   let runningQty = 0;
 
   for (const trade of sortByTradedAt(trades)) {
-    const tradeKey = `${trade.ticker_symbol ?? trade.asset_name}:${trade.country_code ?? "KR"}:${trade.account_id}`;
+    const tradeKey = `${trade.ticker_symbol ?? trade.asset_name}:${trade.country_code ?? DEFAULT_COUNTRY_CODE}:${trade.account_id}`;
     if (tradeKey !== lotKey) continue;
-    if (trade.trade_type === "BUY") runningQty += trade.quantity;
+    if (trade.trade_type === TRADE_TYPE.BUY) runningQty += trade.quantity;
     else runningQty = Math.max(0, runningQty - trade.quantity);
   }
 
@@ -69,7 +71,7 @@ export function findLatestBuyStrategy(trades: Trade[], key: LotKey): StrategyTyp
 
   const buys = trades
     .filter((t) =>
-      t.trade_type === "BUY" &&
+      t.trade_type === TRADE_TYPE.BUY &&
       isFlexibleMatch(t, key.country, key.ticker, assetName, key.accountId),
     )
     .sort((a, b) => new Date(b.traded_at).getTime() - new Date(a.traded_at).getTime());
@@ -95,7 +97,7 @@ export function computeTotalHolding(
 
   for (const trade of sortByTradedAt(trades)) {
     if (!isFlexibleMatch(trade, targetCountry, targetTicker, targetAsset, key.accountId)) continue;
-    if (trade.trade_type === "BUY") runningQty += trade.quantity;
+    if (trade.trade_type === TRADE_TYPE.BUY) runningQty += trade.quantity;
     else runningQty = Math.max(0, runningQty - trade.quantity);
   }
 
@@ -122,7 +124,7 @@ export function computeFlexibleBreakdown(sell: Trade): SellBreakdown {
 
 // FIFO 가중평균 보유일수 (동일 계좌 + flexible ticker).
 export function computeFlexibleHoldingDays(sell: Trade, allTrades: Trade[]): number | null {
-  const targetCountry = sell.country_code ?? "KR";
+  const targetCountry = sell.country_code ?? DEFAULT_COUNTRY_CODE;
   const targetTicker = sell.ticker_symbol ?? sell.asset_name;
   const targetAsset = sell.asset_name;
   const targetAccountId = sell.account_id;
@@ -151,7 +153,7 @@ export function computeFlexibleHoldingDays(sell: Trade, allTrades: Trade[]): num
 
     if (!isFlexibleMatch(trade, targetCountry, targetTicker, targetAsset, targetAccountId)) continue;
 
-    if (trade.trade_type === "BUY") {
+    if (trade.trade_type === TRADE_TYPE.BUY) {
       queue.push({ qty: trade.quantity, timeMs: toKST(new Date(trade.traded_at)).getTime() });
     } else {
       let rem = trade.quantity;

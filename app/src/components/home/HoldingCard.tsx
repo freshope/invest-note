@@ -1,7 +1,7 @@
 import { memo, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { fmt, formatPctSigned, formatPnL, signColor } from "@/lib/format";
+import { calcChangePercent, fmt, formatPctSigned, formatPnL, signColor } from "@/lib/format";
 import type { Position } from "@/lib/portfolio";
 import { CountryBadge } from "@/components/records/trade-display";
 
@@ -31,9 +31,7 @@ export const HoldingCard = memo(function HoldingCard({ position, onPress }: Hold
   const firstLine = lastNote?.split("\n")[0] ?? "";
 
   const priceChangePct =
-    currentPrice !== null && avgBuyPrice > 0
-      ? Math.round(((currentPrice - avgBuyPrice) / avgBuyPrice) * 10000) / 100
-      : null;
+    currentPrice !== null && avgBuyPrice > 0 ? calcChangePercent(currentPrice, avgBuyPrice) : null;
 
   return (
     <div

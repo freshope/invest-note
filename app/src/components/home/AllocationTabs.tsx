@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import dynamic from "next/dynamic";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/base/Tabs";
-import { fmtCompact } from "@/lib/format";
+import { calcPercent, fmtCompact } from "@/lib/format";
 import type { Position, AccountSnapshot } from "@/lib/portfolio";
 import type { DonutEntry } from "./AllocationPieChart";
 
@@ -52,7 +52,7 @@ function AllocationDonut({ data, total, label }: AllocationDonutProps) {
       {/* 범례 */}
       <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
         {data.map((entry, i) => {
-          const pct = total > 0 ? Math.round((entry.value / total) * 100) : 0;
+          const pct = calcPercent(entry.value, total);
           return (
             <div key={entry.name} className="flex items-center gap-1.5 min-w-0">
               <span

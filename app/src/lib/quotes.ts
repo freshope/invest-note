@@ -1,4 +1,5 @@
 import type { QuoteMap } from "@/lib/portfolio";
+import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 
 export interface QuoteResult {
   price: number;
@@ -51,9 +52,10 @@ export async function fetchQuotesByKeys(keys: string[]): Promise<QuoteMap> {
 
   const entries = keys.map((key) => {
     const [code, country] = key.split(":");
-    return { code: code?.slice(0, 20) ?? "", country: country ?? "KR", key };
+    return { code: code?.slice(0, 20) ?? "", country: country ?? DEFAULT_COUNTRY_CODE, key };
   }).filter((e) => e.code.length > 0);
 
+  // "KR" 리터럴 의도적 — fetchKRPrice는 한국 시세 API 전용. 기본 국가 fallback이 아닌 라우팅 키.
   const krEntries = entries.filter((e) => e.country === "KR");
   const krResults = await Promise.all(krEntries.map((e) => fetchKRPrice(e.code)));
 

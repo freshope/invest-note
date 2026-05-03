@@ -16,7 +16,7 @@ export function usePortfolioSummary() {
   });
 
   const refetch = useCallback(
-    () => queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
+    () => queryClient.invalidateQueries({ queryKey: queryKeys.portfolioSummary }),
     [queryClient]
   );
 

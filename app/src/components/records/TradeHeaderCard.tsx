@@ -4,6 +4,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { fmt } from "@/lib/format";
 import { getTradeTypeAccent } from "@/lib/constants/colors";
+import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import { TradeTypeBadge } from "@/components/shared/TradeTypeBadge";
 import {
   CountryBadge,
@@ -73,7 +74,7 @@ export function TradeHeaderCard({
           <MarketTypeBadge marketType={trade.market_type} />
           {trade.market_type === "STOCK" && (
             <>
-              <CountryBadge countryCode={trade.country_code ?? "KR"} />
+              <CountryBadge countryCode={trade.country_code ?? DEFAULT_COUNTRY_CODE} />
               <ExchangeBadge exchange={trade.exchange} />
             </>
           )}

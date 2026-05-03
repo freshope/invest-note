@@ -67,8 +67,10 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
         reasoning_tags: values.reasoning_tags,
         buy_reason: values.buy_reason.trim() || null,
       });
+      // BUY meta 변경 → BE가 매칭 SELL의 emotion/strategy 자동 산출. trades 리스트 + tradeSummary 모두 stale.
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.trade(tradeId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.tradeSummary(tradeId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
       ]);
       onDone();

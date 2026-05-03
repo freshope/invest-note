@@ -2,7 +2,7 @@
 
 import { AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatPnL, signColor } from "@/lib/format";
+import { calcPercent, formatPnL, signColor } from "@/lib/format";
 import { ADHERENCE_CONFIG } from "@/lib/constants/trading";
 import type { StrategyAdherenceStats } from "@/lib/analysis/aggregate";
 
@@ -56,7 +56,7 @@ export function StrategyAdherencePanel({ rate, data }: StrategyAdherencePanelPro
   const unknownCount = unknown?.count ?? 0;
   const unknownPnL = unknown?.sumPnL ?? 0;
   const judged = followedCount + deviatedCount;
-  const followedPct = judged > 0 ? Math.round((followedCount / judged) * 100) : 0;
+  const followedPct = calcPercent(followedCount, judged);
   const deviatedPct = judged > 0 ? 100 - followedPct : 0;
 
   return (
