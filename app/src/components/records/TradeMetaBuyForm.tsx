@@ -12,15 +12,16 @@ import { VALIDATION_LIMITS, TRADE_FREE_TEXT_ERROR } from "@/lib/constants/valida
 import { queryKeys } from "@/lib/query-keys";
 import {
   REASONING_TAGS,
+  STRATEGIES,
+  EMOTIONS,
   STRATEGY_VALUES,
   EMOTION_VALUES,
   REASONING_TAG_VALUES,
 } from "@/lib/constants/trading";
-import { StrategyEmotionFields } from "./StrategyEmotionFields";
 import { ToggleChipGrid } from "@/components/shared/ToggleChipGrid";
 import { TradeFreeTextField } from "./TradeFreeTextField";
 import { getFirstFormError } from "@/lib/utils";
-import type { ReasoningTag } from "@/types/database";
+import type { ReasoningTag, StrategyType, EmotionType } from "@/types/database";
 
 const schema = z.object({
   strategy_type: z.enum(STRATEGY_VALUES).nullable(),
@@ -82,32 +83,38 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">
       <div className="flex-1 px-5 pt-2 pb-4 space-y-6">
         <div className="space-y-6">
-          <Controller
-            control={control}
-            name="strategy_type"
-            render={({ field }) => (
-              <StrategyEmotionFields
-                strategy={field.value ?? ""}
-                emotion=""
-                onStrategyChange={(v) => field.onChange(v || null)}
-                onEmotionChange={() => {}}
-                hideEmotion
-              />
-            )}
-          />
-          <Controller
-            control={control}
-            name="emotion"
-            render={({ field }) => (
-              <StrategyEmotionFields
-                strategy=""
-                emotion={field.value ?? ""}
-                onStrategyChange={() => {}}
-                onEmotionChange={(v) => field.onChange(v || null)}
-                hideStrategy
-              />
-            )}
-          />
+          <div className="space-y-2">
+            <Label>전략</Label>
+            <Controller
+              control={control}
+              name="strategy_type"
+              render={({ field }) => (
+                <ToggleChipGrid<StrategyType>
+                  options={STRATEGIES}
+                  value={field.value}
+                  onChange={field.onChange}
+                  emptyValue={null}
+                  columns={4}
+                />
+              )}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>감정</Label>
+            <Controller
+              control={control}
+              name="emotion"
+              render={({ field }) => (
+                <ToggleChipGrid<EmotionType>
+                  options={EMOTIONS}
+                  value={field.value}
+                  onChange={field.onChange}
+                  emptyValue={null}
+                  columns={3}
+                />
+              )}
+            />
+          </div>
         </div>
 
         <div className="space-y-2">
