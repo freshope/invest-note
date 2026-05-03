@@ -6,7 +6,7 @@ import type {
   TradeResult,
   TradeType,
 } from "@/types/database";
-import { PNL_COLORS } from "./colors";
+import { PNL_COLORS } from "./pnl-colors";
 
 export const MARKET_LABELS: Record<MarketType, string> = {
   STOCK: "주식",
