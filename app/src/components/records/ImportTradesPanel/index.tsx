@@ -27,10 +27,21 @@ interface Props {
   accounts: Account[];
 }
 
+// 마운트 시점에 일괄 등록 가능한 계좌가 정확히 1개면 default select.
+// effect-setState 안티패턴 회피를 위해 부모 lazy initializer 로 한 번만 결정.
+export function getInitialSelectedAccountId(accounts: Account[]): string {
+  const eligible = accounts.filter(
+    (a) => findBrokerKeyByAccountBroker(a.broker) !== null,
+  );
+  return eligible.length === 1 ? eligible[0].id : "";
+}
+
 export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
   const queryClient = useQueryClient();
   const [step, setStep] = useState<Step>("account");
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [selectedAccountId, setSelectedAccountId] = useState<string>(
+    () => getInitialSelectedAccountId(accounts),
+  );
   const [preview, setPreview] = useState<ImportPreviewResponse | null>(null);
   const [result, setResult] = useState<ImportCommitResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);

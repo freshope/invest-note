@@ -17,7 +17,7 @@ Round 1 (`docs/spec-history/...`) 에서 처리된 6 개 외에 도출된 후속
 
 > Round 4 (2026-05-03) 에서 5 개 항목 모두 처리 완료 — `docs/spec-history/2026-05-03-fe-simplify-round4-useeffect-antipatterns.md` 참고. 백로그 가이드의 `key={open?...}` 제안은 `FullScreenPanel` 의 mounted/visible 2 단계 lifecycle 과 충돌하여 "단조증가 key bump" 패턴으로 교정 적용.
 
-- [ ] `ImportTradesPanel/AccountStep` 자동 단일 계좌 선택 effect — `eligibleAccounts.length === 1` 일 때 `onSelect(...)` 를 호출하는 effect-setState (`AccountStep.tsx:25-28`). derive (예: 부모에서 `defaultSelected` 결정) 또는 render-mount 시점 한 번만 실행하는 패턴 검토. Round 4 범위 외로 deferred.
+> Round 4 후속 (2026-05-03): `ImportTradesPanel/AccountStep` 자동 단일 계좌 선택 effect 처리 완료 — 부모(`ImportTradesPanel`) 의 `useState` lazy initializer 로 마운트 시점에 한 번만 결정하는 헬퍼 (`getInitialSelectedAccountId`) 추출.
 
 ### 성능
 

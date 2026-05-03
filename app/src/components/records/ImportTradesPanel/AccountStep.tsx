@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
 import { AlertCircleIcon } from "lucide-react";
 import { Button } from "@/components/base/Button";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
@@ -17,16 +16,6 @@ interface Props {
 }
 
 export function AccountStep({ accounts, selectedAccountId, onSelect, onNext }: Props) {
-  const eligibleAccounts = useMemo(
-    () => accounts.filter((a) => findBrokerKeyByAccountBroker(a.broker) !== null),
-    [accounts]
-  );
-
-  useEffect(() => {
-    if (selectedAccountId || eligibleAccounts.length !== 1) return;
-    onSelect(eligibleAccounts[0].id);
-  }, [eligibleAccounts, selectedAccountId, onSelect]);
-
   const isEmpty = accounts.length === 0;
 
   return (
