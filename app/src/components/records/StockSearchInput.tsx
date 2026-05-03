@@ -108,6 +108,11 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
         onFocus={() => { if (krSuggestions.length > 0) setHidden(false); }}
         autoComplete="off"
         autoCorrect="off"
+        role="combobox"
+        aria-expanded={open}
+        aria-controls="stock-search-listbox"
+        aria-autocomplete="list"
+        aria-activedescendant={activeIndex >= 0 ? `stock-option-${activeIndex}` : undefined}
       />
       {isFetching && (
         <div className="absolute right-4 top-1/2 -translate-y-1/2">
@@ -115,10 +120,18 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
         </div>
       )}
       {open && krSuggestions.length > 0 && (
-        <ul className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 max-h-[280px] overflow-y-auto rounded-xl bg-popover shadow-md ring-1 ring-foreground/10">
+        <ul
+          id="stock-search-listbox"
+          role="listbox"
+          aria-label="종목 검색 결과"
+          className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 max-h-[280px] overflow-y-auto rounded-xl bg-popover shadow-md ring-1 ring-foreground/10"
+        >
           {krSuggestions.map((stock, i) => (
             <li
               key={`${stock.market}-${stock.code}`}
+              id={`stock-option-${i}`}
+              role="option"
+              aria-selected={i === activeIndex}
               onMouseDown={(e) => { e.preventDefault(); handleSelect(stock); }}
               className={`flex items-center gap-3 px-4 py-3 text-[15px] cursor-default transition-colors ${
                 i === activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"
