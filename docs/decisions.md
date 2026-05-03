@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-05-03 | BE simplify Round 5 — `external/quotes._parse_*` 통합 미진행
+
+- **맥락:** `docs/backlog.md` 의 "BE simplify · 재사용 / 잔여" 섹션 마지막 항목 (`external/quotes._parse_realtime_price` / `_parse_basic_price` 통합) 의 Round 5 진행 여부 평가. 두 함수는 모두 Naver 시세 API 응답에서 종가를 추출하지만 endpoint 마다 응답 구조가 다름.
+- **결정:** **진행하지 않는다.** Round 5 는 재사용/잔여 섹션의 5 개만 묶고 본 항목은 backlog 에서 제거.
+- **이유:**
+  - **응답 구조 본질적 비대칭** — `_parse_realtime_price` 는 `data["datas"][0]` 또는 `data["data"]` 로 1 단계 unwrap 후 `closePriceRaw` / shim `now` / `closePrice` (콤마 제거) 순으로 fallback. `_parse_basic_price` 는 unwrap 없이 최상위에서 `closePriceRaw` / `stockEndPrice` (콤마 제거) / `closePrice` (콤마 제거) 순. realtime endpoint 의 `datas[0]` 래핑과 `now` shim 필드는 basic 응답에는 존재하지 않으며, basic endpoint 의 `stockEndPrice` 는 realtime 응답에는 존재하지 않음.
+  - **통합 시 분기 유지 필수** — endpoint 별 응답 키 우선순위가 정확히 다르므로 단일 함수로 만들면 `is_realtime: bool` 같은 분기 파라미터가 다시 필요해 LOC 절감 0. 백로그 항목 자체에도 "realtime shim 차이로 완전 통합 어려움 (cosmetic)" 으로 명시.
+  - **공통 부분 추출 가치도 미미** — 공통 로직은 `float(raw) if raw else 0.0` 1 줄 + `closePriceRaw` 최상위 fallback 정도. 별도 헬퍼 추출 시 두 함수의 가독성이 오히려 떨어짐.
+- **트레이드오프:** 향후 Naver 가 두 endpoint 의 응답 형식을 통일하거나, 시세 provider 가 추가되어 parser 가 3+ 개로 늘어나면 (`Strategy` 패턴 도입 가치 발생) 재평가. backlog "재사용 / 잔여" 섹션에서 영구 종결.
+
+---
+
 ## 2026-05-03 | BE simplify Round 3 — analysis period SQL push 미진행
 
 - **맥락:** `docs/backlog.md` 의 "BE simplify · 효율 / 핫패스" 섹션 5 번째 항목 (`routers/analysis` period 파라미터 SQL push — 1m/3m/6m 선택 시 전체 fetch 회피) 의 Round 3 진행 여부를 평가. 의도는 `list_trades(date_from, date_to)` 로 SQL `WHERE traded_at` 푸시, `filter_by_period` 메모리 필터 호출 제거.

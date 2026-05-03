@@ -38,7 +38,7 @@ Round 1 (`docs/spec-history/...`) 에서 처리된 6 개 외에 도출된 후속
 
 ## BE simplify (Round 1 이후 deferred — 2026-05-01 `/simplify` 결과)
 
-Round 1 (`docs/spec-history/2026-05-01-be-simplify-round1-quick-wins.md`) 에서 처리된 3 개 (`model_copy(update=)` / `dataclasses.replace` / `sort_by_traded_at` 통합) + Round 2 (`docs/spec-history/2026-05-03-be-simplify-round2-response-mapping.md`) 에서 처리된 4 개 + Round 3 (`docs/spec-history/2026-05-03-be-simplify-round3-hot-path.md`) 에서 처리된 4 개 + Round 4 (`docs/spec-history/2026-05-03-be-simplify-round4-domain-cleanup.md`) 에서 처리된 2 개 외에 도출된 후속 항목. 위험도/가치 평가 후 Round 5+ 에서 분할 처리.
+Round 1 (`docs/spec-history/2026-05-01-be-simplify-round1-quick-wins.md`) 에서 처리된 3 개 (`model_copy(update=)` / `dataclasses.replace` / `sort_by_traded_at` 통합) + Round 2 (`docs/spec-history/2026-05-03-be-simplify-round2-response-mapping.md`) 에서 처리된 4 개 + Round 3 (`docs/spec-history/2026-05-03-be-simplify-round3-hot-path.md`) 에서 처리된 4 개 + Round 4 (`docs/spec-history/2026-05-03-be-simplify-round4-domain-cleanup.md`) 에서 처리된 2 개 + Round 5 (`docs/spec-history/2026-05-03-be-simplify-round5-reuse.md`) 에서 처리된 5 개 외에 도출된 후속 항목.
 
 > Round 2 (2026-05-03) 에서 응답 매핑 카테고리 4 개 처리 완료 (`asdict` spread / `account_row_to_dict` UUID 흡수 / `patch_account` 추출 / `create_trade` `model_dump` spread). `_trade_with_account_dict` 스키마화는 [decisions.md 2026-05-03](decisions.md) 으로 **미진행 확정**.
 
@@ -46,19 +46,15 @@ Round 1 (`docs/spec-history/2026-05-01-be-simplify-round1-quick-wins.md`) 에서
 
 > Round 4 (2026-05-03) 에서 도메인 정리 2 개 처리 완료 (`compute_holding_summary` 를 `walk_trades` terminal state 기반으로 재구성 / `build_positions` 119 줄을 `_build_lot_map` + `_lot_to_positions` 헬퍼로 분리).
 
+> Round 5 (2026-05-03) 에서 재사용/잔여 5 개 처리 완료 (`accounts_repo.list_accounts` 헬퍼 + 라우터 3곳 SELECT 통합 / `trade_import` signature 4함수 본문 헬퍼화 + `parse_kst_date` 로 trades.py KST 파싱 흡수 / `_first_bucket_label` 일반 헬퍼 + `Counter` dist 빌드 / `_decimal_to_*` 3 validator 공통 헬퍼 추출 / `EMOTION_UNTAGGED`·`TAG_UNTAGGED` Literal 타입 명시 + 응답 스키마 좁힘). `external/quotes._parse_*` 통합은 [decisions.md 2026-05-03](decisions.md) 으로 **미진행 확정** (Naver realtime/basic endpoint 응답 구조 비대칭).
+
 ### 효율 / 핫패스
 
 - [ ] `GET /api/trades` 페이지네이션 + `ticker` 필터 SQL push — 현재 전량 fetch 후 Python 필터 (FE backlog `tradesApi.list()` 와 동반)
 
 ### 재사용 / 잔여
 
-- [ ] `accounts_repo.list_accounts` 헬퍼 추출 — 라우터 3곳 (`accounts`/`portfolio`/`trades`) 인라인 SQL 흡수 + `_ACCOUNT_RETURNING_COLS` SOT 화
-- [ ] `make_signature` ↔ `make_preview_signature` 4함수 통합 — `account_id: str | None` 단일화 + KST 일자 파싱 헬퍼 (`routers/trades.py:387, 498` 인라인 try/except 흡수)
-- [ ] `_holding_bucket` / `_size_bucket` 통합 + `Counter` 로 dist 빌드
-- [ ] `_decimal_to_float*` 3 validator 공통 헬퍼 추출 (cosmetic)
-- [ ] `EMOTION_UNTAGGED` / `TAG_UNTAGGED` Literal 타입 누락 — `EmotionBucket = EmotionType | Literal["UNTAGGED"]` 정의
-- [ ] `SellBreakdown.is_manual_input` 필드 폐기 또는 명세화 — BE/FE 모두 항상 `false` 만 송수신, FE `TradeDetail.tsx:177` 가 분기 사용. 진짜 manual input 케이스 명세 후 제거 결정 (BE+FE 동기 변경)
-- [ ] `external/quotes._parse_realtime_price` / `_parse_basic_price` 통합 (cosmetic, realtime shim 차이로 완전 통합 어려움)
+- [ ] `SellBreakdown.is_manual_input` 필드 폐기 또는 명세화 — BE/FE 모두 항상 `false` 만 송수신, FE `TradeDetail.tsx:177` 가 분기 사용. 진짜 manual input 케이스 명세 후 제거 결정 (BE+FE 동기 변경 필요 → 별도 spec)
 
 > 참고: `aggregate.py` 4 누산 패턴 (`strat_map`/`adherence_map`/`emotion_map`/`tag_map`) 헬퍼화는 [Tier 3 결정 (2026-04-30)](decisions.md) 으로 **미진행 확정**. 향후 재제기 시 `decisions.md` 의 도메인 시맨틱 비대칭 근거 참조.
 
