@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-05-03 | FE simplify Round 6 — AccountFilter `string | null` 채택, StockSearchInput prevQuery 패턴 유지
+
+- **맥락:** `docs/backlog.md` 의 "FE simplify · 타입/구조 (선택적)" 2 개 항목 (`AccountFilter "all" sentinel 검토` / `StockSearchInput prevQuery derived state 검토`) 을 Round 6 에서 처리. 두 항목 모두 백로그가 "유지/변경 결정 필요" 로 명시한 검토 항목.
+- **결정:**
+  - **AccountFilter sentinel 변경:** `selectedAccountId: string` + `ACCOUNT_FILTER_ALL = "all"` 패턴을 `selectedAccountId: string | null` (`null` = 전체) 로 변경. `ACCOUNT_FILTER_ALL` 상수 완전 제거. 5 개 파일 (`AccountFilterProvider` / `AccountFilter` / `TradeList` / `StockDetail` / `DetailPanelProvider`) 수정.
+  - **StockSearchInput prevQuery 변경 미진행:** 현재 "렌더 중 prev state 비교" 패턴 (`StockSearchInput.tsx:51-57`) 그대로 유지.
+- **이유:**
+  - **(sentinel 변경)** API 계층은 sentinel 을 받지 않음 (모두 클라이언트 메모리 필터링) → 백엔드 영향 0. `useEffectiveAccountId` 가 이미 정규화 캡슐화하고 있어 컨슈머 변경 비용 낮음 (분기 8 사이트). `string | null` 은 idiomatic TypeScript, discriminated union 보다 보일러플레이트 적고 strictNullChecks 가 null 체크 강제 → `string` + 마법 문자열 보다 type-safety 향상.
+  - **(prevQuery 유지)** 현재 패턴은 React 공식 가이드 ["You Might Not Need an Effect — Adjusting some state when a prop changes"](https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes) 의 권장 패턴 그대로. **사이클 효율성 차이가 핵심**: 렌더 중 setState 비교는 첫 commit 전에 React 가 즉시 재렌더로 동기화 → 화면에 stale activeIndex 가 commit 되지 않음. 백로그 제안 (`useEffect(() => setActiveIndex(-1), [debouncedValue])`) 은 1) commit → 2) effect 실행 → 3) setState → 4) 재렌더 의 4 단계 사이클을 거쳐 한 프레임 동안 stale activeIndex 가 commit 됨 → **회귀**. 코드 내 기존 주석의 "suggestions 참조 비교 무한루프" 표현은 부정확 (`debouncedValue` 는 string primitive 라 실제 무한루프는 안 남) — 본 결정문은 사이클 효율성 / stale frame 회피 프레이밍으로 정정.
+- **트레이드오프:**
+  - **(sentinel)** discriminated union (`{kind: 'all'} | {kind: 'one', id}`) 으로 가면 type narrowing 으로 더 explicit 하나, 호출 8 사이트의 보일러플레이트 (`x.kind === 'one' ? x.id : ...`) 증가. 현재 호출처가 단순 비교만 하므로 `string | null` 이 ROI 우위. 향후 sentinel 종류가 늘어나면 (예: `"selected"` 외 `"unselected"`/`"all"` 3 가지) discriminated union 재평가.
+  - **(prevQuery)** React 19+ `use` 훅이나 transition 으로 패턴이 바뀌면 재평가. 그 외에는 backlog 에서 영구 종결.
+
+---
+
 ## 2026-05-03 | FE simplify Round 5 — refetchOnWindowFocus 글로벌 default 유지 (per-query staleTime 만 조정)
 
 - **맥락:** `docs/backlog.md` 의 "FE simplify · 성능" 섹션 6 번째 항목 (`무거운 쿼리 staleTime 상향 — 분석/포트폴리오 5 분+, refetchOnWindowFocus false 검토`) 의 Round 5 진행 시, 글로벌 `refetchOnWindowFocus: false` 도입 여부를 평가. 현재 `QueryProvider` 는 default 인 `true` 사용 중.

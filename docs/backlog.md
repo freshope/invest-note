@@ -28,8 +28,7 @@ Round 1 (`docs/spec-history/...`) 에서 처리된 6 개 외에 도출된 후속
 
 ### 타입/구조 (선택적)
 
-- [ ] `AccountFilter` `"all"` sentinel 검토 — `selectedAccountId: string` + `ACCOUNT_FILTER_ALL = "all"` 패턴이 곳곳에 분기. discriminated union (`{kind: "all"} | {kind: "one"; id}`) 또는 `string | null` 로 type-safe 화 검토. 유지/변경 결정 필요
-- [ ] `StockSearchInput` `prevQuery` derived state → `useEffect(() => setActiveIndex(-1), [debouncedValue])` 검토 — 단순화 가치 vs 공식 권장 패턴 간 결정
+> Round 6 (2026-05-03) 에서 2 개 항목 모두 처리 완료 — `docs/spec-history/2026-05-03-fe-simplify-round6-types.md` 참고. `AccountFilter` 는 `string | null` 채택 (`ACCOUNT_FILTER_ALL` 상수 제거), `StockSearchInput prevQuery` 는 [decisions.md 2026-05-03](decisions.md) 으로 **변경 미진행 확정** (React 공식 권장 패턴 + 사이클 효율성 우위).
 
 ## BE simplify (Round 1 이후 deferred — 2026-05-01 `/simplify` 결과)
 

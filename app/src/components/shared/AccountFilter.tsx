@@ -2,13 +2,12 @@
 
 import { cn } from "@/lib/utils";
 import { AccountChip } from "@/components/shared/AccountChip";
-import { ACCOUNT_FILTER_ALL } from "@/components/providers/AccountFilterProvider";
 import type { Account } from "@/types/database";
 
 interface AccountFilterProps {
   accounts: Account[];
-  value: string;
-  onChange: (value: string) => void;
+  value: string | null;
+  onChange: (value: string | null) => void;
 }
 
 function chipClass(active: boolean, extra?: string) {
@@ -24,8 +23,8 @@ export function AccountFilter({ accounts, value, onChange }: AccountFilterProps)
     <div className="flex gap-2 overflow-x-auto scrollbar-hide px-5 pb-3">
       <button
         type="button"
-        onClick={() => onChange(ACCOUNT_FILTER_ALL)}
-        className={chipClass(value === ACCOUNT_FILTER_ALL, "px-3.5 py-1")}
+        onClick={() => onChange(null)}
+        className={chipClass(value === null, "px-3.5 py-1")}
       >
         전체
       </button>

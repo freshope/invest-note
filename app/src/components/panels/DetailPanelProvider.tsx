@@ -19,7 +19,7 @@ import { TradeDetail } from "@/components/records/TradeDetail";
 import { StockDetail } from "@/components/stocks/StockDetail";
 import { buildPnlMap } from "@/lib/analysis/realized-pnl";
 import { queryKeys } from "@/lib/query-keys";
-import { ACCOUNT_FILTER_ALL, useEffectiveAccountId } from "@/components/providers/AccountFilterProvider";
+import { useEffectiveAccountId } from "@/components/providers/AccountFilterProvider";
 import type { Account } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
 
@@ -208,7 +208,7 @@ function StockPanelContent({ open, payload, onClose, openTrade }: StockPanelCont
         (t) =>
           (t.ticker_symbol ?? t.asset_name) === ticker &&
           (t.country_code ?? "KR") === country &&
-          (effectiveAccountId === ACCOUNT_FILTER_ALL || t.account_id === effectiveAccountId),
+          (effectiveAccountId === null || t.account_id === effectiveAccountId),
       ),
     [allTrades, ticker, country, effectiveAccountId],
   );
