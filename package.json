@@ -1,6 +1,7 @@
 {
   "name": "invest-note",
   "private": true,
+  "packageManager": "pnpm@10.17.1",
   "scripts": {
     "dev": "pnpm -C app dev",
     "restart:be": "cd api && make restart",
