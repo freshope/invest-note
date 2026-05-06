@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { TradeCard } from "./TradeCard";
 import { TradeFormPanel } from "./TradeFormPanel";
 import { useDetailPanel } from "@/components/panels/DetailPanelProvider";
@@ -35,9 +36,9 @@ export function TradeList({ trades, accounts }: TradeListProps) {
     setFormOpen(true);
   }, []);
 
+  // 파일 업로드 일괄 등록은 아직 준비 중. 스토어 등록 전까지 안내 토스트만 노출.
   const openImport = useCallback(() => {
-    setImportKey((k) => k + 1);
-    setImportOpen(true);
+    toast.info("준비 중인 기능이에요. 곧 만나보실 수 있어요.");
   }, []);
 
   const filteredTrades = useMemo(
