@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-05-14 | FE 로컬 env 파일 — `.env.local` → `.env.development.local` (v1.1.6 hotfix)
+
+- **사건:** v1.1.4 배포 후 SNS 로그인이 운영 환경에서 `http://127.0.0.1:64321` 을 호출하며 실패. 정적 export 산출물(`fe/out/_next/static/chunks/*.js`)에 로컬 Supabase URL 이 박혀 있었음 (grep 으로 운영 URL `phynizbvzzsvprawxkvd.supabase.co` 부재 확인).
+- **원인:** `feature/local-supabase-dev` 에서 `fe/.env.local` 을 로컬 Supabase 로 변경. Next.js 의 env 우선순위는 **test 모드를 제외하면 `.env.local` 이 `.env.production` 보다 우선**(공식 문서)이라 `next build` 시 로컬 URL 이 그대로 번들 + Capacitor iOS/Android assets 에 박힘.
+- **결정:** FE 로컬 개발 env 파일을 `.env.development.local` 로 사용. `.env.development.local` 은 Next.js 가 dev 모드에서만 로드하므로 production build 가 격리됨. `.env.local` 은 사용 금지.
+- **이유:** Next.js 공식 컨벤션. 빌드 환경별 분리가 파일명 자체로 명시되어 사고 재발 가능성 차단. BE 는 별개(컨테이너 런타임 주입) 이므로 이번 변경 범위 밖.
+- **사용자 후속:** 운영 재배포 — `pnpm -C fe build && npx cap sync` 로 모바일 번들 포함 재빌드.
+
+---
+
 ## 2026-05-14 | 앱 번들ID — `com.investnote.app` → `app.pixelwave.investnote`
 
 - **결정:** Capacitor `appId`, iOS `PRODUCT_BUNDLE_IDENTIFIER`, Android `applicationId/namespace`, OAuth 딥링크 스킴(`NATIVE_URL_SCHEME`, `AndroidManifest`, `Info.plist`, `strings.xml`) 모두 `app.pixelwave.investnote`로 통일. Android `MainActivity.java` 패키지 경로도 `app/pixelwave/investnote/`로 이동.
