@@ -1,6 +1,6 @@
 {
   "name": "invest-note",
-  "version": "1.1.6",
+  "version": "1.1.7",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "cap": "cap",
-    "build:mobile": "NEXT_PUBLIC_API_BASE_URL=https://invest-note-api.onrender.com next build",
+    "build:mobile": "next build",
     "device:ios": "pnpm build:mobile && cap sync ios && cap run ios",
     "device:android": "pnpm build:mobile && cap sync android && cap run android"
   },
