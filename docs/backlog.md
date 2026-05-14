@@ -11,11 +11,16 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 코드 품질 가드
 
-- [ ] `feature/eslint-cleanup` — `pnpm lint` 가 329 errors / 25,348 warnings 로 실패. 주요: ① `react-hooks/refs` (`app/src/hooks/useClickOutside.ts:8` 등 render 중 ref.current 변경), ② `react-hooks/incompatible-library` (`useForm.watch()` 사용처들 — `AccountFormPanel.tsx:78`, `TradeBasicForm.tsx` 등), ③ `@typescript-eslint/no-unused-vars` warnings 25k 누적. CI baseline (2026-05-03 `feature/ci-baseline`) 에서 lint 가드 제외하고 분리. fix 후 `.github/workflows/ci.yml` 의 frontend job 에 `pnpm lint` 단계 추가.
+- [ ] `feature/eslint-cleanup` — `pnpm lint` 가 329 errors / 25,348 warnings 로 실패. 주요: ① `react-hooks/refs` (`fe/src/hooks/useClickOutside.ts:8` 등 render 중 ref.current 변경), ② `react-hooks/incompatible-library` (`useForm.watch()` 사용처들 — `AccountFormPanel.tsx:78`, `TradeBasicForm.tsx` 등), ③ `@typescript-eslint/no-unused-vars` warnings 25k 누적. CI baseline (2026-05-03 `feature/ci-baseline`) 에서 lint 가드 제외하고 분리. fix 후 `.github/workflows/ci.yml` 의 frontend job 에 `pnpm lint` 단계 추가.
 
 ## 운영 / 어드민 도구
 
 - [ ] PnL 저장값 검증 엔드포인트 (이슈 E) — `/api/admin/verify-pnl` 신설. SELL의 저장된 `profit_loss`/`avg_buy_price`/`holding_days`/`strategy_type`/`reasoning_tags`/`emotion`을 `compute_group_pnl()`로 재계산해 차이 검출. 사용자 단위 batch + 차이 리포트 + (옵션) 자동 보정. 권한은 admin scope. DB 직접 수정·마이그레이션 누락·mutation 경로 우회 시 분석 탭과 거래 기록 합계 불일치를 잡기 위함.
+
+## 배포 / 인프라
+
+- [ ] Vercel Root Directory 수동 변경 — 폴더 리네이밍(`app/` → `fe/`) 후 Vercel 대시보드의 Project Settings → General → Root Directory 가 여전히 `app` 으로 설정되어 있으면 `fe` 로 변경 필요. 다음 배포 빌드 전에 적용. CI(`.github/workflows/ci.yml`) 는 이미 갱신 완료.
+- [ ] internal 패키지명 일관화 검토 — `fe/package.json` `"name": "invest-note"` 과 `be/pyproject.toml` `name = "invest-note-api"` 의 BE/FE 명시화 (`invest-note-fe`, `invest-note-be` 등) 검토. 폴더명과 일관성 vs 변경 비용(import 경로, 빌드 설정, 외부 참조) 비교 후 결정.
 
 ## 거래내역서 임포트 — 후속 과제
 

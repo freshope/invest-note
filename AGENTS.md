@@ -8,8 +8,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # 프로젝트 구조
 
-- `api`: backend (FastAPI)
-- `app`: frontend (Next.js + Capacitor)
+- `be`: backend (FastAPI)
+- `fe`: frontend (Next.js + Capacitor)
 
 # shadcn/ui 규칙
 
@@ -62,12 +62,12 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # 명령어 규칙
 
-- 프론트엔드 명령은 `--filter app` 대신 루트 스크립트 또는 `pnpm -C app ...` 형식을 사용한다.
-  - 타입 체크: `pnpm -C app exec tsc --noEmit` 또는 `pnpm tsc`
-  - 테스트: `pnpm -C app test` 또는 `pnpm test`
-  - 빌드: `pnpm -C app build` 또는 `pnpm build`
+- 프론트엔드 명령은 `--filter fe` 대신 루트 스크립트 또는 `pnpm -C fe ...` 형식을 사용한다.
+  - 타입 체크: `pnpm -C fe exec tsc --noEmit` 또는 `pnpm tsc`
+  - 테스트: `pnpm -C fe test` 또는 `pnpm test`
+  - 빌드: `pnpm -C fe build` 또는 `pnpm build`
 - 백엔드 테스트는 시스템 `pytest`가 아니라 Poetry 환경에서 실행한다.
-  - 전체 테스트: `cd api && poetry run pytest -q`
-  - 단일 파일: `cd api && poetry run pytest tests/<파일명>.py -q`
-- Next.js 문서는 루트 `node_modules`가 아니라 `app/node_modules/next/dist/docs/`에서 확인한다.
+  - 전체 테스트: `cd be && poetry run pytest -q`
+  - 단일 파일: `cd be && poetry run pytest tests/<파일명>.py -q`
+- Next.js 문서는 루트 `node_modules`가 아니라 `fe/node_modules/next/dist/docs/`에서 확인한다.
 - API 테스트 중 인증/DB 초기화 경로가 네트워크 DNS 조회로 실패하면 sandbox 제한 가능성이 있으므로 동일 명령을 권한 상승으로 재시도한다.

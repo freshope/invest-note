@@ -2,8 +2,8 @@ SHELL := /bin/zsh
 
 FE_PORT := 3000
 BE_PORT := 8000
-API_DIR := api
-APP_DIR := app
+BE_DIR := be
+FE_DIR := fe
 DEV_DIR := .dev
 DEV_LOG_DIR := $(DEV_DIR)/logs
 DEV_PID_DIR := $(DEV_DIR)/pids
@@ -51,15 +51,15 @@ dev:
 		esac; \
 	done
 	@if [ "$(DEV_SERVICES)" = "be fe" ]; then \
-		nohup sh -c 'cd $(API_DIR) && exec env PYTHONPATH=src poetry run uvicorn invest_note_api.main:create_app --factory --reload --port $(BE_PORT)' > $(DEV_LOG_DIR)/be.log 2>&1 & echo $$! > $(DEV_PID_DIR)/be.pid; \
-		nohup env PATH="$(NODE_BIN_DIR):$$PATH" pnpm -C $(APP_DIR) dev --hostname 127.0.0.1 --port $(FE_PORT) > $(DEV_LOG_DIR)/fe.log 2>&1 & echo $$! > $(DEV_PID_DIR)/fe.pid; \
+		nohup sh -c 'cd $(BE_DIR) && exec env PYTHONPATH=src poetry run uvicorn invest_note_api.main:create_app --factory --reload --port $(BE_PORT)' > $(DEV_LOG_DIR)/be.log 2>&1 & echo $$! > $(DEV_PID_DIR)/be.pid; \
+		nohup env PATH="$(NODE_BIN_DIR):$$PATH" pnpm -C $(FE_DIR) dev --hostname 127.0.0.1 --port $(FE_PORT) > $(DEV_LOG_DIR)/fe.log 2>&1 & echo $$! > $(DEV_PID_DIR)/fe.pid; \
 		echo "Started be on http://127.0.0.1:$(BE_PORT) (log: $(DEV_LOG_DIR)/be.log)"; \
 		echo "Started fe on http://127.0.0.1:$(FE_PORT) (log: $(DEV_LOG_DIR)/fe.log)"; \
 	elif [ "$(DEV_SERVICES)" = "be" ]; then \
-		nohup sh -c 'cd $(API_DIR) && exec env PYTHONPATH=src poetry run uvicorn invest_note_api.main:create_app --factory --reload --port $(BE_PORT)' > $(DEV_LOG_DIR)/be.log 2>&1 & echo $$! > $(DEV_PID_DIR)/be.pid; \
+		nohup sh -c 'cd $(BE_DIR) && exec env PYTHONPATH=src poetry run uvicorn invest_note_api.main:create_app --factory --reload --port $(BE_PORT)' > $(DEV_LOG_DIR)/be.log 2>&1 & echo $$! > $(DEV_PID_DIR)/be.pid; \
 		echo "Started be on http://127.0.0.1:$(BE_PORT) (log: $(DEV_LOG_DIR)/be.log)"; \
 	elif [ "$(DEV_SERVICES)" = "fe" ]; then \
-		nohup env PATH="$(NODE_BIN_DIR):$$PATH" pnpm -C $(APP_DIR) dev --hostname 127.0.0.1 --port $(FE_PORT) > $(DEV_LOG_DIR)/fe.log 2>&1 & echo $$! > $(DEV_PID_DIR)/fe.pid; \
+		nohup env PATH="$(NODE_BIN_DIR):$$PATH" pnpm -C $(FE_DIR) dev --hostname 127.0.0.1 --port $(FE_PORT) > $(DEV_LOG_DIR)/fe.log 2>&1 & echo $$! > $(DEV_PID_DIR)/fe.pid; \
 		echo "Started fe on http://127.0.0.1:$(FE_PORT) (log: $(DEV_LOG_DIR)/fe.log)"; \
 	else \
 		echo "Usage: make dev [be|fe]"; \

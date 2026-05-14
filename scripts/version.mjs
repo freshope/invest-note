@@ -7,7 +7,7 @@ const versionPath = resolve(rootDir, "version.json");
 
 const targets = [
   {
-    path: "app/package.json",
+    path: "fe/package.json",
     update(content, state) {
       const json = JSON.parse(content);
       json.version = state.version;
@@ -15,7 +15,7 @@ const targets = [
     },
   },
   {
-    path: "api/pyproject.toml",
+    path: "be/pyproject.toml",
     update(content, state) {
       return replaceOne(
         content,
@@ -25,7 +25,7 @@ const targets = [
     },
   },
   {
-    path: "app/android/app/build.gradle",
+    path: "fe/android/app/build.gradle",
     update(content, state) {
       return replaceOne(
         replaceOne(content, /^\s*versionCode \d+$/m, `        versionCode ${state.build}`),
@@ -35,7 +35,7 @@ const targets = [
     },
   },
   {
-    path: "app/ios/App/App.xcodeproj/project.pbxproj",
+    path: "fe/ios/App/App.xcodeproj/project.pbxproj",
     update(content, state) {
       return replaceMany(
         replaceMany(

@@ -74,7 +74,7 @@
 - **결정:** 진행 안 함. backlog 에서 제거.
 - **이유:**
   - LOC 중립~증가 — 7 줄 helper 제거하려면 `TradeWithAccountResponse` + nested `AccountInfo` + `model_validator` 변환 ~30 줄 필요.
-  - FE 계약 보존 비용 — FE Trade interface (`app/src/types/database.ts:27`) 가 snake_case (`account_name`, `ticker_symbol`, `country_code`, `created_at` 등) 사용. `_trade_with_account_dict` 가 통과하는 `model_dump(mode="json")` 은 snake_case. `CamelModel` (`schemas/_base.py`) 적용 시 wire format 이 camelCase 로 바뀌어 FE 가 깨짐. snake_case 보존하려면 `BaseModel` 직접 상속 → `CamelModel` 일원화 컨벤션과 충돌.
+  - FE 계약 보존 비용 — FE Trade interface (`fe/src/types/database.ts:27`) 가 snake_case (`account_name`, `ticker_symbol`, `country_code`, `created_at` 등) 사용. `_trade_with_account_dict` 가 통과하는 `model_dump(mode="json")` 은 snake_case. `CamelModel` (`schemas/_base.py`) 적용 시 wire format 이 camelCase 로 바뀌어 FE 가 깨짐. snake_case 보존하려면 `BaseModel` 직접 상속 → `CamelModel` 일원화 컨벤션과 충돌.
   - OpenAPI 정확도 가치 < 비용 — internal-only API.
 - **재평가 트리거:** trades 응답 wire format 을 camelCase 일원화 결정 (FE 동시 마이그레이션) 시. 본 결정은 2026-04-30 Tier 3 / 본 라운드의 다른 미진행 결정과 동일한 "다르게 보이지만 단순화 비용이 더 큰 사례" 패턴.
 
@@ -117,7 +117,7 @@
   2. `rules.py` 의 모든 비교 매직 넘버를 `thresholds.py` 상수로 흡수 — 도메인 판정 6 개 (`FEELING_RATE_HIGH`, `REFLECTION_RATE_LOW`, `LOSING_STRATEGY_RATE`, `MISSING_TAG_RATE_HIGH`, `RESULT_INPUT_RATE_LOW`, `SCALPING_HOLDING_LIMIT_DAYS`) + 최소 샘플 가드 8 개 (`MIN_EMOTION_TRADES/RESULTS`, `MIN_TOTAL_TRADES`, `MIN_SELL_TRADES`, `MIN_HIGH_WINRATE_SELL`, `MIN_SCALPING_TRADES`, `MIN_STRATEGY_TRADES/RESULTS`). 명명은 "어디서 쓰이는가" 가 아닌 "무엇을 의미하는가" 기준 (같은 5 라도 의미 다르면 별도 상수).
   3. FE `SummaryCards.tsx` 가 `WIN_THRESHOLD`/`LOSS_THRESHOLD` import — 하드코드 제거.
   4. FE dead 분석 로직 삭제 — `aggregate.ts:computeSummary`, `rules.ts:evaluateRules`, `strategy-adherence.ts:inferActualStrategy/evaluateStrategyAdherence`, `AnalysisDashboard.tsx` fallback 호출, 관련 테스트 (BE `tests/test_analysis_logic.py` 가 동일 검증 담당). 응답 타입 정의 (`AnalysisSummary`, `Suggestion`, `StrategyEvaluation`) 만 보존.
-  5. FE 정적 export 구조상 BE 직접 참조 불가 — `app/src/lib/constants/analysis.ts` 위치 유지. **임계값 변경 시 BE/FE 두 파일을 함께 수정한다.**
+  5. FE 정적 export 구조상 BE 직접 참조 불가 — `fe/src/lib/constants/analysis.ts` 위치 유지. **임계값 변경 시 BE/FE 두 파일을 함께 수정한다.**
 - **이유:** "임계값은 한 곳에서 변경" 정신을 깨고 있던 분산을 모두 흡수. BE 는 `thresholds.py` 만 보면 모든 도메인 임계값 파악. FE 자체 평가 로직은 BE 응답이 모든 판정 결과를 담고 있어 dead code, 임계값 동기화 책임 분산만 유발.
 - **트레이드오프:** ① BE suggestions 응답 빈 배열/실패 시 인사이트 섹션 공란 (fallback 사라진 비용) — `useAnalysisData` 별도 에러 핸들링 경로 담당. ② BE/FE 동기화는 여전히 수동 — PR review 시 양쪽 diff 확인 필요. 자동 sync (JSON export → FE 빌드 import) 는 정적 export 구조 + 별도 빌드 단계 비용으로 미적용. ③ `analysis.py:_HOLDING_BUCKETS` / `_size_bucket` 은 표시용 버킷팅이라 SOT 흡수 제외. UI 색상/라벨용 임계값 (`WinRateBar`, `DiversificationPanel`) 은 FE constants 그대로 — BE→rating 필드 응답화는 비용 대비 가치 낮아 미적용.
 
@@ -185,7 +185,7 @@
 
 ## 2026-04-24 | FE constants — 레이어 분리 + 중앙화 (BE co-location 미적용)
 
-- **결정:** FE 상수는 BE 처럼 도메인 폴더 내 co-location 이 아닌 `app/src/lib/constants/` 중앙 폴더로 관리. 단일 파일에서만 쓰이는 UI 로컬 상수 (색상, 애니메이션 ms, 탭 정의 등) 는 컴포넌트 파일 내 유지.
+- **결정:** FE 상수는 BE 처럼 도메인 폴더 내 co-location 이 아닌 `fe/src/lib/constants/` 중앙 폴더로 관리. 단일 파일에서만 쓰이는 UI 로컬 상수 (색상, 애니메이션 ms, 탭 정의 등) 는 컴포넌트 파일 내 유지.
 - **이유:** FE UI 는 여러 도메인 데이터를 혼합해서 보여주는 것이 본업이라 도메인 경계가 BE 처럼 강하지 않음. co-location 하면 어디에 둘지 애매한 상수 발생. 현재 구조 (레이어 분리 + 도메인 서브폴더) 가 FE 특성에 맞는 절충안.
 - **트레이드오프:** 상수가 늘어날수록 constants 파일 관리 필요. 여러 곳에서 쓰이는 상수만 선별 이관, 단일 파일 전용은 로컬 유지 원칙.
 
@@ -238,9 +238,9 @@
 
 ---
 
-## 2026-04-23 | Capacitor 셋업 — 설치 `app/`, appId `com.investnote.app`
+## 2026-04-23 | Capacitor 셋업 — 설치 `fe/`, appId `com.investnote.app`
 
-- **결정:** Capacitor 8.x 를 `app/` 워크스페이스 내부 설치. `webDir=out`. `ios/`, `android/` 네이티브 프로젝트 커밋.
+- **결정:** Capacitor 8.x 를 `fe/` 워크스페이스 내부 설치. `webDir=out`. `ios/`, `android/` 네이티브 프로젝트 커밋.
 - **이유:** Next.js export 결과물 경로 일치. 네이티브 커밋은 Capacitor 공식 권장 (재현성).
 - **트레이드오프:** appId 는 스토어 등록 후 변경 불가. 레포 크기 수 MB 증가.
 
@@ -254,11 +254,11 @@
 
 ---
 
-## 2026-04-22 | 모노레포 — pnpm workspace (`app/` + `api/`)
+## 2026-04-22 | 모노레포 — pnpm workspace (`fe/` + `be/`)
 
-- **결정:** 루트 pnpm workspace 로 `app/` (Next.js) 과 `api/` (FastAPI) 분리. 루트 `package.json` 은 위임 스크립트만.
-- **이유:** 단일 레포에서 코드·히스토리·이슈 공동 관리가 1 인 팀에 적합. `app/` 은 독립 레포 분리 여지 확보.
-- **트레이드오프:** Vercel 배포 시 Root Directory 를 `app` 으로 수동 설정. `scripts/backfill-pnl.ts` 는 `app/` 에서 실행.
+- **결정:** 루트 pnpm workspace 로 `fe/` (Next.js) 과 `be/` (FastAPI) 분리. 루트 `package.json` 은 위임 스크립트만.
+- **이유:** 단일 레포에서 코드·히스토리·이슈 공동 관리가 1 인 팀에 적합. `fe/` 는 독립 레포 분리 여지 확보.
+- **트레이드오프:** Vercel 배포 시 Root Directory 를 `fe` 로 수동 설정. `scripts/backfill-pnl.ts` 는 `fe/` 에서 실행.
 
 ---
 
