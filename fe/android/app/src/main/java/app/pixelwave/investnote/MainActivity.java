@@ -1,4 +1,4 @@
-package com.investnote.app;
+package app.pixelwave.investnote;
 
 import com.getcapacitor.BridgeActivity;
 

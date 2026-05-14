@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-05-14 | 앱 번들ID — `com.investnote.app` → `app.pixelwave.investnote`
+
+- **결정:** Capacitor `appId`, iOS `PRODUCT_BUNDLE_IDENTIFIER`, Android `applicationId/namespace`, OAuth 딥링크 스킴(`NATIVE_URL_SCHEME`, `AndroidManifest`, `Info.plist`, `strings.xml`) 모두 `app.pixelwave.investnote`로 통일. Android `MainActivity.java` 패키지 경로도 `app/pixelwave/investnote/`로 이동.
+- **이유:** 기존 `com.investnote.app`은 미보유 도메인 기반 역도메인. 보유 도메인(`pixelwave.app`) 기반으로 통일해 스토어 등록 전 충돌·소유권 분쟁 가능성을 제거.
+- **후속 작업(사용자):** Supabase 대시보드 Authentication → URL Configuration → Redirect URLs에 `app.pixelwave.investnote://auth/callback` 추가. 스토어 등록 전 상태이므로 기존 ID 마이그레이션 이슈는 없음.
+
+---
+
 ## 2026-05-14 | 로컬 개발 — Supabase CLI 로컬 스택 + ES256 비대칭 서명
 
 - **맥락:** BE/FE 의 `.env.local` 이 클라우드 Supabase (`phynizbvzzsvprawxkvd.supabase.co`) 를 가리켜 로컬 개발이 운영 DB·Auth 와 직접 연결됨. 마이그레이션 검증을 운영에서 수행해야 하는 위험 + 테스트 데이터가 운영과 섞이는 문제.

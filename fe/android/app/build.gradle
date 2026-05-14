@@ -8,10 +8,10 @@ def requireReleaseSigningCredentials = gradle.startParameter.taskNames.any { it.
 def hasReleaseSigningCredentials = releaseStoreFile.exists() && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
 
 android {
-    namespace = "com.investnote.app"
+    namespace = "app.pixelwave.investnote"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.investnote.app"
+        applicationId "app.pixelwave.investnote"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 3
