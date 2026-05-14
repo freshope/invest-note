@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-05-14 | 로컬 개발 — Supabase CLI 로컬 스택 + ES256 비대칭 서명
+
+- **맥락:** BE/FE 의 `.env.local` 이 클라우드 Supabase (`phynizbvzzsvprawxkvd.supabase.co`) 를 가리켜 로컬 개발이 운영 DB·Auth 와 직접 연결됨. 마이그레이션 검증을 운영에서 수행해야 하는 위험 + 테스트 데이터가 운영과 섞이는 문제.
+- **결정:** 개발(로컬)에서 `supabase start` 로 띄우는 로컬 스택을 사용. 다른 Supabase 프로젝트 (`today`) 가 기본 포트를 점유 중이라 invest-note 는 64321 대역으로 변경 (API 64321 / DB 64322 / Studio 64323 / Inbucket 64324 / Analytics 64327 / Pooler 64329 / shadow 64320). JWT 는 ES256 비대칭 서명 활성화 — `supabase gen signing-key --algorithm ES256` 로 생성한 `supabase/signing_keys.json` (gitignore) + `config.toml` 의 `signing_keys_path` 등록. BE `auth/jwt.py` 무수정으로 운영과 동일한 JWKS 검증 경로.
+- **이유:** ① 클라우드 의존 제거로 오프라인/속도/안전성 확보. ② 마이그레이션은 `supabase db reset` 으로 로컬 검증 후 클라우드에 반영. ③ 운영도 비대칭 (`sb_publishable_*`/`sb_secret_*`) 사용 중이라 로컬 ES256 채택 시 인증 검증 경로가 환경 간 동일.
+- **트레이드오프:** ① 다른 Supabase 프로젝트와 동시 실행 시 포트 변경 필요 (이미 적용). ② 로컬 Auth 사용자는 비어있어 회원가입 다시 (의도된 격리). ③ 클라우드 일시 전환 필요 시 `cp be/.env.production be/.env.local && cp fe/.env.production fe/.env.local`. ④ `signing_keys.json` 분실 시 재생성하면 기존 발급 토큰 모두 무효 (로컬 한정 영향).
+- **운영 절차:**
+  - 시작: `supabase start` (루트 또는 `supabase/` 안에서)
+  - 중지: `supabase stop`
+  - 마이그레이션 재적용: `supabase db reset`
+  - 키/URL 확인: `supabase status` (Studio: http://127.0.0.1:64323, Inbucket: http://127.0.0.1:64324)
+- **OAuth 보강 (2026-05-14):** 클라우드는 Dashboard 에서 Google/Kakao 를 활성화했지만 로컬은 `config.toml` 로 별도 선언이 필요. `[auth.external.google]`, `[auth.external.kakao]` 섹션 추가, `client_id`/`secret` 은 `env(...)` 로 `supabase/.env` 참조, `redirect_uri = "http://127.0.0.1:64321/auth/v1/callback"` 명시 (생략 시 GoTrue 가 "missing redirect URI" 반환). 사용자는 `supabase/.env` 에 실제 OAuth credentials 입력 + Google Cloud Console / Kakao Developers 의 redirect URI 화이트리스트에 동일 callback URL 추가 + `supabase stop && supabase start` 로 반영.
+
+---
+
 ## 2026-05-03 | FE simplify Round 6 — AccountFilter / StockSearchInput
 
 - **백로그:** "FE simplify · 타입/구조" 2 항목.

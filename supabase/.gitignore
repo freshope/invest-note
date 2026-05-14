@@ -1,8 +1,13 @@
 # Supabase
 .branches
 .temp
+signing_keys.json
 
 # dotenvx
 .env.keys
 .env.local
 .env.*.local
+
+# OAuth provider credentials (gitignored, .env.example 은 추적)
+.env
+!.env.example
