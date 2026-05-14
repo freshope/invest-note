@@ -8,7 +8,7 @@ importers:
 
   .: {}
 
-  app:
+  fe:
     dependencies:
       '@base-ui/react':
         specifier: ^1.4.0

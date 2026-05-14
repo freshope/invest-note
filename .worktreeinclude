@@ -1,4 +1,4 @@
-api/.env.local
-app/.env.local
-app/.env.production
+be/.env.local
+fe/.env.local
+fe/.env.production
 certificates/

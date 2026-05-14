@@ -11,7 +11,7 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 코드 품질 가드
 
-- [ ] `feature/eslint-cleanup` — `pnpm lint` 가 329 errors / 25,348 warnings 로 실패. 주요: ① `react-hooks/refs` (`app/src/hooks/useClickOutside.ts:8` 등 render 중 ref.current 변경), ② `react-hooks/incompatible-library` (`useForm.watch()` 사용처들 — `AccountFormPanel.tsx:78`, `TradeBasicForm.tsx` 등), ③ `@typescript-eslint/no-unused-vars` warnings 25k 누적. CI baseline (2026-05-03 `feature/ci-baseline`) 에서 lint 가드 제외하고 분리. fix 후 `.github/workflows/ci.yml` 의 frontend job 에 `pnpm lint` 단계 추가.
+- [ ] `feature/eslint-cleanup` — `pnpm lint` 가 329 errors / 25,348 warnings 로 실패. 주요: ① `react-hooks/refs` (`fe/src/hooks/useClickOutside.ts:8` 등 render 중 ref.current 변경), ② `react-hooks/incompatible-library` (`useForm.watch()` 사용처들 — `AccountFormPanel.tsx:78`, `TradeBasicForm.tsx` 등), ③ `@typescript-eslint/no-unused-vars` warnings 25k 누적. CI baseline (2026-05-03 `feature/ci-baseline`) 에서 lint 가드 제외하고 분리. fix 후 `.github/workflows/ci.yml` 의 frontend job 에 `pnpm lint` 단계 추가.
 
 ## 운영 / 어드민 도구
 
