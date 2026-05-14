@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-05-14 | FE 모바일 빌드 API URL — 인라인 env 제거 (v1.1.7 hotfix)
+
+- **사건:** TestFlight v1.1.6 빌드에서 모든 데이터 화면이 `"데이터를 불러오지 못했어요"` 로 실패. `https://invest-note.pixelwave.app/healthz` 는 200 정상이지만, 모바일 번들이 옛 Render 주소 `https://invest-note-api.onrender.com` 을 호출하고 있었음 (해당 도메인은 현재 Render 기본 404 응답).
+- **원인:** `fe/package.json` 의 `build:mobile` 스크립트가 `NEXT_PUBLIC_API_BASE_URL=https://invest-note-api.onrender.com next build` 로 옛 Render URL 을 인라인 env 로 강제 주입. 인라인 env 가 `.env.production` (`NEXT_PUBLIC_API_BASE_URL=https://invest-note.pixelwave.app`) 보다 우선 적용되어, BE 가 79808b6 에서 Coolify 의 `invest-note.pixelwave.app` 으로 이전된 뒤에도 모바일 번들은 죽은 Render 주소를 박은 채 출시됨.
+- **결정:** `build:mobile` 의 인라인 `NEXT_PUBLIC_API_BASE_URL` 제거. API URL 은 `.env.production` 단일 출처에서만 관리. `fe/package.json` 1.1.6 → 1.1.7, iOS/Android build number 6 → 7.
+- **이유:** 모바일 빌드만 별도 URL 을 갖는 정당한 이유가 없음 — production build 는 어차피 `.env.production` 을 로드한다. 인라인 env 는 BE 도메인이 바뀌었을 때 추적이 어려운 hidden override 였음. 단일 출처 (`.env.production`) 로 통일해야 다음 BE 이전 시 재발 안 함.
+- **사용자 후속:** `pnpm -C fe device:ios` (또는 `build:mobile && cap sync ios`) 재빌드 → Xcode 에서 Archive → TestFlight 업로드.
+
+---
+
 ## 2026-05-14 | FE 로컬 env 파일 — `.env.local` → `.env.development.local` (v1.1.6 hotfix)
 
 - **사건:** v1.1.4 배포 후 SNS 로그인이 운영 환경에서 `http://127.0.0.1:64321` 을 호출하며 실패. 정적 export 산출물(`fe/out/_next/static/chunks/*.js`)에 로컬 Supabase URL 이 박혀 있었음 (grep 으로 운영 URL `phynizbvzzsvprawxkvd.supabase.co` 부재 확인).
