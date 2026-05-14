@@ -1,0 +1,169 @@
+"""Trade POST/PATCH Pydantic 스키마.
+
+validators.ts의 TradeCreateSchema / TradeUpdateSchema 포팅.
+commaPositive / commaNonNegative → field_validator(mode="before")로 재현.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from pydantic import BaseModel, field_validator, model_validator
+
+from ..domain.trade_types import (
+    CountryCode,
+    DEFAULT_COUNTRY,
+    EmotionType,
+    MAX_NAME_LEN,
+    MarketType,
+    ReasoningTag,
+    StrategyType,
+    TRADE_TYPE_BUY,
+    TradeResult,
+    TradeType,
+)
+from ..domain.trade_utils import KST_OFFSET
+from ..utils.numbers import strip_comma_number
+
+TRADE_FREE_TEXT_MAX_LEN = 5000
+
+
+def _comma_positive(v: object) -> float:
+    """쉼표 포함 문자열/숫자 → 양수 float."""
+    f = float(strip_comma_number(v))  # type: ignore[arg-type]
+    if f <= 0:
+        raise ValueError("양수여야 합니다.")
+    return f
+
+
+def _comma_non_negative(v: object) -> float:
+    """쉼표 포함 문자열/숫자 → 0 이상 float."""
+    f = float(strip_comma_number(v))  # type: ignore[arg-type]
+    if f < 0:
+        raise ValueError("0 이상이어야 합니다.")
+    return f
+
+
+def _traded_at_transform(raw: object) -> datetime:
+    """KST 날짜/시간 문자열 → UTC datetime."""
+    if isinstance(raw, datetime):
+        traded_at = raw.astimezone(timezone.utc)
+    elif not isinstance(raw, str) or not raw.strip():
+        raise ValueError("날짜를 선택해주세요.")
+    else:
+        s = raw.strip()
+        # "+09:00" suffix가 없으면 KST로 간주
+        if not any(s.endswith(tz) for tz in (KST_OFFSET, "Z", "+00:00")) and "+" not in s[10:] and "Z" not in s:
+            s = s + KST_OFFSET
+        try:
+            traded_at = datetime.fromisoformat(s).astimezone(timezone.utc)
+        except ValueError:
+            raise ValueError("traded_at: 올바른 날짜/시간 형식이 아닙니다")
+    if traded_at > datetime.now(timezone.utc):
+        raise ValueError("미래 날짜의 거래는 등록할 수 없습니다.")
+    return traded_at
+
+
+class TradeCreate(BaseModel):
+    trade_type: TradeType
+    market_type: MarketType = "STOCK"
+    account_id: str
+    asset_name: str
+    ticker_symbol: str
+    country_code: CountryCode = "KR"
+    exchange: str = ""
+    traded_at: datetime
+    price: float
+    quantity: float
+    commission: float = 0.0
+    tax: float = 0.0
+
+    @field_validator("account_id", mode="before")
+    @classmethod
+    def _trim_account_id(cls, v: object) -> str:
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError("account_id가 필요합니다.")
+        return v.strip()
+
+    @field_validator("asset_name", mode="before")
+    @classmethod
+    def _trim_asset_name(cls, v: object) -> str:
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError("종목명을 입력해주세요.")
+        if len(v.strip()) > 100:
+            raise ValueError("종목명은 100자 이내여야 합니다.")
+        return v.strip()
+
+    @field_validator("ticker_symbol", mode="before")
+    @classmethod
+    def _trim_ticker(cls, v: object) -> str:
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError("종목코드를 입력해주세요.")
+        stripped = v.strip()
+        if ":" in stripped:
+            raise ValueError("종목코드에 ':'를 포함할 수 없습니다.")
+        return stripped
+
+    @field_validator("exchange", mode="before")
+    @classmethod
+    def _trim_exchange(cls, v: object) -> str:
+        if v is None:
+            return ""
+        if isinstance(v, str):
+            return v.strip()[:MAX_NAME_LEN]
+        return str(v)[:MAX_NAME_LEN]
+
+    @field_validator("traded_at", mode="before")
+    @classmethod
+    def _parse_traded_at(cls, v: object) -> datetime:
+        return _traded_at_transform(v)
+
+    @field_validator("price", "quantity", mode="before")
+    @classmethod
+    def _positive(cls, v: object) -> float:
+        return _comma_positive(v)
+
+    @field_validator("commission", "tax", mode="before")
+    @classmethod
+    def _non_negative(cls, v: object) -> float:
+        return _comma_non_negative(v)
+
+    @model_validator(mode="after")
+    def _mvp_foreign_buy_blocked(self) -> "TradeCreate":
+        if self.trade_type == TRADE_TYPE_BUY and self.country_code != DEFAULT_COUNTRY:
+            raise ValueError("MVP에서는 해외 주식 신규 매수를 등록할 수 없습니다.")
+        return self
+
+
+class TradeUpdate(BaseModel):
+    market_type: MarketType | None = None
+    price: float | None = None
+    quantity: float | None = None
+    commission: float | None = None
+    tax: float | None = None
+    strategy_type: StrategyType | None = None
+    emotion: EmotionType | None = None
+    reasoning_tags: list[ReasoningTag] | None = None
+    buy_reason: str | None = None
+    sell_reason: str | None = None
+    result: TradeResult | None = None
+
+    @field_validator("buy_reason", "sell_reason")
+    @classmethod
+    def _free_text_max_len(cls, v: str | None) -> str | None:
+        if v is not None and len(v) > TRADE_FREE_TEXT_MAX_LEN:
+            raise ValueError(f"자유 텍스트는 {TRADE_FREE_TEXT_MAX_LEN}자 이내여야 합니다.")
+        return v
+
+    @field_validator("price", "quantity", mode="before")
+    @classmethod
+    def _positive(cls, v: object) -> float | None:
+        if v is None:
+            return None
+        return _comma_positive(v)
+
+    @field_validator("commission", "tax", mode="before")
+    @classmethod
+    def _non_negative(cls, v: object) -> float | None:
+        if v is None:
+            return None
+        return _comma_non_negative(v)

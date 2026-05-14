@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+jobs:
+  frontend:
+    name: Frontend (Next.js + Capacitor)
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_dummy
+      NEXT_PUBLIC_API_BASE_URL: ""
+      NEXT_PUBLIC_SITE_URL: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm tsc
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+  backend:
+    name: Backend (FastAPI)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: be
+    env:
+      SUPABASE_URL: https://example.supabase.co
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: be/.python-version
+
+      - uses: snok/install-poetry@v1
+        with:
+          virtualenvs-in-project: true
+
+      - name: Cache Poetry venv
+        uses: actions/cache@v4
+        with:
+          path: be/.venv
+          key: poetry-${{ runner.os }}-${{ hashFiles('be/poetry.lock') }}
+          restore-keys: |
+            poetry-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
+
+      - name: Lint (ruff)
+        run: poetry run ruff check
+
+      - name: Unit tests
+        run: poetry run pytest -q

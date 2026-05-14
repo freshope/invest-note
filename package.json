@@ -1,41 +1,21 @@
 {
-  "name": "invest-note-app",
-  "version": "0.1.0",
+  "name": "invest-note",
   "private": true,
+  "packageManager": "pnpm@10.17.1",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint",
-    "test": "vitest run",
-    "test:watch": "vitest"
-  },
-  "dependencies": {
-    "@hookform/resolvers": "^5.2.2",
-    "@supabase/ssr": "^0.10.2",
-    "@supabase/supabase-js": "^2.103.0",
-    "clsx": "^2.1.1",
-    "lucide-react": "^1.8.0",
-    "next": "16.2.3",
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
-    "react-hook-form": "^7.72.1",
-    "zod": "^4.3.6"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
-    "@testing-library/user-event": "^14.6.1",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "@vitejs/plugin-react": "^6.0.1",
-    "eslint": "^9",
-    "eslint-config-next": "16.2.3",
-    "jsdom": "^29.0.2",
-    "tailwindcss": "^4",
-    "typescript": "^5",
-    "vitest": "^4.1.3"
+    "dev": "pnpm -C fe dev",
+    "restart:be": "cd be && make restart",
+    "restart:fe": "sh -c 'kill $(lsof -ti tcp:3000) 2>/dev/null || true; pnpm -C fe dev'",
+    "build": "pnpm -C fe build",
+    "lint": "pnpm -C fe lint",
+    "test": "pnpm -C fe test",
+    "tsc": "pnpm -C fe exec tsc --noEmit",
+    "device:ios": "pnpm -C fe device:ios",
+    "device:android": "pnpm -C fe device:android",
+    "bundle:android": "sh fe/scripts/bundle-android.sh",
+    "version:sync": "node scripts/version.mjs sync",
+    "version:check": "node scripts/version.mjs check",
+    "version:set": "node scripts/version.mjs set",
+    "version:bump": "node scripts/version.mjs bump"
   }
 }

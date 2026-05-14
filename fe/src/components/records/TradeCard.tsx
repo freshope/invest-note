@@ -1,0 +1,108 @@
+"use client";
+
+import { memo } from "react";
+import { cn } from "@/lib/utils";
+import { AccountChip } from "@/components/shared/AccountChip";
+import { TradeTypeBadge } from "@/components/shared/TradeTypeBadge";
+import { STRATEGY_LABELS, EMOTION_LABELS, RESULT_LABELS, TRADE_TYPE } from "@/lib/constants/trading";
+import { PNL_COLORS, getTradeTypeAccent } from "@/lib/constants/colors";
+import { fmt, formatPnL } from "@/lib/format";
+import type { TradeWithAccount } from "@/lib/trade-utils";
+
+interface TradeCardProps {
+  trade: TradeWithAccount;
+  // 부모가 카드마다 새 클로저를 만들지 않도록 trade 자체를 인자로 전달한다.
+  onPress?: (trade: TradeWithAccount) => void;
+}
+
+export const TradeCard = memo(function TradeCard({ trade, onPress }: TradeCardProps) {
+  const isBuy = trade.trade_type === TRADE_TYPE.BUY;
+
+  const price = fmt(Number(trade.price));
+  const quantity = Number(trade.quantity);
+  const totalAmount = fmt(Number(trade.total_amount));
+
+  return (
+    <button
+      type="button"
+      onClick={() => onPress?.(trade)}
+      className="w-full text-left rounded-2xl bg-muted/60 overflow-hidden active:scale-[0.99] transition-transform"
+    >
+      <div className="flex">
+        {/* 좌측 컬러 액센트 */}
+        <div
+          className={cn(
+            "w-1 flex-shrink-0 rounded-l-2xl",
+            getTradeTypeAccent(trade.trade_type).bg,
+          )}
+        />
+
+        <div className="flex-1 p-4">
+          <div className="flex items-start justify-between gap-2">
+            {/* 종목명 + 매수/매도 뱃지 */}
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-[16px] font-bold text-foreground truncate">{trade.asset_name}</span>
+              <TradeTypeBadge tradeType={trade.trade_type} size="sm" />
+            </div>
+
+            {/* 매도 수익/손실 (우측) */}
+            {!isBuy && trade.result && (
+              <div className={cn(
+                "flex-shrink-0 text-right",
+                trade.result === "SUCCESS" && PNL_COLORS.rise.text,
+                trade.result === "FAIL" && PNL_COLORS.fall.text,
+                trade.result === "BREAKEVEN" && "text-muted-foreground",
+              )}>
+                <div className="text-[13px] font-bold">
+                  {RESULT_LABELS[trade.result]}
+                </div>
+                {trade.profit_loss != null && (
+                  <div className="text-[12px] font-semibold tabular-nums">
+                    {formatPnL(Number(trade.profit_loss))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 가격 × 수량 = 총액 */}
+          <div className="mt-1.5 text-[13px] text-muted-foreground">
+            {price}원 × {quantity}주 ={" "}
+            <span className="font-semibold text-foreground">{totalAmount}원</span>
+          </div>
+
+          {trade.account && (
+            <AccountChip
+              account={trade.account}
+              size="sm"
+              className="mt-1 text-[12px] text-muted-foreground"
+            />
+          )}
+
+          {/* 메타데이터 뱃지들 */}
+          {(trade.strategy_type || trade.emotion) && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {trade.strategy_type && trade.strategy_type !== "UNKNOWN" && (
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                  {STRATEGY_LABELS[trade.strategy_type]}
+                </span>
+              )}
+              {trade.emotion && (
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
+                  {EMOTION_LABELS[trade.emotion]}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* 매수/매도 이유 */}
+          {(isBuy ? trade.buy_reason : trade.sell_reason) && (
+            <p className="mt-1.5 text-[12px] text-muted-foreground truncate">
+              {isBuy ? trade.buy_reason : trade.sell_reason}
+            </p>
+          )}
+        </div>
+      </div>
+    </button>
+  );
+});

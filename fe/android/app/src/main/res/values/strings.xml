@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">투자노트</string>
+    <string name="title_activity_main">투자노트</string>
+    <string name="package_name">app.pixelwave.investnote</string>
+    <string name="custom_url_scheme">app.pixelwave.investnote</string>
+</resources>

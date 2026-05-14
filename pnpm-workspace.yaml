@@ -1,3 +1,6 @@
+packages:
+  - "fe"
+
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver
