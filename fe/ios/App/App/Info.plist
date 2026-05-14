@@ -48,12 +48,12 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.investnote.app.oauth</string>
+			<string>app.pixelwave.investnote.oauth</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.investnote.app</string>
+				<string>app.pixelwave.investnote</string>
 			</array>
 		</dict>
 	</array>

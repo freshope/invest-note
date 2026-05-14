@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">투자노트</string>
     <string name="title_activity_main">투자노트</string>
-    <string name="package_name">com.investnote.app</string>
-    <string name="custom_url_scheme">com.investnote.app</string>
+    <string name="package_name">app.pixelwave.investnote</string>
+    <string name="custom_url_scheme">app.pixelwave.investnote</string>
 </resources>
