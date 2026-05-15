@@ -8,11 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "cap": "cap",
-    "build:mobile": "next build",
-    "device:ios": "pnpm build:mobile && cap sync ios && cap run ios",
-    "device:android": "pnpm build:mobile && cap sync android && cap run android"
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",

@@ -3,10 +3,12 @@
 DEVTOOLS_DIR ?= $(HOME)/devtools
 
 # ── project config ──────────────────────────────
-FE_PORT        := 3000
-BE_PORT        := 8000
-BE_FACTORY     := invest_note_api.main:create_app
-ARCHIVE_PREFIX := InvestNote
+FE_PORT         := 3000
+BE_PORT         := 8000
+BE_APP          := invest_note_api.main:create_app
+BE_PYTHONPATH   := src
+BE_UVICORN_OPTS := --factory --reload
+ARCHIVE_PREFIX  := InvestNote
 # ────────────────────────────────────────────────
 
 ifeq ($(wildcard $(DEVTOOLS_DIR)/Makefile.common),)
