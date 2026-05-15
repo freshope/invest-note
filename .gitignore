@@ -25,3 +25,4 @@ certificates
 .gstack/
 .claude/
 .dev/
+.makerc
