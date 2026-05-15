@@ -74,7 +74,7 @@ ifeq ($(strip $(BUILD_TARGETS)),)
 BUILD_TARGETS := ios android
 endif
 
-.PHONY: build run ios android
+.PHONY: build run archive ios android
 
 build:
 	@cd fe && pnpm build:mobile
@@ -100,55 +100,128 @@ run:
 ios android:
 	@:
 
-# ── 모바일 앱 버전 관리 ────────────────────────────────────────────────
-# iOS Build Number(CFBundleVersion) 와 Marketing Version,
-# Android versionCode/versionName, package.json 을 한 곳에서 관리.
-# TestFlight 는 동일 Build Number 재업로드 불가 → archive 직전 매번 bump-build.
+# ── 모바일 앱 아카이브 (Xcode Organizer 오픈까지) ─────────────────────
+# xcodebuild archive → Organizer 오픈만 수행. (build / cap sync / bump-build 미포함)
+# 사전 준비는 별도로: make bump-build && make build ios
+#   - 새 마케팅 릴리즈면 bump-build 대신 bump-{patch|minor|major}
+# 업로드는 Organizer 의 Distribute App → App Store Connect 로 수동 진행.
+archive:
+	@if [ "$(filter ios,$(MAKECMDGOALS))" != "ios" ] || [ -n "$(filter-out archive ios,$(MAKECMDGOALS))" ]; then \
+		echo "Usage: make archive ios"; \
+		exit 2; \
+	fi
+	@ARCHIVE_DIR="$$HOME/Library/Developer/Xcode/Archives/$$(date +%Y-%m-%d)"; \
+	  mkdir -p "$$ARCHIVE_DIR"; \
+	  ARCHIVE_PATH="$$ARCHIVE_DIR/InvestNote-$$(date +%H-%M-%S).xcarchive"; \
+	  echo "→ xcodebuild archive → $$ARCHIVE_PATH"; \
+	  xcodebuild \
+	    -project $(IOS_PROJ_DIR)/App.xcodeproj \
+	    -scheme App \
+	    -configuration Release \
+	    -destination 'generic/platform=iOS' \
+	    -archivePath "$$ARCHIVE_PATH" \
+	    -allowProvisioningUpdates \
+	    archive; \
+	  echo "→ open $$ARCHIVE_PATH (Xcode Organizer)"; \
+	  open "$$ARCHIVE_PATH"
+
+# ── 버전 관리 ──────────────────────────────────────────────────────────
+# Marketing version (SemVer X.Y.Z) 와 Build number (단조 증가 정수) 를 분리.
+#   - 마케팅 버전: fe/package.json, be/pyproject.toml,
+#                  iOS MARKETING_VERSION, Android versionName
+#   - 빌드 번호  : iOS CURRENT_PROJECT_VERSION, Android versionCode
+# 진실 소스: fe/package.json 의 version (마케팅), max(iOS,Android) build (빌드 번호).
+# bump 명령은 네 파일을 한 번에 갱신 → 드리프트 발생 방지.
+# 릴리즈 흐름:
+#   1) make bump-{patch|minor|major}  (또는 TestFlight 재업로드는 bump-build)
+#   2) CHANGELOG.md 항목 정리
+#   3) git commit && git tag vX.Y.Z   (push 는 수동)
 IOS_PROJ_DIR := fe/ios/App
+IOS_PBXPROJ := $(IOS_PROJ_DIR)/App.xcodeproj/project.pbxproj
 ANDROID_GRADLE := fe/android/app/build.gradle
 FE_PKG := fe/package.json
+BE_PYPROJECT := be/pyproject.toml
 
-.PHONY: version bump-build set-version ios-archive-prep help
+.PHONY: version version-check version-sync bump-patch bump-minor bump-major bump-build _bump _apply
 
 version:
-	@MV=$$(grep -m1 "MARKETING_VERSION = " $(IOS_PROJ_DIR)/App.xcodeproj/project.pbxproj | sed -E 's/.*= //; s/;//; s/[[:space:]]+//g'); \
-	  BV=$$(grep -m1 "CURRENT_PROJECT_VERSION = " $(IOS_PROJ_DIR)/App.xcodeproj/project.pbxproj | sed -E 's/.*= //; s/;//; s/[[:space:]]+//g'); \
-	  printf "iOS marketing : %s\niOS build     : %s\n" "$$MV" "$$BV"
-	@printf "Android name  : %s\nAndroid code  : %s\n" \
-	  "$$(awk '/versionName/ {gsub(/"/,""); print $$2}' $(ANDROID_GRADLE))" \
-	  "$$(awk '/versionCode/ {print $$2}' $(ANDROID_GRADLE))"
-	@printf "package.json  : %s\n" \
-	  "$$(node -p "require('./$(FE_PKG)').version")"
+	@PV=$$(node -p "require('./$(FE_PKG)').version"); \
+	  BE=$$(grep -m1 '^version = ' $(BE_PYPROJECT) | sed -E 's/version = "([^"]+)"/\1/'); \
+	  IMV=$$(grep -m1 "MARKETING_VERSION = " $(IOS_PBXPROJ) | sed -E 's/.*= //; s/;//; s/[[:space:]]+//g'); \
+	  IBV=$$(grep -m1 "CURRENT_PROJECT_VERSION = " $(IOS_PBXPROJ) | sed -E 's/.*= //; s/;//; s/[[:space:]]+//g'); \
+	  ANN=$$(awk '/versionName/ {gsub(/"/,""); print $$2}' $(ANDROID_GRADLE)); \
+	  ANC=$$(awk '/versionCode/ {print $$2}' $(ANDROID_GRADLE)); \
+	  printf "Marketing version (SemVer)\n"; \
+	  printf "  fe/package.json   : %s\n" "$$PV"; \
+	  printf "  be/pyproject.toml : %s\n" "$$BE"; \
+	  printf "  iOS marketing     : %s\n" "$$IMV"; \
+	  printf "  Android name      : %s\n" "$$ANN"; \
+	  printf "Build number (monotonic)\n"; \
+	  printf "  iOS build         : %s\n" "$$IBV"; \
+	  printf "  Android code      : %s\n" "$$ANC"
 
+version-check:
+	@PV=$$(node -p "require('./$(FE_PKG)').version"); \
+	  BE=$$(grep -m1 '^version = ' $(BE_PYPROJECT) | sed -E 's/version = "([^"]+)"/\1/'); \
+	  IMV=$$(grep -m1 "MARKETING_VERSION = " $(IOS_PBXPROJ) | sed -E 's/.*= //; s/;//; s/[[:space:]]+//g'); \
+	  IBV=$$(grep -m1 "CURRENT_PROJECT_VERSION = " $(IOS_PBXPROJ) | sed -E 's/.*= //; s/;//; s/[[:space:]]+//g'); \
+	  ANN=$$(awk '/versionName/ {gsub(/"/,""); print $$2}' $(ANDROID_GRADLE)); \
+	  ANC=$$(awk '/versionCode/ {print $$2}' $(ANDROID_GRADLE)); \
+	  FAIL=0; \
+	  if [ "$$PV" != "$$BE" ] || [ "$$PV" != "$$IMV" ] || [ "$$PV" != "$$ANN" ]; then \
+	    echo "마케팅 버전 불일치: pkg=$$PV be=$$BE ios=$$IMV android=$$ANN"; FAIL=1; \
+	  fi; \
+	  if [ "$$IBV" != "$$ANC" ]; then \
+	    echo "빌드 번호 불일치: ios=$$IBV android=$$ANC"; FAIL=1; \
+	  fi; \
+	  if [ "$$FAIL" = "0" ]; then echo "in sync: $$PV build $$IBV"; else exit 1; fi
+
+# fe/package.json + max(iOS,Android) build 기준으로 BE/iOS/Android 강제 동기화
+version-sync:
+	@NEW_MV=$$(node -p "require('./$(FE_PKG)').version"); \
+	  IBV=$$(grep -m1 "CURRENT_PROJECT_VERSION = " $(IOS_PBXPROJ) | sed -E 's/.*= //; s/;//; s/[[:space:]]+//g'); \
+	  ANC=$$(awk '/versionCode/ {print $$2}' $(ANDROID_GRADLE)); \
+	  NEW_BUILD=$$IBV; if [ "$$ANC" -gt "$$NEW_BUILD" ]; then NEW_BUILD=$$ANC; fi; \
+	  $(MAKE) -s _apply NEW_MV="$$NEW_MV" NEW_BUILD="$$NEW_BUILD"
+
+bump-patch:
+	@$(MAKE) -s _bump TYPE=patch
+bump-minor:
+	@$(MAKE) -s _bump TYPE=minor
+bump-major:
+	@$(MAKE) -s _bump TYPE=major
 bump-build:
-	@CUR=$$(grep -m1 "CURRENT_PROJECT_VERSION = " $(IOS_PROJ_DIR)/App.xcodeproj/project.pbxproj | sed -E 's/.*= //; s/;//; s/[[:space:]]+//g'); \
-	  NEW=$$((CUR + 1)); \
-	  sed -i '' -E "s/CURRENT_PROJECT_VERSION = [^;]+;/CURRENT_PROJECT_VERSION = $$NEW;/g" $(IOS_PROJ_DIR)/App.xcodeproj/project.pbxproj; \
-	  printf "iOS CFBundleVersion : %s → %s\n" "$$CUR" "$$NEW"
-	@CUR=$$(awk '/versionCode/ {print $$2}' $(ANDROID_GRADLE)); \
-	  NEW=$$((CUR + 1)); \
-	  sed -i '' "s/versionCode $$CUR/versionCode $$NEW/" $(ANDROID_GRADLE); \
-	  printf "Android versionCode : %s → %s\n" "$$CUR" "$$NEW"
-	@$(MAKE) -s version
+	@$(MAKE) -s _bump TYPE=build
 
-set-version:
-	@if ! printf "%s\n" "$(V)" | grep -Eq '^[0-9]+[.][0-9]+$$'; then echo "Usage: make set-version V=1.0"; exit 1; fi
-	@sed -i '' -E "s/MARKETING_VERSION = [^;]+;/MARKETING_VERSION = $(V);/g" $(IOS_PROJ_DIR)/App.xcodeproj/project.pbxproj
-	@IOS_CUR=$$(grep -m1 "CURRENT_PROJECT_VERSION = " $(IOS_PROJ_DIR)/App.xcodeproj/project.pbxproj | sed -E 's/.*= //; s/;//; s/[[:space:]]+//g'); \
-	  ANDROID_CUR=$$(awk '/versionCode/ {print $$2}' $(ANDROID_GRADLE)); \
-	  CUR=$$IOS_CUR; \
-	  if [ "$$ANDROID_CUR" -gt "$$CUR" ]; then CUR=$$ANDROID_CUR; fi; \
-	  NEW=$$((CUR + 1)); \
-	  PKG_VERSION="$(V).$$NEW"; \
-	  sed -i '' -E "s/CURRENT_PROJECT_VERSION = [^;]+;/CURRENT_PROJECT_VERSION = $$NEW;/g" $(IOS_PROJ_DIR)/App.xcodeproj/project.pbxproj; \
-	  sed -i '' "s/versionCode [0-9][0-9]*/versionCode $$NEW/" $(ANDROID_GRADLE); \
-	  cd fe && npm version --no-git-tag-version --allow-same-version $$PKG_VERSION >/dev/null
-	@sed -i '' "s/versionName \".*\"/versionName \"$(V)\"/" $(ANDROID_GRADLE)
-	@$(MAKE) -s version
+# 내부: TYPE 에 따라 새 마케팅/빌드 계산 후 _apply 호출
+_bump:
+	@CUR=$$(node -p "require('./$(FE_PKG)').version"); \
+	  if ! printf "%s\n" "$$CUR" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+	    echo "fe/package.json 의 version 이 SemVer 가 아님: $$CUR"; exit 1; \
+	  fi; \
+	  IFS=. read -r MA MI PA <<< "$$CUR"; \
+	  case "$(TYPE)" in \
+	    major) NEW_MV="$$((MA+1)).0.0";; \
+	    minor) NEW_MV="$$MA.$$((MI+1)).0";; \
+	    patch) NEW_MV="$$MA.$$MI.$$((PA+1))";; \
+	    build) NEW_MV="$$CUR";; \
+	    *) echo "Usage: make bump-{patch|minor|major|build}"; exit 1;; \
+	  esac; \
+	  IBV=$$(grep -m1 "CURRENT_PROJECT_VERSION = " $(IOS_PBXPROJ) | sed -E 's/.*= //; s/;//; s/[[:space:]]+//g'); \
+	  ANC=$$(awk '/versionCode/ {print $$2}' $(ANDROID_GRADLE)); \
+	  CUR_BUILD=$$IBV; if [ "$$ANC" -gt "$$CUR_BUILD" ]; then CUR_BUILD=$$ANC; fi; \
+	  NEW_BUILD=$$((CUR_BUILD + 1)); \
+	  $(MAKE) -s _apply NEW_MV="$$NEW_MV" NEW_BUILD="$$NEW_BUILD"
 
-ios-archive-prep: bump-build
-	@cd fe && pnpm build:mobile && npx cap sync ios
-	@echo "✅ Ready. Open Xcode → Product → Archive"
+# 내부: NEW_MV / NEW_BUILD 를 네 파일에 일괄 적용
+_apply:
+	@sed -i '' -E "s/MARKETING_VERSION = [^;]+;/MARKETING_VERSION = $(NEW_MV);/g" $(IOS_PBXPROJ)
+	@sed -i '' -E "s/CURRENT_PROJECT_VERSION = [^;]+;/CURRENT_PROJECT_VERSION = $(NEW_BUILD);/g" $(IOS_PBXPROJ)
+	@sed -i '' -E "s/versionName \"[^\"]+\"/versionName \"$(NEW_MV)\"/" $(ANDROID_GRADLE)
+	@sed -i '' -E "s/versionCode [0-9]+/versionCode $(NEW_BUILD)/" $(ANDROID_GRADLE)
+	@sed -i '' -E "s/^version = \"[^\"]+\"/version = \"$(NEW_MV)\"/" $(BE_PYPROJECT)
+	@cd fe && npm version --no-git-tag-version --allow-same-version $(NEW_MV) >/dev/null
+	@$(MAKE) -s version
 
 help:
 	@printf "사용법: make <target>\n\n"
@@ -163,13 +236,17 @@ help:
 	@printf "모바일 앱 실행\n"
 	@printf "  run ios                pnpm build + cap sync ios + cap run ios\n"
 	@printf "                         (연결된 iPhone에 설치/실행)\n\n"
-	@printf "모바일 앱 버전 관리\n"
-	@printf "  version                iOS / Android / package.json 의 현재 버전 표시\n"
-	@printf "  bump-build             iOS Build Number, Android versionCode 를 +1\n"
-	@printf "                         (TestFlight 업로드 직전 매번 실행)\n"
-	@printf "  set-version V=X.Y      마케팅 버전을 X.Y 로 셋팅 + Build Number 도 +1\n"
-	@printf "                         package.json 은 X.Y.<Build Number> 로 설정\n"
-	@printf "  ios-archive-prep       bump-build → pnpm build → cap sync ios\n"
-	@printf "                         (Xcode Archive 직전 일괄 준비)\n\n"
+	@printf "모바일 앱 아카이브\n"
+	@printf "  archive ios            xcodebuild archive → Xcode Organizer 오픈\n"
+	@printf "                         (사전: make bump-build && make build ios)\n"
+	@printf "                         (이후: Distribute App → App Store Connect 수동)\n\n"
+	@printf "버전 관리\n"
+	@printf "  version                네 파일의 현재 마케팅/빌드 버전 표시\n"
+	@printf "  bump-patch             X.Y.Z → X.Y.(Z+1), build +1  (버그 수정)\n"
+	@printf "  bump-minor             X.Y.Z → X.(Y+1).0, build +1  (기능 추가)\n"
+	@printf "  bump-major             X.Y.Z → (X+1).0.0, build +1  (breaking)\n"
+	@printf "  bump-build             마케팅 동일, build 만 +1     (TestFlight 재업로드)\n"
+	@printf "  version-sync           fe/package.json 마케팅 + 최대 build 로 나머지 동기화\n"
+	@printf "  version-check          마케팅/빌드 버전이 모든 파일에서 일치하는지 검증\n\n"
 	@printf "기타\n"
 	@printf "  help                   이 도움말 표시\n"
