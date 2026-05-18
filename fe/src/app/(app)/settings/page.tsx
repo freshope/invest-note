@@ -54,7 +54,7 @@ export default function SettingsPage() {
         </section>
 
         <p className="text-xs text-center text-muted-foreground">
-          투자노트 v0.1.0
+          투자노트 v{process.env.NEXT_PUBLIC_APP_VERSION}
         </p>
       </div>
     </>

@@ -1,5 +1,5 @@
 import { toKST } from "@/lib/trade-utils";
-import { buildPnlMap } from "@/lib/analysis/realized-pnl";
+import { buildPnlMap, sortForCalc } from "@/lib/analysis/realized-pnl";
 import { TRADE_TYPE } from "@/lib/constants/trading";
 import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import type { Trade, Account } from "@/types/database";
@@ -56,10 +56,9 @@ export function buildPositions(trades: Trade[]): Position[] {
     lastNote: string | null;
   }>();
 
-  // Oldest first — iterating once, last write per key = newest note
-  const sorted = [...trades].sort(
-    (a, b) => new Date(a.traded_at).getTime() - new Date(b.traded_at).getTime(),
-  );
+  // BE의 sort_for_calc와 동일 규칙(traded_at → BUY 먼저 → created_at).
+  // 같은 날 BUY+SELL 일괄 등록 시 동률 traded_at 에서 SELL이 먼저 적용돼 보유 수량이 음수로 클램프되던 버그 방지.
+  const sorted = sortForCalc(trades);
 
   for (const trade of sorted) {
     const ticker = trade.ticker_symbol ?? trade.asset_name;
