@@ -43,9 +43,12 @@ from invest_note_api.domain.holdings import (
 from invest_note_api.domain.analysis.strategy_adherence import evaluate_strategy_for_sell
 from invest_note_api.domain.realized_pnl import (
     TradeGroupKey,
+    is_same_group,
+    sort_for_calc,
     trade_to_group_key,
     validate_mutation,
 )
+from invest_note_api.domain.trade_walker import walk_trades
 from invest_note_api.domain.trade_utils import kst_date_to_utc
 from invest_note_api.domain.trade_import import (
     build_merge_patch,
@@ -97,6 +100,140 @@ def get_trade_staging_state(request: Request) -> TradeStagingState:
 router = APIRouter(prefix="/api/trades")
 
 _TICKER_RE = re.compile(r"^[A-Za-z0-9.\-_가-힣]+$")
+
+
+async def _validate_import_groups(
+    pool: asyncpg.Pool,
+    user_id,
+    account_id: str,
+    rows: list[dict],
+) -> list[ImportError]:
+    """preview 시점 정합성 검증. staging rows 를 group 단위로 가상 적용 후 oversell 탐지.
+
+    commit 시 한 번 더 동일 검증을 수행하므로 race condition 은 commit 단계에서 차단된다.
+    """
+    if not rows:
+        return []
+
+    errors: list[ImportError] = []
+    groups: dict[TradeGroupKey, list[dict]] = defaultdict(list)
+    for row in rows:
+        group_key = TradeGroupKey(
+            account_id=account_id,
+            ticker=row["ticker_symbol"],
+            asset_name=row["asset_name"],
+            country=row["country_code"],
+        )
+        groups[group_key].append(row)
+
+    now = datetime.now(timezone.utc)
+    async with acquire_for_user(pool, user_id) as conn:
+        await assert_account_exists(conn, account_id)
+        for group_key, group_rows in groups.items():
+            group_existing = await list_trades_in_group(conn, user_id, group_key)
+            existing_by_sig: dict = {
+                trade_to_signature(t, account_id): t for t in group_existing
+            }
+            seen_sigs: set = set(existing_by_sig.keys())
+
+            sorted_rows = sorted(
+                group_rows,
+                key=lambda r: (r["traded_at_kst"], 0 if r["trade_type"] == TRADE_TYPE_BUY else 1),
+            )
+
+            virtual_inserts: list[Trade] = []
+            virtual_merged: list[Trade] = []
+            for i, row in enumerate(sorted_rows):
+                traded_date = date.fromisoformat(row["traded_at_kst"])
+                kst_full = row.get("traded_at_kst_full")
+                if kst_full:
+                    kst_dt = datetime.fromisoformat(kst_full)
+                    traded_at_utc = kst_date_to_utc(kst_dt.date(), kst_dt.time())
+                    row_for_merge = {**row, "traded_at_utc": traded_at_utc}
+                else:
+                    traded_at_utc = kst_date_to_utc(traded_date)
+                    row_for_merge = row
+
+                sig = make_signature(
+                    account_id=account_id,
+                    trade_date=traded_date,
+                    ticker=row["ticker_symbol"],
+                    asset_name=row["asset_name"],
+                    trade_type=row["trade_type"],
+                    quantity=row["quantity"],
+                    price=row["price"],
+                )
+                existing = existing_by_sig.get(sig)
+                if existing is not None:
+                    patch = build_merge_patch(existing, row_for_merge)
+                    if patch:
+                        virtual_merged.append(existing.model_copy(update=patch))
+                    continue
+                if sig in seen_sigs:
+                    continue
+                seen_sigs.add(sig)
+                virtual_inserts.append(Trade(
+                    id=f"__pending_preview_{i}",
+                    user_id=str(user_id),
+                    account_id=account_id,
+                    asset_name=row["asset_name"],
+                    ticker_symbol=row["ticker_symbol"],
+                    market_type=row["market_type"],
+                    trade_type=row["trade_type"],
+                    price=row["price"],
+                    quantity=row["quantity"],
+                    total_amount=row["price"] * row["quantity"],
+                    traded_at=traded_at_utc,
+                    commission=row["commission"],
+                    tax=row["tax"],
+                    country_code=row["country_code"],
+                    exchange=row["exchange"],
+                    created_at=now,
+                    updated_at=now,
+                ))
+
+            virtual_merged_ids = {m.id for m in virtual_merged}
+            virtual_fresh = (
+                virtual_merged
+                + [t for t in group_existing if t.id not in virtual_merged_ids]
+                + virtual_inserts
+            )
+            oversell_msg = _find_import_oversell(virtual_fresh, group_key)
+            if oversell_msg is not None:
+                errors.append(ImportError(row_no=0, reason=oversell_msg))
+
+    return errors
+
+
+def _find_import_oversell(
+    trades: list[Trade], key: TradeGroupKey
+) -> str | None:
+    """fresh_trades 에 oversell/no_holding SELL 이 있으면 사용자용 사유 문자열 반환.
+
+    수동 등록은 `validate_mutation` 한 mutation씩 검증하지만, 일괄 등록은 같은 그룹에
+    여러 INSERT/UPDATE 가 동시 적용되므로 walk_trades 로 직접 순회한다.
+    """
+    for ev in walk_trades(
+        trades,
+        group_filter=lambda t: is_same_group(t, key),
+        sort_fn=sort_for_calc,
+        track_fifo_lots=False,
+    ):
+        if ev.kind != "SELL":
+            continue
+        asset = ev.trade.asset_name or key.asset_name
+        traded_date = ev.trade.traded_at.date().isoformat()
+        if ev.no_holding:
+            return (
+                f"{asset} {traded_date} 매도 거래에 해당하는 보유 수량이 없습니다. "
+                "이전 매수 거래가 누락된 것 같으니 거래내역서 기간을 더 길게 받아 다시 시도해주세요."
+            )
+        if ev.oversell:
+            return (
+                f"{asset} {traded_date} 매도 수량이 보유 수량을 초과합니다. "
+                "이전 매수 거래가 누락된 것 같으니 거래내역서 기간을 더 길게 받아 다시 시도해주세요."
+            )
+    return None
 
 
 def _trade_dict(trade) -> dict:
@@ -314,6 +451,7 @@ async def delete_trade_endpoint(
 async def import_preview(
     file: UploadFile = File(...),
     broker_key: str | None = None,
+    account_id: str | None = None,
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
     staging: TradeStagingState = Depends(get_trade_staging_state),
@@ -445,6 +583,13 @@ async def import_preview(
         "account_hint": parse_result.account_hint,
     }
 
+    # 계좌가 지정되었으면 사용자에게 commit 전에 정합성 위반을 노출한다.
+    validation_errors: list[ImportError] = []
+    if account_id:
+        validation_errors = await _validate_import_groups(
+            pool, user.id, account_id, rows_to_stage
+        )
+
     return ImportPreviewResponse(
         staging_id=staging_id,
         broker_key=detected_key,
@@ -456,6 +601,7 @@ async def import_preview(
         usd_skip_count=parse_result.usd_skip_count,
         unresolved_ticker_count=unresolved_ticker_count,
         errors=parse_errors,
+        validation_errors=validation_errors,
     )
 
 
@@ -568,7 +714,37 @@ async def import_commit(
             if not to_insert and not to_merge:
                 continue
 
-            # 그룹 lock + (merge + insert) + recalc (savepoint로 그룹 단위 롤백)
+            # 정합성 검증은 DB 적용 *전* 가상 적용으로 수행한다.
+            # acquire_for_user 가 이미 outer transaction 을 잡고 있어 inner
+            # conn.transaction() 의 SAVEPOINT 동작이 Supavisor pooler 환경에서
+            # 안정적이지 않을 수 있어, "검증 실패면 raise → rollback" 패턴을 피한다.
+            now_for_virtual = datetime.now(timezone.utc)
+            virtual_inserts = [
+                Trade(
+                    id=f"__pending_{i}",
+                    user_id=str(user.id),
+                    total_amount=r["price"] * r["quantity"],
+                    created_at=now_for_virtual,
+                    updated_at=now_for_virtual,
+                    **r,
+                )
+                for i, r in enumerate(to_insert)
+            ]
+            virtual_merged = [
+                existing.model_copy(update=patch) for existing, patch in to_merge
+            ]
+            virtual_merged_ids = {m.id for m in virtual_merged}
+            virtual_fresh = (
+                virtual_merged
+                + [t for t in group_existing if t.id not in virtual_merged_ids]
+                + virtual_inserts
+            )
+            oversell_msg = _find_import_oversell(virtual_fresh, group_key)
+            if oversell_msg is not None:
+                commit_errors.append(ImportError(row_no=0, reason=oversell_msg))
+                continue
+
+            # 검증 통과 → 실제 DB 적용
             err_asset = (
                 to_insert[0]["asset_name"]
                 if to_insert

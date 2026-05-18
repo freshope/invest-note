@@ -28,7 +28,7 @@ export function ResultStep({ result, onClose }: Props) {
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
             {result.inserted_count}건 신규 등록
-            {result.merged_count > 0 && ` · ${result.merged_count}건 머지`}
+            {result.merged_count > 0 && ` · ${result.merged_count}건 갱신`}
             {result.skipped_count > 0 && ` · ${result.skipped_count}건 건너뜀`}
             {result.error_count > 0 && ` · ${result.error_count}건 실패`}
           </p>

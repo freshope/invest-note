@@ -58,7 +58,7 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
     if (!effectiveBrokerKey) return;
     setIsLoading(true);
     try {
-      const res = await importApi.preview(file, effectiveBrokerKey);
+      const res = await importApi.preview(file, effectiveBrokerKey, selectedAccountId);
       setPreview(res);
       setStep("preview");
     } catch (err) {
@@ -83,7 +83,7 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
       if (res.inserted_count > 0 || res.merged_count > 0) {
         const parts: string[] = [];
         if (res.inserted_count > 0) parts.push(`${res.inserted_count}건 신규 등록`);
-        if (res.merged_count > 0) parts.push(`${res.merged_count}건 머지`);
+        if (res.merged_count > 0) parts.push(`${res.merged_count}건 갱신`);
         toast.success(parts.join(" · "));
       }
     } catch (err) {
@@ -117,6 +117,7 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
               accept={effectiveBroker?.accept ?? ".xlsx,.xls,.pdf"}
               downloadGuide={effectiveBroker?.downloadGuide}
               onFileSelect={handleFileSelect}
+              onBack={() => setStep("account")}
               isLoading={isLoading}
             />
           )}
@@ -125,6 +126,10 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
               preview={preview}
               account={selectedAccount}
               onCommit={handleCommit}
+              onBack={() => {
+                setPreview(null);
+                setStep("file");
+              }}
               isLoading={isLoading}
             />
           )}

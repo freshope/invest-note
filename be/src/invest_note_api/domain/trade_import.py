@@ -7,6 +7,8 @@ from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import TYPE_CHECKING
 
+from invest_note_api.domain.trade_utils import to_kst
+
 if TYPE_CHECKING:
     from invest_note_api.domain.trade_types import Trade
 
@@ -61,8 +63,10 @@ def _signature_fields(
 
 
 def _trade_signature_kwargs(trade: "Trade") -> dict:
+    # KST 기준 date — import 측 `pt.traded_at_kst` 와 동일한 시간대로 비교해야
+    # KST 새벽(00~08시)에 수동 등록된 거래도 거래내역서 일자와 매칭된다.
     return {
-        "trade_date": trade.traded_at.date(),
+        "trade_date": to_kst(trade.traded_at).date(),
         "ticker": trade.ticker_symbol,
         "asset_name": trade.asset_name,
         "trade_type": trade.trade_type,

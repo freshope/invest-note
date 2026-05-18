@@ -8,6 +8,8 @@ from invest_note_api.domain.trade_import import (
     build_merge_patch,
     make_preview_signature,
     make_signature,
+    trade_to_preview_signature,
+    trade_to_signature,
 )
 from invest_note_api.domain.trade_types import Trade
 
@@ -202,3 +204,47 @@ def test_merge_patch_money_quantized_to_two_decimal():
     # 100.001 ↔ 100.006 은 100.00 vs 100.01 로 다름 (ROUND_HALF_UP)
     row2 = _row(commission=100.006, tax=50.0)
     assert build_merge_patch(existing, row2) == {"commission": 100.01}
+
+
+# ── trade_to_signature: KST date 기준 변환 ─────────────────────────────────
+
+
+def test_trade_to_signature_uses_kst_date_for_pre_dawn_kst_time():
+    """KST 새벽(00~08시)에 수동 등록된 거래는 UTC 기준으로 하루 빠른 date 가 되는데,
+    시그니처는 거래내역서(KST date)와 매칭되어야 하므로 KST date 로 계산되어야 한다.
+    """
+    # 2026-02-25 05:00 KST == 2026-02-24 20:00 UTC
+    trade = _trade(traded_at=datetime(2026, 2, 24, 20, 0, tzinfo=timezone.utc))
+
+    sig_trade = trade_to_signature(trade, account_id=trade.account_id)
+    sig_import = make_signature(
+        account_id=trade.account_id,
+        trade_date=date(2026, 2, 25),
+        ticker=trade.ticker_symbol,
+        asset_name=trade.asset_name,
+        trade_type=trade.trade_type,
+        quantity=trade.quantity,
+        price=trade.price,
+    )
+    assert sig_trade == sig_import
+
+
+def test_trade_to_signature_kst_business_hour_date_matches():
+    # 2026-02-25 14:00 KST == 2026-02-25 05:00 UTC
+    trade = _trade(traded_at=datetime(2026, 2, 25, 5, 0, tzinfo=timezone.utc))
+    sig_trade = trade_to_signature(trade, account_id=trade.account_id)
+    assert sig_trade.trade_date == date(2026, 2, 25)
+
+
+def test_trade_to_preview_signature_also_kst_based():
+    trade = _trade(traded_at=datetime(2026, 2, 24, 20, 0, tzinfo=timezone.utc))
+    p_trade = trade_to_preview_signature(trade)
+    p_import = make_preview_signature(
+        trade_date=date(2026, 2, 25),
+        ticker=trade.ticker_symbol,
+        asset_name=trade.asset_name,
+        trade_type=trade.trade_type,
+        quantity=trade.quantity,
+        price=trade.price,
+    )
+    assert p_trade == p_import

@@ -12,6 +12,7 @@ interface Props {
   accept: string;
   downloadGuide?: BrokerDownloadGuide;
   onFileSelect: (file: File) => void;
+  onBack?: () => void;
   isLoading: boolean;
 }
 
@@ -24,11 +25,12 @@ async function openExternal(url: string) {
   }
 }
 
-export function FileStep({ brokerName, accept, downloadGuide, onFileSelect, isLoading }: Props) {
+export function FileStep({ brokerName, accept, downloadGuide, onFileSelect, onBack, isLoading }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [guideOpen, setGuideOpen] = useState(false);
+  // 다운로드 절차를 모르는 사용자가 많아 기본 열림으로 안내.
+  const [guideOpen, setGuideOpen] = useState(true);
 
   const handleFile = (file: File) => {
     setSelectedFile(file);
@@ -127,15 +129,28 @@ export function FileStep({ brokerName, accept, downloadGuide, onFileSelect, isLo
       </div>
 
       <FullScreenPanelFooter>
-        <Button
-          size="xl"
-          className="w-full"
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          disabled={isLoading}
-        >
-          {buttonLabel}
-        </Button>
+        <div className="flex gap-2">
+          {onBack && (
+            <Button
+              size="xl"
+              variant="outline"
+              type="button"
+              onClick={onBack}
+              disabled={isLoading}
+            >
+              이전
+            </Button>
+          )}
+          <Button
+            size="xl"
+            className="flex-1"
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={isLoading}
+          >
+            {buttonLabel}
+          </Button>
+        </div>
       </FullScreenPanelFooter>
     </div>
   );
