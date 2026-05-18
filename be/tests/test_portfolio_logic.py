@@ -123,6 +123,29 @@ class TestBuildPositions:
         running_qtys = sorted(lot.running_qty for lot in lot_map.values())
         assert running_qtys == [3.0, 10.0]
 
+    def test_same_day_buy_sell_buy_sell_buy_first(self):
+        """시각 없는 일괄 등록의 동률 traded_at 케이스 — sort_for_calc 의 BUY-first tiebreaker.
+
+        NHN 사용자 시나리오: 2025-06-18 BUY 29 + BUY 93 + SELL 61, 2025-06-25 SELL 61.
+        입력 순열에 무관하게 최종 보유 0주 (== 포지션 비어 있음) 이어야 한다.
+        sort_by_traded_at 시절에는 SELL 이 먼저 매칭되면 32주가 잔류했다.
+        """
+        same_day = _dt("2025-06-18T00:00:00Z")
+        later = _dt("2025-06-25T00:00:00Z")
+        # 입력 순서 의도적으로 섞기 — sort_for_calc 가 결정적으로 BUY 먼저 정렬해야 함
+        trades = [
+            make_trade(id="s1", trade_type="SELL", ticker_symbol="NHN", asset_name="NHN",
+                       quantity=61, price=27550, traded_at=same_day, avg_buy_price=28361.0738),
+            make_trade(id="b1", trade_type="BUY", ticker_symbol="NHN", asset_name="NHN",
+                       quantity=29, price=28400, traded_at=same_day),
+            make_trade(id="b2", trade_type="BUY", ticker_symbol="NHN", asset_name="NHN",
+                       quantity=93, price=28350, traded_at=same_day),
+            make_trade(id="s2", trade_type="SELL", ticker_symbol="NHN", asset_name="NHN",
+                       quantity=61, price=32000, traded_at=later, avg_buy_price=28362.6993),
+        ]
+        positions, _ = build_positions(trades)
+        assert positions == [], f"holding 0 expected, got {positions}"
+
 
 class TestMergeQuotes:
     def test_quote_updates_position(self):

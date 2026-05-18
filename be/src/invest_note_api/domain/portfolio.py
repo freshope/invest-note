@@ -10,7 +10,8 @@ from invest_note_api.domain.trade_types import (
     trade_country,
     trade_identifier,
 )
-from invest_note_api.domain.trade_utils import position_key, sort_by_traded_at, to_kst
+from invest_note_api.domain.realized_pnl import sort_for_calc
+from invest_note_api.domain.trade_utils import position_key, to_kst
 from invest_note_api.domain.trade_walker import (
     stored_avg_cost_deduction,
     walk_trades,
@@ -125,7 +126,7 @@ def _build_lot_map(trades: list["Trade"]) -> LotMap:
         for ev in walk_trades(
             lot_trades,
             group_filter=lambda _t: True,
-            sort_fn=sort_by_traded_at,
+            sort_fn=sort_for_calc,
             cost_deduction=stored_avg_cost_deduction,
             track_fifo_lots=False,
         ):
