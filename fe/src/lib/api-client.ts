@@ -235,6 +235,7 @@ export interface ImportPreviewResponse {
 
 export interface ImportCommitResponse {
   inserted_count: number;
+  merged_count: number;
   skipped_count: number;
   error_count: number;
   errors: ImportErrorItem[];

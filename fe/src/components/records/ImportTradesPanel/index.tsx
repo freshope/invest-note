@@ -80,8 +80,11 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
         queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
         queryClient.invalidateQueries({ queryKey: queryKeys.portfolioSummary }),
       ]);
-      if (res.inserted_count > 0) {
-        toast.success(`${res.inserted_count}건의 거래가 등록되었습니다.`);
+      if (res.inserted_count > 0 || res.merged_count > 0) {
+        const parts: string[] = [];
+        if (res.inserted_count > 0) parts.push(`${res.inserted_count}건 신규 등록`);
+        if (res.merged_count > 0) parts.push(`${res.merged_count}건 머지`);
+        toast.success(parts.join(" · "));
       }
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "등록 중 오류가 발생했습니다.";
@@ -112,6 +115,7 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
             <FileStep
               brokerName={effectiveBroker?.label ?? "증권사"}
               accept={effectiveBroker?.accept ?? ".xlsx,.xls,.pdf"}
+              downloadGuide={effectiveBroker?.downloadGuide}
               onFileSelect={handleFileSelect}
               isLoading={isLoading}
             />

@@ -34,6 +34,7 @@ from invest_note_api.db_ops.trades_repo import (
     list_trades_with_account,
     patch_trade,
     strip_sell_auto_derived,
+    update_trade_from_import,
 )
 from invest_note_api.domain.holdings import (
     compute_flexible_breakdown,
@@ -47,6 +48,7 @@ from invest_note_api.domain.realized_pnl import (
 )
 from invest_note_api.domain.trade_utils import kst_date_to_utc
 from invest_note_api.domain.trade_import import (
+    build_merge_patch,
     make_preview_signature,
     make_signature,
     parse_kst_date,
@@ -395,6 +397,8 @@ async def import_preview(
             parse_errors.append(ImportError(row_no=pt.source_row_no, reason=f"날짜 파싱 오류: {pt.traded_at_kst}"))
             continue
         kst_str = pt.traded_at_kst[:10]  # "YYYY-MM-DD" — staging 시 commit 경로에서 재사용
+        # 시각 정보가 함께 들어온 경우만 보관 (머지 시 traded_at 정밀도 갱신용)
+        kst_full = pt.traded_at_kst if len(pt.traded_at_kst) > 10 else None
 
         if traded_date > now_utc.date():
             parse_errors.append(ImportError(row_no=pt.source_row_no, reason="미래 일자 거래 등록 불가"))
@@ -420,6 +424,7 @@ async def import_preview(
             "price": pt.price,
             "quantity": pt.quantity,
             "traded_at_kst": kst_str,  # commit 시 KST→UTC 변환
+            "traded_at_kst_full": kst_full,  # 시각 정보 있을 때만 (머지 traded_at 갱신용)
             "commission": pt.commission,
             "tax": pt.tax,
             "country_code": DEFAULT_COUNTRY,
@@ -472,6 +477,7 @@ async def import_commit(
     usd_skip_count: int = staged["usd_skip_count"]
     commit_errors: list[ImportError] = []
     inserted_count = 0
+    merged_count = 0
     skipped_count = 0
 
     async with acquire_for_user(pool, user.id) as conn:
@@ -489,19 +495,33 @@ async def import_commit(
             groups[group_key].append(row)
 
         for group_key, group_rows in groups.items():
-            # 그룹별로 기존 거래 페치 → sig 셋 구성 (사용자 전체 fetch 회피)
+            # 그룹별로 기존 거래 페치 → 시그니처→Trade 매핑 구성 (사용자 전체 fetch 회피)
             group_existing = await list_trades_in_group(conn, user.id, group_key)
-            existing_sigs: set = {
-                trade_to_signature(t, str(body.account_id)) for t in group_existing
+            existing_by_sig: dict = {
+                trade_to_signature(t, str(body.account_id)): t for t in group_existing
             }
+            # 같은 batch 내 중복 INSERT 방지용 (DB + 직전 INSERT 결정 모두 포함)
+            seen_sigs: set = set(existing_by_sig.keys())
 
             # BUY → SELL 순 정렬
             group_rows.sort(key=lambda r: (r["traded_at_kst"], 0 if r["trade_type"] == TRADE_TYPE_BUY else 1))
 
             to_insert: list[dict] = []
+            to_merge: list[tuple[Trade, dict]] = []
             for row in group_rows:
                 kst_str = row["traded_at_kst"]
                 traded_date = date.fromisoformat(kst_str)
+
+                # 파일 체결 시각 → UTC. 시각 없으면 KST 장 시작(09:00) 고정.
+                kst_full = row.get("traded_at_kst_full")
+                if kst_full:
+                    kst_dt = datetime.fromisoformat(kst_full)
+                    traded_at_utc = kst_date_to_utc(kst_dt.date(), kst_dt.time())
+                    # build_merge_patch 가 traded_at 비교를 위해 사용하는 키
+                    row_for_merge = {**row, "traded_at_utc": traded_at_utc}
+                else:
+                    traded_at_utc = kst_date_to_utc(traded_date)
+                    row_for_merge = row  # traded_at_utc 키 없음 → 머지에서 traded_at 비교 안 함
 
                 sig = make_signature(
                     account_id=str(body.account_id),
@@ -512,12 +532,21 @@ async def import_commit(
                     quantity=row["quantity"],
                     price=row["price"],
                 )
-                if sig in existing_sigs:
-                    skipped_count += 1
+
+                existing = existing_by_sig.get(sig)
+                if existing is not None:
+                    patch = build_merge_patch(existing, row_for_merge)
+                    if patch:
+                        to_merge.append((existing, patch))
+                    else:
+                        # 완전히 동일 → noop
+                        skipped_count += 1
                     continue
 
-                # 파일에 체결 시각이 없으므로 KST 장 시작 시간(09:00)으로 고정
-                traded_at_utc = kst_date_to_utc(traded_date)
+                if sig in seen_sigs:
+                    # 같은 import batch 내에서 같은 시그니처가 또 등장 → skip
+                    skipped_count += 1
+                    continue
 
                 insert_row = {
                     "account_id": str(body.account_id),
@@ -534,32 +563,63 @@ async def import_commit(
                     "exchange": row["exchange"],
                 }
                 to_insert.append(insert_row)
-                existing_sigs.add(sig)
+                seen_sigs.add(sig)
 
-            if not to_insert:
+            if not to_insert and not to_merge:
                 continue
 
-            # 그룹 lock + bulk insert + recalc (savepoint로 그룹 단위 롤백)
+            # 그룹 lock + (merge + insert) + recalc (savepoint로 그룹 단위 롤백)
+            err_asset = (
+                to_insert[0]["asset_name"]
+                if to_insert
+                else (to_merge[0][0].asset_name if to_merge else group_key.asset_name)
+            )
             try:
                 async with conn.transaction():
                     await acquire_trade_group_lock(conn, str(user.id), group_key)
-                    inserted_trades = await insert_trades_bulk(conn, str(user.id), to_insert)
+
+                    # 1) 머지: 기존 거래 update
+                    merged_trades: list[Trade] = []
+                    for existing, patch in to_merge:
+                        await update_trade_from_import(
+                            conn, str(existing.id), str(user.id), patch
+                        )
+                        merged_trades.append(existing.model_copy(update=patch))
+
+                    # 2) 신규 INSERT
+                    if to_insert:
+                        inserted_trades = await insert_trades_bulk(
+                            conn, str(user.id), to_insert
+                        )
+                    else:
+                        inserted_trades = []
+
+                    # 3) recalc 입력: 머지된 거래는 갱신값으로, 머지 안된 기존은 그대로
+                    merged_ids = {m.id for m in merged_trades}
+                    fresh_trades = (
+                        merged_trades
+                        + [t for t in group_existing if t.id not in merged_ids]
+                        + list(inserted_trades)
+                    )
+                    await recalc_group_pnl(conn, fresh_trades, group_key)
+
                     inserted_count += len(inserted_trades)
-                    await recalc_group_pnl(conn, [*group_existing, *inserted_trades], group_key)
+                    merged_count += len(merged_trades)
             except asyncpg.LockNotAvailableError:
-                commit_errors.append(ImportError(row_no=0, reason=f"{to_insert[0]['asset_name']} 처리 중 충돌 — 잠시 후 다시 시도해주세요."))
+                commit_errors.append(ImportError(row_no=0, reason=f"{err_asset} 처리 중 충돌 — 잠시 후 다시 시도해주세요."))
             except asyncpg.UniqueViolationError:
-                commit_errors.append(ImportError(row_no=0, reason=f"{to_insert[0]['asset_name']} 중복 거래 감지 — 이미 등록된 거래가 있습니다."))
+                commit_errors.append(ImportError(row_no=0, reason=f"{err_asset} 중복 거래 감지 — 이미 등록된 거래가 있습니다."))
             except asyncpg.PostgresError as e:
-                commit_errors.append(ImportError(row_no=0, reason=f"{to_insert[0]['asset_name']} DB 오류 ({e.sqlstate}): {e.args[0] if e.args else e}"))
+                commit_errors.append(ImportError(row_no=0, reason=f"{err_asset} DB 오류 ({e.sqlstate}): {e.args[0] if e.args else e}"))
             except Exception:
-                logger.exception("import commit 처리 오류 user_id=%s asset=%s", user.id, to_insert[0]["asset_name"])
-                commit_errors.append(ImportError(row_no=0, reason=f"{to_insert[0]['asset_name']} 처리 오류 — 잠시 후 다시 시도해주세요."))
+                logger.exception("import commit 처리 오류 user_id=%s asset=%s", user.id, err_asset)
+                commit_errors.append(ImportError(row_no=0, reason=f"{err_asset} 처리 오류 — 잠시 후 다시 시도해주세요."))
 
     del staging.cache[body.staging_id]
 
     return ImportCommitResponse(
         inserted_count=inserted_count,
+        merged_count=merged_count,
         skipped_count=skipped_count + usd_skip_count,
         error_count=len(commit_errors),
         errors=commit_errors,

@@ -30,6 +30,7 @@ class ImportCommitRequest(BaseModel):
 
 class ImportCommitResponse(BaseModel):
     inserted_count: int
+    merged_count: int = 0
     skipped_count: int
     error_count: int
     errors: list[ImportError]
