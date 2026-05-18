@@ -8,7 +8,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname } from "next/navigation";
 import {
   FullScreenPanel,
@@ -19,6 +19,7 @@ import { TradeDetail } from "@/components/records/TradeDetail";
 import { StockDetail } from "@/components/stocks/StockDetail";
 import { buildPnlMap } from "@/lib/analysis/realized-pnl";
 import { queryKeys } from "@/lib/query-keys";
+import { tradesApi } from "@/lib/api-client";
 import { TRADE_TYPE } from "@/lib/constants/trading";
 import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import { useEffectiveAccountId } from "@/components/providers/AccountFilterProvider";
@@ -201,7 +202,19 @@ interface StockPanelContentProps {
 }
 
 function StockPanelContent({ open, payload, onClose, openTrade }: StockPanelContentProps) {
-  const { assetName, ticker, country, allTrades, accounts } = payload;
+  const { assetName, ticker, country, allTrades: initialTrades, accounts: initialAccounts } = payload;
+
+  // 거래 mutation 후 queryKeys.trades 가 invalidate 되면 prefix 매칭으로 함께 refetch 되도록
+  // 종목 필터 리스트를 react-query 로 구독한다. 패널 오픈 시 이미 가져온 데이터는 initialData 로 주입.
+  const { data } = useQuery({
+    queryKey: [...queryKeys.trades, ticker, country],
+    queryFn: () => tradesApi.list({ ticker, country }),
+    initialData: { trades: initialTrades, accounts: initialAccounts },
+    initialDataUpdatedAt: Date.now(),
+  });
+  const allTrades = data?.trades ?? initialTrades;
+  const accounts = data?.accounts ?? initialAccounts;
+
   const effectiveAccountId = useEffectiveAccountId(accounts);
 
   const filteredTrades = useMemo(
