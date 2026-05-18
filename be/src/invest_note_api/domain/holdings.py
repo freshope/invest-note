@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 from invest_note_api.domain.realized_pnl import (
     TradeGroupKey,
     is_same_group,
+    sort_for_calc,
 )
-from invest_note_api.domain.trade_utils import sort_by_traded_at
 from invest_note_api.domain.trade_walker import WalkerState, walk_trades
 
 if TYPE_CHECKING:
@@ -38,7 +38,7 @@ def compute_holding_summary(trades: list["Trade"], key: TradeGroupKey) -> Holdin
     for ev in walk_trades(
         trades,
         group_filter=lambda t: is_same_group(t, key),
-        sort_fn=sort_by_traded_at,
+        sort_fn=sort_for_calc,
         track_fifo_lots=False,
     ):
         final_state = ev.state_after
