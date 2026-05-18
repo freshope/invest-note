@@ -10,7 +10,7 @@ import { tradesApi } from "@/lib/api-client";
 import { VALIDATION_LIMITS, TRADE_FREE_TEXT_ERROR } from "@/lib/constants/validation";
 import { queryKeys } from "@/lib/query-keys";
 import { TradeFreeTextField } from "./TradeFreeTextField";
-import { AutoEmotionField } from "./AutoMetaField";
+import { AutoBuyReasonField, AutoEmotionField, AutoReasoningTagsField } from "./AutoMetaField";
 import { getFirstFormError } from "@/lib/utils";
 
 const schema = z.object({
@@ -84,6 +84,10 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
         />
 
         <AutoEmotionField emotion={trade?.emotion ?? null} />
+
+        <AutoReasoningTagsField tags={trade?.reasoning_tags ?? null} />
+
+        <AutoBuyReasonField reason={summary?.buyReason ?? null} />
 
         {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
       </div>

@@ -28,3 +28,5 @@ class TradeSummaryResponse(CamelModel):
     holding_days: int | None = None
     strategy_evaluation: StrategyEvaluationResponse | None = None
     breakdown: SellBreakdownResponse
+    # FIFO 매칭에서 가장 최근 소비된 BUY의 buy_reason — SELL row에는 저장되지 않으므로 조회 시점 계산.
+    buy_reason: str | None = None

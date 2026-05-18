@@ -346,9 +346,12 @@ async def get_trade_summary(
             raise APIError(ERR_TRADE_NOT_FOUND, 404)
         if sell.trade_type != TRADE_TYPE_SELL:
             raise APIError("매도 거래만 조회할 수 있습니다.", 400)
+        group_key = trade_to_group_key(sell)
+        group_trades = await list_trades_in_group(conn, user.id, group_key)
 
     breakdown = compute_flexible_breakdown(sell)
     evaluation = evaluate_strategy_for_sell(sell, None)
+    buy_reason = _latest_consumed_buy_reason(group_trades, sell.id)
 
     return TradeSummaryResponse.model_validate({
         "pnl": breakdown.pnl,
@@ -356,7 +359,25 @@ async def get_trade_summary(
         "holding_days": sell.holding_days,
         "strategy_evaluation": evaluation,
         "breakdown": breakdown,
+        "buy_reason": buy_reason,
     })
+
+
+def _latest_consumed_buy_reason(group_trades: list[Trade], sell_id: str) -> str | None:
+    """SELL이 FIFO로 소비한 BUY들 중 가장 최근(traded_at, 입력 순서) 항목의 buy_reason."""
+    for event in walk_trades(
+        group_trades,
+        group_filter=lambda _t: True,
+        sort_fn=sort_for_calc,
+    ):
+        if event.kind != "SELL" or event.trade.id != sell_id:
+            continue
+        if not event.consumed:
+            return None
+        latest = max(event.consumed, key=lambda c: (c.lot.time_ms, c.lot.order))
+        reason = (latest.lot.source_trade.buy_reason or "").strip()
+        return reason or None
+    return None
 
 
 @router.get("/{trade_id}")

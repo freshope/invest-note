@@ -28,7 +28,7 @@ import {
   TRADE_RESULT_VALUES,
   TRADE_TYPE,
 } from "@/lib/constants/trading";
-import { AutoEmotionField, AutoReasoningTagsField } from "./AutoMetaField";
+import { AutoBuyReasonField, AutoEmotionField, AutoReasoningTagsField } from "./AutoMetaField";
 import { TradeHeaderCard } from "./TradeHeaderCard";
 import { CompactRow } from "./trade-display";
 import { ToggleChipGrid } from "@/components/shared/ToggleChipGrid";
@@ -312,7 +312,11 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                 )}
 
                 {/* 매수 근거 */}
-                {!isSell && (
+                {isSell ? (
+                  <div className="mb-5">
+                    <AutoBuyReasonField reason={summary?.buyReason ?? null} />
+                  </div>
+                ) : (
                   <div className="mb-5">
                     <TradeFreeTextField
                       id="edit_buy_reason"

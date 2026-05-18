@@ -177,6 +177,7 @@ export interface TradeSummary {
   holdingDays: number | null;
   strategyEvaluation: StrategyEvaluation | null;
   breakdown: SellBreakdown;
+  buyReason?: string | null;
 }
 
 export const tradesApi = {
