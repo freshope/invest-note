@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-05-18 | 거래내역서 머지 정책 — update_trade_from_import 분리 + 필드 화이트리스트
+
+- **맥락:** 거래 일괄 등록(`/import/commit`) 은 기존 동일 시그니처 거래를 **단순 skip** 만 했음. 사용자는 거래내역서를 여러 번 받아 update 가 필요하지만, 거래마다 수동으로 기록한 메모(`buy_reason`/`sell_reason`)·전략(`strategy_type`)·감정(`emotion`)·근거(`reasoning_tags`) 는 보존되어야 함. 또한 거래내역서에 정확한 체결 시각이 있으면 09:00 고정 대신 그 시각으로 정밀도를 높이고 싶음.
+- **결정:**
+  - **머지 키**: `(account_id, traded_date, ticker_or_asset_name, trade_type, quantity, price)` (`be/src/invest_note_api/domain/trade_import.py` `TradeSignature` — 기존 dedup 키 유지). 사용자 명시 키에는 `trade_type` 이 빠져 있었지만 BUY/SELL 머지는 회계 부정합(PnL 망가짐)을 만들어 안전상 포함.
+  - **머지 갱신 필드 = `commission`/`tax`/`traded_at`** 만 (`be/src/invest_note_api/domain/trade_import.py::build_merge_patch`). `market_type`/`country_code`/`exchange` 는 거래내역서가 사용자 수동 분류를 덮어쓸 위험이 있어 **보존**.
+  - **머지 전용 update 경로 분리**: `db_ops/trades_repo.py::update_trade_from_import()` 신규. 허용 필드 = `{commission, tax, traded_at}` 화이트리스트. 기존 `patch_trade()` 의 `TRADE_FIELD_META` 에는 `traded_at` 없음 — PATCH 엔드포인트에서 사용자가 거래 시각을 직접 바꿀 수 없게 한 의도된 보안 모델을 머지에서만 우회.
+  - **SELL 자동 산출 필드**(`profit_loss`/`avg_buy_price`/`holding_days`/`result`/SELL의 `emotion`/`reasoning_tags`/`strategy_type`)는 머지 후 `recalc_group_pnl()` 이 자동 재계산.
+  - **응답 분리**: `ImportCommitResponse` 에 `merged_count` 필드 추가. `skipped_count` 의미는 "완전히 동일하여 noop" 으로 좁아짐.
+- **이유:** ① 사용자 메타 보존이 머지의 핵심 가치 — 화이트리스트로 명시하지 않으면 `commission` 추가하다 실수로 `buy_reason` 까지 덮어쓸 위험. ② PATCH 엔드포인트의 보안 모델(traded_at 불변)을 깨면 다른 경로에서도 시각 변경 가능해져 분석 결과 일관성 위협. ③ `market_type`/`exchange` 자동 갱신은 사용자가 명시적으로 원할 때만 — 거래내역서 파서가 한쪽으로 일괄 분류해 사용자 분류를 일거에 무효화하는 사고 회피.
+- **트레이드오프:** ① 머지 패치 함수가 `patch_trade` 와 별도라 두 곳을 동기화 유지해야 함 — `commission`/`tax` 가 양쪽 모두 patchable. ② 완전 동일 거래는 `skipped_count` 로 분류되어 preview 의 `duplicate_count` 는 commit 후 `merged_count + skipped_count` 합으로 분해됨. ③ 시각 정보가 거래내역서마다 있을 수도 없을 수도 있어, 같은 거래가 재import 될 때 시각 정밀도가 들쭉날쭉 갱신될 수 있음 (현재는 시각이 있을 때만 갱신).
+- **재평가 트리거:** ① `market_type`/`exchange` 의 사용자 수동 분류와 거래내역서 분류가 다른 사례가 다수 보고됨 → 머지 갱신 범위 확장 검토(`docs/backlog.md`). ② 사용자가 SELL 자동 산출 결과를 수동 override 하고 싶다는 요구가 생기면 `result` 등 SELL 자동 필드의 머지 보존 로직 추가 검토.
+
+---
+
 ## 2026-05-14 | FE 모바일 빌드 API URL — 인라인 env 제거 (v1.1.7 hotfix)
 
 - **사건:** TestFlight v1.1.6 빌드에서 모든 데이터 화면이 `"데이터를 불러오지 못했어요"` 로 실패. `https://invest-note.pixelwave.app/healthz` 는 200 정상이지만, 모바일 번들이 옛 Render 주소 `https://invest-note-api.onrender.com` 을 호출하고 있었음 (해당 도메인은 현재 Render 기본 404 응답).
