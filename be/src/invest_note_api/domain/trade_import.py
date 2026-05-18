@@ -1,9 +1,9 @@
-"""거래 import 공통 로직: 시그니처 dedup, 버킷팅."""
+"""거래 import 공통 로직: 시그니처 dedup, 버킷팅, 머지 patch."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import TYPE_CHECKING
 
@@ -129,6 +129,35 @@ def parse_kst_date(s: str) -> date | None:
         return date.fromisoformat(s[:10])
     except ValueError:
         return None
+
+
+def _money_decimal(v: float | Decimal | int) -> Decimal:
+    return Decimal(str(v)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def build_merge_patch(existing: "Trade", row: dict) -> dict:
+    """기존 Trade 와 staging row 를 비교해 머지로 update 할 필드만 반환한다.
+
+    비교 대상은 거래내역서 출처 필드 중 시그니처에 포함되지 않는 것들:
+    - commission, tax: 소수점 2자리 quantize 후 비교 (부동소수 정밀도 회피)
+    - traded_at: row 에 `traded_at_utc` (datetime) 가 있을 때만 비교. 없으면 보존.
+
+    Returns:
+        변경된 필드만 담은 dict. 완전히 동일하면 빈 dict.
+    """
+    patch: dict = {}
+
+    if _money_decimal(row["commission"]) != _money_decimal(existing.commission):
+        patch["commission"] = float(_money_decimal(row["commission"]))
+
+    if _money_decimal(row["tax"]) != _money_decimal(existing.tax):
+        patch["tax"] = float(_money_decimal(row["tax"]))
+
+    row_traded_at: datetime | None = row.get("traded_at_utc")
+    if row_traded_at is not None and row_traded_at != existing.traded_at:
+        patch["traded_at"] = row_traded_at
+
+    return patch
 
 
 @dataclass

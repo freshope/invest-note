@@ -27,7 +27,9 @@ export function ResultStep({ result, onClose }: Props) {
             {success ? "등록 완료" : "일부 오류 발생"}
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            {result.inserted_count}건 등록됨 · {result.skipped_count}건 건너뜀
+            {result.inserted_count}건 신규 등록
+            {result.merged_count > 0 && ` · ${result.merged_count}건 머지`}
+            {result.skipped_count > 0 && ` · ${result.skipped_count}건 건너뜀`}
             {result.error_count > 0 && ` · ${result.error_count}건 실패`}
           </p>
         </div>

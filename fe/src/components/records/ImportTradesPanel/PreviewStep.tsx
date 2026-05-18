@@ -50,13 +50,15 @@ export function PreviewStep({ preview, account, onCommit, isLoading }: Props) {
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <CountCard label="신규 등록" value={preview.new_count} variant="success" />
-          <CountCard label="중복(근사)" value={preview.duplicate_count} variant="default" />
+          <CountCard label="기존 거래에 머지(근사)" value={preview.duplicate_count} variant="default" />
           <CountCard label="제외된 오류" value={preview.error_count} variant={preview.error_count > 0 ? "warn" : "default"} />
           <CountCard label="USD 미지원" value={preview.usd_skip_count} variant={preview.usd_skip_count > 0 ? "warn" : "default"} />
         </div>
         {preview.duplicate_count > 0 && (
           <p className="text-xs text-muted-foreground -mt-3">
-            * 미리보기 단계의 근사값이며, 실제 등록 시 정확히 처리됩니다.
+            * 같은 계좌·날짜·종목·단가·수량의 기존 거래는 수수료·세금·체결 시각만 갱신되고
+            메모/감정/근거 등은 그대로 보존됩니다. 미리보기 카운트는 근사값이며 실제
+            등록 시 정확히 처리됩니다.
           </p>
         )}
 

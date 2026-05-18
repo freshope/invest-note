@@ -288,6 +288,36 @@ async def patch_trade(conn: Any, trade_id: str, user_id: str, patch: dict) -> bo
     return result != PG_UPDATE_ZERO
 
 
+# 거래내역서 머지에서만 update 가능한 필드. 사용자 PATCH 엔드포인트는 traded_at 변경
+# 불허(시그니처/그룹키에 영향). 머지는 시그니처 일치 하에 시각 정밀도 향상이 목적이라 허용.
+_IMPORT_MERGE_ALLOWED: frozenset[str] = frozenset({"commission", "tax", "traded_at"})
+
+
+async def update_trade_from_import(
+    conn: Any, trade_id: str, user_id: str, patch: dict
+) -> bool:
+    """거래내역서 머지 전용 update. 허용 필드 = {commission, tax, traded_at}.
+
+    patch_trade 와 분리한 이유: traded_at 는 PATCH 엔드포인트에서 사용자가 직접 변경할
+    수 없도록 의도된 보안 모델. 머지는 시그니처가 일치하는 거래의 시각 정밀도 향상이라
+    별도 경로로 좁힌 화이트리스트로 update.
+    """
+    safe_patch = {k: v for k, v in patch.items() if k in _IMPORT_MERGE_ALLOWED}
+    if not safe_patch:
+        return False
+
+    set_clause = ", ".join(f"{k} = ${i + 3}" for i, k in enumerate(safe_patch))
+    values = list(safe_patch.values())
+
+    result = await conn.execute(
+        f"UPDATE trades SET {set_clause} WHERE id = $1 AND user_id = $2",
+        trade_id,
+        user_id,
+        *values,
+    )
+    return result != PG_UPDATE_ZERO
+
+
 async def delete_trade(conn: Any, trade_id: str, user_id: str) -> bool:
     result = await conn.execute(
         "DELETE FROM trades WHERE id = $1 AND user_id = $2",
