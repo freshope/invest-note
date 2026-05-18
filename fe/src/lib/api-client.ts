@@ -177,6 +177,7 @@ export interface TradeSummary {
   holdingDays: number | null;
   strategyEvaluation: StrategyEvaluation | null;
   breakdown: SellBreakdown;
+  buyReason?: string | null;
 }
 
 export const tradesApi = {
@@ -231,21 +232,32 @@ export interface ImportPreviewResponse {
   usd_skip_count: number;
   unresolved_ticker_count: number;
   errors: ImportErrorItem[];
+  /** 선택 계좌 기준 정합성 위반 (oversell 등). 항목이 있으면 commit 진행 차단. */
+  validation_errors: ImportErrorItem[];
 }
 
 export interface ImportCommitResponse {
   inserted_count: number;
+  merged_count: number;
   skipped_count: number;
   error_count: number;
   errors: ImportErrorItem[];
 }
 
 export const importApi = {
-  preview: async (file: File, brokerKey?: string): Promise<ImportPreviewResponse> => {
+  preview: async (
+    file: File,
+    brokerKey?: string,
+    accountId?: string,
+  ): Promise<ImportPreviewResponse> => {
     const bearer = await getBearerHeader();
     const formData = new FormData();
     formData.append("file", file);
-    const url = `${API_BASE}${ROUTES.trades.importPreview}${brokerKey ? `?broker_key=${brokerKey}` : ""}`;
+    const params = new URLSearchParams();
+    if (brokerKey) params.set("broker_key", brokerKey);
+    if (accountId) params.set("account_id", accountId);
+    const qs = params.toString();
+    const url = `${API_BASE}${ROUTES.trades.importPreview}${qs ? `?${qs}` : ""}`;
     const res = await fetch(url, {
       method: "POST",
       headers: { ...bearer },

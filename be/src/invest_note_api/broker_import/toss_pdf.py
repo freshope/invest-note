@@ -16,6 +16,15 @@ _ACCOUNT_RE = re.compile(r"계좌\s*번호\s+([\d\-]+)")
 # KRX 6자리 코드. 우선주는 'A' 접두사가 붙는 경우가 있어(예: A005935) A?로 허용.
 _TICKER_RE = re.compile(r"^(.+?)\(A?(\d{6})\)$")
 
+# 데이터 행 패턴: "<YYYY.MM.DD or YYYY-MM-DD> <구매|판매> <name(code)> <숫자들...>"
+# 종목명은 공백을 포함할 수 있으므로 비탐욕 매칭 + 종목코드 패턴으로 경계를 잡는다.
+_DATA_LINE_RE = re.compile(
+    r"^(?P<date>\d{4}[.\-]\d{2}[.\-]\d{2})\s+"
+    r"(?P<klass>구매|판매)\s+"
+    r"(?P<name>.+?\(A?\d{6}\))\s+"
+    r"(?P<rest>.+)$"
+)
+
 _KRW_SECTION = "원화 거래내역"
 _USD_SECTION = "달러 거래내역"
 
@@ -42,6 +51,8 @@ class TossPdfParser(BrokerStatementParser):
         return False
 
     def parse(self, file_bytes: bytes, filename: str) -> ParseResult:
+        # pdfplumber.extract_tables() 는 토스 PDF 의 텍스트 레이아웃에서 테이블 경계를
+        # 찾지 못해 빈 리스트만 반환한다. 따라서 페이지 텍스트를 줄 단위로 파싱한다.
         result = ParseResult()
         row_counter = 0
 
@@ -52,97 +63,81 @@ class TossPdfParser(BrokerStatementParser):
             for page in pdf.pages:
                 page_text = page.extract_text() or ""
 
-                # 계좌번호 추출 (첫 페이지)
                 if result.account_hint is None:
                     m = _ACCOUNT_RE.search(page_text)
                     if m:
                         result.account_hint = m.group(1).strip()
 
-                # 섹션 감지
-                if _KRW_SECTION in page_text:
-                    in_krw = True
-                    in_usd = False
-                if _USD_SECTION in page_text:
-                    in_usd = True
-                    in_krw = False
-
-                if in_usd:
-                    # USD 섹션은 skip — 테이블만 카운트
-                    tables = page.extract_tables()
-                    for table in tables:
-                        for row in (table or []):
-                            if row and any(row):
-                                result.usd_skip_count += 1
-                    continue
-
-                if not in_krw:
-                    continue
-
-                tables = page.extract_tables()
-                for table in tables:
-                    if not table:
+                for line in page_text.split("\n"):
+                    line = line.strip()
+                    if not line:
                         continue
-                    for row in table:
-                        if not row or not any(row):
-                            continue
-                        row_counter += 1
 
-                        # 헤더 행 skip (거래일자가 리터럴 텍스트인 경우)
-                        if str(row[0] or "").strip() in ("거래일자", ""):
-                            continue
+                    if _KRW_SECTION in line:
+                        in_krw, in_usd = True, False
+                        continue
+                    if _USD_SECTION in line:
+                        in_krw, in_usd = False, True
+                        continue
 
-                        parsed = self._parse_row(row, row_counter, result)
-                        if parsed:
-                            result.trades.append(parsed)
+                    if not _DATA_LINE_RE.match(line):
+                        continue
+
+                    if in_usd:
+                        result.usd_skip_count += 1
+                        continue
+                    if not in_krw:
+                        continue
+
+                    row_counter += 1
+                    parsed = self._parse_line(line, row_counter, result)
+                    if parsed:
+                        result.trades.append(parsed)
 
         return result
 
-    def _parse_row(self, row: list, row_no: int, result: ParseResult) -> ParsedTrade | None:
-        """
-        토스 PDF 원화 거래내역 컬럼 순서 (pdfplumber extract_table 기준):
-        0: 거래일자
-        1: 거래구분 ("구매" | "" | None)
-        2: 종목명(종목코드)
-        3: 환율
-        4: 거래수량
-        5: 거래대금 (또는 단가)
-        6: 거래세
-        7: 제세금
-        8: 변제/연체합
-        9: 잔고
-        10: 잔액
+    def _parse_line(self, line: str, row_no: int, result: ParseResult) -> ParsedTrade | None:
+        """텍스트 한 줄을 파싱하여 ParsedTrade 를 반환한다.
 
-        매도 행은 거래구분 셀이 비어 shift되는 경우가 있어 최소 컬럼 수로 보정한다.
-        """
-        cells = [str(c or "").strip() for c in row]
-        while len(cells) < 11:
-            cells.append("")
+        원화 거래내역 컬럼 (extract_text 토큰 순서):
+            0: 거래일자
+            1: 거래구분 ("구매" | "판매")
+            2: 종목명(종목코드)
+            3: 거래수량
+            4: 거래대금
+            5: 단가
+            6: 수수료
+            7: 거래세
+            8: 제세금
+            9: 변제/연체합
+            10: 잔고
+            11: 잔액
 
-        date_raw = cells[0]
-        if not re.match(r"\d{4}[.\-]\d{2}[.\-]\d{2}", date_raw):
+        환율 컬럼은 KRW 행에서 비어 있어 토큰으로 추출되지 않는다.
+        """
+        m = _DATA_LINE_RE.match(line)
+        if not m:
             return None
 
-        traded_at_kst = date_raw.replace(".", "-")[:10]
+        date_raw = m.group("date")
+        klass = m.group("klass")
+        name_raw = m.group("name")
+        nums = m.group("rest").split()
 
-        # 거래구분 판단
-        trade_class = cells[1]
-        if trade_class == "구매":
+        if klass == "구매":
             trade_type = TRADE_TYPE_BUY
-            name_raw = cells[2]
-            qty_raw = cells[4]
-            amount_raw = cells[5]
-            tax_raw = cells[6]
-            sec_tax_raw = cells[7]
-        elif trade_class == "":
+        elif klass == "판매":
             trade_type = TRADE_TYPE_SELL
-            name_raw = cells[2]
-            qty_raw = cells[4]
-            amount_raw = cells[5]
-            tax_raw = cells[6]
-            sec_tax_raw = cells[7]
         else:
-            result.add_error(row_no, f"알 수 없는 거래구분: {trade_class}")
+            result.add_error(row_no, f"알 수 없는 거래구분: {klass}")
             return None
+
+        # 숫자 컬럼 9개(거래수량 ~ 잔액). 부족하면 행이 잘렸을 가능성.
+        if len(nums) < 9:
+            result.add_error(row_no, f"숫자 컬럼 부족 ({len(nums)}/9): {nums}")
+            return None
+
+        qty_raw, amount_raw, price_raw, fee_raw, tax_raw, sec_tax_raw = nums[:6]
 
         asset_name, ticker_hint = _parse_ticker_hint(name_raw)
         if not asset_name:
@@ -151,17 +146,22 @@ class TossPdfParser(BrokerStatementParser):
 
         quantity = parse_number(qty_raw)
         amount = parse_number(amount_raw)
+        price = parse_number(price_raw)
+        commission = parse_number(fee_raw)
         tax = parse_number(tax_raw) + parse_number(sec_tax_raw)
 
         if quantity <= 0:
             result.add_error(row_no, f"수량({quantity})이 0 이하")
             return None
 
-        # 단가 = 거래대금 / 수량 (토스 PDF에 단가 컬럼 없음)
-        price = round(amount / quantity, 4) if quantity > 0 else 0.0
+        # 단가가 비어 있거나 0 이면 거래대금 / 수량 으로 보정.
+        if price <= 0:
+            price = round(amount / quantity, 4) if quantity > 0 else 0.0
         if price <= 0:
             result.add_error(row_no, f"단가 계산 불가 (거래대금={amount}, 수량={quantity})")
             return None
+
+        traded_at_kst = date_raw.replace(".", "-")[:10]
 
         return ParsedTrade(
             source_row_no=row_no,
@@ -170,7 +170,7 @@ class TossPdfParser(BrokerStatementParser):
             asset_name=asset_name,
             quantity=quantity,
             price=price,
-            commission=0.0,
+            commission=commission,
             tax=tax,
             currency="KRW",
             ticker_hint=ticker_hint,

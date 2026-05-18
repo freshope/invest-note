@@ -1,6 +1,6 @@
 {
   "name": "invest-note",
-  "version": "1.1.7",
+  "version": "1.1.8",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -8,17 +8,14 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "cap": "cap",
-    "build:mobile": "next build",
-    "device:ios": "pnpm build:mobile && cap sync ios && cap run ios",
-    "device:android": "pnpm build:mobile && cap sync android && cap run android"
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",
     "@capacitor/app": "^8.1.0",
     "@capacitor/browser": "^8.0.3",
     "@capacitor/core": "^8.3.1",
+    "@capacitor/splash-screen": "^8.0.1",
     "@date-fns/tz": "^1.4.1",
     "@heroicons/react": "^2.2.0",
     "@hookform/resolvers": "^5.2.2",

@@ -12,7 +12,16 @@ interface Props {
   preview: ImportPreviewResponse;
   account: Account;
   onCommit: () => void;
+  onBack?: () => void;
   isLoading: boolean;
+}
+
+function buildCommitLabel(newCount: number, dupCount: number): string {
+  const parts: string[] = [];
+  if (newCount > 0) parts.push(`${newCount}건 등록`);
+  if (dupCount > 0) parts.push(`${dupCount}건 갱신`);
+  if (parts.length === 0) return "등록하기";
+  return `${parts.join(" · ")}하기`;
 }
 
 function CountCard({ label, value, variant = "default" }: {
@@ -35,11 +44,13 @@ function CountCard({ label, value, variant = "default" }: {
   );
 }
 
-export function PreviewStep({ preview, account, onCommit, isLoading }: Props) {
+export function PreviewStep({ preview, account, onCommit, onBack, isLoading }: Props) {
   const [showErrors, setShowErrors] = useState(false);
   const hasErrors = preview.errors.length > 0;
   const hint = preview.account_hint;
   const hintMismatch = !!hint && !account.name?.includes(hint);
+  const validationErrors = preview.validation_errors ?? [];
+  const hasValidationError = validationErrors.length > 0;
 
   return (
     <div className="flex flex-col min-h-full">
@@ -50,13 +61,15 @@ export function PreviewStep({ preview, account, onCommit, isLoading }: Props) {
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <CountCard label="신규 등록" value={preview.new_count} variant="success" />
-          <CountCard label="중복(근사)" value={preview.duplicate_count} variant="default" />
+          <CountCard label="기존 거래 갱신(근사)" value={preview.duplicate_count} variant="default" />
           <CountCard label="제외된 오류" value={preview.error_count} variant={preview.error_count > 0 ? "warn" : "default"} />
           <CountCard label="USD 미지원" value={preview.usd_skip_count} variant={preview.usd_skip_count > 0 ? "warn" : "default"} />
         </div>
         {preview.duplicate_count > 0 && (
           <p className="text-xs text-muted-foreground -mt-3">
-            * 미리보기 단계의 근사값이며, 실제 등록 시 정확히 처리됩니다.
+            * 같은 계좌·날짜·종목·단가·수량의 기존 거래는 수수료·세금·체결 시각만 갱신되고
+            메모/감정/근거 등은 그대로 보존됩니다. 미리보기 카운트는 근사값이며 실제
+            등록 시 정확히 처리됩니다.
           </p>
         )}
 
@@ -64,6 +77,22 @@ export function PreviewStep({ preview, account, onCommit, isLoading }: Props) {
           <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
             종목코드 미해결: {preview.unresolved_ticker_count}건 — 해당 종목은 등록되지 않습니다.
             종목명을 정확히 입력했는지 확인하거나, 거래내역의 종목명 표기를 점검해주세요.
+          </div>
+        )}
+
+        {hasValidationError && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
+            <div className="flex items-start gap-2">
+              <AlertCircleIcon className="mt-0.5 h-4 w-4 shrink-0" />
+              <div className="flex-1 space-y-1.5">
+                <p className="font-medium">정합성 오류 — 등록할 수 없습니다</p>
+                <ul className="list-disc space-y-1 pl-5 text-xs">
+                  {validationErrors.map((e, i) => (
+                    <li key={i}>{e.reason}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
           </div>
         )}
 
@@ -113,14 +142,31 @@ export function PreviewStep({ preview, account, onCommit, isLoading }: Props) {
       </div>
 
       <FullScreenPanelFooter>
-        <Button
-          size="xl"
-          className="w-full"
-          onClick={onCommit}
-          disabled={preview.new_count === 0 || isLoading}
-        >
-          {isLoading ? "등록 중..." : `${preview.new_count}건 등록하기`}
-        </Button>
+        <div className="flex gap-2">
+          {onBack && (
+            <Button
+              size="xl"
+              variant="outline"
+              type="button"
+              onClick={onBack}
+              disabled={isLoading}
+            >
+              이전
+            </Button>
+          )}
+          <Button
+            size="xl"
+            className="flex-1"
+            onClick={onCommit}
+            disabled={
+              hasValidationError
+              || (preview.new_count === 0 && preview.duplicate_count === 0)
+              || isLoading
+            }
+          >
+            {isLoading ? "등록 중..." : buildCommitLabel(preview.new_count, preview.duplicate_count)}
+          </Button>
+        </div>
       </FullScreenPanelFooter>
     </div>
   );

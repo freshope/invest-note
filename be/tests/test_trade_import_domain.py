@@ -1,13 +1,17 @@
 """domain/trade_import.py 단위 테스트."""
 
-from datetime import date
+from datetime import date, datetime, timezone
 
 
 from invest_note_api.domain.trade_import import (
     ImportSummary,
+    build_merge_patch,
     make_preview_signature,
     make_signature,
+    trade_to_preview_signature,
+    trade_to_signature,
 )
+from invest_note_api.domain.trade_types import Trade
 
 
 def sig(account_id="acct1", trade_date="2026-01-15", ticker="005930",
@@ -109,3 +113,138 @@ def test_import_summary_defaults():
     assert s.duplicate_count == 0
     assert s.error_count == 0
     assert s.errors == []
+
+
+# ── build_merge_patch ──────────────────────────────────────────────────────
+
+
+def _trade(
+    *,
+    commission: float = 100.0,
+    tax: float = 50.0,
+    traded_at: datetime = datetime(2026, 1, 15, 9, 0, tzinfo=timezone.utc),
+) -> Trade:
+    """build_merge_patch 테스트용 minimal Trade."""
+    return Trade(
+        id="trade-1",
+        user_id="user-1",
+        account_id="acct-1",
+        asset_name="삼성전자",
+        ticker_symbol="005930",
+        market_type="STOCK",
+        trade_type="BUY",
+        price=70000.0,
+        quantity=10.0,
+        total_amount=700000.0,
+        traded_at=traded_at,
+        commission=commission,
+        tax=tax,
+        created_at=datetime(2026, 1, 15, 9, 0, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 1, 15, 9, 0, tzinfo=timezone.utc),
+    )
+
+
+def _row(*, commission: float = 100.0, tax: float = 50.0, traded_at_utc=None) -> dict:
+    row = {"commission": commission, "tax": tax}
+    if traded_at_utc is not None:
+        row["traded_at_utc"] = traded_at_utc
+    return row
+
+
+def test_merge_patch_empty_when_identical():
+    existing = _trade(commission=100.0, tax=50.0)
+    row = _row(commission=100.0, tax=50.0)
+    assert build_merge_patch(existing, row) == {}
+
+
+def test_merge_patch_detects_commission_change():
+    existing = _trade(commission=100.0, tax=50.0)
+    row = _row(commission=150.0, tax=50.0)
+    assert build_merge_patch(existing, row) == {"commission": 150.0}
+
+
+def test_merge_patch_detects_tax_change():
+    existing = _trade(commission=100.0, tax=50.0)
+    row = _row(commission=100.0, tax=75.0)
+    assert build_merge_patch(existing, row) == {"tax": 75.0}
+
+
+def test_merge_patch_detects_both_commission_and_tax():
+    existing = _trade(commission=100.0, tax=50.0)
+    row = _row(commission=150.0, tax=75.0)
+    assert build_merge_patch(existing, row) == {"commission": 150.0, "tax": 75.0}
+
+
+def test_merge_patch_ignores_traded_at_when_row_has_no_time_info():
+    existing = _trade(traded_at=datetime(2026, 1, 15, 9, 0, tzinfo=timezone.utc))
+    row = _row()  # traded_at_utc 없음
+    assert build_merge_patch(existing, row) == {}
+
+
+def test_merge_patch_detects_traded_at_change_when_row_has_time():
+    existing = _trade(traded_at=datetime(2026, 1, 15, 9, 0, tzinfo=timezone.utc))
+    new_at = datetime(2026, 1, 15, 14, 30, tzinfo=timezone.utc)
+    row = _row(traded_at_utc=new_at)
+    assert build_merge_patch(existing, row) == {"traded_at": new_at}
+
+
+def test_merge_patch_traded_at_same_no_change():
+    same = datetime(2026, 1, 15, 9, 0, tzinfo=timezone.utc)
+    existing = _trade(traded_at=same)
+    row = _row(traded_at_utc=same)
+    assert build_merge_patch(existing, row) == {}
+
+
+def test_merge_patch_money_quantized_to_two_decimal():
+    # commission 100.001 ↔ 100.004 둘 다 100.00 으로 quantize → 변화 없음
+    existing = _trade(commission=100.001, tax=50.0)
+    row = _row(commission=100.004, tax=50.0)
+    assert build_merge_patch(existing, row) == {}
+
+    # 100.001 ↔ 100.006 은 100.00 vs 100.01 로 다름 (ROUND_HALF_UP)
+    row2 = _row(commission=100.006, tax=50.0)
+    assert build_merge_patch(existing, row2) == {"commission": 100.01}
+
+
+# ── trade_to_signature: KST date 기준 변환 ─────────────────────────────────
+
+
+def test_trade_to_signature_uses_kst_date_for_pre_dawn_kst_time():
+    """KST 새벽(00~08시)에 수동 등록된 거래는 UTC 기준으로 하루 빠른 date 가 되는데,
+    시그니처는 거래내역서(KST date)와 매칭되어야 하므로 KST date 로 계산되어야 한다.
+    """
+    # 2026-02-25 05:00 KST == 2026-02-24 20:00 UTC
+    trade = _trade(traded_at=datetime(2026, 2, 24, 20, 0, tzinfo=timezone.utc))
+
+    sig_trade = trade_to_signature(trade, account_id=trade.account_id)
+    sig_import = make_signature(
+        account_id=trade.account_id,
+        trade_date=date(2026, 2, 25),
+        ticker=trade.ticker_symbol,
+        asset_name=trade.asset_name,
+        trade_type=trade.trade_type,
+        quantity=trade.quantity,
+        price=trade.price,
+    )
+    assert sig_trade == sig_import
+
+
+def test_trade_to_signature_kst_business_hour_date_matches():
+    # 2026-02-25 14:00 KST == 2026-02-25 05:00 UTC
+    trade = _trade(traded_at=datetime(2026, 2, 25, 5, 0, tzinfo=timezone.utc))
+    sig_trade = trade_to_signature(trade, account_id=trade.account_id)
+    assert sig_trade.trade_date == date(2026, 2, 25)
+
+
+def test_trade_to_preview_signature_also_kst_based():
+    trade = _trade(traded_at=datetime(2026, 2, 24, 20, 0, tzinfo=timezone.utc))
+    p_trade = trade_to_preview_signature(trade)
+    p_import = make_preview_signature(
+        trade_date=date(2026, 2, 25),
+        ticker=trade.ticker_symbol,
+        asset_name=trade.asset_name,
+        trade_type=trade.trade_type,
+        quantity=trade.quantity,
+        price=trade.price,
+    )
+    assert p_trade == p_import

@@ -51,3 +51,22 @@ export function AutoReasoningTagsField({ tags }: { tags: ReasoningTag[] | null |
     </div>
   );
 }
+
+export function AutoBuyReasonField({ reason }: { reason: string | null | undefined }) {
+  const text = (reason ?? "").trim();
+  return (
+    <div className="space-y-2">
+      <Label>
+        매수 근거
+        <span className="ml-1 text-[12px] font-normal text-muted-foreground">{AUTO_HINT}</span>
+      </Label>
+      {text ? (
+        <p className="whitespace-pre-wrap rounded-md bg-muted px-3 py-2 text-[13px] text-foreground">
+          {text}
+        </p>
+      ) : (
+        <p className="text-[13px] text-muted-foreground">매수 시점의 매수 근거가 없습니다.</p>
+      )}
+    </div>
+  );
+}

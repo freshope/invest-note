@@ -444,6 +444,413 @@ class TestImportCommit:
         # 그룹 단위 fetch — 그룹 수만큼 호출
         assert len(list_trade_calls) == 2
 
+    # ── 머지 케이스 ─────────────────────────────────────────────────────────
+
+    def _merge_row(
+        self,
+        *,
+        ticker: str = "005930",
+        asset_name: str = "삼성전자",
+        traded_at_kst: str = "2024-01-10",
+        trade_type: str = "BUY",
+        price: float = 70000,
+        quantity: float = 1,
+        commission: float = 0,
+        tax: float = 0,
+        traded_at_kst_full: str | None = None,
+    ) -> dict:
+        return {
+            "asset_name": asset_name,
+            "ticker_symbol": ticker,
+            "market_type": "STOCK",
+            "trade_type": trade_type,
+            "price": price,
+            "quantity": quantity,
+            "traded_at_kst": traded_at_kst,
+            "traded_at_kst_full": traded_at_kst_full,
+            "commission": commission,
+            "tax": tax,
+            "country_code": "KR",
+            "exchange": "",
+        }
+
+    def _stage(self, trades_client, rows: list[dict]) -> str:
+        staging_id = str(uuid4())
+        trades_client.app.state.trade_staging.cache[staging_id] = {
+            "user_id": TEST_USER_ID,
+            "rows": rows,
+            "parse_errors": [],
+            "usd_skip_count": 0,
+            "broker_key": "samsung_xlsx",
+            "account_hint": None,
+        }
+        return staging_id
+
+    def test_merge_updates_commission_tax(self, trades_client, monkeypatch):
+        """동일 시그니처 + commission/tax 변경 → 머지 1건, INSERT 0건."""
+        sql_calls = _capture_sql(monkeypatch)
+        staging_id = self._stage(
+            trades_client,
+            [self._merge_row(commission=100.0, tax=50.0)],
+        )
+        existing = _to_record(_make_trade_row(
+            id_="existing-1", ticker="005930", asset_name="삼성전자",
+            price=70000, quantity=1,
+            traded_at=_dt("2024-01-10T09:00:00+09:00"),
+        ))
+        conn = FakeConnection("a1", [existing])
+
+        with _patch_trades(conn):
+            resp = trades_client.post(
+                "/api/trades/import/commit",
+                json={"staging_id": staging_id, "account_id": "a1"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["inserted_count"] == 0
+        assert body["merged_count"] == 1
+        assert body["skipped_count"] == 0
+
+        merge_updates = [
+            q for q in sql_calls
+            if q.lower().startswith("update trades set")
+            and "commission" in q.lower()
+            and "profit_loss" not in q.lower()  # recalc UPDATE 와 구분
+        ]
+        assert len(merge_updates) == 1
+        assert "tax" in merge_updates[0].lower()
+
+    def test_merge_preserves_user_meta_in_update_sql(self, trades_client, monkeypatch):
+        """머지 UPDATE 에 사용자 메타 필드가 포함되지 않는다."""
+        sql_calls = _capture_sql(monkeypatch)
+        staging_id = self._stage(
+            trades_client,
+            [self._merge_row(commission=200.0)],
+        )
+        existing = _to_record(_make_trade_row(
+            id_="existing-1", ticker="005930", asset_name="삼성전자",
+            price=70000, quantity=1,
+            traded_at=_dt("2024-01-10T09:00:00+09:00"),
+        ))
+        conn = FakeConnection("a1", [existing])
+
+        with _patch_trades(conn):
+            resp = trades_client.post(
+                "/api/trades/import/commit",
+                json={"staging_id": staging_id, "account_id": "a1"},
+            )
+        assert resp.status_code == 200
+        merge_updates = [
+            q for q in sql_calls
+            if q.lower().startswith("update trades set")
+            and "commission" in q.lower()
+            and "profit_loss" not in q.lower()
+        ]
+        assert len(merge_updates) == 1
+        update_sql = merge_updates[0].lower()
+        for forbidden in (
+            "strategy_type", "buy_reason", "sell_reason", "emotion", "reasoning_tags",
+            "price", "quantity", "asset_name", "ticker_symbol", "trade_type",
+        ):
+            assert forbidden not in update_sql, f"머지 UPDATE 에 {forbidden} 포함됨: {update_sql}"
+
+    def test_merge_traded_at_when_kst_full_present(self, trades_client, monkeypatch):
+        """traded_at_kst_full 시각 정보가 다르면 traded_at 도 머지 UPDATE 에 포함."""
+        sql_calls = _capture_sql(monkeypatch)
+        staging_id = self._stage(
+            trades_client,
+            [self._merge_row(
+                commission=100.0,
+                traded_at_kst_full="2024-01-10 14:30:00",
+            )],
+        )
+        # 기존은 09:00, 머지로 14:30 으로 갱신되어야 함
+        existing = _to_record(_make_trade_row(
+            id_="existing-1", ticker="005930", asset_name="삼성전자",
+            price=70000, quantity=1,
+            traded_at=_dt("2024-01-10T09:00:00+09:00"),
+        ))
+        conn = FakeConnection("a1", [existing])
+
+        with _patch_trades(conn):
+            resp = trades_client.post(
+                "/api/trades/import/commit",
+                json={"staging_id": staging_id, "account_id": "a1"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["merged_count"] == 1
+
+        merge_updates = [
+            q for q in sql_calls
+            if q.lower().startswith("update trades set")
+            and "commission" in q.lower()
+            and "profit_loss" not in q.lower()
+        ]
+        assert len(merge_updates) == 1
+        assert "traded_at" in merge_updates[0].lower()
+
+    def test_skipped_when_completely_identical(self, trades_client, monkeypatch):
+        """commission/tax 까지 완전히 동일 → merged_count 0, skipped_count 1."""
+        sql_calls = _capture_sql(monkeypatch)
+        staging_id = self._stage(
+            trades_client,
+            [self._merge_row(commission=0.0, tax=0.0)],
+        )
+        existing = _to_record(_make_trade_row(
+            id_="existing-1", ticker="005930", asset_name="삼성전자",
+            price=70000, quantity=1,
+            traded_at=_dt("2024-01-10T09:00:00+09:00"),
+        ))
+        conn = FakeConnection("a1", [existing])
+
+        with _patch_trades(conn):
+            resp = trades_client.post(
+                "/api/trades/import/commit",
+                json={"staging_id": staging_id, "account_id": "a1"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["inserted_count"] == 0
+        assert body["merged_count"] == 0
+        assert body["skipped_count"] == 1
+
+        # 머지 UPDATE 호출 없어야 함
+        merge_updates = [
+            q for q in sql_calls
+            if q.lower().startswith("update trades set")
+            and "commission" in q.lower()
+            and "profit_loss" not in q.lower()
+        ]
+        assert merge_updates == []
+
+    def test_buy_sell_same_qty_price_inserted_separately(self, trades_client, monkeypatch):
+        """같은 date/ticker/price/quantity 의 BUY 와 SELL → 둘 다 별도 INSERT, 머지/skip 아님."""
+        sql_calls = _capture_sql(monkeypatch)
+        staging_id = self._stage(
+            trades_client,
+            [
+                self._merge_row(trade_type="BUY"),
+                self._merge_row(trade_type="SELL"),
+            ],
+        )
+        # 그룹에 기존 거래 없음 → 둘 다 신규 INSERT
+        conn = FakeConnection(
+            "a1",
+            [],  # list_trades_in_group: 빈 리스트
+            [   # insert_trades_bulk: 2건 RETURNING
+                _to_record(_make_trade_row(id_="new-buy", trade_type="BUY",
+                                           traded_at=_dt("2024-01-10T09:00:00+09:00"))),
+                _to_record(_make_trade_row(id_="new-sell", trade_type="SELL",
+                                           traded_at=_dt("2024-01-10T09:00:00+09:00"))),
+            ],
+        )
+        with _patch_trades(conn):
+            resp = trades_client.post(
+                "/api/trades/import/commit",
+                json={"staging_id": staging_id, "account_id": "a1"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["inserted_count"] == 2
+        assert body["merged_count"] == 0
+        assert body["skipped_count"] == 0
+
+        # INSERT INTO trades 가 한 번 호출되어 2건 RETURNING
+        inserts = [q for q in sql_calls if q.lower().startswith("insert into trades")]
+        assert len(inserts) == 1
+
+    # ── 정합성 (oversell) 검증 ────────────────────────────────────────────
+
+    def test_sell_without_existing_buy_rejected_before_db_change(
+        self, trades_client, monkeypatch
+    ):
+        """기존 BUY 없는 종목에 SELL 만 import → DB 변경 없이 error 1.
+
+        INSERT/UPDATE 가 호출되지 않아야 한다 (검증을 DB 적용 전에 수행).
+        """
+        sql_calls = _capture_sql(monkeypatch)
+        staging_id = self._stage(
+            trades_client,
+            [self._merge_row(trade_type="SELL")],
+        )
+        conn = FakeConnection(
+            "a1",
+            [],  # list_trades_in_group: 기존 거래 없음
+        )
+        with _patch_trades(conn):
+            resp = trades_client.post(
+                "/api/trades/import/commit",
+                json={"staging_id": staging_id, "account_id": "a1"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["inserted_count"] == 0
+        assert body["merged_count"] == 0
+        assert body["error_count"] == 1
+        assert "보유 수량이 없습니다" in body["errors"][0]["reason"]
+
+        # INSERT / UPDATE 가 한 번도 호출되지 않아야 함
+        inserts = [q for q in sql_calls if q.lower().startswith("insert into trades")]
+        updates = [q for q in sql_calls if q.lower().startswith("update trades set")]
+        assert inserts == []
+        assert updates == []
+
+    def test_sell_exceeding_holding_rejected_before_db_change(
+        self, trades_client, monkeypatch
+    ):
+        """보유 수량보다 큰 SELL import → DB 변경 없이 error 1."""
+        sql_calls = _capture_sql(monkeypatch)
+        staging_id = self._stage(
+            trades_client,
+            [self._merge_row(trade_type="SELL", quantity=2)],
+        )
+        existing_buy = _to_record(_make_trade_row(
+            id_="existing-buy", trade_type="BUY", quantity=1, price=70000,
+            traded_at=_dt("2024-01-09T09:00:00+09:00"),
+        ))
+        conn = FakeConnection(
+            "a1",
+            [existing_buy],  # list_trades_in_group: BUY 1주 보유
+        )
+        with _patch_trades(conn):
+            resp = trades_client.post(
+                "/api/trades/import/commit",
+                json={"staging_id": staging_id, "account_id": "a1"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["inserted_count"] == 0
+        assert body["error_count"] == 1
+        assert "초과" in body["errors"][0]["reason"]
+
+        inserts = [q for q in sql_calls if q.lower().startswith("insert into trades")]
+        updates = [q for q in sql_calls if q.lower().startswith("update trades set")]
+        assert inserts == []
+        assert updates == []
+
+    def test_oversell_in_one_group_does_not_block_other_groups(
+        self, trades_client, monkeypatch
+    ):
+        """한 종목이 oversell 이어도 다른 정상 종목은 INSERT 되어야 한다."""
+        staging_id = self._stage(
+            trades_client,
+            [
+                # 그룹 1: 정상 BUY
+                self._merge_row(ticker="005930", asset_name="삼성전자", trade_type="BUY"),
+                # 그룹 2: 보유 없이 SELL → oversell (DB 변경 없음)
+                self._merge_row(ticker="000660", asset_name="SK하이닉스", trade_type="SELL"),
+            ],
+        )
+        conn = FakeConnection(
+            "a1",
+            [],  # 그룹 1 list_trades_in_group
+            [   # 그룹 1 insert_trades_bulk RETURNING
+                _to_record(_make_trade_row(
+                    id_="new-1", ticker="005930", asset_name="삼성전자",
+                    trade_type="BUY",
+                    traded_at=_dt("2024-01-10T09:00:00+09:00"),
+                )),
+            ],
+            [],  # 그룹 2 list_trades_in_group (검증에서 reject → INSERT 호출 안 됨)
+        )
+        with _patch_trades(conn):
+            resp = trades_client.post(
+                "/api/trades/import/commit",
+                json={"staging_id": staging_id, "account_id": "a1"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["inserted_count"] == 1  # 삼성전자 BUY 만
+        assert body["error_count"] == 1
+        assert "SK하이닉스" in body["errors"][0]["reason"]
+
+
+class TestImportPreviewValidation:
+    """import_preview 의 _validate_import_groups 흐름 단위 테스트."""
+
+    def _row(
+        self,
+        *,
+        ticker: str = "005930",
+        asset_name: str = "삼성전자",
+        traded_at_kst: str = "2024-01-10",
+        trade_type: str = "BUY",
+        price: float = 70000,
+        quantity: float = 1,
+    ) -> dict:
+        return {
+            "asset_name": asset_name,
+            "ticker_symbol": ticker,
+            "market_type": "STOCK",
+            "trade_type": trade_type,
+            "price": price,
+            "quantity": quantity,
+            "traded_at_kst": traded_at_kst,
+            "traded_at_kst_full": None,
+            "commission": 0,
+            "tax": 0,
+            "country_code": "KR",
+            "exchange": "",
+        }
+
+    @pytest.mark.asyncio
+    async def test_sell_only_returns_validation_error(self):
+        from invest_note_api.routers.trades import _validate_import_groups
+
+        rows = [self._row(trade_type="SELL")]
+        conn = FakeConnection(
+            "a1",  # assert_account_exists
+            [],    # list_trades_in_group (빈 그룹)
+        )
+        with patch(
+            "invest_note_api.routers.trades.acquire_for_user",
+            make_fake_acquire(conn),
+        ):
+            errors = await _validate_import_groups(
+                pool=None, user_id=TEST_USER_ID, account_id="a1", rows=rows,
+            )
+        assert len(errors) == 1
+        assert "보유 수량이 없습니다" in errors[0].reason
+
+    @pytest.mark.asyncio
+    async def test_buy_and_sell_in_same_batch_pass(self):
+        """같은 batch 안 BUY → SELL 정렬 후 매칭되면 검증 통과."""
+        from invest_note_api.routers.trades import _validate_import_groups
+
+        rows = [
+            self._row(trade_type="BUY", quantity=1),
+            self._row(trade_type="SELL", quantity=1),
+        ]
+        conn = FakeConnection("a1", [])
+        with patch(
+            "invest_note_api.routers.trades.acquire_for_user",
+            make_fake_acquire(conn),
+        ):
+            errors = await _validate_import_groups(
+                pool=None, user_id=TEST_USER_ID, account_id="a1", rows=rows,
+            )
+        assert errors == []
+
+    @pytest.mark.asyncio
+    async def test_sell_exceeding_existing_returns_validation_error(self):
+        from invest_note_api.routers.trades import _validate_import_groups
+
+        rows = [self._row(trade_type="SELL", quantity=2)]
+        existing_buy = _to_record(_make_trade_row(
+            id_="existing-buy", trade_type="BUY", quantity=1, price=70000,
+            traded_at=_dt("2024-01-09T09:00:00+09:00"),
+        ))
+        conn = FakeConnection("a1", [existing_buy])
+        with patch(
+            "invest_note_api.routers.trades.acquire_for_user",
+            make_fake_acquire(conn),
+        ):
+            errors = await _validate_import_groups(
+                pool=None, user_id=TEST_USER_ID, account_id="a1", rows=rows,
+            )
+        assert len(errors) == 1
+        assert "초과" in errors[0].reason
+
 
 class TestGetTrade:
     def test_get_404(self, trades_client):
