@@ -19,3 +19,14 @@ Key routing rules:
 - Architecture review → invoke gstack-plan-eng-review
 - Save progress, checkpoint, resume → invoke gstack-checkpoint
 - Code quality, health check → invoke gstack-health
+
+## 하네스: invest-note 풀스택 작업
+
+**목표:** BE(FastAPI)+FE(Next.js) 동반 변경이 필요한 feature 작업을 spec-planner / be-engineer / fe-engineer / integration-qa 4명 팀으로 분배하여 정합성·반복 함정·shape drift를 가드한다.
+
+**트리거:** 풀스택 feature 구현·큰 리팩토링·BE+FE 동반 변경·재실행/부분 수정 요청 시 `invest-note-workflow` 스킬을 사용한다. 단일 영역 작은 변경, 단순 질문, 기존 커맨드(`/custom:spec-start`, `/custom:fix`, `/commit`) 단독 흐름에는 사용하지 않는다.
+
+**변경 이력:**
+| 날짜 | 변경 내용 | 대상 | 사유 |
+|------|----------|------|------|
+| 2026-05-18 | 초기 구성 (4명 팀 + 워크플로 스킬) | 전체 | - |
