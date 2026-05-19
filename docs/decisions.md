@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-05-19 | Apple Sign In — Supabase OAuth web flow 통일 (Native SDK 미사용)
+
+- **맥락:** App Store Review Guideline 4.8 충족을 위해 Apple Sign In 추가가 필요. 구현 선택지는 ① iOS Native(`@capacitor-community/apple-sign-in` + `signInWithIdToken`), ② Supabase OAuth web flow(Google/Kakao와 동일), ③ 둘 다(iOS만 native) 였음.
+- **결정:** ②번 — Google/Kakao와 동일하게 Supabase `signInWithOAuth({provider:"apple"})` + Capacitor InAppBrowser deep-link 패턴을 그대로 재사용. iOS 네이티브 Sign in with Apple SDK 는 도입하지 않음. `fe/src/app/login/page.tsx` 의 `handleSocialLogin(provider)` 시그니처를 `"google" | "kakao" | "apple"` 로 확장하기만 함.
+- **이유:** ① 기존 OAuth 흐름이 PKCE + 딥링크 핸들러(`CapacitorDeepLinkHandler.tsx`)로 provider 무관하게 동작하도록 일반화되어 있어, Apple 만 별도 코드 경로를 두면 분기가 늘어남. ② Apple Developer 자격증명 발급/Supabase secret JWT 생성 등 사전 설정 비용이 큰데 그 위에 native plugin 까지 추가하면 도입 부담이 가중. ③ 첫 통합은 동작 확보가 우선 — 심사·UX 피드백을 본 뒤 native 도입을 결정하는 게 합리적.
+- **트레이드오프:** ① iOS Human Interface Guidelines 의 system Sign in with Apple 버튼(`ASAuthorizationAppleIDButton`) UX 를 제공하지 못함 — 검정 배경 + 흰 사과 로고의 일반 OAuth 버튼으로 대체. ② 로컬 dev 환경(`http://127.0.0.1:64321`) 에서 동작 검증이 불가 — Apple 은 `https://` + 공개 도메인 redirect_uri 만 허용. cloud/staging 환경에서만 실제 흐름 테스트 가능. ③ Apple 의 `privaterelay.appleid.com` relay 이메일 때문에 기존 Google/Kakao 사용자가 Apple 로 로그인 시 별도 `auth.users` row 가 생성됨 — Supabase 자동 identity linking 은 verified email 일치 시에만 동작하므로 우회 불가. Manual Identity Linking 은 후속 spec(`docs/backlog.md`) 으로 분리.
+- **재평가 트리거:** ① App Store 심사에서 native Sign in with Apple 버튼 요구로 거절되거나 사용자 피드백이 누적되면 native plugin 도입. ② 사용자 중복 계정(같은 사람이 Google + Apple 둘 다 사용) 문의가 누적되면 Manual Identity Linking 도입.
+
+---
+
 ## 2026-05-18 | 거래내역서 머지 정책 — update_trade_from_import 분리 + 필드 화이트리스트
 
 - **맥락:** 거래 일괄 등록(`/import/commit`) 은 기존 동일 시그니처 거래를 **단순 skip** 만 했음. 사용자는 거래내역서를 여러 번 받아 update 가 필요하지만, 거래마다 수동으로 기록한 메모(`buy_reason`/`sell_reason`)·전략(`strategy_type`)·감정(`emotion`)·근거(`reasoning_tags`) 는 보존되어야 함. 또한 거래내역서에 정확한 체결 시각이 있으면 09:00 고정 대신 그 시각으로 정밀도를 높이고 싶음.
