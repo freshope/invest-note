@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-05-19 | 법적 문서·랜딩 호스팅 — pixelwave-web 모노레포 + `api.<project>.pixelwave.app` 분리
+
+- **맥락:** 프로덕션 배포 준비 중. 그동안 개인정보처리방침은 `freshope.github.io/invest-note-legal` (단일 HTML, GitHub Pages) 에 두고, 서비스 이용약관은 미작성. API 는 `invest-note.pixelwave.app` 단일 서브도메인이 점유. 신규 `pixelwave.app` 도메인을 구입했고 향후 다른 Pixelwave 프로젝트(`b2c`, `claimon`, `today-alive` 등 워크스페이스에 이미 존재) 도 같은 패턴으로 운영 예정. 지원 이메일은 개인 `freshope@gmail.com` 상태였음.
+- **결정:**
+  - **저장소**: 프로젝트별 분리(`<project>-site`) 대신 통합 모노레포 `freshope/pixelwave-web`. `sites/<project>/` 폴더당 Cloudflare Pages 프로젝트 1개 (Root directory 옵션 사용). `shared/` 에 디자인 토큰·푸터 템플릿을 두어 다음 프로젝트의 시드로 사용.
+  - **도메인 패턴**: `<project>.pixelwave.app` = 랜딩 + 법적 문서(CF Pages), `api.<project>.pixelwave.app` = API. 기존 `invest-note.pixelwave.app` (API) 를 `api.invest-note.pixelwave.app` 으로 이전. `pixelwave.app` 루트는 당분간 invest-note 로 301 리다이렉트(`sites/hub/_redirects`).
+  - **법적 문서 위치**: FastAPI BE 에 두지 않고 별도 정적 사이트로 분리. 약관은 이번에 신규 작성, 개인정보처리방침은 기존 콘텐츠 이관 + Apple/Cloudflare 위탁 추가 + 시행일 갱신.
+  - **이메일**: 프로젝트별(`support@<project>.pixelwave.app`) 대신 단일 `support@pixelwave.app`. Cloudflare Email Routing → `freshope@gmail.com` 포워딩. `be/pyproject.toml` authors 와 모든 정적 사이트 푸터를 새 주소로 일괄 갱신.
+  - **레거시**: `freshope/invest-note-legal` 저장소는 archive 대상.
+- **이유:** ① 약관/개인정보는 프로젝트 간 80% 동일 보일러플레이트 → 통합 저장소가 재사용·일관성 유리. ② BE 에 정적 페이지를 추가하면 인증 미들웨어·CORS·RLS 경로에서 공개 페이지 분기 분기점이 늘어 RLS 회피 사고 위험. ③ 단일 도메인이 랜딩+API 를 동시 호스팅하면 CDN 캐시·OAuth redirect_uri·CORS 가 충돌. `api.*` 패턴은 의미가 명확하고 충돌 없음. ④ 서브도메인 메일은 별도 MX 필요해 프로젝트 추가마다 반복 비용 발생 — root 도메인 단일 인박스 + Gmail 라벨 분리가 운영 부담 가장 낮음. ⑤ Cloudflare 가 DNS/Pages/Email 을 한 콘솔에서 통합 관리 — 같은 vendor 안에서 끝남.
+- **트레이드오프:** ① 모노레포 → 한 PR 이 여러 사이트에 영향 가능. CF Pages 의 root directory 빌드 트리거가 이를 완화하지만 큰 변경은 사이트별 PR 권장. ② `shared/styles/base.css` 와 `sites/<name>/styles.css` 가 물리적으로 분리되어 sync 부담 — 사이트 3 개 이내는 수동 OK, 늘어나면 빌드 단계에서 자동 복사. ③ API 도메인 이전으로 OAuth redirect URI (Google/Apple/Kakao/Supabase) · BE 운영 설정 · FE `NEXT_PUBLIC_API_BASE_URL` · 모바일 빌드까지 모두 갱신 필요했음 (이번 작업에서 완료). ④ 단일 `support@` 이메일이라 프로젝트별 인박스 분리는 Gmail 필터에 의존. ⑤ 발신은 무료 구성에서 개인 Gmail 로 보내져 발신자 표기는 개인 메일임 — 도메인 발신이 필요해지면 별도 비용.
+- **재평가 트리거:** ① 사이트가 5 개 이상으로 늘어 `shared/styles` ↔ `sites/*/styles.css` 수동 sync 가 부담스러워지면 빌드 스크립트 도입. ② 시스템 발신 메일(인증·알림) 요구가 생기면 Google Workspace 또는 Resend/Mailgun 도입. ③ 프로젝트 간 디자인 시스템이 크게 분기되어 공통 자산 가치가 사라지면 모노레포 → 프로젝트별 저장소 분리 검토. ④ `pixelwave.app` 루트가 invest-note 단독 리다이렉트로 충분치 않아지면 (다른 프로젝트가 출시되면) 진짜 허브 페이지로 전환.
+
+---
+
 ## 2026-05-19 | Apple Sign In — Supabase OAuth web flow 통일 (Native SDK 미사용)
 
 - **맥락:** App Store Review Guideline 4.8 충족을 위해 Apple Sign In 추가가 필요. 구현 선택지는 ① iOS Native(`@capacitor-community/apple-sign-in` + `signInWithIdToken`), ② Supabase OAuth web flow(Google/Kakao와 동일), ③ 둘 다(iOS만 native) 였음.
