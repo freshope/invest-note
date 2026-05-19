@@ -18,6 +18,7 @@ import { DEFAULT_ANALYSIS_PERIOD, type Period } from "@/lib/analysis/period";
 import { useAnalysisData } from "@/hooks/useAnalysisData";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { MissingQuoteBadge } from "@/components/shared/MissingQuoteBadge";
+import { PullToRefresh } from "@/components/shared/PullToRefresh";
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -41,15 +42,17 @@ export function AnalysisDashboard() {
 
   if (!loading && isError) {
     return (
-      <>
-        <PageHeader title="분석" />
-        <ErrorState onRetry={refetch} />
-      </>
+      <PullToRefresh onRefresh={refetch}>
+        <>
+          <PageHeader title="분석" />
+          <ErrorState onRetry={refetch} />
+        </>
+      </PullToRefresh>
     );
   }
 
   return (
-    <>
+    <PullToRefresh onRefresh={refetch}>
       <PageHeader
         title="분석"
         actions={loading ? undefined : <PeriodFilterTabs value={period} onChange={setPeriod} compact />}
@@ -156,6 +159,6 @@ export function AnalysisDashboard() {
           </>
         ) : null}
       </div>
-    </>
+    </PullToRefresh>
   );
 }

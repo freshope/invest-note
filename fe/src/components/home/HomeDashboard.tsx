@@ -6,6 +6,7 @@ import { HoldingsList } from "./HoldingsList";
 import { EmptyState } from "./EmptyState";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ErrorState } from "@/components/shared/ErrorState";
+import { PullToRefresh } from "@/components/shared/PullToRefresh";
 import { usePortfolioSummary } from "@/hooks/usePortfolioSummary";
 
 function Skeleton() {
@@ -39,58 +40,62 @@ function Skeleton() {
 export function HomeDashboard() {
   const { data, loading, error, refetch } = usePortfolioSummary();
 
-  if (loading) return <Skeleton />;
+  const content = () => {
+    if (loading) return <Skeleton />;
 
-  if (error) {
-    return (
-      <>
-        <PageHeader title="홈" />
-        <ErrorState onRetry={refetch} />
-      </>
-    );
-  }
+    if (error) {
+      return (
+        <>
+          <PageHeader title="홈" />
+          <ErrorState onRetry={refetch} />
+        </>
+      );
+    }
 
-  if (!data) return null;
+    if (!data) return null;
 
-  const { totals, positions, snapshots, hasAccounts, hasTrades } = data;
+    const { totals, positions, snapshots, hasAccounts, hasTrades } = data;
 
-  if (!hasAccounts) {
-    return (
-      <>
-        <PageHeader title="홈" />
-        <div className="pt-10">
-          <EmptyState variant="no-accounts" />
-        </div>
-      </>
-    );
-  }
+    if (!hasAccounts) {
+      return (
+        <>
+          <PageHeader title="홈" />
+          <div className="pt-10">
+            <EmptyState variant="no-accounts" />
+          </div>
+        </>
+      );
+    }
 
-  if (!hasTrades) {
+    if (!hasTrades) {
+      return (
+        <>
+          <PageHeader><DashboardTitle totals={totals} /></PageHeader>
+          <div className="pt-2 space-y-5">
+            <DashboardBody totals={totals} />
+            <EmptyState variant="no-trades" />
+          </div>
+        </>
+      );
+    }
+
     return (
       <>
         <PageHeader><DashboardTitle totals={totals} /></PageHeader>
-        <div className="pt-2 space-y-5">
+        <div className="pt-2 pb-6 space-y-5">
           <DashboardBody totals={totals} />
-          <EmptyState variant="no-trades" />
+          <AllocationTabs positions={positions} snapshots={snapshots} />
+
+          {positions.length > 0 && (
+            <div className="space-y-2">
+              <p className="px-5 text-[13px] font-semibold text-muted-foreground">보유 종목</p>
+              <HoldingsList positions={positions} />
+            </div>
+          )}
         </div>
       </>
     );
-  }
+  };
 
-  return (
-    <>
-      <PageHeader><DashboardTitle totals={totals} /></PageHeader>
-      <div className="pt-2 pb-6 space-y-5">
-        <DashboardBody totals={totals} />
-        <AllocationTabs positions={positions} snapshots={snapshots} />
-
-        {positions.length > 0 && (
-          <div className="space-y-2">
-            <p className="px-5 text-[13px] font-semibold text-muted-foreground">보유 종목</p>
-            <HoldingsList positions={positions} />
-          </div>
-        )}
-      </div>
-    </>
-  );
+  return <PullToRefresh onRefresh={refetch}>{content()}</PullToRefresh>;
 }
