@@ -12,6 +12,7 @@ class Settings(BaseSettings):
         "https://localhost",
     ]
     database_url: str = ""
+    supabase_secret_key: str = ""
 
     model_config = SettingsConfigDict(env_file=".env.local", extra="ignore")
 

@@ -6,6 +6,7 @@ import { queryKeys } from "@/lib/query-keys";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { AccountList } from "@/components/settings/AccountList";
 import { UserInfoSection } from "@/components/settings/UserInfoSection";
+import { DeleteAccountSection } from "@/components/settings/DeleteAccountSection";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ErrorState } from "@/components/shared/ErrorState";
 
@@ -51,6 +52,11 @@ export default function SettingsPage() {
         <section className="space-y-3">
           <h2 className="text-[13px] font-semibold text-muted-foreground px-1">내 정보</h2>
           <UserInfoSection email={user?.email ?? ""} />
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-[13px] font-semibold text-muted-foreground px-1">계정</h2>
+          <DeleteAccountSection />
         </section>
 
         <p className="text-xs text-center text-muted-foreground">
