@@ -94,6 +94,25 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+html,
+body {
+  overscroll-behavior-y: contain;
+}
+
+/**
+ * react-simple-pull-to-refresh 의 기본 CSS(.ptr, .ptr__children)는
+ * height: 100%; overflow: hidden 을 강제해 자식의 position: sticky 가
+ * 가장 가까운 스크롤 컨테이너로 ptr__children 을 지목하게 만든다.
+ * body 스크롤 모델을 유지해야 PageHeader sticky 가 정상 동작하므로
+ * 강제 해제한다. 라이브러리는 boundingRect.top 만으로 pull 여부를
+ * 판단하므로 자체 동작에는 영향이 없다.
+ */
+.ptr,
+.ptr__children {
+  height: auto !important;
+  overflow: visible !important;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
