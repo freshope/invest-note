@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-05-20 | 계정 탈퇴 & 로그아웃 강건화 — Supabase Admin REST 직호출 + 클라이언트 finally redirect
+
+- **맥락:** App Store Review (1.0_15) 에서 두 건 reject — ① Guideline 5.1.1(v): 계정 생성이 있으면 탈퇴도 필요, ② Guideline 2.1(a): 리뷰어 환경(iPhone 17 Pro Max / iOS 26.5)에서 "Unable to sign out". 로그아웃은 개발자 환경에서 재현 불가지만 코드 분석 결과 catch 후 `setPending(false)` 만 실행하고 `queryClient.clear()` / `router.replace` 가 누락된 채 `AuthGuard.onAuthStateChange` 에 의존하는 구조였음.
+- **결정:**
+  - **탈퇴**: `BE DELETE /api/me` 신설. Supabase Auth 사용자 삭제는 `${SUPABASE_URL}/auth/v1/admin/users/{user_id}` 로의 **httpx 직접 호출** (supabase-py 미도입). `auth.users` 삭제 시 `accounts`/`trades` 는 FK `on delete cascade` 로 자동 정리. 키 누락 시 503, 외부 호출 실패/4xx/5xx 응답은 502 매핑.
+  - **키 명칭**: `SUPABASE_SECRET_KEY` (FE 와 통일). Supabase 신규 키 형식 `sb_secret_*` 사용 — 구 명칭 `service_role` 은 `supabase status` 출력에서 제거됨.
+  - **라우터 prefix**: me 라우터를 `APIRouter(prefix="/api/me")` 로 변경하고 path 는 `""` 로 정의. accounts/trades 등과 컨벤션 통일 + 기존 GET `/me` 의 잠재 404 동시 해결.
+  - **FE 로그아웃**: `supabase.auth.signOut({ scope: "local" })` + `try/catch` + `finally` 에서 `queryClient.clear()` + `router.replace("/login")` 강제. 에러는 `console.error` + sonner toast 로 가시화. AuthGuard 의존 제거.
+  - **FE 탈퇴 UX**: 설정 → "계정" 섹션에 `DeleteAccountSection`. destructive 버튼 → `ConfirmDeleteDialog` 경고 ("탈퇴 시 모든 데이터 영구 삭제, 복구 불가") → 확정 시 `meApi.deleteAccount()` → 로컬 signOut + redirect.
+- **이유:** ① supabase-py 도입은 BE 의존성/이미지 사이즈 증가에 비해 호출 1건. 기존 패턴(`httpx.AsyncClient` + lifespan 공유)으로 충분. ② Supabase 신규 키 형식이 표준이고 FE 가 이미 `SUPABASE_SECRET_KEY` 로 통일되어 BE 만 다른 명명을 두면 혼선. ③ 로그아웃 실패의 본질은 "서버 호출 결과와 무관하게 클라이언트가 로그아웃되었다고 인지하는가" — `scope: "local"` 은 서버 콜을 생략해 네트워크/스토리지 오류와 무관하게 로컬 토큰만 무효화, `finally` 는 try 경로와 catch 경로 모두에서 동일한 정리·이동을 보장. ④ Admin REST 호출 path 는 안정적이고 RLS 와 무관하게 service-role 권한으로 동작 — `acquire_for_user` 컨텍스트가 불필요.
+- **트레이드오프:** ① `SUPABASE_SECRET_KEY` 가 BE 시크릿에 별도 필요 — 운영 환경 누락 시 탈퇴 503 (이슈는 `docs/backlog.md` 에 등록). ② `auth.users` cascade 에 의존하므로 향후 `user_id` 컬럼을 가진 새 테이블이 cascade 없이 추가되면 탈퇴가 FK 위반으로 실패 (가드는 backlog 항목). ③ 로그아웃 강건화는 추정 기반 fix — 리뷰어 환경에서 실제 원인이 무엇이었든 사용자 입장에서 항상 `/login` 으로 이동하므로 증상이 사라짐.
+- **재평가 트리거:** ① BE 에서 Supabase 측 호출이 2~3건 이상 누적되면 supabase-py 도입 재검토. ② `auth.users` cascade 정책으로 부족한 부수 정리(예: 외부 S3 객체) 가 생기면 hard delete + soft delete 혼합 또는 별도 `delete_user_data()` SQL function 추가 검토.
+
+---
+
 ## 2026-05-19 | 법적 문서·랜딩 호스팅 — pixelwave-web 모노레포 + `api.<project>.pixelwave.app` 분리
 
 - **맥락:** 프로덕션 배포 준비 중. 그동안 개인정보처리방침은 `freshope.github.io/invest-note-legal` (단일 HTML, GitHub Pages) 에 두고, 서비스 이용약관은 미작성. API 는 `invest-note.pixelwave.app` 단일 서브도메인이 점유. 신규 `pixelwave.app` 도메인을 구입했고 향후 다른 Pixelwave 프로젝트(`b2c`, `claimon`, `today-alive` 등 워크스페이스에 이미 존재) 도 같은 패턴으로 운영 예정. 지원 이메일은 개인 `freshope@gmail.com` 상태였음.
