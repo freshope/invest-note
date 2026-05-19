@@ -154,7 +154,25 @@ export default function LoginPage() {
         </Suspense>
 
         <p className="mt-8 text-center text-[12px] text-muted-foreground">
-          로그인 시 서비스 이용약관 및 개인정보처리방침에 동의하게 됩니다.
+          로그인 시{" "}
+          <a
+            href="https://invest-note.pixelwave.app/terms.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            서비스 이용약관
+          </a>{" "}
+          및{" "}
+          <a
+            href="https://invest-note.pixelwave.app/privacy.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            개인정보처리방침
+          </a>
+          에 동의하게 됩니다.
         </p>
       </div>
     </div>
