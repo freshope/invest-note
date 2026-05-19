@@ -32,10 +32,18 @@ function KakaoIcon() {
   );
 }
 
+function AppleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M14.94 13.59c-.27.62-.59 1.19-.96 1.71-.51.72-.93 1.21-1.25 1.49-.5.46-1.04.7-1.62.71-.41 0-.91-.12-1.49-.36-.58-.24-1.11-.36-1.6-.36-.51 0-1.06.12-1.65.36-.59.24-1.06.37-1.42.38-.55.02-1.1-.22-1.66-.73-.34-.3-.78-.81-1.31-1.52-.57-.76-1.04-1.64-1.41-2.65C1.18 11.55 1 10.49 1 9.46c0-1.18.25-2.2.76-3.05.4-.69.93-1.23 1.59-1.62.66-.4 1.38-.6 2.15-.61.43 0 1.01.14 1.73.4.72.26 1.18.4 1.38.4.15 0 .66-.15 1.51-.45.81-.28 1.49-.4 2.06-.35 1.53.12 2.68.72 3.45 1.81-1.37.83-2.05 1.99-2.03 3.49.02 1.16.44 2.13 1.26 2.9.37.35.78.62 1.24.81-.1.29-.21.57-.32.84zM11.6 1.37c0 .88-.32 1.7-.96 2.46-.77.91-1.7 1.43-2.71 1.34A2.73 2.73 0 0 1 7.91 5c0-.85.36-1.75 1.01-2.5.32-.38.74-.69 1.24-.94.5-.25.97-.39 1.42-.41.01.07.02.15.02.22z" fill="currentColor"/>
+    </svg>
+  );
+}
+
 function LoginForm() {
   const searchParams = useSearchParams();
   const urlError = searchParams.get("error");
-  const [pending, setPending] = useState<"google" | "kakao" | null>(null);
+  const [pending, setPending] = useState<"google" | "kakao" | "apple" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // 네이티브에서 사용자가 인앱 브라우저를 수동으로 닫으면 pending 상태 해제
@@ -45,7 +53,7 @@ function LoginForm() {
     return () => window.removeEventListener(OAUTH_BROWSER_FINISHED_EVENT, handler);
   }, []);
 
-  async function handleSocialLogin(provider: "google" | "kakao") {
+  async function handleSocialLogin(provider: "google" | "kakao" | "apple") {
     setError(null);
     setPending(provider);
     try {
@@ -97,6 +105,16 @@ function LoginForm() {
         >
           <KakaoIcon />
           {pending === "kakao" ? "처리 중..." : "카카오로 계속하기"}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleSocialLogin("apple")}
+          disabled={pending !== null}
+          className="flex h-12 w-full items-center justify-center gap-3 rounded-2xl bg-black px-4 text-[15px] font-medium text-white transition-opacity disabled:opacity-50 hover:opacity-90"
+        >
+          <AppleIcon />
+          {pending === "apple" ? "처리 중..." : "Apple로 계속하기"}
         </button>
       </div>
 
