@@ -6,6 +6,7 @@ import { queryKeys } from "@/lib/query-keys";
 import { TradeList } from "@/components/records/TradeList";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ErrorState } from "@/components/shared/ErrorState";
+import { PullToRefresh } from "@/components/shared/PullToRefresh";
 
 function Skeleton() {
   return (
@@ -26,16 +27,20 @@ export default function RecordsPage() {
     queryFn: () => tradesApi.list(),
   });
 
-  if (isLoading) return <Skeleton />;
+  const content = () => {
+    if (isLoading) return <Skeleton />;
 
-  if (isError) {
-    return (
-      <>
-        <PageHeader title="기록" />
-        <ErrorState onRetry={refetch} />
-      </>
-    );
-  }
+    if (isError) {
+      return (
+        <>
+          <PageHeader title="기록" />
+          <ErrorState onRetry={refetch} />
+        </>
+      );
+    }
 
-  return <TradeList trades={data?.trades ?? []} accounts={data?.accounts ?? []} />;
+    return <TradeList trades={data?.trades ?? []} accounts={data?.accounts ?? []} />;
+  };
+
+  return <PullToRefresh onRefresh={refetch}>{content()}</PullToRefresh>;
 }
