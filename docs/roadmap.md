@@ -35,7 +35,7 @@
 | 버전 | 내용 | 상태 |
 |------|------|------|
 | MVP | 국내 주식 수동 매매 기록, 포트폴리오 조회, 홈 대시보드, 분석 탭 | ✅ 완료 |
-| v2.5 | FastAPI 백엔드 분리 + Capacitor 모바일앱 (iOS/Android) | 🚧 FastAPI 배포·Apple Sign-in·스토어 심사 대기 |
+| v2.5 | FastAPI 백엔드 분리 + Capacitor 모바일앱 (iOS/Android) | 🚧 FastAPI 배포·스토어 심사 대기 |
 | v2 | 해외 주식 지원, KIS API 자동 연동, 공식 실시간 시세 | 예정 |
 | v3 | AI 패턴 분석, 모바일 네이티브 전환 검토 (RN) | 예정 |
 
