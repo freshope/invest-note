@@ -60,6 +60,9 @@ const ROUTES = {
   analysis: {
     dashboard: "/api/analysis/dashboard",
   },
+  me: {
+    base: "/api/me",
+  },
 } as const;
 
 // 지연 초기화 싱글턴 — SSR import 시 createBrowserClient 실행을 피하기 위해
@@ -371,4 +374,12 @@ export const analysisApi = {
     apiFetch<AnalysisDashboardData>(
       `${ROUTES.analysis.dashboard}?period=${period}`,
     ),
+};
+
+// ============================================================
+// Me / Account
+// ============================================================
+
+export const meApi = {
+  deleteAccount: () => apiFetch<void>(ROUTES.me.base, { method: "DELETE" }),
 };
