@@ -26,3 +26,4 @@ certificates
 .claude/
 .dev/
 .makerc
+/docs/store/
