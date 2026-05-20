@@ -137,7 +137,6 @@ export function AnalysisDashboard() {
                 <ReviewQualityPanel
                   inputRates={behavior.inputRates}
                   reflectionRate={summary.reflectionRate}
-                  resultInputRate={summary.resultInputRate}
                 />
               </SectionCard>
             )}

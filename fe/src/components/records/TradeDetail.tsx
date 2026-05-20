@@ -161,7 +161,7 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
             )}
             {trade.buy_reason && (
               <div className="py-3 border-b border-border/50 last:border-0 space-y-1">
-                <span className="text-[13px] text-muted-foreground">매수 근거</span>
+                <span className="text-[13px] text-muted-foreground">매수 메모</span>
                 <p className="text-[14px] text-foreground whitespace-pre-wrap">{trade.buy_reason}</p>
               </div>
             )}

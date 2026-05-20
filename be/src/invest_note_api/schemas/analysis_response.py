@@ -51,7 +51,6 @@ class AnalysisSummaryResponse(CamelModel):
     missing_tag_rate: float
     feeling_rate: float
     reflection_rate: float
-    result_input_rate: float
 
 
 class BehaviorProfileResponse(CamelModel):
@@ -66,7 +65,7 @@ class ProfileInputRatesResponse(CamelModel):
     holding_days: float
     emotion: float
     reasoning_tag: float
-    result: float
+    buy_reason: float
     reflection: float
     strategy: float
 

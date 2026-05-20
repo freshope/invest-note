@@ -26,6 +26,7 @@ def _make_trade_row(
     reasoning_tags=None,
     country_code="KR",
     total_amount=None,
+    buy_reason=None,
 ) -> dict:
     now = _dt("2026-04-20T09:00:00+09:00")
     return {
@@ -42,7 +43,7 @@ def _make_trade_row(
         "traded_at": traded_at or now,
         "strategy_type": strategy_type,
         "reasoning_tags": reasoning_tags or [],
-        "buy_reason": None,
+        "buy_reason": buy_reason,
         "sell_reason": None,
         "emotion": emotion,
         "result": result,
@@ -116,6 +117,26 @@ class TestAnalysisDashboard:
         # PnL 약어 키는 대문자 'L' (FE 타입 호환)
         assert "sumPnL" in summary["byStrategy"][0]
         assert "sumPnL" in summary["byStrategyAdherence"][0]
+        # result_input_rate 는 제거됨 (자동 유도값이라 의미 없음)
+        assert "resultInputRate" not in summary
+
+    def test_input_rates_shape(self, trades_client):
+        # BUY 2건: 1건은 buy_reason 채움, 1건은 None → buyReason = 50.0
+        buy_with = _make_trade_row(
+            id_="b1", trade_type="BUY", buy_reason="기술적 분석"
+        )
+        buy_without = _make_trade_row(
+            id_="b2", trade_type="BUY", buy_reason=None,
+            traded_at=_dt("2026-04-20T10:00:00+09:00"),
+        )
+        conn = FakeConnection([buy_with, buy_without])
+        with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
+            resp = _patched_get(trades_client, "/api/analysis/dashboard")
+        assert resp.status_code == 200
+        input_rates = resp.json()["behavior"]["inputRates"]
+        # 신규 buyReason 필드 존재 + 기존 result 필드 제거 확인
+        assert input_rates["buyReason"] == 50.0
+        assert "result" not in input_rates
 
     def test_period_filter(self, trades_client):
         old_buy = _make_trade_row(id_="b1", traded_at=_dt("2024-01-01T09:00:00+09:00"))

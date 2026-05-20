@@ -75,7 +75,6 @@ class AnalysisSummary:
     missing_tag_rate: float = 0.0
     feeling_rate: float = 0.0
     reflection_rate: float = 0.0
-    result_input_rate: float = 0.0
     strategy_adherence_rate: float = 0.0
     by_strategy_adherence: list[StrategyAdherenceStats] = field(default_factory=list)
 
@@ -231,7 +230,6 @@ def compute_summary(
     reflection_rate = _percent(
         sum(1 for t in sells if t.sell_reason and t.sell_reason.strip()), len(sells)
     )
-    result_input_rate = _percent(len(sells_with_result), len(sells))
 
     return AnalysisSummary(
         total_trades=len(trades),
@@ -244,7 +242,6 @@ def compute_summary(
         missing_tag_rate=missing_tag_rate,
         feeling_rate=feeling_rate,
         reflection_rate=reflection_rate,
-        result_input_rate=result_input_rate,
         strategy_adherence_rate=strategy_adherence_rate,
         by_strategy_adherence=by_strategy_adherence,
     )

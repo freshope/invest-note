@@ -38,7 +38,7 @@ class ProfileInputRates:
     holding_days: float
     emotion: float
     reasoning_tag: float
-    result: float
+    buy_reason: float
     reflection: float
     strategy: float
 
@@ -100,7 +100,9 @@ def compute_profile(
         holding_days=_percent(len(period_days), len(sells)),
         emotion=_percent(len(emotion_tagged), len(trades)),
         reasoning_tag=_percent(len(buys) - buys_with_no_tag, len(buys)),
-        result=_percent(sum(1 for t in sells if t.result is not None), len(sells)),
+        buy_reason=_percent(
+            sum(1 for t in buys if t.buy_reason and t.buy_reason.strip()), len(buys)
+        ),
         reflection=review_habit,
         strategy=strategy_input_rate,
     )

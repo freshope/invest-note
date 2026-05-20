@@ -9,14 +9,14 @@ describe("TradeFreeTextField", () => {
     render(
       <TradeFreeTextField
         id="buy_reason"
-        label="매수 근거"
+        label="매수 메모"
         valueLength={12}
         placeholder="입력"
       />,
     );
 
     expect(screen.getByText(`12/${VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX}`)).toBeDefined();
-    expect((screen.getByLabelText("매수 근거") as HTMLTextAreaElement).maxLength).toBe(
+    expect((screen.getByLabelText("매수 메모") as HTMLTextAreaElement).maxLength).toBe(
       VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX,
     );
   });
