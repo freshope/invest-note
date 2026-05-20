@@ -263,7 +263,6 @@ class TestComputeSummary:
         assert s.missing_tag_rate == 50.0
         assert s.feeling_rate == 50.0
         assert s.reflection_rate == 50.0
-        assert s.result_input_rate == 50.0
 
     def test_by_emotion_includes_untagged_bucket(self):
         # emotion 미입력 SELL이 통째 누락되어 합계가 어긋나던 버그 회귀 방지.
@@ -459,6 +458,19 @@ class TestComputeProfile:
         assert profile.strategy_consistency == 0.0
         assert rates.strategy == 0.0
 
+    def test_buy_reason_input_rate(self):
+        # BUY 중 buy_reason이 빈 문자열/공백/None은 미입력, 비공백 텍스트만 입력.
+        buys = [
+            make_trade(id="b1", trade_type="BUY", buy_reason="기술적 분석 신호"),
+            make_trade(id="b2", trade_type="BUY", buy_reason="  "),
+            make_trade(id="b3", trade_type="BUY", buy_reason=None),
+            make_trade(id="b4", trade_type="BUY", buy_reason="펀더멘털"),
+        ]
+        # sell_reason 채워진 SELL은 buy_reason 입력률에 영향 없음
+        sells = [make_trade(id="s1", trade_type="SELL", buy_reason="무시되어야 함")]
+        _, rates = compute_profile(buys + sells, {})
+        assert rates.buy_reason == 50.0
+
 
 # --- rules ---
 
@@ -475,7 +487,6 @@ def _make_summary(**kwargs) -> AnalysisSummary:
         missing_tag_rate=0.0,
         feeling_rate=0.0,
         reflection_rate=50.0,
-        result_input_rate=80.0,
     )
     defaults.update(kwargs)
     return AnalysisSummary(**defaults)
@@ -519,7 +530,7 @@ class TestEvaluateRules:
         assert any(s.id == "emotion_fomo_low_winrate" for s in result)
 
     def test_high_winrate_triggers(self):
-        summary = _make_summary(sell_trades=6, win_rate=70.0, result_input_rate=80.0)
+        summary = _make_summary(sell_trades=6, win_rate=70.0)
         inp: RuleInput = {"summary": summary}
         result = evaluate_rules(inp)
         assert any(s.id == "high_winrate" for s in result)

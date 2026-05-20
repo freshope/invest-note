@@ -36,13 +36,11 @@ function QualityBar({
 interface ReviewQualityPanelProps {
   inputRates: ProfileInputRates;
   reflectionRate: number;
-  resultInputRate: number;
 }
 
 export function ReviewQualityPanel({
   inputRates,
   reflectionRate,
-  resultInputRate,
 }: ReviewQualityPanelProps) {
   return (
     <div className="space-y-3">
@@ -52,9 +50,9 @@ export function ReviewQualityPanel({
         description="매도 후 이유 작성률"
       />
       <QualityBar
-        label="거래 결과 입력"
-        rate={resultInputRate}
-        description="승률 분석의 정확도 기반"
+        label="매수 메모 작성"
+        rate={inputRates.buyReason}
+        description="매수 거래 중 메모 입력률"
       />
       <QualityBar
         label="감정 기록"
@@ -64,7 +62,7 @@ export function ReviewQualityPanel({
       <QualityBar
         label="매수 근거 태그"
         rate={inputRates.reasoningTag}
-        description="BUY 거래 중 태그 입력률"
+        description="매수 거래 중 태그 입력률"
       />
     </div>
   );

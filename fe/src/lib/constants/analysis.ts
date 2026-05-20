@@ -26,6 +26,3 @@ export const HHI_MID = 0.25;
 // 승률 임계치 (%) — FE UI 색상 결정용 (WinRateBar, SummaryCards)
 export const WIN_THRESHOLD = 65;
 export const LOSS_THRESHOLD = 40;
-
-// 결과 입력률 임계치 (%) — 승률 표시 신뢰도 컷오프 (SummaryCards)
-export const RESULT_INPUT_RATE_LOW = 50;

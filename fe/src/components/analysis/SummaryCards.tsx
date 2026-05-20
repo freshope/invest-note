@@ -2,7 +2,7 @@
 
 import { formatPnL, signColor } from "@/lib/format";
 import type { AnalysisSummary } from "@/lib/analysis/aggregate";
-import { LOSS_THRESHOLD, RESULT_INPUT_RATE_LOW, WIN_THRESHOLD } from "@/lib/constants/analysis";
+import { LOSS_THRESHOLD, WIN_THRESHOLD } from "@/lib/constants/analysis";
 import { PNL_COLORS } from "@/lib/constants/colors";
 import { StatCard } from "@/components/shared/StatCard";
 
@@ -10,17 +10,16 @@ interface SummaryCardsProps {
   summary: AnalysisSummary;
 }
 
-function classifyWinRate(winRate: number, resultInputRate: number): string {
-  if (resultInputRate < RESULT_INPUT_RATE_LOW) return "text-muted-foreground";
+function classifyWinRate(winRate: number): string {
   if (winRate >= WIN_THRESHOLD) return PNL_COLORS.rise.text;
   if (winRate < LOSS_THRESHOLD) return PNL_COLORS.fall.text;
   return "text-foreground";
 }
 
 export function SummaryCards({ summary }: SummaryCardsProps) {
-  const { totalTrades, sellTrades, winRate, totalProfitLoss, resultInputRate } = summary;
+  const { totalTrades, sellTrades, winRate, totalProfitLoss } = summary;
 
-  const winRateClass = classifyWinRate(winRate, resultInputRate);
+  const winRateClass = classifyWinRate(winRate);
   const pnlClass = signColor(totalProfitLoss, "foreground");
 
   return (
@@ -29,8 +28,7 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
       <StatCard label="매도 거래" value={`${sellTrades}건`} />
       <StatCard
         label="승률"
-        value={resultInputRate === 0 ? "-" : `${Math.round(winRate)}%`}
-        sub={resultInputRate < 100 && sellTrades > 0 ? `입력률 ${Math.round(resultInputRate)}%` : undefined}
+        value={sellTrades === 0 ? "-" : `${Math.round(winRate)}%`}
         valueClass={winRateClass}
       />
       <StatCard

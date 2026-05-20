@@ -10,7 +10,7 @@ export interface ProfileInputRates {
   holdingDays: number;   // SELL 중 보유일 계산 가능 비율
   emotion: number;       // 전체 거래 중 emotion 입력 비율
   reasoningTag: number;  // BUY 중 태그 입력 비율
-  result: number;        // SELL 중 result 입력 비율
+  buyReason: number;     // BUY 중 buy_reason(매수 메모) 작성 비율
   reflection: number;    // SELL 중 sell_reason 작성 비율
   strategy: number;      // SELL 중 전략 판정 가능 비율 (planned + holding_days)
 }

@@ -57,7 +57,7 @@ export function AutoBuyReasonField({ reason }: { reason: string | null | undefin
   return (
     <div className="space-y-2">
       <Label>
-        매수 근거
+        매수 메모
         <span className="ml-1 text-[12px] font-normal text-muted-foreground">{AUTO_HINT}</span>
       </Label>
       {text ? (
@@ -65,7 +65,7 @@ export function AutoBuyReasonField({ reason }: { reason: string | null | undefin
           {text}
         </p>
       ) : (
-        <p className="text-[13px] text-muted-foreground">매수 시점의 매수 근거가 없습니다.</p>
+        <p className="text-[13px] text-muted-foreground">매수 시점의 매수 메모가 없습니다.</p>
       )}
     </div>
   );

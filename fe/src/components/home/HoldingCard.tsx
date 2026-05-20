@@ -117,7 +117,7 @@ export const HoldingCard = memo(function HoldingCard({ position, onPress }: Hold
         </div>
       </div>
 
-      {/* 매수 근거 스니펫 */}
+      {/* 매수 메모 스니펫 */}
       {lastNote && (
         <div
           className={cn(
@@ -133,7 +133,7 @@ export const HoldingCard = memo(function HoldingCard({ position, onPress }: Hold
           }}
         >
           <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-brand/10 text-[var(--brand)]">
-            매수 근거
+            매수 메모
           </span>
           <p
             className={cn(

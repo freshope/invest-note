@@ -49,7 +49,6 @@ export interface AnalysisSummary {
   missingTagRate: number;
   feelingRate: number;
   reflectionRate: number;
-  resultInputRate: number;
   strategyAdherenceRate: number;
   byStrategyAdherence: StrategyAdherenceStats[];
 }
