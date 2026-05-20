@@ -19,7 +19,6 @@ from invest_note_api.domain.analysis.thresholds import (
     MIN_TOTAL_TRADES,
     MISSING_TAG_RATE_HIGH,
     REFLECTION_RATE_LOW,
-    RESULT_INPUT_RATE_LOW,
     SCALPING_HOLDING_LIMIT_DAYS,
     TOP1_WEIGHT_HIGH,
     WIN_THRESHOLD,
@@ -215,27 +214,11 @@ def _rule_tag_missing(inp: RuleInput) -> Suggestion | None:
     )
 
 
-def _rule_result_missing(inp: RuleInput) -> Suggestion | None:
-    summary = inp["summary"]
-    if summary.result_input_rate >= RESULT_INPUT_RATE_LOW or summary.sell_trades < MIN_SELL_TRADES:
-        return None
-    pct = half_up_int(100 - summary.result_input_rate)
-    return Suggestion(
-        id="result_missing",
-        severity=SEVERITY_INFO,
-        title="거래 결과 입력이 부족해요",
-        body=f"매도 거래 중 {pct}%에 결과(성공/실패)가 미입력되어 승률 분석 정확도가 낮습니다.",
-        metric={"label": "미입력률", "value": f"{pct}%"},
-        link_section=SECTION_STRATEGY,
-    )
-
-
 def _rule_high_winrate(inp: RuleInput) -> Suggestion | None:
     summary = inp["summary"]
     if (
         summary.win_rate < WIN_THRESHOLD
         or summary.sell_trades < MIN_HIGH_WINRATE_SELL
-        or summary.result_input_rate < RESULT_INPUT_RATE_LOW
     ):
         return None
     pct = half_up_int(summary.win_rate)
@@ -266,7 +249,6 @@ _RULES: list[_RuleFn] = [
     _rule_holding_mismatch,
     _rule_losing_strategy,
     _rule_tag_missing,
-    _rule_result_missing,
     _rule_high_winrate,
 ]
 

@@ -135,11 +135,11 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
 
         <TradeFreeTextField
           id="buy_reason"
-          label="매수 근거"
+          label="매수 메모"
           optional
           valueLength={buyReason.length}
           {...register("buy_reason")}
-          placeholder="매수한 근거를 간단히 적어주세요"
+          placeholder="매수 메모를 간단히 적어주세요"
           rows={3}
         />
 

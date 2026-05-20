@@ -8,6 +8,7 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [ ] 분석 API 쿼리 `.limit(1000)` 가드 — 거래 수 급증 시 메모리/응답 보호
 - [ ] 수수료 현황 별도 패널 — BUY commission·세금 합계, 순실현손익 vs 총비용 비교
+- [ ] `_rule_high_winrate` 신뢰도 게이트 재검토 — 2026-05-20 `result_input_rate` 게이트 제거 후 현재 `sell_trades >= MIN_HIGH_WINRATE_SELL` + `win_rate >= WIN_THRESHOLD` 만으로 트리거. 실 데이터에서 인사이트가 과도하게 트리거되면 별도 신뢰도 메트릭(SELL 매칭률 등) 도입 검토. 트리거: 사용자 피드백 또는 인사이트 노출 빈도 모니터링에서 노이즈 체감.
 
 ## 코드 품질 가드
 
@@ -26,6 +27,8 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [ ] Vercel Root Directory 수동 변경 — 폴더 리네이밍(`app/` → `fe/`) 후 Vercel 대시보드의 Project Settings → General → Root Directory 가 여전히 `app` 으로 설정되어 있으면 `fe` 로 변경 필요. 다음 배포 빌드 전에 적용. CI(`.github/workflows/ci.yml`) 는 이미 갱신 완료.
 - [ ] internal 패키지명 일관화 검토 — `fe/package.json` `"name": "invest-note"` 과 `be/pyproject.toml` `name = "invest-note-api"` 의 BE/FE 명시화 (`invest-note-fe`, `invest-note-be` 등) 검토. 폴더명과 일관성 vs 변경 비용(import 경로, 빌드 설정, 외부 참조) 비교 후 결정.
+- [ ] 운영 환경 `SUPABASE_SECRET_KEY` 주입 확인 — 계정 탈퇴(`DELETE /api/me`)는 Supabase Admin REST 호출을 위해 `sb_secret_*` 키가 필요. Coolify/Render 등 BE 배포 시크릿에 누락되면 503 ("계정 삭제 기능이 비활성화되었습니다") 반환. 다음 배포 전에 운영 시크릿 등록 여부 확인.
+- [ ] user-scoped 테이블 신규 추가 시 `on delete cascade` 가드 — `auth.users` 삭제 시 cascade 누락된 FK가 있으면 탈퇴가 FK 위반으로 실패. 향후 새 user_id 컬럼을 가진 테이블을 추가하는 마이그레이션은 PR 리뷰 시 cascade 옵션 확인을 체크리스트로 명시. 또는 통합 테스트로 데모 사용자 삭제→재시드 시나리오를 자동화 검토.
 
 ## 거래내역서 임포트 — 후속 과제
 

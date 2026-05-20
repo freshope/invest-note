@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+
 import { Button } from "@/components/base/Button";
 import { createClient } from "@/lib/supabase/client";
 
@@ -10,17 +13,23 @@ interface UserInfoSectionProps {
 }
 
 export function UserInfoSection({ email }: UserInfoSectionProps) {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [pending, setPending] = useState(false);
 
   async function handleSignOut() {
     setPending(true);
+    const supabase = createClient();
     try {
-      const supabase = createClient();
-      await supabase.auth.signOut();
+      // 서버 호출 실패에도 로컬 세션은 무조건 비우도록 scope: "local"
+      await supabase.auth.signOut({ scope: "local" });
+    } catch (error) {
+      console.error("[signOut]", error);
+      toast.error("로그아웃 중 문제가 발생했어요. 다시 시도해주세요.");
+    } finally {
+      // AuthGuard에 의존하지 않고 직접 정리·이동 — 어떤 환경에서도 동일하게 동작.
       queryClient.clear();
-      // AuthGuard(onAuthStateChange → user=null)가 /login으로 리다이렉트 처리
-    } catch {
+      router.replace("/login");
       setPending(false);
     }
   }

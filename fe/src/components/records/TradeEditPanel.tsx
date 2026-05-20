@@ -311,7 +311,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                   </div>
                 )}
 
-                {/* 매수 근거 */}
+                {/* 매수 메모 */}
                 {isSell ? (
                   <div className="mb-5">
                     <AutoBuyReasonField reason={summary?.buyReason ?? null} />
@@ -320,10 +320,10 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                   <div className="mb-5">
                     <TradeFreeTextField
                       id="edit_buy_reason"
-                      label="매수 근거"
+                      label="매수 메모"
                       valueLength={(buyReason ?? "").length}
                       {...register("buy_reason")}
-                      placeholder="매수한 근거를 간단히 적어주세요"
+                      placeholder="매수 메모를 간단히 적어주세요"
                       rows={3}
                     />
                   </div>
