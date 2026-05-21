@@ -97,7 +97,7 @@ def get_trade_staging_state(request: Request) -> TradeStagingState:
     return request.app.state.trade_staging
 
 
-router = APIRouter(prefix="/api/trades")
+router = APIRouter(prefix="/trades")
 
 _TICKER_RE = re.compile(r"^[A-Za-z0-9.\-_가-힣]+$")
 

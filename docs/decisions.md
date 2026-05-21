@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-05-20 | BE 라우터 prefix 단축 — `/api/*` legacy alias 동시 지원 (1단계)
+
+- **맥락:** 운영 도메인이 `api.invest-note.pixelwave.app` 서브도메인으로 분리되면서 라우터 path 의 `/api/` prefix 가 의미상 중복이 되었다. 단축이 자연스럽지만 ① Capacitor Android 앱은 JS 번들이 빌드 시 박혀 설치되므로 기존 설치 사용자는 강제 업데이트 전까지 옛 경로로 호출하고, ② BE/FE 가 별도 배포라 동시 전환 보장이 어렵다. 한쪽만 바꾸면 전체 기능이 즉시 마비.
+- **결정:**
+  - 1단계(본 결정): 각 라우터의 `prefix` 를 `/api/<resource>` → `/<resource>` 로 단축하고, `main.py` 에서 동일 라우터를 `include_router(router, prefix="/api", include_in_schema=False)` 로 한 번 더 register 해 legacy alias 를 유지. OpenAPI/Swagger 에는 새 경로만 노출.
+  - 테스트는 새 SOT 경로로 일괄 치환하고, legacy 동등성은 `tests/test_legacy_api_prefix.py` 한 곳에서 status + body 비교로 검증.
+  - 2단계(후속 spec): FE `api-client.ts` ROUTES 의 `/api/` 제거 + 모바일 앱 강제 업데이트 게이트 + 새 번들 배포.
+  - 3단계(후속 spec): legacy alias 등록 제거(sunset). 시점은 강제 업데이트 게이트 이후 + 모니터링에서 `/api/*` 트래픽이 사라지면.
+- **이유:** ① 같은 라우터 객체를 두 번 include 하는 패턴은 FastAPI 표준 — 새 코드 작성 없이 무중단 prefix 전환 가능. ② `include_in_schema=False` 로 docs 중복 노출이 차단되어 신규 사용자/외부 consumer 에게는 새 경로만 보임. ③ 테스트가 새 경로 SOT 를 따라야 한다 — legacy 는 alias 이며 "동일 응답" 만 한 곳에서 보장하면 충분. ④ 단일 PR revert 로 원복 가능 — 본 spec 은 BE 내부 변경만이라 FE/앱 호환성 회귀 위험은 BE 내부에 한정.
+- **트레이드오프:** ① 같은 라우터를 두 번 include 하면 FastAPI 가 operation_id 중복 경고를 낼 수 있음 (`include_in_schema=False` 로 스키마 영향은 없으나 기동 로그에 잔재). ② legacy alias 가 살아 있는 동안에는 두 경로 응답 동등성을 새 엔드포인트 추가 때마다 의식해야 함 — 단일 라우터 객체를 그대로 등록하므로 자동 동등하지만 라우터 분기/middleware 가 path-prefix 기반이면 깨질 수 있음. ③ legacy 가 OpenAPI 에서 빠지므로 옛 경로로 호출하는 외부 도구는 docs 만으로 발견 불가 — 본 spec 의 범위가 invest-note 자체 클라이언트에 한정됨이 전제.
+- **재평가 트리거:** ① 옛 앱 버전 점유율이 충분히 줄어 강제 업데이트 게이트가 모든 사용자를 새 번들로 옮긴 시점 → 3단계(alias 제거) 진행. ② OpenAPI operation_id 중복 경고가 도구 체인에 실제 문제를 일으키면 `generate_unique_id_function` 으로 legacy 쪽만 다른 prefix 적용.
+
+---
+
 ## 2026-05-20 | 계정 탈퇴 & 로그아웃 강건화 — Supabase Admin REST 직호출 + 클라이언트 finally redirect
 
 - **맥락:** App Store Review (1.0_15) 에서 두 건 reject — ① Guideline 5.1.1(v): 계정 생성이 있으면 탈퇴도 필요, ② Guideline 2.1(a): 리뷰어 환경(iPhone 17 Pro Max / iOS 26.5)에서 "Unable to sign out". 로그아웃은 개발자 환경에서 재현 불가지만 코드 분석 결과 catch 후 `setPending(false)` 만 실행하고 `queryClient.clear()` / `router.replace` 가 누락된 채 `AuthGuard.onAuthStateChange` 에 의존하는 구조였음.

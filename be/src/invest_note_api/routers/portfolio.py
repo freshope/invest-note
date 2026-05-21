@@ -35,7 +35,7 @@ from invest_note_api.schemas.portfolio_response import PortfolioSummaryResponse
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/portfolio")
+router = APIRouter(prefix="/portfolio")
 
 
 @router.get("/holding")
