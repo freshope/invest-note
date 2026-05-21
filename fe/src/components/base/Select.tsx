@@ -34,7 +34,10 @@ function SelectTrigger({ className, ...props }: ComponentProps<typeof SelectTrig
 function SelectContent({ className, ...props }: ComponentProps<typeof SelectContentUI>) {
   return (
     <SelectContentUI
-      className={cn("rounded-xl", className)}
+      className={cn(
+        "max-w-[var(--radix-select-trigger-width)] rounded-xl",
+        className,
+      )}
       {...props}
     />
   );
@@ -43,7 +46,10 @@ function SelectContent({ className, ...props }: ComponentProps<typeof SelectCont
 function SelectItem({ className, ...props }: ComponentProps<typeof SelectItemUI>) {
   return (
     <SelectItemUI
-      className={cn("py-2.5 text-[15px]", className)}
+      className={cn(
+        "py-2.5 text-[15px] [&>span[id]]:flex [&>span[id]]:min-w-0 [&>span[id]]:flex-1",
+        className,
+      )}
       {...props}
     />
   );

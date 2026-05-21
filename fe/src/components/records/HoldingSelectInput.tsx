@@ -71,7 +71,7 @@ export function HoldingSelectInput({ accountId, value, onChange, onSelect, onSel
         autoCorrect="off"
       />
       {open && filtered.length > 0 && (
-        <ul className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 max-h-[280px] overflow-y-auto rounded-xl bg-popover shadow-md ring-1 ring-foreground/10">
+        <ul className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 max-h-[280px] overflow-y-auto rounded-xl bg-popover shadow-md ring-1 ring-foreground/10">
           {filtered.map((pos) => (
             <li
               key={pos.key}

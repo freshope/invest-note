@@ -124,7 +124,7 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
           id="stock-search-listbox"
           role="listbox"
           aria-label="종목 검색 결과"
-          className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 max-h-[280px] overflow-y-auto rounded-xl bg-popover shadow-md ring-1 ring-foreground/10"
+          className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 max-h-[280px] overflow-y-auto rounded-xl bg-popover shadow-md ring-1 ring-foreground/10"
         >
           {krSuggestions.map((stock, i) => (
             <li
