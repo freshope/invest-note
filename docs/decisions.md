@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-05-21 | shadcn 컴포넌트 primitive — base-ui → radix-ui 전환
+
+- **맥락:** `fe/components.json` 의 `style: "base-nova"` 로 도입된 shadcn 컴포넌트들이 `@base-ui/react` 프리미티브에 의존하고 있었음. shadcn 의 표준 라인은 `@radix-ui/react-*` 이며, 향후 registry 업데이트·예제 코드·새 컴포넌트 추가 시 base-nova 변종은 호환을 잃는다. 또 `Backdrop`/`Popup`/`Positioner`·`alignItemWithTrigger`·`render` prop 등 base-ui 고유 API 가 `ui/` 9개 컴포넌트와 컨슈머 클래스명(`data-active:`, `group-data-horizontal/tabs:`)까지 새어 나가 있어 유지보수 부담이 컸음.
+- **결정:**
+  - `@base-ui/react` 의존을 제거하고 `@radix-ui/react-{dialog,popover,select,tabs,toggle,toggle-group,slot}` 7개 패키지로 교체. `components.json` 의 `style` 을 `"new-york"` 으로 변경.
+  - `ui/` 9개(button/input/toggle/toggle-group/tabs/popover/dialog/select) 를 shadcn registry 의 표준 radix 버전을 그대로 `pnpm dlx shadcn add` 로 재설치하지 않고 **수동으로 한 파일씩 포팅**. `base/` 래퍼들이 의존하는 export 이름(`tabsListVariants`, `showCloseButton` 옵션 등)과 커스텀 className 을 보존하기 위함.
+  - Button 의 `render={<X/>}` → `<Slot asChild>` 패턴. Dialog/Popover/Select 의 `Positioner`+`Popup` → `Content` 한 단계 구조. Tabs 의 `Tab`/`Panel` → `Trigger`/`Content`. data 속성 `data-open`/`data-closed`/`data-active`/`data-horizontal` → radix 의 `data-[state=*]`/`data-[orientation=*]` 로 컨슈머 코드(`TradeBasicForm.tsx`, `pnl-colors.ts`)도 함께 치환.
+  - Select 의 `alignItemWithTrigger=true` (선택 아이템을 트리거 위치에 정렬) 동작은 radix 에 1:1 대응 없음 → `position="popper"` + `align="center"` 기본값으로 시각 근사 매칭.
+  - 컨슈머가 한 곳도 직접 `@/components/ui/*` 를 import 하지 않는다는 AGENTS.md 규칙이 이미 지켜져 있어, ui/ 내부 재작성만으로 컨슈머는 영향 없음.
+- **이유:** ① 표준 radix 정합으로 향후 shadcn 업데이트·신규 컴포넌트 추가가 마찰 없음. ② shadcn registry 재설치 대신 수동 포팅을 택한 이유는 (a) 기존 `base/` 래퍼·variant·옵션을 보존하기 위함, (b) 컴포넌트 간 미세한 className 충돌(`new-york` 표준 스타일과 우리 토큰 차이)을 점진적으로 흡수할 수 있기 때문. ③ Select `position="popper"` 채택은 모바일 우선 UX 에서 더 자연스럽고(드롭다운이 트리거 아래로 펼침), `alignItemWithTrigger` 의 "선택된 아이템 정렬" 은 다항목 리스트에서만 가치가 있는데 invest-note 의 Select 사용처(계좌 선택, 일반적으로 1~3개)에서 효용이 낮음.
+- **트레이드오프:** ① Select 의 시각 동작이 base-ui 와 미세하게 달라짐 — "선택된 아이템이 트리거 위에 겹쳐 나타나는" 동작이 사라지고 트리거 아래로 펼침. 실기기 회귀 가능성 있어 후속 모바일 QA 권장. ② `base-nova` → `new-york` 스타일 토큰 차이(그림자/radius/색)가 잠재적으로 존재하나 우리는 ui/ 컴포넌트의 className 을 그대로 옮겼으므로 즉각 차이는 없음. ③ React Hook Form Controller 의 `onValueChange` 가 radix 에서는 `(value: string) => void` 시그니처로 좁아져 `TradeBasicForm.tsx` 에 `v as TradeType` 캐스팅 1건 추가. ④ Tabs trigger 의 `fireEvent.click` 이 라dix-tabs controlled mode 에서 testing-library `fireEvent` 만으로 active 상태 갱신이 즉시 반영되지 않아, `TradeBasicForm.test.tsx` 의 매도 탭 클릭을 `userEvent.click` 으로 교체. ⑤ radix Select 가 form 통합을 위해 hidden native `<select>` (BubbleSelect) 를 함께 렌더 → 동일 옵션 라벨 텍스트가 DOM 에 2회 존재. 테스트에서 `getByText` 가 중복 매칭되어 `getByRole("combobox")` 의 textContent 검증으로 보정.
+- **재평가 트리거:** ① Select 의 popper 동작이 사용자 피드백/QA 에서 문제 보고되면 radix Select 의 `item-aligned` mode 로 전환 검토. ② shadcn 이 new-york → new-york-v5 같은 신규 style 을 표준화하면 그때 `style` 마이그레이션. ③ 다른 컨슈머가 ui/ 의 새 prop(예: Dialog `forceMount`) 을 필요로 하면 그때 표준 radix 시그니처에 맞춰 점진 확장.
+
+---
+
 ## 2026-05-20 | BE 라우터 prefix 단축 — `/api/*` legacy alias 동시 지원 (1단계)
 
 - **맥락:** 운영 도메인이 `api.invest-note.pixelwave.app` 서브도메인으로 분리되면서 라우터 path 의 `/api/` prefix 가 의미상 중복이 되었다. 단축이 자연스럽지만 ① Capacitor Android 앱은 JS 번들이 빌드 시 박혀 설치되므로 기존 설치 사용자는 강제 업데이트 전까지 옛 경로로 호출하고, ② BE/FE 가 별도 배포라 동시 전환 보장이 어렵다. 한쪽만 바꾸면 전체 기능이 즉시 마비.
