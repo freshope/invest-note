@@ -14,7 +14,7 @@ export const PNL_COLORS = {
     bgSoft: "bg-[var(--rise)]/10",
     border: "border-[var(--rise)]",
     borderSoft: "border-[var(--rise)]/30",
-    dataActiveBg: "data-active:bg-[var(--rise)]",
+    dataActiveBg: "data-[state=active]:bg-[var(--rise)]",
   },
   fall: {
     text: "text-[var(--fall)]",
@@ -22,7 +22,7 @@ export const PNL_COLORS = {
     bgSoft: "bg-[var(--fall)]/10",
     border: "border-[var(--fall)]",
     borderSoft: "border-[var(--fall)]/30",
-    dataActiveBg: "data-active:bg-[var(--fall)]",
+    dataActiveBg: "data-[state=active]:bg-[var(--fall)]",
   },
 } as const;
 
