@@ -62,8 +62,8 @@ export function PullToRefresh({
         isPullable={isPullable}
         pullingContent={<Indicator spinning={false} />}
         refreshingContent={<Indicator spinning />}
-        pullDownThreshold={80}
-        maxPullDownDistance={110}
+        pullDownThreshold={100}
+        maxPullDownDistance={130}
         resistance={2.5}
       >
         <div className="h-full w-full">{children}</div>
