@@ -21,20 +21,19 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 운영 / 어드민 도구
 
-- [ ] PnL 저장값 검증 엔드포인트 (이슈 E) — `/api/admin/verify-pnl` 신설. SELL의 저장된 `profit_loss`/`avg_buy_price`/`holding_days`/`strategy_type`/`reasoning_tags`/`emotion`을 `compute_group_pnl()`로 재계산해 차이 검출. 사용자 단위 batch + 차이 리포트 + (옵션) 자동 보정. 권한은 admin scope. DB 직접 수정·마이그레이션 누락·mutation 경로 우회 시 분석 탭과 거래 기록 합계 불일치를 잡기 위함.
+- [ ] PnL 저장값 검증 엔드포인트 (이슈 E) — `/admin/verify-pnl` 신설. SELL의 저장된 `profit_loss`/`avg_buy_price`/`holding_days`/`strategy_type`/`reasoning_tags`/`emotion`을 `compute_group_pnl()`로 재계산해 차이 검출. 사용자 단위 batch + 차이 리포트 + (옵션) 자동 보정. 권한은 admin scope. DB 직접 수정·마이그레이션 누락·mutation 경로 우회 시 분석 탭과 거래 기록 합계 불일치를 잡기 위함.
 
 ## 배포 / 인프라
 
 - [ ] Vercel Root Directory 수동 변경 — 폴더 리네이밍(`app/` → `fe/`) 후 Vercel 대시보드의 Project Settings → General → Root Directory 가 여전히 `app` 으로 설정되어 있으면 `fe` 로 변경 필요. 다음 배포 빌드 전에 적용. CI(`.github/workflows/ci.yml`) 는 이미 갱신 완료.
 - [ ] internal 패키지명 일관화 검토 — `fe/package.json` `"name": "invest-note"` 과 `be/pyproject.toml` `name = "invest-note-api"` 의 BE/FE 명시화 (`invest-note-fe`, `invest-note-be` 등) 검토. 폴더명과 일관성 vs 변경 비용(import 경로, 빌드 설정, 외부 참조) 비교 후 결정.
-- [ ] 운영 환경 `SUPABASE_SECRET_KEY` 주입 확인 — 계정 탈퇴(`DELETE /api/me`)는 Supabase Admin REST 호출을 위해 `sb_secret_*` 키가 필요. Coolify/Render 등 BE 배포 시크릿에 누락되면 503 ("계정 삭제 기능이 비활성화되었습니다") 반환. 다음 배포 전에 운영 시크릿 등록 여부 확인.
+- [ ] 운영 환경 `SUPABASE_SECRET_KEY` 주입 확인 — 계정 탈퇴(`DELETE /me`)는 Supabase Admin REST 호출을 위해 `sb_secret_*` 키가 필요. Coolify/Render 등 BE 배포 시크릿에 누락되면 503 ("계정 삭제 기능이 비활성화되었습니다") 반환. 다음 배포 전에 운영 시크릿 등록 여부 확인.
 - [ ] user-scoped 테이블 신규 추가 시 `on delete cascade` 가드 — `auth.users` 삭제 시 cascade 누락된 FK가 있으면 탈퇴가 FK 위반으로 실패. 향후 새 user_id 컬럼을 가진 테이블을 추가하는 마이그레이션은 PR 리뷰 시 cascade 옵션 확인을 체크리스트로 명시. 또는 통합 테스트로 데모 사용자 삭제→재시드 시나리오를 자동화 검토.
 
 ## API 라우터 prefix 마이그레이션
 
-- [ ] BE legacy `/api/*` alias 제거 (sunset) — 2026-05-21 `docs/spec-history/2026-05-21-be-dual-api-prefix.md` 에서 BE 가 `/api/<resource>` 와 `/<resource>` 를 동시 지원하도록 등록 (legacy 는 `include_in_schema=False`). FE/웹은 새 경로로 이미 전환. **선행 조건**: 모바일 앱 강제 업데이트 게이트로 옛 번들 사용자가 새 번들로 모두 이동 + 운영 로그에서 `/api/*` 트래픽이 충분히 줄어든 시점. 작업: `be/src/invest_note_api/main.py` 의 `include_router(legacy_router, prefix="/api", include_in_schema=False)` 루프 제거 + `tests/test_legacy_api_prefix.py` 폐기.
-- [ ] 모바일 앱 강제 업데이트 게이트 + 새 번들 배포 — Capacitor Android 앱은 JS 번들이 빌드 시 박혀 설치되어 옛 사용자는 현재도 `/api/*` 로 호출 중. BE legacy alias 가 살아 있는 동안엔 무해하지만 sunset 전에 옛 번들 사용자를 새 번들(신 경로 호출)로 강제 이동시켜야 함. v2.5 모바일 잔여의 "강제 업데이트 메커니즘" 과 동일 항목 — 이 spec 의존성으로 cross-link.
-- [ ] `/api/` 표기 잔존 정리 — `be/README.md` curl 예시 약 20곳, `docs/backlog.md` 의 `/api/admin/verify-pnl`·`DELETE /api/me`·`GET /api/trades` 설명 표기 등을 새 경로로 일괄 갱신. 코스메틱 — 우선순위 낮음. legacy alias sunset 전후 어느 시점이든 처리 가능.
+- [ ] BE legacy `/api/*` alias 제거 (sunset) — 2026-05-21 `docs/spec-history/2026-05-21-be-dual-api-prefix.md` 에서 신/구 prefix 동시 지원 등록 (legacy 는 `include_in_schema=False`). FE/웹은 이미 새 경로 전환. **선행 조건**: v2.5 모바일 잔여의 "강제 업데이트 메커니즘" 적용으로 옛 번들 사용자가 새 번들로 모두 이동 + 운영 로그에서 `/api/*` 트래픽이 충분히 줄어든 시점. 작업: `be/src/invest_note_api/main.py` 의 legacy `include_router` 루프 제거 + `tests/test_legacy_api_prefix.py` 폐기.
+- [ ] `be/README.md` curl 예시 새 경로 갱신 — README 의 `http://localhost:8000/api/{accounts,trades,portfolio,stocks,analysis}` curl 예시 약 20곳을 신 경로로 일괄 갱신. 코스메틱.
 
 ## 거래내역서 임포트 — 후속 과제
 
@@ -70,7 +69,7 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## v2 — 성능 / 스케일
 
-- [ ] trades 페이지네이션 (BE+FE 동반) — `GET /api/trades` 에 cursor/limit 도입 + records 화면 `useInfiniteQuery` 무한스크롤. records 가 현재 전량 fetch 후 메모리 group-by-date / account filter 구조라, 페이지네이션 시 그룹핑·`allTrades` (상세 패널) ·`accounts` 응답 분리까지 함께 재설계 필요. 트리거: 거래 수 분포 측정에서 첫 페인트/메모리 영향이 체감되면 도입. ticker SQL push (2026-05-03 `docs/spec-history/2026-05-03-be-simplify-trades-ticker-sql-push.md`) 로 HoldingsList 측은 이미 행 수만 fetch 중.
+- [ ] trades 페이지네이션 (BE+FE 동반) — `GET /trades` 에 cursor/limit 도입 + records 화면 `useInfiniteQuery` 무한스크롤. records 가 현재 전량 fetch 후 메모리 group-by-date / account filter 구조라, 페이지네이션 시 그룹핑·`allTrades` (상세 패널) ·`accounts` 응답 분리까지 함께 재설계 필요. 트리거: 거래 수 분포 측정에서 첫 페인트/메모리 영향이 체감되면 도입. ticker SQL push (2026-05-03 `docs/spec-history/2026-05-03-be-simplify-trades-ticker-sql-push.md`) 로 HoldingsList 측은 이미 행 수만 fetch 중.
 
 ## v3 — AI 분석
 
