@@ -84,7 +84,7 @@ class TestHolding:
         conn = FakeConnection([_to_record(trade)])
         with _patch_portfolio(conn):
             resp = trades_client.get(
-                "/api/portfolio/holding",
+                "/portfolio/holding",
                 params={"accountId": "a1", "assetName": "삼성전자", "ticker": "005930", "country": "KR"},
             )
         assert resp.status_code == 200
@@ -92,14 +92,14 @@ class TestHolding:
         assert body["quantity"] == 10.0
 
     def test_holding_missing_params_400(self, trades_client):
-        resp = trades_client.get("/api/portfolio/holding")
+        resp = trades_client.get("/portfolio/holding")
         assert resp.status_code == 422  # FastAPI validation error for missing required params
 
     def test_no_holding_zero(self, trades_client):
         conn = FakeConnection([])
         with _patch_portfolio(conn):
             resp = trades_client.get(
-                "/api/portfolio/holding",
+                "/portfolio/holding",
                 params={"accountId": "a1", "assetName": "삼성전자"},
             )
         assert resp.status_code == 200
@@ -122,7 +122,7 @@ class TestPortfolioSummary:
 
         with _patch_portfolio(conn):
             with patch("invest_note_api.routers.portfolio.fetch_quotes_by_keys", mock_quotes):
-                resp = trades_client.get("/api/portfolio/summary")
+                resp = trades_client.get("/portfolio/summary")
 
         assert resp.status_code == 200
         body = resp.json()
@@ -162,7 +162,7 @@ class TestPortfolioSummary:
 
         with _patch_portfolio(conn):
             with patch("invest_note_api.routers.portfolio.fetch_quotes_by_keys", failing_quotes):
-                resp = trades_client.get("/api/portfolio/summary")
+                resp = trades_client.get("/portfolio/summary")
 
         assert resp.status_code == 200
         body = resp.json()
@@ -170,5 +170,5 @@ class TestPortfolioSummary:
         assert body["positions"][0]["currentPrice"] is None
 
     def test_summary_401(self, auth_client):
-        resp = auth_client.get("/api/portfolio/summary")
+        resp = auth_client.get("/portfolio/summary")
         assert resp.status_code == 401

@@ -1,4 +1,4 @@
-// BE `/api/analysis/dashboard` 응답의 `summary` 필드 타입 정의.
+// BE `/analysis/dashboard` 응답의 `summary` 필드 타입 정의.
 // 분석 집계 자체는 BE(`api/.../domain/analysis/aggregate.py`)가 단독 SOT로 담당하며,
 // FE는 BE 응답을 그대로 표시한다.
 

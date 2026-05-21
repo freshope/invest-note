@@ -38,30 +38,30 @@ const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "")
 // FastAPI 라우트 매핑 — 인라인 경로 문자열 사용 금지, 반드시 이 객체 경유.
 const ROUTES = {
   accounts: {
-    base: "/api/accounts",
-    byId: (id: string) => `/api/accounts/${id}`,
-    tradeCount: (id: string) => `/api/accounts/${id}/trade-count`,
+    base: "/accounts",
+    byId: (id: string) => `/accounts/${id}`,
+    tradeCount: (id: string) => `/accounts/${id}/trade-count`,
   },
   trades: {
-    base: "/api/trades",
-    byId: (id: string) => `/api/trades/${id}`,
-    summary: (id: string) => `/api/trades/${id}/summary`,
-    importPreview: "/api/trades/import/preview",
-    importCommit: "/api/trades/import/commit",
+    base: "/trades",
+    byId: (id: string) => `/trades/${id}`,
+    summary: (id: string) => `/trades/${id}/summary`,
+    importPreview: "/trades/import/preview",
+    importCommit: "/trades/import/commit",
   },
   portfolio: {
-    summary: "/api/portfolio/summary",
-    holding: "/api/portfolio/holding",
+    summary: "/portfolio/summary",
+    holding: "/portfolio/holding",
   },
   stocks: {
-    search: "/api/stocks/search",
-    quote: "/api/stocks/quote",
+    search: "/stocks/search",
+    quote: "/stocks/quote",
   },
   analysis: {
-    dashboard: "/api/analysis/dashboard",
+    dashboard: "/analysis/dashboard",
   },
   me: {
-    base: "/api/me",
+    base: "/me",
   },
 } as const;
 

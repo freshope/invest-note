@@ -32,7 +32,7 @@ from invest_note_api.schemas.analysis_response import AnalysisDashboardResponse
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/analysis")
+router = APIRouter(prefix="/analysis")
 
 # 보유 기간 구간 — 임계값은 inclusive (`days <= threshold`)
 _HOLDING_BUCKETS: list[tuple[float, str]] = [

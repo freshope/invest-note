@@ -16,12 +16,12 @@ from tests.conftest import TEST_EMAIL, TEST_SUPABASE_URL, TEST_USER_ID, _kid, _p
 
 
 def test_me_no_header(auth_client: TestClient) -> None:
-    r = auth_client.get("/api/me")
+    r = auth_client.get("/me")
     assert r.status_code == 401
 
 
 def test_me_invalid_token(auth_client: TestClient) -> None:
-    r = auth_client.get("/api/me", headers={"Authorization": "Bearer invalid.token.here"})
+    r = auth_client.get("/me", headers={"Authorization": "Bearer invalid.token.here"})
     assert r.status_code == 401
 
 
@@ -38,13 +38,13 @@ def test_me_expired_token(auth_client: TestClient) -> None:
         algorithm="ES256",
         headers={"kid": _kid},
     )
-    r = auth_client.get("/api/me", headers={"Authorization": f"Bearer {expired}"})
+    r = auth_client.get("/me", headers={"Authorization": f"Bearer {expired}"})
     assert r.status_code == 401
 
 
 def test_me_valid_token(auth_client: TestClient) -> None:
     token = make_jwt()
-    r = auth_client.get("/api/me", headers={"Authorization": f"Bearer {token}"})
+    r = auth_client.get("/me", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200
     data = r.json()
     assert data["user_id"] == TEST_USER_ID
@@ -79,7 +79,7 @@ def _make_delete_client(
 
 
 def test_delete_me_no_auth(auth_client: TestClient) -> None:
-    r = auth_client.delete("/api/me")
+    r = auth_client.delete("/me")
     assert r.status_code == 401
 
 
@@ -91,7 +91,7 @@ def test_delete_me_service_key_missing() -> None:
         return httpx.Response(204)
 
     client = _make_delete_client(secret_key="", handler=handler)
-    r = client.delete("/api/me")
+    r = client.delete("/me")
     assert r.status_code == 503
     assert "비활성화" in r.json()["error"]
     assert captured == []  # Supabase 호출 안 됨
@@ -105,7 +105,7 @@ def test_delete_me_success() -> None:
         return httpx.Response(200, json={"id": TEST_USER_ID})
 
     client = _make_delete_client(secret_key="test-service-key", handler=handler)
-    r = client.delete("/api/me")
+    r = client.delete("/me")
     assert r.status_code == 204
     assert len(captured) == 1
     req = captured[0]
@@ -121,7 +121,7 @@ def test_delete_me_supabase_error_status(status_code: int) -> None:
         return httpx.Response(status_code, json={"error": "boom"})
 
     client = _make_delete_client(secret_key="test-service-key", handler=handler)
-    r = client.delete("/api/me")
+    r = client.delete("/me")
     assert r.status_code == 502
     assert "실패" in r.json()["error"]
 
@@ -131,5 +131,5 @@ def test_delete_me_network_error() -> None:
         raise httpx.ConnectError("connection refused")
 
     client = _make_delete_client(secret_key="test-service-key", handler=handler)
-    r = client.delete("/api/me")
+    r = client.delete("/me")
     assert r.status_code == 502

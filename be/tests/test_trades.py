@@ -155,7 +155,7 @@ class TestListTrades:
             [],                         # accounts
         )
         with _patch_trades(conn):
-            resp = trades_client.get("/api/trades")
+            resp = trades_client.get("/trades")
         assert resp.status_code == 200
         body = resp.json()
         assert "trades" in body
@@ -168,7 +168,7 @@ class TestListTrades:
             [],
         )
         with _patch_trades(conn):
-            resp = trades_client.get("/api/trades", params={"ticker": "005930", "country": "KR"})
+            resp = trades_client.get("/trades", params={"ticker": "005930", "country": "KR"})
         assert resp.status_code == 200
 
     def test_list_ticker_pushed_to_sql(self, trades_client, monkeypatch):
@@ -184,7 +184,7 @@ class TestListTrades:
 
         conn = FakeConnection([_to_record(_make_trade_row())], [])
         with _patch_trades(conn):
-            resp = trades_client.get("/api/trades", params={"ticker": "005930", "country": "KR"})
+            resp = trades_client.get("/trades", params={"ticker": "005930", "country": "KR"})
         assert resp.status_code == 200
 
         list_calls = [
@@ -199,7 +199,7 @@ class TestListTrades:
         assert args[1:] == ("005930", "KR")
 
     def test_list_invalid_ticker_400(self, trades_client):
-        resp = trades_client.get("/api/trades", params={"ticker": "/../etc/passwd"})
+        resp = trades_client.get("/trades", params={"ticker": "/../etc/passwd"})
         assert resp.status_code == 400
 
 
@@ -231,17 +231,17 @@ class TestCreateTrade:
             _to_record(inserted),      # insert_trade RETURNING
         )
         with _patch_trades(conn):
-            resp = trades_client.post("/api/trades", json=self._buy_payload())
+            resp = trades_client.post("/trades", json=self._buy_payload())
         assert resp.status_code == 201
         assert resp.json()["id"] == "new-t1"
 
     def test_invalid_body_422(self, trades_client):
-        resp = trades_client.post("/api/trades", json={"trade_type": "BUY"})
+        resp = trades_client.post("/trades", json={"trade_type": "BUY"})
         assert resp.status_code == 422
 
     def test_create_future_trade_422(self, trades_client):
         payload = {**self._buy_payload(), "traded_at": "2999-01-10T09:00:00"}
-        resp = trades_client.post("/api/trades", json=payload)
+        resp = trades_client.post("/trades", json=payload)
         assert resp.status_code == 422
         assert "미래" in resp.json()["error"]
 
@@ -261,7 +261,7 @@ class TestCreateTrade:
             "country_code": "US",
             "exchange": "NASDAQ",
         }
-        resp = trades_client.post("/api/trades", json=payload)
+        resp = trades_client.post("/trades", json=payload)
         assert resp.status_code == 422
         assert "해외 주식 신규 매수" in resp.json()["error"]
 
@@ -293,7 +293,7 @@ class TestCreateTrade:
             "exchange": "NASDAQ",
         }
         with _patch_trades(conn):
-            resp = trades_client.post("/api/trades", json=payload)
+            resp = trades_client.post("/trades", json=payload)
         assert resp.status_code == 201
         assert resp.json()["id"] == "new-us-sell"
 
@@ -305,7 +305,7 @@ class TestCreateTrade:
         )
         payload = {**self._buy_payload(), "trade_type": "SELL"}
         with _patch_trades(conn):
-            resp = trades_client.post("/api/trades", json=payload)
+            resp = trades_client.post("/trades", json=payload)
         assert resp.status_code == 400
         assert "보유" in resp.json()["error"]
 
@@ -322,7 +322,7 @@ class TestCreateTrade:
         )
         payload = {**self._buy_payload(), "trade_type": "SELL"}
         with _patch_trades(conn):
-            resp = trades_client.post("/api/trades", json=payload)
+            resp = trades_client.post("/trades", json=payload)
         assert resp.status_code == 201
 
     def test_create_advisory_lock_before_list_trades(self, trades_client, monkeypatch):
@@ -337,7 +337,7 @@ class TestCreateTrade:
             _to_record(inserted),      # insert_trade RETURNING
         )
         with _patch_trades(conn):
-            resp = trades_client.post("/api/trades", json=self._buy_payload())
+            resp = trades_client.post("/trades", json=self._buy_payload())
         assert resp.status_code == 201
         _assert_lock_before_list(sql_calls)
         _assert_lock_timeout_before_lock(sql_calls)
@@ -356,7 +356,7 @@ class TestCreateTrade:
         )
         payload = {**self._buy_payload(), "trade_type": "SELL"}
         with _patch_trades(conn):
-            resp = trades_client.post("/api/trades", json=payload)
+            resp = trades_client.post("/trades", json=payload)
         assert resp.status_code == 201
         _assert_lock_before_list(sql_calls)
         _assert_lock_timeout_before_lock(sql_calls)
@@ -374,7 +374,7 @@ class TestCreateTrade:
 
         monkeypatch.setattr(FakeConnection, "fetchval", spy_fetchval)
         with _patch_trades(conn):
-            resp = trades_client.post("/api/trades", json=self._buy_payload())
+            resp = trades_client.post("/trades", json=self._buy_payload())
         assert resp.status_code == 409
         assert "충돌" in resp.json()["error"]
 
@@ -430,7 +430,7 @@ class TestImportCommit:
 
         with _patch_trades(conn):
             resp = trades_client.post(
-                "/api/trades/import/commit",
+                "/trades/import/commit",
                 json={"staging_id": staging_id, "account_id": "a1"},
             )
 
@@ -502,7 +502,7 @@ class TestImportCommit:
 
         with _patch_trades(conn):
             resp = trades_client.post(
-                "/api/trades/import/commit",
+                "/trades/import/commit",
                 json={"staging_id": staging_id, "account_id": "a1"},
             )
         assert resp.status_code == 200
@@ -536,7 +536,7 @@ class TestImportCommit:
 
         with _patch_trades(conn):
             resp = trades_client.post(
-                "/api/trades/import/commit",
+                "/trades/import/commit",
                 json={"staging_id": staging_id, "account_id": "a1"},
             )
         assert resp.status_code == 200
@@ -574,7 +574,7 @@ class TestImportCommit:
 
         with _patch_trades(conn):
             resp = trades_client.post(
-                "/api/trades/import/commit",
+                "/trades/import/commit",
                 json={"staging_id": staging_id, "account_id": "a1"},
             )
         assert resp.status_code == 200
@@ -605,7 +605,7 @@ class TestImportCommit:
 
         with _patch_trades(conn):
             resp = trades_client.post(
-                "/api/trades/import/commit",
+                "/trades/import/commit",
                 json={"staging_id": staging_id, "account_id": "a1"},
             )
         assert resp.status_code == 200
@@ -646,7 +646,7 @@ class TestImportCommit:
         )
         with _patch_trades(conn):
             resp = trades_client.post(
-                "/api/trades/import/commit",
+                "/trades/import/commit",
                 json={"staging_id": staging_id, "account_id": "a1"},
             )
         assert resp.status_code == 200
@@ -679,7 +679,7 @@ class TestImportCommit:
         )
         with _patch_trades(conn):
             resp = trades_client.post(
-                "/api/trades/import/commit",
+                "/trades/import/commit",
                 json={"staging_id": staging_id, "account_id": "a1"},
             )
         assert resp.status_code == 200
@@ -714,7 +714,7 @@ class TestImportCommit:
         )
         with _patch_trades(conn):
             resp = trades_client.post(
-                "/api/trades/import/commit",
+                "/trades/import/commit",
                 json={"staging_id": staging_id, "account_id": "a1"},
             )
         assert resp.status_code == 200
@@ -755,7 +755,7 @@ class TestImportCommit:
         )
         with _patch_trades(conn):
             resp = trades_client.post(
-                "/api/trades/import/commit",
+                "/trades/import/commit",
                 json={"staging_id": staging_id, "account_id": "a1"},
             )
         assert resp.status_code == 200
@@ -856,14 +856,14 @@ class TestGetTrade:
     def test_get_404(self, trades_client):
         conn = FakeConnection(None)
         with _patch_trades(conn):
-            resp = trades_client.get("/api/trades/nonexistent")
+            resp = trades_client.get("/trades/nonexistent")
         assert resp.status_code == 404
 
     def test_get_200(self, trades_client):
         row = _make_trade_row()
         conn = FakeConnection(_to_record(row))
         with _patch_trades(conn):
-            resp = trades_client.get("/api/trades/t1")
+            resp = trades_client.get("/trades/t1")
         assert resp.status_code == 200
         assert resp.json()["id"] == "t1"
 
@@ -871,7 +871,7 @@ class TestGetTrade:
 class TestPatchTrade:
     def test_empty_body_204(self, trades_client):
         # No acquire call needed — returns 204 before DB
-        resp = trades_client.patch("/api/trades/t1", json={})
+        resp = trades_client.patch("/trades/t1", json={})
         assert resp.status_code == 204
 
     def test_patch_non_pnl_field(self, trades_client):
@@ -881,7 +881,7 @@ class TestPatchTrade:
             "UPDATE 1",       # patch_trade
         )
         with _patch_trades(conn):
-            resp = trades_client.patch("/api/trades/t1", json={"buy_reason": "테스트"})
+            resp = trades_client.patch("/trades/t1", json={"buy_reason": "테스트"})
         assert resp.status_code == 204
 
     def test_patch_free_text_5000_chars_ok(self, trades_client):
@@ -892,14 +892,14 @@ class TestPatchTrade:
         )
         with _patch_trades(conn):
             resp = trades_client.patch(
-                "/api/trades/t1",
+                "/trades/t1",
                 json={"buy_reason": "가" * TRADE_FREE_TEXT_MAX_LEN},
             )
         assert resp.status_code == 204
 
     def test_patch_free_text_5001_chars_422(self, trades_client):
         resp = trades_client.patch(
-            "/api/trades/t1",
+            "/trades/t1",
             json={"buy_reason": "가" * (TRADE_FREE_TEXT_MAX_LEN + 1)},
         )
         assert resp.status_code == 422
@@ -908,7 +908,7 @@ class TestPatchTrade:
     def test_patch_not_found_404(self, trades_client):
         conn = FakeConnection(None)  # fetchrow returns None
         with _patch_trades(conn):
-            resp = trades_client.patch("/api/trades/nonexistent", json={"price": 75000})
+            resp = trades_client.patch("/trades/nonexistent", json={"price": 75000})
         assert resp.status_code == 404
 
     def test_patch_pnl_advisory_lock_before_list_trades(self, trades_client, monkeypatch):
@@ -921,7 +921,7 @@ class TestPatchTrade:
             "UPDATE 1",        # patch_trade
         )
         with _patch_trades(conn):
-            resp = trades_client.patch("/api/trades/t1", json={"price": 75000})
+            resp = trades_client.patch("/trades/t1", json={"price": 75000})
         assert resp.status_code == 204
         _assert_lock_before_list(sql_calls)
         _assert_lock_timeout_before_lock(sql_calls)
@@ -932,7 +932,7 @@ class TestPatchTrade:
         sell_row = _make_trade_row(id_="s1", trade_type="SELL", quantity=10)
         conn = FakeConnection(_to_record(sell_row))  # fetchrow만 호출, UPDATE 없음
         with _patch_trades(conn):
-            resp = trades_client.patch("/api/trades/s1", json={"emotion": "FOMO"})
+            resp = trades_client.patch("/trades/s1", json={"emotion": "FOMO"})
         assert resp.status_code == 204
         # patch_trade의 SET 쿼리가 호출되지 않아야 함
         assert not any("UPDATE trades SET" in q for q in sql_calls)
@@ -943,7 +943,7 @@ class TestPatchTrade:
         sell_row = _make_trade_row(id_="s1", trade_type="SELL", quantity=10)
         conn = FakeConnection(_to_record(sell_row))
         with _patch_trades(conn):
-            resp = trades_client.patch("/api/trades/s1", json={"reasoning_tags": ["TECHNICAL"]})
+            resp = trades_client.patch("/trades/s1", json={"reasoning_tags": ["TECHNICAL"]})
         assert resp.status_code == 204
         assert not any("UPDATE trades SET" in q for q in sql_calls)
 
@@ -964,7 +964,7 @@ class TestPatchTrade:
         )
         with _patch_trades(conn):
             resp = trades_client.patch(
-                "/api/trades/s1",
+                "/trades/s1",
                 json={"emotion": "FOMO", "price": 90000},
             )
         assert resp.status_code == 204
@@ -996,7 +996,7 @@ class TestPatchTrade:
             "UPDATE 1",                                 # patch_trade
         )
         with _patch_trades(conn):
-            resp = trades_client.patch("/api/trades/b1", json={"strategy_type": "LONG_TERM"})
+            resp = trades_client.patch("/trades/b1", json={"strategy_type": "LONG_TERM"})
         assert resp.status_code == 204
         _assert_lock_before_list(sql_calls)
         assert any(
@@ -1009,7 +1009,7 @@ class TestDeleteTrade:
     def test_delete_404(self, trades_client):
         conn = FakeConnection(None)  # fetchrow → None → 404
         with _patch_trades(conn):
-            resp = trades_client.delete("/api/trades/nonexistent")
+            resp = trades_client.delete("/trades/nonexistent")
         assert resp.status_code == 404
 
     def test_delete_buy_ok(self, trades_client):
@@ -1020,7 +1020,7 @@ class TestDeleteTrade:
             "DELETE 1",             # delete_trade
         )
         with _patch_trades(conn):
-            resp = trades_client.delete("/api/trades/b1")
+            resp = trades_client.delete("/trades/b1")
         assert resp.status_code == 204
 
     def test_delete_advisory_lock_before_list_trades(self, trades_client, monkeypatch):
@@ -1033,7 +1033,7 @@ class TestDeleteTrade:
             "DELETE 1",             # delete_trade
         )
         with _patch_trades(conn):
-            resp = trades_client.delete("/api/trades/b1")
+            resp = trades_client.delete("/trades/b1")
         assert resp.status_code == 204
         _assert_lock_before_list(sql_calls)
         _assert_lock_timeout_before_lock(sql_calls)
@@ -1053,7 +1053,7 @@ class TestDeleteTrade:
             [_to_record(buy_row), _to_record(sell_row)],  # list_trades
         )
         with _patch_trades(conn):
-            resp = trades_client.delete("/api/trades/b1")
+            resp = trades_client.delete("/trades/b1")
         assert resp.status_code == 400
 
 
@@ -1065,7 +1065,7 @@ class TestTradeSummary:
             [],               # list_trades (unreached)
         )
         with _patch_trades(conn):
-            resp = trades_client.get("/api/trades/b1/summary")
+            resp = trades_client.get("/trades/b1/summary")
         assert resp.status_code == 400
 
     def test_summary_sell_200(self, trades_client):
@@ -1084,7 +1084,7 @@ class TestTradeSummary:
             [_to_record(buy_row), _to_record(sell_row)],
         )
         with _patch_trades(conn):
-            resp = trades_client.get("/api/trades/s1/summary")
+            resp = trades_client.get("/trades/s1/summary")
         assert resp.status_code == 200
         body = resp.json()
         assert "pnl" in body
@@ -1124,7 +1124,7 @@ class TestTradeSummary:
             [_to_record(sell_row), _to_record(buy_row)],
         )
         with _patch_trades(conn):
-            resp = trades_client.get("/api/trades/s1/summary")
+            resp = trades_client.get("/trades/s1/summary")
         assert resp.status_code == 200
         body = resp.json()
         assert body["holdingDays"] == 0
@@ -1133,15 +1133,15 @@ class TestTradeSummary:
     def test_summary_404(self, trades_client):
         conn = FakeConnection(None)
         with _patch_trades(conn):
-            resp = trades_client.get("/api/trades/nonexistent/summary")
+            resp = trades_client.get("/trades/nonexistent/summary")
         assert resp.status_code == 404
 
 
 class TestTradesAuth:
     def test_no_token_401(self, auth_client):
-        resp = auth_client.get("/api/trades")
+        resp = auth_client.get("/trades")
         assert resp.status_code == 401
 
     def test_invalid_token_401(self, auth_client):
-        resp = auth_client.get("/api/trades", headers={"Authorization": "Bearer invalid"})
+        resp = auth_client.get("/trades", headers={"Authorization": "Bearer invalid"})
         assert resp.status_code == 401

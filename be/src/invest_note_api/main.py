@@ -61,6 +61,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(stocks.router)
     application.include_router(analysis.router)
 
+    # Legacy `/api/*` 경로 alias — FE/모바일 앱 마이그레이션 완료 후 제거 예정.
+    # 스키마 중복 노출 방지를 위해 include_in_schema=False.
+    for legacy_router in (me.router, accounts.router, trades.router, portfolio.router, stocks.router, analysis.router):
+        application.include_router(legacy_router, prefix="/api", include_in_schema=False)
+
     return application
 
 
