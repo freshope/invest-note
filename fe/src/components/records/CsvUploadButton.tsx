@@ -17,7 +17,7 @@ export function CsvUploadButton({ onClick }: Props) {
       className="gap-1.5"
     >
       <UploadIcon className="h-3.5 w-3.5" />
-      파일 업로드
+      거래내역서 업로드
     </Button>
   );
 }
