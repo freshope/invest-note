@@ -192,4 +192,4 @@ poetry run pytest
 
 ## 배포
 
-Render + Railway (예정 — 라우트 포팅 완료 후 진행)
+Coolify (self-hosted) — `api.invest-note.pixelwave.app`
