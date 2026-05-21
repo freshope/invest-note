@@ -222,18 +222,19 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
               value={field.value}
               onValueChange={(v) => {
                 if (v && v !== field.value) {
+                  const next = v as TradeType;
                   setValue("asset_name", "");
                   clearStockSelection();
-                  field.onChange(v);
-                  recalcFees(getValues("price"), getValues("quantity"), v);
+                  field.onChange(next);
+                  recalcFees(getValues("price"), getValues("quantity"), next);
                 }
               }}
             >
-              <TabsList className="group-data-horizontal/tabs:h-12 p-1">
+              <TabsList className="group-data-[orientation=horizontal]/tabs:h-12 p-1">
                 <TabsTrigger
                   value={TRADE_TYPE.BUY}
                   className={cn(
-                    "flex-1 text-[16px] font-bold data-active:text-white",
+                    "flex-1 text-[16px] font-bold data-[state=active]:text-white",
                     PNL_COLORS.rise.text,
                     PNL_COLORS.rise.dataActiveBg,
                   )}
@@ -243,7 +244,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 <TabsTrigger
                   value={TRADE_TYPE.SELL}
                   className={cn(
-                    "flex-1 text-[16px] font-bold data-active:text-white",
+                    "flex-1 text-[16px] font-bold data-[state=active]:text-white",
                     PNL_COLORS.fall.text,
                     PNL_COLORS.fall.dataActiveBg,
                   )}
