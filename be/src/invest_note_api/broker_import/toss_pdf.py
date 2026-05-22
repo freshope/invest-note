@@ -28,6 +28,25 @@ _DATA_LINE_RE = re.compile(
 _KRW_SECTION = "원화 거래내역"
 _USD_SECTION = "달러 거래내역"
 
+# 헤더에서 데이터 행의 nums 토큰에 대응하지 않는 컬럼:
+# - 거래일자/거래구분/종목명(종목코드)은 _DATA_LINE_RE 의 named group으로 잡힘
+# - 환율은 KRW 거래 행에서 값이 비어 토큰으로 추출되지 않음
+_HEADER_EXCLUDED = frozenset({"거래일자", "거래구분", "종목명(종목코드)", "환율"})
+_HEADER_REQUIRED = ("거래수량", "거래대금", "단가", "수수료")
+
+# 헤더 라인이 보이지 않을 때 사용할 기본 컬럼 맵 (구 PDF 포맷, 정산금액 컬럼 없음)
+_DEFAULT_COLUMN_MAP: dict[str, int] = {
+    "거래수량": 0,
+    "거래대금": 1,
+    "단가": 2,
+    "수수료": 3,
+    "거래세": 4,
+    "제세금": 5,
+    "변제/연체합": 6,
+    "잔고": 7,
+    "잔액": 8,
+}
+
 
 def _parse_ticker_hint(raw_name: str) -> tuple[str, str | None]:
     """'삼성전자(A005930)' → ('삼성전자', '005930')"""
@@ -35,6 +54,26 @@ def _parse_ticker_hint(raw_name: str) -> tuple[str, str | None]:
     if m:
         return m.group(1).strip(), m.group(2)
     return raw_name.strip(), None
+
+
+def _build_column_map(header_line: str) -> dict[str, int] | None:
+    """헤더 라인 → {컬럼명: nums 인덱스} 매핑.
+
+    토스가 컬럼 순서를 바꾸거나 추가(예: '정산금액')해도 동적으로 따라가도록 한다.
+    필수 컬럼이 모두 없으면 헤더로 보기 어려워 None 반환 → 호출자는 fallback 사용.
+    """
+    tokens = header_line.split()
+    if not all(name in tokens for name in _HEADER_REQUIRED):
+        return None
+
+    column_map: dict[str, int] = {}
+    nums_idx = -1
+    for token in tokens:
+        if token in _HEADER_EXCLUDED:
+            continue
+        nums_idx += 1
+        column_map[token] = nums_idx
+    return column_map
 
 
 class TossPdfParser(BrokerStatementParser):
@@ -55,6 +94,7 @@ class TossPdfParser(BrokerStatementParser):
         # 찾지 못해 빈 리스트만 반환한다. 따라서 페이지 텍스트를 줄 단위로 파싱한다.
         result = ParseResult()
         row_counter = 0
+        column_map = _DEFAULT_COLUMN_MAP
 
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
             in_krw = False
@@ -80,6 +120,14 @@ class TossPdfParser(BrokerStatementParser):
                         in_krw, in_usd = False, True
                         continue
 
+                    # 헤더 라인은 매 페이지 반복 노출된다. 토스가 컬럼을 추가(예: '정산금액')해도
+                    # 데이터 행 인덱스가 밀리지 않도록 헤더에서 동적으로 매핑을 갱신한다.
+                    if line.startswith("거래일자") and "단가" in line:
+                        new_map = _build_column_map(line)
+                        if new_map is not None:
+                            column_map = new_map
+                        continue
+
                     if not _DATA_LINE_RE.match(line):
                         continue
 
@@ -90,30 +138,24 @@ class TossPdfParser(BrokerStatementParser):
                         continue
 
                     row_counter += 1
-                    parsed = self._parse_line(line, row_counter, result)
+                    parsed = self._parse_line(line, row_counter, result, column_map)
                     if parsed:
                         result.trades.append(parsed)
 
         return result
 
-    def _parse_line(self, line: str, row_no: int, result: ParseResult) -> ParsedTrade | None:
+    def _parse_line(
+        self,
+        line: str,
+        row_no: int,
+        result: ParseResult,
+        column_map: dict[str, int] | None = None,
+    ) -> ParsedTrade | None:
         """텍스트 한 줄을 파싱하여 ParsedTrade 를 반환한다.
 
-        원화 거래내역 컬럼 (extract_text 토큰 순서):
-            0: 거래일자
-            1: 거래구분 ("구매" | "판매")
-            2: 종목명(종목코드)
-            3: 거래수량
-            4: 거래대금
-            5: 단가
-            6: 수수료
-            7: 거래세
-            8: 제세금
-            9: 변제/연체합
-            10: 잔고
-            11: 잔액
-
-        환율 컬럼은 KRW 행에서 비어 있어 토큰으로 추출되지 않는다.
+        `column_map` 은 헤더 라인에서 동적으로 추출한 {컬럼명: nums 인덱스} 매핑.
+        미지정 시 구 PDF 포맷 (`_DEFAULT_COLUMN_MAP`) 으로 폴백한다. 토스가 컬럼을
+        추가(예: '정산금액') 해도 헤더가 갱신되면 데이터 행 인덱스가 자동 보정된다.
         """
         m = _DATA_LINE_RE.match(line)
         if not m:
@@ -123,6 +165,7 @@ class TossPdfParser(BrokerStatementParser):
         klass = m.group("klass")
         name_raw = m.group("name")
         nums = m.group("rest").split()
+        cmap = column_map or _DEFAULT_COLUMN_MAP
 
         if klass == "구매":
             trade_type = TRADE_TYPE_BUY
@@ -132,12 +175,24 @@ class TossPdfParser(BrokerStatementParser):
             result.add_error(row_no, f"알 수 없는 거래구분: {klass}")
             return None
 
-        # 숫자 컬럼 9개(거래수량 ~ 잔액). 부족하면 행이 잘렸을 가능성.
-        if len(nums) < 9:
-            result.add_error(row_no, f"숫자 컬럼 부족 ({len(nums)}/9): {nums}")
-            return None
+        def _col(name: str) -> str:
+            idx = cmap.get(name)
+            if idx is None or idx >= len(nums):
+                return ""
+            return nums[idx]
 
-        qty_raw, amount_raw, price_raw, fee_raw, tax_raw, sec_tax_raw = nums[:6]
+        qty_raw = _col("거래수량")
+        amount_raw = _col("거래대금")
+        price_raw = _col("단가")
+        fee_raw = _col("수수료")
+        tax_raw = _col("거래세")
+        sec_tax_raw = _col("제세금")
+
+        if not qty_raw or not price_raw:
+            result.add_error(
+                row_no, f"필수 컬럼 누락 (qty={qty_raw!r}, price={price_raw!r}): {nums}"
+            )
+            return None
 
         asset_name, ticker_hint = _parse_ticker_hint(name_raw)
         if not asset_name:
