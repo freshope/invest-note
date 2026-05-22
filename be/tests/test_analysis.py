@@ -74,7 +74,7 @@ class TestAnalysisDashboard:
     def test_empty_trades(self, trades_client):
         conn = FakeConnection([])
         with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
-            resp = _patched_get(trades_client, "/api/analysis/dashboard")
+            resp = _patched_get(trades_client, "/analysis/dashboard")
         assert resp.status_code == 200
         data = resp.json()
         assert data["period"] == "all"
@@ -103,7 +103,7 @@ class TestAnalysisDashboard:
         )
         conn = FakeConnection([buy, sell])
         with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
-            resp = _patched_get(trades_client, "/api/analysis/dashboard")
+            resp = _patched_get(trades_client, "/analysis/dashboard")
         assert resp.status_code == 200
         summary = resp.json()["summary"]
         assert summary["totalTrades"] == 2
@@ -131,7 +131,7 @@ class TestAnalysisDashboard:
         )
         conn = FakeConnection([buy_with, buy_without])
         with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
-            resp = _patched_get(trades_client, "/api/analysis/dashboard")
+            resp = _patched_get(trades_client, "/analysis/dashboard")
         assert resp.status_code == 200
         input_rates = resp.json()["behavior"]["inputRates"]
         # 신규 buyReason 필드 존재 + 기존 result 필드 제거 확인
@@ -148,7 +148,7 @@ class TestAnalysisDashboard:
         )
         conn = FakeConnection([old_buy, recent_sell])
         with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
-            resp = _patched_get(trades_client, "/api/analysis/dashboard?period=1m")
+            resp = _patched_get(trades_client, "/analysis/dashboard?period=1m")
         assert resp.status_code == 200
         data = resp.json()
         assert data["period"] == "1m"
@@ -165,7 +165,7 @@ class TestAnalysisDashboard:
                 "invest_note_api.routers.analysis.fetch_quotes_by_keys",
                 new=AsyncMock(side_effect=Exception("timeout")),
             ):
-                resp = trades_client.get("/api/analysis/dashboard")
+                resp = trades_client.get("/analysis/dashboard")
         assert resp.status_code == 200
         assert "profile" in resp.json()["behavior"]
 
@@ -179,7 +179,7 @@ class TestAnalysisDashboard:
         )
         conn = FakeConnection([buy, sell])
         with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
-            resp = _patched_get(trades_client, "/api/analysis/dashboard?period=all")
+            resp = _patched_get(trades_client, "/analysis/dashboard?period=all")
         assert resp.status_code == 200
         behavior = resp.json()["behavior"]
         assert len(behavior["holdingPeriodDist"]) >= 1
@@ -190,7 +190,7 @@ class TestAnalysisDashboard:
         buy = _make_trade_row(id_="b1", price=80000.0, quantity=5.0, total_amount=400000.0)
         conn = FakeConnection([buy])
         with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
-            resp = _patched_get(trades_client, "/api/analysis/dashboard?period=all")
+            resp = _patched_get(trades_client, "/analysis/dashboard?period=all")
         assert resp.status_code == 200
         behavior = resp.json()["behavior"]
         assert len(behavior["positionSizeDist"]) == 1
@@ -201,7 +201,7 @@ class TestAnalysisDashboard:
     def test_suggestions_schema(self, trades_client):
         conn = FakeConnection([])
         with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
-            resp = _patched_get(trades_client, "/api/analysis/dashboard")
+            resp = _patched_get(trades_client, "/analysis/dashboard")
         assert resp.status_code == 200
         suggestions_block = resp.json()["suggestions"]
         assert "period" in suggestions_block
@@ -222,7 +222,7 @@ class TestAnalysisDashboard:
         ]
         conn = FakeConnection(trades)
         with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
-            resp = _patched_get(trades_client, "/api/analysis/dashboard")
+            resp = _patched_get(trades_client, "/analysis/dashboard")
         assert resp.status_code == 200
         ids = [s["id"] for s in resp.json()["suggestions"]["suggestions"]]
         assert "losing_strategy" in ids
@@ -243,7 +243,7 @@ class TestAnalysisDashboard:
         ]
         conn = FakeConnection(trades)
         with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
-            resp = _patched_get(trades_client, "/api/analysis/dashboard")
+            resp = _patched_get(trades_client, "/analysis/dashboard")
         assert resp.status_code == 200
         suggestions = resp.json()["suggestions"]["suggestions"]
         severity_order = {"critical": 0, "warn": 1, "info": 2}
@@ -253,7 +253,7 @@ class TestAnalysisDashboard:
     # --- 인증 / SQL 호출 횟수 ---
 
     def test_401_without_token(self, auth_client):
-        resp = auth_client.get("/api/analysis/dashboard")
+        resp = auth_client.get("/analysis/dashboard")
         assert resp.status_code == 401
 
     def test_list_trades_called_once(self, trades_client):
@@ -280,7 +280,7 @@ class TestAnalysisDashboard:
         conn.fetch = counting_fetch  # type: ignore[assignment]
 
         with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
-            resp = _patched_get(trades_client, "/api/analysis/dashboard")
+            resp = _patched_get(trades_client, "/analysis/dashboard")
         assert resp.status_code == 200
         trade_queries = [q for q in fetch_queries if "FROM TRADES" in q.upper()]
         assert len(trade_queries) == 1, fetch_queries

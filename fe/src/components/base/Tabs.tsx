@@ -6,9 +6,9 @@ import {
   TabsContent as UITabsContent,
   tabsListVariants,
 } from "@/components/ui/tabs";
-import type { Tabs as TabsPrimitive } from "@base-ui/react/tabs";
+import type { ComponentProps } from "react";
 
-function Tabs({ className, ...props }: TabsPrimitive.Root.Props) {
+function Tabs({ className, ...props }: ComponentProps<typeof UITabs>) {
   return <UITabs className={cn(className)} {...props} />;
 }
 
@@ -31,7 +31,7 @@ function TabsTrigger({
   return (
     <UITabsTrigger
       className={cn(
-        "rounded-lg text-[13px] font-semibold data-active:shadow-none",
+        "rounded-lg text-[13px] font-semibold data-[state=active]:shadow-none",
         className,
       )}
       {...props}

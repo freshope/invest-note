@@ -97,7 +97,7 @@ def get_trade_staging_state(request: Request) -> TradeStagingState:
     return request.app.state.trade_staging
 
 
-router = APIRouter(prefix="/api/trades")
+router = APIRouter(prefix="/trades")
 
 _TICKER_RE = re.compile(r"^[A-Za-z0-9.\-_가-힣]+$")
 
@@ -107,15 +107,19 @@ async def _validate_import_groups(
     user_id,
     account_id: str,
     rows: list[dict],
-) -> list[ImportError]:
+) -> tuple[list[ImportError], int]:
     """preview 시점 정합성 검증. staging rows 를 group 단위로 가상 적용 후 oversell 탐지.
 
     commit 시 한 번 더 동일 검증을 수행하므로 race condition 은 commit 단계에서 차단된다.
+
+    반환값: (validation_errors, excluded_count).
+    excluded_count 는 검증에 실패한 그룹들의 import row 합계.
     """
     if not rows:
-        return []
+        return [], 0
 
     errors: list[ImportError] = []
+    excluded_count = 0
     groups: dict[TradeGroupKey, list[dict]] = defaultdict(list)
     for row in rows:
         group_key = TradeGroupKey(
@@ -201,8 +205,9 @@ async def _validate_import_groups(
             oversell_msg = _find_import_oversell(virtual_fresh, group_key)
             if oversell_msg is not None:
                 errors.append(ImportError(row_no=0, reason=oversell_msg))
+                excluded_count += len(group_rows)
 
-    return errors
+    return errors, excluded_count
 
 
 def _find_import_oversell(
@@ -226,12 +231,12 @@ def _find_import_oversell(
         if ev.no_holding:
             return (
                 f"{asset} {traded_date} 매도 거래에 해당하는 보유 수량이 없습니다. "
-                "이전 매수 거래가 누락된 것 같으니 거래내역서 기간을 더 길게 받아 다시 시도해주세요."
+                "이 종목 거래는 제외되고 나머지 거래만 등록됩니다."
             )
         if ev.oversell:
             return (
                 f"{asset} {traded_date} 매도 수량이 보유 수량을 초과합니다. "
-                "이전 매수 거래가 누락된 것 같으니 거래내역서 기간을 더 길게 받아 다시 시도해주세요."
+                "이 종목 거래는 제외되고 나머지 거래만 등록됩니다."
             )
     return None
 
@@ -606,8 +611,9 @@ async def import_preview(
 
     # 계좌가 지정되었으면 사용자에게 commit 전에 정합성 위반을 노출한다.
     validation_errors: list[ImportError] = []
+    excluded_count = 0
     if account_id:
-        validation_errors = await _validate_import_groups(
+        validation_errors, excluded_count = await _validate_import_groups(
             pool, user.id, account_id, rows_to_stage
         )
 
@@ -623,6 +629,7 @@ async def import_preview(
         unresolved_ticker_count=unresolved_ticker_count,
         errors=parse_errors,
         validation_errors=validation_errors,
+        excluded_count=excluded_count,
     )
 
 

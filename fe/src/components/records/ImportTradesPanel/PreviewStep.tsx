@@ -16,12 +16,13 @@ interface Props {
   isLoading: boolean;
 }
 
-function buildCommitLabel(newCount: number, dupCount: number): string {
+function buildCommitLabel(newCount: number, dupCount: number, excludedCount: number): string {
   const parts: string[] = [];
   if (newCount > 0) parts.push(`${newCount}건 등록`);
   if (dupCount > 0) parts.push(`${dupCount}건 갱신`);
   if (parts.length === 0) return "등록하기";
-  return `${parts.join(" · ")}하기`;
+  const prefix = excludedCount > 0 ? `제외하고 ` : "";
+  return `${prefix}${parts.join(" · ")}하기`;
 }
 
 function CountCard({ label, value, variant = "default" }: {
@@ -51,6 +52,11 @@ export function PreviewStep({ preview, account, onCommit, onBack, isLoading }: P
   const hintMismatch = !!hint && !account.name?.includes(hint);
   const validationErrors = preview.validation_errors ?? [];
   const hasValidationError = validationErrors.length > 0;
+  const excludedCount = preview.excluded_count ?? 0;
+  // 제외 예정 그룹은 보통 신규 등록으로 분류돼 있으므로 차감해서 실제 등록 예정 수를 표시한다.
+  // dup_count 까지 차감하지 않는 이유: 제외 그룹의 row 가 dup 으로 분류된 경우는 드물고, BE 가 row 합계만 알려주기 때문.
+  const effectiveNewCount = Math.max(0, preview.new_count - excludedCount);
+  const totalExcluded = preview.error_count + excludedCount;
 
   return (
     <div className="flex flex-col min-h-full">
@@ -60,9 +66,13 @@ export function PreviewStep({ preview, account, onCommit, onBack, isLoading }: P
         </p>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <CountCard label="신규 등록" value={preview.new_count} variant="success" />
+          <CountCard label="신규 등록" value={effectiveNewCount} variant="success" />
           <CountCard label="기존 거래 갱신(근사)" value={preview.duplicate_count} variant="default" />
-          <CountCard label="제외된 오류" value={preview.error_count} variant={preview.error_count > 0 ? "warn" : "default"} />
+          <CountCard
+            label="제외 예정"
+            value={totalExcluded}
+            variant={totalExcluded > 0 ? "warn" : "default"}
+          />
           <CountCard label="USD 미지원" value={preview.usd_skip_count} variant={preview.usd_skip_count > 0 ? "warn" : "default"} />
         </div>
         {preview.duplicate_count > 0 && (
@@ -81,16 +91,19 @@ export function PreviewStep({ preview, account, onCommit, onBack, isLoading }: P
         )}
 
         {hasValidationError && (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
+          <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
             <div className="flex items-start gap-2">
               <AlertCircleIcon className="mt-0.5 h-4 w-4 shrink-0" />
               <div className="flex-1 space-y-1.5">
-                <p className="font-medium">정합성 오류 — 등록할 수 없습니다</p>
+                <p className="font-medium">
+                  일부 거래가 제외됩니다{excludedCount > 0 ? ` (${excludedCount}건)` : ""}
+                </p>
                 <ul className="list-disc space-y-1 pl-5 text-xs">
                   {validationErrors.map((e, i) => (
                     <li key={i}>{e.reason}</li>
                   ))}
                 </ul>
+                <p className="text-xs">아래 종목 거래는 제외되고 나머지 거래만 등록됩니다.</p>
               </div>
             </div>
           </div>
@@ -159,12 +172,11 @@ export function PreviewStep({ preview, account, onCommit, onBack, isLoading }: P
             className="flex-1"
             onClick={onCommit}
             disabled={
-              hasValidationError
-              || (preview.new_count === 0 && preview.duplicate_count === 0)
+              (effectiveNewCount === 0 && preview.duplicate_count === 0)
               || isLoading
             }
           >
-            {isLoading ? "등록 중..." : buildCommitLabel(preview.new_count, preview.duplicate_count)}
+            {isLoading ? "등록 중..." : buildCommitLabel(effectiveNewCount, preview.duplicate_count, excludedCount)}
           </Button>
         </div>
       </FullScreenPanelFooter>

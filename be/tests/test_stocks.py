@@ -10,7 +10,7 @@ class TestStocksQuote:
             return {"005930:KR": {"price": 75000.0, "currency": "KRW", "as_of": "2024-01-15"}}
 
         with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
-            resp = trades_client.get("/api/stocks/quote", params={"symbols": "005930:KR"})
+            resp = trades_client.get("/stocks/quote", params={"symbols": "005930:KR"})
 
         assert resp.status_code == 200
         body = resp.json()
@@ -22,7 +22,7 @@ class TestStocksQuote:
             return {}
 
         with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
-            resp = trades_client.get("/api/stocks/quote", params={"symbols": ""})
+            resp = trades_client.get("/stocks/quote", params={"symbols": ""})
 
         assert resp.status_code == 200
         assert resp.json() == {}
@@ -32,7 +32,7 @@ class TestStocksQuote:
             return {"AAPL:US": None}
 
         with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
-            resp = trades_client.get("/api/stocks/quote", params={"symbols": "AAPL:US"})
+            resp = trades_client.get("/stocks/quote", params={"symbols": "AAPL:US"})
 
         assert resp.status_code == 200
         assert resp.json()["AAPL:US"] is None
@@ -45,7 +45,7 @@ class TestStocksQuote:
             }
 
         with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
-            resp = trades_client.get("/api/stocks/quote", params={"symbols": "005930:KR,AAPL:US"})
+            resp = trades_client.get("/stocks/quote", params={"symbols": "005930:KR,AAPL:US"})
 
         assert resp.status_code == 200
         body = resp.json()
@@ -53,7 +53,7 @@ class TestStocksQuote:
         assert body["AAPL:US"] is None
 
     def test_quote_401(self, auth_client):
-        resp = auth_client.get("/api/stocks/quote", params={"symbols": "005930:KR"})
+        resp = auth_client.get("/stocks/quote", params={"symbols": "005930:KR"})
         assert resp.status_code == 401
 
 
@@ -63,7 +63,7 @@ class TestStocksSearch:
             return [{"code": "005930", "name": "삼성전자", "market": "KR", "exchange": "KOSPI"}]
 
         with patch("invest_note_api.routers.stocks.search_kr", mock_search_kr):
-            resp = trades_client.get("/api/stocks/search", params={"q": "삼성"})
+            resp = trades_client.get("/stocks/search", params={"q": "삼성"})
 
         assert resp.status_code == 200
         assert resp.json()[0]["code"] == "005930"
@@ -74,7 +74,7 @@ class TestStocksSearch:
             return [{"code": "005930", "name": "삼성전자", "market": "KR", "exchange": ""}]
 
         with patch("invest_note_api.routers.stocks.search_kr", mock_search_kr):
-            resp = trades_client.get("/api/stocks/search", params={"q": "005930"})
+            resp = trades_client.get("/stocks/search", params={"q": "005930"})
 
         assert resp.status_code == 200
         assert resp.json()[0]["market"] == "KR"
@@ -84,15 +84,15 @@ class TestStocksSearch:
             return []
 
         with patch("invest_note_api.routers.stocks.search_kr", mock_search_kr):
-            resp = trades_client.get("/api/stocks/search", params={"q": "apple"})
+            resp = trades_client.get("/stocks/search", params={"q": "apple"})
         assert resp.status_code == 200
         assert resp.json() == []
 
     def test_search_empty_query_empty_result(self, trades_client):
-        resp = trades_client.get("/api/stocks/search", params={"q": ""})
+        resp = trades_client.get("/stocks/search", params={"q": ""})
         assert resp.status_code == 200
         assert resp.json() == []
 
     def test_search_401(self, auth_client):
-        resp = auth_client.get("/api/stocks/search", params={"q": "삼성"})
+        resp = auth_client.get("/stocks/search", params={"q": "삼성"})
         assert resp.status_code == 401

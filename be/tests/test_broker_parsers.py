@@ -7,7 +7,11 @@ import pytest
 
 from invest_note_api.broker_import import PARSERS, detect_broker
 from invest_note_api.broker_import.samsung_xlsx import SamsungXlsxParser
-from invest_note_api.broker_import.toss_pdf import TossPdfParser, _parse_ticker_hint
+from invest_note_api.broker_import.toss_pdf import (
+    TossPdfParser,
+    _build_column_map,
+    _parse_ticker_hint,
+)
 from invest_note_api.broker_import.base import ParseResult
 
 
@@ -245,6 +249,15 @@ class TestTossPdfParserFixture:
             pytest.skip(f"sample PDF not present: {path}")
         return path.read_bytes()
 
+    @pytest.fixture
+    def sample_pdf_with_settlement(self) -> bytes:
+        """'정산금액' 컬럼이 추가된 신 PDF 포맷 (2026-05 이후 발급분)."""
+        from pathlib import Path
+        path = Path(__file__).resolve().parents[2] / "sample" / "토스증권_거래내역서_20250523_20260522_1.pdf"
+        if not path.exists():
+            pytest.skip(f"sample PDF not present: {path}")
+        return path.read_bytes()
+
     def test_parses_real_sample(self, sample_pdf_bytes: bytes):
         result = self.parser.parse(sample_pdf_bytes, "토스증권_거래내역서_20250417_20260416_1.pdf")
         assert len(result.trades) > 0
@@ -257,6 +270,62 @@ class TestTossPdfParserFixture:
         for t in result.trades:
             assert t.price > 0
             assert t.quantity > 0
+
+    def test_parses_new_format_with_settlement_column(
+        self, sample_pdf_with_settlement: bytes
+    ):
+        """신 포맷에 추가된 '정산금액' 컬럼이 단가/수수료 인덱스를 밀어내지 않는지 회귀.
+
+        헤더가 동적으로 인식되지 않으면 price 에 정산금액, commission 에 단가가 들어가
+        SELL 의 PnL 이 천문학적 손실로 계산되는 사고가 재발한다.
+        """
+        result = self.parser.parse(
+            sample_pdf_with_settlement, "토스증권_거래내역서_20250523_20260522_1.pdf"
+        )
+        assert len(result.trades) == 16
+        by_key = {(t.trade_type, t.asset_name, t.quantity): t for t in result.trades}
+        # 삼성전자 BUY 33 주 — 단가 60000, 수수료 277.
+        # 동적 인식 실패 시 price=1980277(정산금액) 으로 잘못 들어옴.
+        samsung_buy = by_key[("BUY", "삼성전자", 33.0)]
+        assert samsung_buy.price == pytest.approx(60000.0)
+        assert samsung_buy.commission == pytest.approx(277.0)
+        assert samsung_buy.tax == pytest.approx(0.0)
+        # 삼성전자 SELL 15 주 — 단가 58100, 수수료 122, 거래세+제세금 = 0 + 1307.
+        samsung_sell = by_key[("SELL", "삼성전자", 15.0)]
+        assert samsung_sell.price == pytest.approx(58100.0)
+        assert samsung_sell.commission == pytest.approx(122.0)
+        assert samsung_sell.tax == pytest.approx(1307.0)
+
+
+class TestTossColumnMap:
+    def test_default_format_without_settlement(self):
+        header = "거래일자 거래구분 종목명(종목코드) 환율 거래수량 거래대금 단가 수수료 거래세 제세금 변제/연체합 잔고 잔액"
+        m = _build_column_map(header)
+        assert m is not None
+        assert m["거래수량"] == 0
+        assert m["거래대금"] == 1
+        assert m["단가"] == 2
+        assert m["수수료"] == 3
+        assert m["거래세"] == 4
+        assert m["제세금"] == 5
+
+    def test_new_format_with_settlement(self):
+        header = "거래일자 거래구분 종목명(종목코드) 환율 거래수량 거래대금 정산금액 단가 수수료 거래세 제세금 변제/연체합 잔고 잔액"
+        m = _build_column_map(header)
+        assert m is not None
+        # '정산금액' 이 거래대금과 단가 사이에 끼어 단가/수수료가 한 칸씩 밀려야 한다.
+        assert m["거래수량"] == 0
+        assert m["거래대금"] == 1
+        assert m["정산금액"] == 2
+        assert m["단가"] == 3
+        assert m["수수료"] == 4
+        assert m["거래세"] == 5
+        assert m["제세금"] == 6
+
+    def test_non_header_line_returns_none(self):
+        # 데이터 행이나 잡음 라인은 헤더로 오인되면 안 된다.
+        assert _build_column_map("2025.06.11 구매 삼성전자(A005930) 33 1,980,000") is None
+        assert _build_column_map("발급번호 20260522-101-11-B000033") is None
 
 
 class TestDetectBroker:

@@ -14,7 +14,7 @@ from invest_note_api.external.quotes import (
     get_quote_cache_state,
 )
 
-router = APIRouter(prefix="/api/stocks")
+router = APIRouter(prefix="/stocks")
 
 
 @router.get("/quote")

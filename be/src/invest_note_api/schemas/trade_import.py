@@ -22,8 +22,11 @@ class ImportPreviewResponse(BaseModel):
     unresolved_ticker_count: int
     errors: list[ImportError]
     # 선택한 계좌 기준 정합성 검증 결과 (oversell/보유 부족 등).
-    # 항목이 있으면 FE는 commit 진행을 막아야 한다. account_id 미지정 preview 호출 시 빈 리스트.
+    # 항목이 있는 종목 그룹은 commit 시 BE 가 그룹 단위로 skip 한다. 사용자가 인지할 수 있도록 FE 가 노출.
+    # account_id 미지정 preview 호출 시 빈 리스트.
     validation_errors: list[ImportError] = []
+    # validation_errors 로 제외 예정인 그룹들의 row 합계. FE 의 "신규 등록" 카운트 보정용.
+    excluded_count: int = 0
 
 
 class ImportCommitRequest(BaseModel):

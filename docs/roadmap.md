@@ -20,7 +20,7 @@
 | 백엔드 | FastAPI (Python) — Supabase JWKS(ES256) 인증 + asyncpg + RLS |
 | DB/Auth | Supabase (PostgreSQL + Auth + RLS) |
 | 시세 | 네이버 금융(KR) — 비공식 지연 시세 |
-| 배포 | Vercel (웹), Render → Railway (API, 예정) |
+| 배포 | 모바일 앱 (iOS/Android, Capacitor) 단일 배포, BE는 Coolify (self-hosted) |
 | 모바일 | Capacitor (iOS/Android), 향후 React Native 검토 |
 
 ## 디자인 원칙

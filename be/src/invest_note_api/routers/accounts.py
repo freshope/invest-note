@@ -15,7 +15,7 @@ from invest_note_api.db_ops.accounts_repo import (
 from invest_note_api.errors import ERR_ACCOUNT_NOT_FOUND, APIError
 from invest_note_api.schemas.account import AccountCreate, AccountUpdate
 
-router = APIRouter(prefix="/api/accounts")
+router = APIRouter(prefix="/accounts")
 
 
 @router.get("")

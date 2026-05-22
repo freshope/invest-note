@@ -38,30 +38,30 @@ const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "")
 // FastAPI 라우트 매핑 — 인라인 경로 문자열 사용 금지, 반드시 이 객체 경유.
 const ROUTES = {
   accounts: {
-    base: "/api/accounts",
-    byId: (id: string) => `/api/accounts/${id}`,
-    tradeCount: (id: string) => `/api/accounts/${id}/trade-count`,
+    base: "/accounts",
+    byId: (id: string) => `/accounts/${id}`,
+    tradeCount: (id: string) => `/accounts/${id}/trade-count`,
   },
   trades: {
-    base: "/api/trades",
-    byId: (id: string) => `/api/trades/${id}`,
-    summary: (id: string) => `/api/trades/${id}/summary`,
-    importPreview: "/api/trades/import/preview",
-    importCommit: "/api/trades/import/commit",
+    base: "/trades",
+    byId: (id: string) => `/trades/${id}`,
+    summary: (id: string) => `/trades/${id}/summary`,
+    importPreview: "/trades/import/preview",
+    importCommit: "/trades/import/commit",
   },
   portfolio: {
-    summary: "/api/portfolio/summary",
-    holding: "/api/portfolio/holding",
+    summary: "/portfolio/summary",
+    holding: "/portfolio/holding",
   },
   stocks: {
-    search: "/api/stocks/search",
-    quote: "/api/stocks/quote",
+    search: "/stocks/search",
+    quote: "/stocks/quote",
   },
   analysis: {
-    dashboard: "/api/analysis/dashboard",
+    dashboard: "/analysis/dashboard",
   },
   me: {
-    base: "/api/me",
+    base: "/me",
   },
 } as const;
 
@@ -235,8 +235,10 @@ export interface ImportPreviewResponse {
   usd_skip_count: number;
   unresolved_ticker_count: number;
   errors: ImportErrorItem[];
-  /** 선택 계좌 기준 정합성 위반 (oversell 등). 항목이 있으면 commit 진행 차단. */
+  /** 선택 계좌 기준 정합성 위반 (oversell 등). 해당 종목 그룹은 commit 시 BE 가 skip; FE 는 사용자에게 노출만 한다. */
   validation_errors: ImportErrorItem[];
+  /** validation_errors 로 제외 예정인 그룹들의 import row 합계. 카운트 카드 보정용. */
+  excluded_count: number;
 }
 
 export interface ImportCommitResponse {

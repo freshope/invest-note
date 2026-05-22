@@ -4,6 +4,57 @@
 
 ---
 
+## 2026-05-22 | 거래 일괄 등록 부분 성공 정책 — 그룹 단위 제외 + ResultStep 성공 판정 완화
+
+- **맥락:** 일괄 등록(`/trades/import/preview` → `/trades/import/commit`) 은 BE 내부적으로 이미 그룹(=계좌·종목·국가) 단위 부분 성공을 지원했음. 그러나 FE `PreviewStep` 의 `hasValidationError` disabled 가드가 정합성 위반(보유부족 SELL 등) 발생 시 commit 자체를 막아 BE 의 부분 성공 경로에 도달하지 못했음 — 한 종목에서 매도 보유부족이 1건이라도 발견되면 모든 거래(정상 다른 종목 포함)가 등록되지 않는 사용자 불만 발생. 또한 ResultStep 은 `error_count === 0` 만으로 성공을 판정해, 부분 등록이 정상 진행된 경우에도 빨간 X 아이콘 + "일부 오류 발생" 으로 표시되어 사용자가 실패로 오해했음.
+- **결정:**
+  - **제외 단위**: row 단위가 아닌 **그룹(종목) 단위** 로 제외. 문제 SELL 이 포함된 종목 그룹은 그 그룹의 BUY 까지 함께 commit 에서 skip, 다른 종목 그룹은 정상 등록.
+  - **FE 흐름**: PreviewStep 의 정합성 위반 배너를 red → yellow 톤으로 바꾸고("일부 거래가 제외됩니다"), 등록 버튼 disabled 조건에서 `hasValidationError` 제거. 라벨에 "제외하고 N건 등록" 으로 사용자 의사 표현. 카운트 카드의 "신규 등록" 은 `excluded_count` 만큼 차감, "제외 예정" 카드에 합산.
+  - **BE 메시지·메타**: `_find_import_oversell` 사용자 안내를 "거래내역서 기간을 더 길게 받아 다시 시도해주세요" → "이 종목 거래는 제외되고 나머지 거래만 등록됩니다" 로 정정. `ImportPreviewResponse.excluded_count: int` 신설해 FE 카운트 카드 정확도 확보.
+  - **ResultStep 성공 판정**: `error_count === 0` → `inserted_count > 0 || merged_count > 0 || error_count === 0`. 등록·갱신이 1건이라도 발생했으면 성공(CheckCircle + "등록 완료"), errors 는 "제외된 종목" 안내로 노출. 진짜 실패(등록 0건)인 경우에만 XCircle + "등록 실패".
+- **이유:**
+  - ① row 단위 제외(같은 그룹에서 SELL 만 빼고 BUY 는 등록)는 사용자 발화("문제 없는 거래는 등록")와 가장 부합하지만, **BUY 만 들어가고 SELL 이 누락된 상태**가 보유 수량·PnL 을 일시적으로 왜곡함. 그룹 단위 제외는 부정합 없는 일관 상태를 보장하고, 누락 SELL 보완은 재업로드 + signature dedup 으로 자연스럽게 해결됨.
+  - ② BE 는 이미 그룹 단위 부분 성공 구조였으므로 FE 차단만 풀고 메시지·메타데이터만 다듬는 최소 변경으로 사용자 요구를 충족.
+  - ③ ResultStep 성공 판정은 사용자가 PreviewStep 에서 제외 항목을 **인지하고 의도적으로** "제외하고 등록" 을 클릭한 결과 — error 가 있어도 그것은 사용자가 수락한 제외이며 시스템적 실패가 아님. 빨간 X 아이콘은 이 의미를 왜곡함.
+- **트레이드오프:**
+  - ① 같은 그룹의 정상 BUY 도 함께 제외되므로 사용자가 매도 누락분을 보완하려면 거래내역서를 한 번 더 받아 재업로드해야 함. dedup 이 중복 등록을 막아 안전하지만, "BUY 만 정상이고 SELL 만 문제" 인 사용자는 2-step 작업을 거침.
+  - ② `excluded_count` 가 그룹 row 합계라 dup 으로 분류된 row 가 포함된 경우 카운트 카드의 "신규 등록" 이 약간 낮게 표시될 수 있음 — 실제 commit 결과는 정확하므로 ResultStep 에서 보정됨.
+  - ③ ResultStep 성공 판정 완화로 1건이라도 등록되면 success 표시 — 사용자가 결과 화면에서 errors 리스트를 안 읽고 지나칠 위험이 있음. errors 리스트 자체는 여전히 노출되며 헤더("제외된 종목") 로 맥락을 강조해 완화.
+- **재평가 트리거:**
+  - ① 사용자 피드백으로 row 단위 제외(같은 그룹의 BUY 는 살리고 SELL 만 빼기) 요구가 누적되면 재검토. 그 경우 BE `_find_import_oversell` 이 (msg, skip 인덱스) 를 반환하도록 확장하고 preview/commit 양쪽에서 row 단위로 제거.
+  - ② "기존 DB 거래만으로도 oversell" (사용자가 import 하지 않은 기존 데이터 문제) 케이스가 다수 보고되면, 해당 시그널을 별도로 분리해 사용자가 데이터 정합성을 직접 손볼 수 있는 UI(수동 매칭/삭제) 추가.
+
+---
+
+## 2026-05-21 | shadcn 컴포넌트 primitive — base-ui → radix-ui 전환
+
+- **맥락:** `fe/components.json` 의 `style: "base-nova"` 로 도입된 shadcn 컴포넌트들이 `@base-ui/react` 프리미티브에 의존하고 있었음. shadcn 의 표준 라인은 `@radix-ui/react-*` 이며, 향후 registry 업데이트·예제 코드·새 컴포넌트 추가 시 base-nova 변종은 호환을 잃는다. 또 `Backdrop`/`Popup`/`Positioner`·`alignItemWithTrigger`·`render` prop 등 base-ui 고유 API 가 `ui/` 9개 컴포넌트와 컨슈머 클래스명(`data-active:`, `group-data-horizontal/tabs:`)까지 새어 나가 있어 유지보수 부담이 컸음.
+- **결정:**
+  - `@base-ui/react` 의존을 제거하고 `@radix-ui/react-{dialog,popover,select,tabs,toggle,toggle-group,slot}` 7개 패키지로 교체. `components.json` 의 `style` 을 `"new-york"` 으로 변경.
+  - `ui/` 9개(button/input/toggle/toggle-group/tabs/popover/dialog/select) 를 shadcn registry 의 표준 radix 버전을 그대로 `pnpm dlx shadcn add` 로 재설치하지 않고 **수동으로 한 파일씩 포팅**. `base/` 래퍼들이 의존하는 export 이름(`tabsListVariants`, `showCloseButton` 옵션 등)과 커스텀 className 을 보존하기 위함.
+  - Button 의 `render={<X/>}` → `<Slot asChild>` 패턴. Dialog/Popover/Select 의 `Positioner`+`Popup` → `Content` 한 단계 구조. Tabs 의 `Tab`/`Panel` → `Trigger`/`Content`. data 속성 `data-open`/`data-closed`/`data-active`/`data-horizontal` → radix 의 `data-[state=*]`/`data-[orientation=*]` 로 컨슈머 코드(`TradeBasicForm.tsx`, `pnl-colors.ts`)도 함께 치환.
+  - Select 의 `alignItemWithTrigger=true` (선택 아이템을 트리거 위치에 정렬) 동작은 radix 에 1:1 대응 없음 → `position="popper"` + `align="center"` 기본값으로 시각 근사 매칭.
+  - 컨슈머가 한 곳도 직접 `@/components/ui/*` 를 import 하지 않는다는 AGENTS.md 규칙이 이미 지켜져 있어, ui/ 내부 재작성만으로 컨슈머는 영향 없음.
+- **이유:** ① 표준 radix 정합으로 향후 shadcn 업데이트·신규 컴포넌트 추가가 마찰 없음. ② shadcn registry 재설치 대신 수동 포팅을 택한 이유는 (a) 기존 `base/` 래퍼·variant·옵션을 보존하기 위함, (b) 컴포넌트 간 미세한 className 충돌(`new-york` 표준 스타일과 우리 토큰 차이)을 점진적으로 흡수할 수 있기 때문. ③ Select `position="popper"` 채택은 모바일 우선 UX 에서 더 자연스럽고(드롭다운이 트리거 아래로 펼침), `alignItemWithTrigger` 의 "선택된 아이템 정렬" 은 다항목 리스트에서만 가치가 있는데 invest-note 의 Select 사용처(계좌 선택, 일반적으로 1~3개)에서 효용이 낮음.
+- **트레이드오프:** ① Select 의 시각 동작이 base-ui 와 미세하게 달라짐 — "선택된 아이템이 트리거 위에 겹쳐 나타나는" 동작이 사라지고 트리거 아래로 펼침. 실기기 회귀 가능성 있어 후속 모바일 QA 권장. ② `base-nova` → `new-york` 스타일 토큰 차이(그림자/radius/색)가 잠재적으로 존재하나 우리는 ui/ 컴포넌트의 className 을 그대로 옮겼으므로 즉각 차이는 없음. ③ React Hook Form Controller 의 `onValueChange` 가 radix 에서는 `(value: string) => void` 시그니처로 좁아져 `TradeBasicForm.tsx` 에 `v as TradeType` 캐스팅 1건 추가. ④ Tabs trigger 의 `fireEvent.click` 이 라dix-tabs controlled mode 에서 testing-library `fireEvent` 만으로 active 상태 갱신이 즉시 반영되지 않아, `TradeBasicForm.test.tsx` 의 매도 탭 클릭을 `userEvent.click` 으로 교체. ⑤ radix Select 가 form 통합을 위해 hidden native `<select>` (BubbleSelect) 를 함께 렌더 → 동일 옵션 라벨 텍스트가 DOM 에 2회 존재. 테스트에서 `getByText` 가 중복 매칭되어 `getByRole("combobox")` 의 textContent 검증으로 보정.
+- **재평가 트리거:** ① Select 의 popper 동작이 사용자 피드백/QA 에서 문제 보고되면 radix Select 의 `item-aligned` mode 로 전환 검토. ② shadcn 이 new-york → new-york-v5 같은 신규 style 을 표준화하면 그때 `style` 마이그레이션. ③ 다른 컨슈머가 ui/ 의 새 prop(예: Dialog `forceMount`) 을 필요로 하면 그때 표준 radix 시그니처에 맞춰 점진 확장.
+
+---
+
+## 2026-05-20 | BE 라우터 prefix 단축 — `/api/*` legacy alias 동시 지원 (1단계)
+
+- **맥락:** 운영 도메인이 `api.invest-note.pixelwave.app` 서브도메인으로 분리되면서 라우터 path 의 `/api/` prefix 가 의미상 중복이 되었다. 단축이 자연스럽지만 ① Capacitor Android 앱은 JS 번들이 빌드 시 박혀 설치되므로 기존 설치 사용자는 강제 업데이트 전까지 옛 경로로 호출하고, ② BE/FE 가 별도 배포라 동시 전환 보장이 어렵다. 한쪽만 바꾸면 전체 기능이 즉시 마비.
+- **결정:**
+  - 1단계(본 결정): 각 라우터의 `prefix` 를 `/api/<resource>` → `/<resource>` 로 단축하고, `main.py` 에서 동일 라우터를 `include_router(router, prefix="/api", include_in_schema=False)` 로 한 번 더 register 해 legacy alias 를 유지. OpenAPI/Swagger 에는 새 경로만 노출.
+  - 테스트는 새 SOT 경로로 일괄 치환하고, legacy 동등성은 `tests/test_legacy_api_prefix.py` 한 곳에서 status + body 비교로 검증.
+  - 2단계(후속 spec): FE `api-client.ts` ROUTES 의 `/api/` 제거 + 모바일 앱 강제 업데이트 게이트 + 새 번들 배포.
+  - 3단계(후속 spec): legacy alias 등록 제거(sunset). 시점은 강제 업데이트 게이트 이후 + 모니터링에서 `/api/*` 트래픽이 사라지면.
+- **이유:** ① 같은 라우터 객체를 두 번 include 하는 패턴은 FastAPI 표준 — 새 코드 작성 없이 무중단 prefix 전환 가능. ② `include_in_schema=False` 로 docs 중복 노출이 차단되어 신규 사용자/외부 consumer 에게는 새 경로만 보임. ③ 테스트가 새 경로 SOT 를 따라야 한다 — legacy 는 alias 이며 "동일 응답" 만 한 곳에서 보장하면 충분. ④ 단일 PR revert 로 원복 가능 — 본 spec 은 BE 내부 변경만이라 FE/앱 호환성 회귀 위험은 BE 내부에 한정.
+- **트레이드오프:** ① 같은 라우터를 두 번 include 하면 FastAPI 가 operation_id 중복 경고를 낼 수 있음 (`include_in_schema=False` 로 스키마 영향은 없으나 기동 로그에 잔재). ② legacy alias 가 살아 있는 동안에는 두 경로 응답 동등성을 새 엔드포인트 추가 때마다 의식해야 함 — 단일 라우터 객체를 그대로 등록하므로 자동 동등하지만 라우터 분기/middleware 가 path-prefix 기반이면 깨질 수 있음. ③ legacy 가 OpenAPI 에서 빠지므로 옛 경로로 호출하는 외부 도구는 docs 만으로 발견 불가 — 본 spec 의 범위가 invest-note 자체 클라이언트에 한정됨이 전제.
+- **재평가 트리거:** ① 옛 앱 버전 점유율이 충분히 줄어 강제 업데이트 게이트가 모든 사용자를 새 번들로 옮긴 시점 → 3단계(alias 제거) 진행. ② OpenAPI operation_id 중복 경고가 도구 체인에 실제 문제를 일으키면 `generate_unique_id_function` 으로 legacy 쪽만 다른 prefix 적용.
+
+---
+
 ## 2026-05-20 | 계정 탈퇴 & 로그아웃 강건화 — Supabase Admin REST 직호출 + 클라이언트 finally redirect
 
 - **맥락:** App Store Review (1.0_15) 에서 두 건 reject — ① Guideline 5.1.1(v): 계정 생성이 있으면 탈퇴도 필요, ② Guideline 2.1(a): 리뷰어 환경(iPhone 17 Pro Max / iOS 26.5)에서 "Unable to sign out". 로그아웃은 개발자 환경에서 재현 불가지만 코드 분석 결과 catch 후 `setPending(false)` 만 실행하고 `queryClient.clear()` / `router.replace` 가 누락된 채 `AuthGuard.onAuthStateChange` 에 의존하는 구조였음.

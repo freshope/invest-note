@@ -11,7 +11,7 @@ from invest_note_api.external.http_client import get_http_client
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/me")
+router = APIRouter(prefix="/me")
 
 
 @router.get("")
