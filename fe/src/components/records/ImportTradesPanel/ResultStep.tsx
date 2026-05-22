@@ -11,7 +11,11 @@ interface Props {
 }
 
 export function ResultStep({ result, onClose }: Props) {
-  const success = result.error_count === 0;
+  // 사용자가 preview 에서 제외 항목을 인지하고 "제외하고 등록" 을 클릭한 결과이므로
+  // 등록된 거래가 1건이라도 있으면 성공으로 표시하고, 제외 내역은 안내로 노출한다.
+  // 진짜 실패는 등록/갱신이 0건인데 errors 만 있는 경우.
+  const hasInserts = result.inserted_count > 0 || result.merged_count > 0;
+  const success = hasInserts || result.error_count === 0;
 
   return (
     <div className="flex flex-col min-h-full">
@@ -24,22 +28,27 @@ export function ResultStep({ result, onClose }: Props) {
 
         <div>
           <p className="text-lg font-semibold">
-            {success ? "등록 완료" : "일부 오류 발생"}
+            {success ? "등록 완료" : "등록 실패"}
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
             {result.inserted_count}건 신규 등록
             {result.merged_count > 0 && ` · ${result.merged_count}건 갱신`}
             {result.skipped_count > 0 && ` · ${result.skipped_count}건 건너뜀`}
-            {result.error_count > 0 && ` · ${result.error_count}건 실패`}
+            {result.error_count > 0 && ` · ${result.error_count}건 제외`}
           </p>
         </div>
 
         {result.errors.length > 0 && (
-          <ul className="w-full max-h-32 overflow-y-auto rounded-lg border bg-muted/30 p-2 text-left text-xs text-muted-foreground space-y-1">
-            {result.errors.map((e, i) => (
-              <li key={i}>{e.reason}</li>
-            ))}
-          </ul>
+          <div className="w-full space-y-1">
+            <p className="text-left text-xs font-medium text-muted-foreground">
+              제외된 종목
+            </p>
+            <ul className="w-full max-h-32 overflow-y-auto rounded-lg border bg-muted/30 p-2 text-left text-xs text-muted-foreground space-y-1">
+              {result.errors.map((e, i) => (
+                <li key={i}>{e.reason}</li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
 
