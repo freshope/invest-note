@@ -56,6 +56,7 @@ export function PreviewStep({ preview, account, onCommit, onBack, isLoading }: P
   // 제외 예정 그룹은 보통 신규 등록으로 분류돼 있으므로 차감해서 실제 등록 예정 수를 표시한다.
   // dup_count 까지 차감하지 않는 이유: 제외 그룹의 row 가 dup 으로 분류된 경우는 드물고, BE 가 row 합계만 알려주기 때문.
   const effectiveNewCount = Math.max(0, preview.new_count - excludedCount);
+  const totalExcluded = preview.error_count + excludedCount;
 
   return (
     <div className="flex flex-col min-h-full">
@@ -69,8 +70,8 @@ export function PreviewStep({ preview, account, onCommit, onBack, isLoading }: P
           <CountCard label="기존 거래 갱신(근사)" value={preview.duplicate_count} variant="default" />
           <CountCard
             label="제외 예정"
-            value={preview.error_count + excludedCount}
-            variant={preview.error_count + excludedCount > 0 ? "warn" : "default"}
+            value={totalExcluded}
+            variant={totalExcluded > 0 ? "warn" : "default"}
           />
           <CountCard label="USD 미지원" value={preview.usd_skip_count} variant={preview.usd_skip_count > 0 ? "warn" : "default"} />
         </div>
