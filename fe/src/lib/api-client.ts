@@ -235,8 +235,10 @@ export interface ImportPreviewResponse {
   usd_skip_count: number;
   unresolved_ticker_count: number;
   errors: ImportErrorItem[];
-  /** 선택 계좌 기준 정합성 위반 (oversell 등). 항목이 있으면 commit 진행 차단. */
+  /** 선택 계좌 기준 정합성 위반 (oversell 등). 해당 종목 그룹은 commit 시 BE 가 skip; FE 는 사용자에게 노출만 한다. */
   validation_errors: ImportErrorItem[];
+  /** validation_errors 로 제외 예정인 그룹들의 import row 합계. 카운트 카드 보정용. */
+  excluded_count: number;
 }
 
 export interface ImportCommitResponse {

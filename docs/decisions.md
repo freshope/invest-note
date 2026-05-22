@@ -4,6 +4,28 @@
 
 ---
 
+## 2026-05-22 | 거래 일괄 등록 부분 성공 정책 — 그룹 단위 제외 + ResultStep 성공 판정 완화
+
+- **맥락:** 일괄 등록(`/trades/import/preview` → `/trades/import/commit`) 은 BE 내부적으로 이미 그룹(=계좌·종목·국가) 단위 부분 성공을 지원했음. 그러나 FE `PreviewStep` 의 `hasValidationError` disabled 가드가 정합성 위반(보유부족 SELL 등) 발생 시 commit 자체를 막아 BE 의 부분 성공 경로에 도달하지 못했음 — 한 종목에서 매도 보유부족이 1건이라도 발견되면 모든 거래(정상 다른 종목 포함)가 등록되지 않는 사용자 불만 발생. 또한 ResultStep 은 `error_count === 0` 만으로 성공을 판정해, 부분 등록이 정상 진행된 경우에도 빨간 X 아이콘 + "일부 오류 발생" 으로 표시되어 사용자가 실패로 오해했음.
+- **결정:**
+  - **제외 단위**: row 단위가 아닌 **그룹(종목) 단위** 로 제외. 문제 SELL 이 포함된 종목 그룹은 그 그룹의 BUY 까지 함께 commit 에서 skip, 다른 종목 그룹은 정상 등록.
+  - **FE 흐름**: PreviewStep 의 정합성 위반 배너를 red → yellow 톤으로 바꾸고("일부 거래가 제외됩니다"), 등록 버튼 disabled 조건에서 `hasValidationError` 제거. 라벨에 "제외하고 N건 등록" 으로 사용자 의사 표현. 카운트 카드의 "신규 등록" 은 `excluded_count` 만큼 차감, "제외 예정" 카드에 합산.
+  - **BE 메시지·메타**: `_find_import_oversell` 사용자 안내를 "거래내역서 기간을 더 길게 받아 다시 시도해주세요" → "이 종목 거래는 제외되고 나머지 거래만 등록됩니다" 로 정정. `ImportPreviewResponse.excluded_count: int` 신설해 FE 카운트 카드 정확도 확보.
+  - **ResultStep 성공 판정**: `error_count === 0` → `inserted_count > 0 || merged_count > 0 || error_count === 0`. 등록·갱신이 1건이라도 발생했으면 성공(CheckCircle + "등록 완료"), errors 는 "제외된 종목" 안내로 노출. 진짜 실패(등록 0건)인 경우에만 XCircle + "등록 실패".
+- **이유:**
+  - ① row 단위 제외(같은 그룹에서 SELL 만 빼고 BUY 는 등록)는 사용자 발화("문제 없는 거래는 등록")와 가장 부합하지만, **BUY 만 들어가고 SELL 이 누락된 상태**가 보유 수량·PnL 을 일시적으로 왜곡함. 그룹 단위 제외는 부정합 없는 일관 상태를 보장하고, 누락 SELL 보완은 재업로드 + signature dedup 으로 자연스럽게 해결됨.
+  - ② BE 는 이미 그룹 단위 부분 성공 구조였으므로 FE 차단만 풀고 메시지·메타데이터만 다듬는 최소 변경으로 사용자 요구를 충족.
+  - ③ ResultStep 성공 판정은 사용자가 PreviewStep 에서 제외 항목을 **인지하고 의도적으로** "제외하고 등록" 을 클릭한 결과 — error 가 있어도 그것은 사용자가 수락한 제외이며 시스템적 실패가 아님. 빨간 X 아이콘은 이 의미를 왜곡함.
+- **트레이드오프:**
+  - ① 같은 그룹의 정상 BUY 도 함께 제외되므로 사용자가 매도 누락분을 보완하려면 거래내역서를 한 번 더 받아 재업로드해야 함. dedup 이 중복 등록을 막아 안전하지만, "BUY 만 정상이고 SELL 만 문제" 인 사용자는 2-step 작업을 거침.
+  - ② `excluded_count` 가 그룹 row 합계라 dup 으로 분류된 row 가 포함된 경우 카운트 카드의 "신규 등록" 이 약간 낮게 표시될 수 있음 — 실제 commit 결과는 정확하므로 ResultStep 에서 보정됨.
+  - ③ ResultStep 성공 판정 완화로 1건이라도 등록되면 success 표시 — 사용자가 결과 화면에서 errors 리스트를 안 읽고 지나칠 위험이 있음. errors 리스트 자체는 여전히 노출되며 헤더("제외된 종목") 로 맥락을 강조해 완화.
+- **재평가 트리거:**
+  - ① 사용자 피드백으로 row 단위 제외(같은 그룹의 BUY 는 살리고 SELL 만 빼기) 요구가 누적되면 재검토. 그 경우 BE `_find_import_oversell` 이 (msg, skip 인덱스) 를 반환하도록 확장하고 preview/commit 양쪽에서 row 단위로 제거.
+  - ② "기존 DB 거래만으로도 oversell" (사용자가 import 하지 않은 기존 데이터 문제) 케이스가 다수 보고되면, 해당 시그널을 별도로 분리해 사용자가 데이터 정합성을 직접 손볼 수 있는 UI(수동 매칭/삭제) 추가.
+
+---
+
 ## 2026-05-21 | shadcn 컴포넌트 primitive — base-ui → radix-ui 전환
 
 - **맥락:** `fe/components.json` 의 `style: "base-nova"` 로 도입된 shadcn 컴포넌트들이 `@base-ui/react` 프리미티브에 의존하고 있었음. shadcn 의 표준 라인은 `@radix-ui/react-*` 이며, 향후 registry 업데이트·예제 코드·새 컴포넌트 추가 시 base-nova 변종은 호환을 잃는다. 또 `Backdrop`/`Popup`/`Positioner`·`alignItemWithTrigger`·`render` prop 등 base-ui 고유 API 가 `ui/` 9개 컴포넌트와 컨슈머 클래스명(`data-active:`, `group-data-horizontal/tabs:`)까지 새어 나가 있어 유지보수 부담이 컸음.

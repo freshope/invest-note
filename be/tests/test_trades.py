@@ -806,11 +806,13 @@ class TestImportPreviewValidation:
             "invest_note_api.routers.trades.acquire_for_user",
             make_fake_acquire(conn),
         ):
-            errors = await _validate_import_groups(
+            errors, excluded_count = await _validate_import_groups(
                 pool=None, user_id=TEST_USER_ID, account_id="a1", rows=rows,
             )
         assert len(errors) == 1
         assert "보유 수량이 없습니다" in errors[0].reason
+        assert "나머지 거래만 등록됩니다" in errors[0].reason
+        assert excluded_count == 1
 
     @pytest.mark.asyncio
     async def test_buy_and_sell_in_same_batch_pass(self):
@@ -826,10 +828,11 @@ class TestImportPreviewValidation:
             "invest_note_api.routers.trades.acquire_for_user",
             make_fake_acquire(conn),
         ):
-            errors = await _validate_import_groups(
+            errors, excluded_count = await _validate_import_groups(
                 pool=None, user_id=TEST_USER_ID, account_id="a1", rows=rows,
             )
         assert errors == []
+        assert excluded_count == 0
 
     @pytest.mark.asyncio
     async def test_sell_exceeding_existing_returns_validation_error(self):
@@ -845,11 +848,34 @@ class TestImportPreviewValidation:
             "invest_note_api.routers.trades.acquire_for_user",
             make_fake_acquire(conn),
         ):
-            errors = await _validate_import_groups(
+            errors, excluded_count = await _validate_import_groups(
                 pool=None, user_id=TEST_USER_ID, account_id="a1", rows=rows,
             )
         assert len(errors) == 1
         assert "초과" in errors[0].reason
+        assert excluded_count == 1
+
+    @pytest.mark.asyncio
+    async def test_excluded_count_sums_rows_in_invalid_groups(self):
+        """문제 그룹(SELL 보유부족)의 import row 수가 excluded_count 에 합산된다."""
+        from invest_note_api.routers.trades import _validate_import_groups
+
+        # 같은 종목 그룹: BUY 1건 + SELL 2건 → 총 3건 모두 제외 대상
+        rows = [
+            self._row(trade_type="BUY", quantity=1),
+            self._row(trade_type="SELL", quantity=2, traded_at_kst="2024-01-11"),
+            self._row(trade_type="SELL", quantity=3, traded_at_kst="2024-01-12"),
+        ]
+        conn = FakeConnection("a1", [])
+        with patch(
+            "invest_note_api.routers.trades.acquire_for_user",
+            make_fake_acquire(conn),
+        ):
+            errors, excluded_count = await _validate_import_groups(
+                pool=None, user_id=TEST_USER_ID, account_id="a1", rows=rows,
+            )
+        assert len(errors) == 1
+        assert excluded_count == 3
 
 
 class TestGetTrade:
