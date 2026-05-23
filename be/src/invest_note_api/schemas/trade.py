@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..domain.trade_types import (
     CountryCode,
@@ -167,3 +167,9 @@ class TradeUpdate(BaseModel):
         if v is None:
             return None
         return _comma_non_negative(v)
+
+
+class TradeBulkDeleteRequest(BaseModel):
+    """기록 탭 다중 선택 일괄 삭제 요청 — 1~200건 제한."""
+
+    ids: list[str] = Field(..., min_length=1, max_length=200)
