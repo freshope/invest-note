@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+.pnpm-store/
 
 # misc
 .DS_Store
@@ -27,3 +28,7 @@ certificates
 .dev/
 .makerc
 /docs/store/
+
+# obsidian
+.obsidian/
+.trash/
