@@ -172,3 +172,114 @@ class TestPortfolioSummary:
     def test_summary_401(self, auth_client):
         resp = auth_client.get("/portfolio/summary")
         assert resp.status_code == 401
+
+    def test_summary_with_account_filter(self, trades_client):
+        """accountId 쿼리 파라미터가 list_trades_with_account 에 전달되고 snapshots 가 좁혀지는지."""
+        account_a1 = _make_account_row(id_="a1")
+        account_a2 = _make_account_row(id_="a2")
+
+        # capturing_list 가 list_trades_with_account 를 가로채므로 FakeConnection 의 trade response 는
+        # 소비되지 않는다. accounts (list_accounts) 만 한 번 fetch → responses[0] = accounts.
+        conn = FakeConnection(
+            [_to_record(account_a1), _to_record(account_a2)],  # accounts (글로벌)
+        )
+
+        captured_kwargs: dict = {}
+
+        async def capturing_list(conn_arg, user_id, **kwargs):
+            captured_kwargs.update(kwargs)
+            return []  # 빈 trades — totals/positions/snapshots 는 비어도 무방 (kwargs 만 검증)
+
+        async def mock_quotes(state, keys, *, client=None):
+            return {}
+
+        with _patch_portfolio(conn):
+            with patch(
+                "invest_note_api.routers.portfolio.list_trades_with_account",
+                capturing_list,
+            ):
+                with patch(
+                    "invest_note_api.routers.portfolio.fetch_quotes_by_keys",
+                    mock_quotes,
+                ):
+                    resp = trades_client.get(
+                        "/portfolio/summary", params={"accountId": "a1"}
+                    )
+
+        assert resp.status_code == 200
+        assert captured_kwargs.get("account_id") == "a1"
+
+        body = resp.json()
+        # 글로벌 계좌가 2개라도 hasAccounts 는 true (정상)
+        assert body["hasAccounts"] is True
+        # snapshots 는 선택 계좌(a1)만 1개로 좁혀짐
+        assert len(body["snapshots"]) == 1
+        assert body["snapshots"][0]["account"]["id"] == "a1"
+
+    def test_summary_without_account_filter_passes_none(self, trades_client):
+        """accountId 미지정 시 list_trades_with_account 에 account_id=None 이 전달되고 모든 계좌의 snapshots 반환."""
+        account_a1 = _make_account_row(id_="a1")
+        account_a2 = _make_account_row(id_="a2")
+
+        conn = FakeConnection(
+            [_to_record(account_a1), _to_record(account_a2)],
+        )
+
+        captured_kwargs: dict = {}
+
+        async def capturing_list(conn_arg, user_id, **kwargs):
+            captured_kwargs.update(kwargs)
+            return []
+
+        async def mock_quotes(state, keys, *, client=None):
+            return {}
+
+        with _patch_portfolio(conn):
+            with patch(
+                "invest_note_api.routers.portfolio.list_trades_with_account",
+                capturing_list,
+            ):
+                with patch(
+                    "invest_note_api.routers.portfolio.fetch_quotes_by_keys",
+                    mock_quotes,
+                ):
+                    resp = trades_client.get("/portfolio/summary")
+
+        assert resp.status_code == 200
+        assert captured_kwargs.get("account_id") is None
+        body = resp.json()
+        assert len(body["snapshots"]) == 2  # 전체 계좌 모두
+
+    def test_summary_with_nonexistent_account_filter(self, trades_client):
+        """존재하지 않는 accountId 가 들어와도 has_accounts 는 글로벌 기준으로 true, has_trades 는 false."""
+        account_a1 = _make_account_row(id_="a1")
+
+        conn = FakeConnection(
+            [_to_record(account_a1)],  # accounts (글로벌)
+        )
+
+        async def capturing_list(conn_arg, user_id, **kwargs):
+            return []  # 매칭 trade 없음
+
+        async def mock_quotes(state, keys, *, client=None):
+            return {}
+
+        with _patch_portfolio(conn):
+            with patch(
+                "invest_note_api.routers.portfolio.list_trades_with_account",
+                capturing_list,
+            ):
+                with patch(
+                    "invest_note_api.routers.portfolio.fetch_quotes_by_keys",
+                    mock_quotes,
+                ):
+                    resp = trades_client.get(
+                        "/portfolio/summary", params={"accountId": "ghost"}
+                    )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["hasAccounts"] is True
+        assert body["hasTrades"] is False
+        assert body["snapshots"] == []
+        assert body["positions"] == []

@@ -78,7 +78,7 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
       setStep("result");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.portfolioSummary }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
       ]);
       if (res.inserted_count > 0 || res.merged_count > 0) {
         const parts: string[] = [];

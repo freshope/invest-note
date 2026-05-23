@@ -4,6 +4,26 @@
 
 ---
 
+## 2026-05-23 | 홈 계좌 필터 — BE `/portfolio/summary` 에 accountId 도입 + invalidate scope 확대
+
+- **맥락:** 메인(`HomeDashboard`)에 계좌 필터 칩을 추가. 2026-05-03 결정문은 AccountFilter 를 "클라 메모리 필터링(BE 영향 0)" 으로 정의했으나, 이는 기록 페이지(`TradeList`)의 단순 리스트 필터에만 한정된 결정이었음. 메인의 집계는 BE 도메인 로직(`build_positions`/`build_account_snapshots`/`build_totals`)을 거쳐 다단계로 계산되므로 클라이언트만으로는 정확히 좁힐 수 없음.
+- **결정:**
+  - **BE 필터링 채택**: `GET /portfolio/summary?accountId=...` 옵션 쿼리 파라미터 추가. 지정 시 trades 와 accounts 를 그 계좌로 좁힌 뒤 기존 도메인 함수 재사용. 미지정 시 기존 합산 동작 유지. `has_accounts` 는 글로벌 기준(EmptyState "계좌 만드세요" 가 잘못 뜨지 않도록), `has_trades` 는 필터된 결과 기준.
+  - **`queryKeys.portfolioSummary` 함수화**: `(accountId: string | null) => ["portfolio", "summary", accountId]` 로 변경해 calc 별 캐시 분리. invalidate 호출처는 모두 prefix `queryKeys.portfolio` (`["portfolio"]`) 로 전환 → 모든 accountId 캐시를 한 번에 무효화.
+  - **`keepPreviousData` 적용**: 칩 전환 시 이전 응답을 유지해 스켈레톤 깜박임 차단.
+  - **sticky 패턴 통일**: records 와 동일하게 `<div className="sticky top-0 z-10 bg-background">` 안에 `<PageHeader sticky={false}>` + `<AccountFilter>` 를 묶어 칩이 스크롤 시 함께 고정.
+- **이유:**
+  - `Position` 응답에 `account_ids: list[str]` 만 있고 **계좌별 holding_quantity / cost_basis 가 분리되어 있지 않음** — 한 종목을 여러 계좌에서 보유 중일 때 클라에서 정확한 집계 불가능. BE 가 lot 단위 정보를 추가로 내려보내는 것보다 기존 도메인 로직을 입력 trades 만 좁혀 재사용하는 쪽이 변경 표면적이 작음.
+  - 2026-05-03 결정은 "사용자가 클라에서 즉시 토글" 패턴에 한정된 것으로 재확인됨(본 결정문이 그 범위를 명시).
+- **트레이드오프:**
+  - **invalidate scope 확대**: `queryKeys.portfolioSummary` 단일 키 → `queryKeys.portfolio` prefix 로 바꾸면서, 같은 prefix 의 `queryKeys.accounts`(`["portfolio","accounts"]`)도 함께 무효화됨. 의도된 동작 — `Account.trade_count` 가 trade mutation 에 의존하므로 함께 갱신되는 게 자연스러움. trades CUD 빈도가 낮아 성능 부담 미미.
+  - 칩 전환 시 BE 라운드트립이 발생(클라 즉시 토글 불가). `keepPreviousData` 로 UX 회귀 완화.
+- **재평가 트리거:**
+  - `Position` 에 계좌별 수량/원가가 추가로 직렬화되면 클라 필터링 회귀 가능.
+  - 모바일 Capacitor resume 시 staleTime 만료로 모든 accountId 캐시가 동시에 refetch 되어 부하 이슈 보고가 들어오면 per-accountId staleTime 차등화 검토.
+
+---
+
 ## 2026-05-22 | 거래 일괄 등록 부분 성공 정책 — 그룹 단위 제외 + ResultStep 성공 판정 완화
 
 - **맥락:** 일괄 등록(`/trades/import/preview` → `/trades/import/commit`) 은 BE 내부적으로 이미 그룹(=계좌·종목·국가) 단위 부분 성공을 지원했음. 그러나 FE `PreviewStep` 의 `hasValidationError` disabled 가드가 정합성 위반(보유부족 SELL 등) 발생 시 commit 자체를 막아 BE 의 부분 성공 경로에 도달하지 못했음 — 한 종목에서 매도 보유부족이 1건이라도 발견되면 모든 거래(정상 다른 종목 포함)가 등록되지 않는 사용자 불만 발생. 또한 ResultStep 은 `error_count === 0` 만으로 성공을 판정해, 부분 등록이 정상 진행된 경우에도 빨간 X 아이콘 + "일부 오류 발생" 으로 표시되어 사용자가 실패로 오해했음.
