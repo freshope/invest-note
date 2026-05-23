@@ -1,7 +1,7 @@
 """시세 fetch — Naver Finance (KR).
 
-캐싱: TTLCache(maxsize=512, ttl=60) + asyncio.Lock으로 symbol:country 키별 60초 in-memory 캐시.
-Next.js `fetch(..., { next: { revalidate: 60 } })` 동작과 등가.
+캐싱: TTLCache(maxsize=512, ttl=10) + asyncio.Lock으로 symbol:country 키별 10초 in-memory 캐시.
+pull-to-refresh 직후 새 시세를 받을 수 있도록 짧게 설정.
 
 캐시 상태(`QuoteCacheState`)는 `app.state.quote_cache` 에 보관하고 라우터에서
 `Depends(get_quote_cache_state)` 로 주입한다.
