@@ -309,10 +309,8 @@ export interface PortfolioHoldingResponse {
 
 export const portfolioApi = {
   summary: (accountId?: string | null) => {
-    const url = accountId
-      ? `${ROUTES.portfolio.summary}?accountId=${encodeURIComponent(accountId)}`
-      : ROUTES.portfolio.summary;
-    return apiFetch<PortfolioSummaryResponse>(url);
+    const qs = accountId ? `?${new URLSearchParams({ accountId })}` : "";
+    return apiFetch<PortfolioSummaryResponse>(`${ROUTES.portfolio.summary}${qs}`);
   },
 
   holding: (params: PortfolioHoldingParams) => {

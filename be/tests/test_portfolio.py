@@ -175,8 +175,10 @@ class TestPortfolioSummary:
 
     def test_summary_with_account_filter(self, trades_client):
         """accountId 쿼리 파라미터가 list_trades_with_account 에 전달되고 snapshots 가 좁혀지는지."""
-        account_a1 = _make_account_row(id_="a1")
-        account_a2 = _make_account_row(id_="a2")
+        a1_id = "00000000-0000-0000-0000-000000000001"
+        a2_id = "00000000-0000-0000-0000-000000000002"
+        account_a1 = _make_account_row(id_=a1_id)
+        account_a2 = _make_account_row(id_=a2_id)
 
         # capturing_list 가 list_trades_with_account 를 가로채므로 FakeConnection 의 trade response 는
         # 소비되지 않는다. accounts (list_accounts) 만 한 번 fetch → responses[0] = accounts.
@@ -203,23 +205,23 @@ class TestPortfolioSummary:
                     mock_quotes,
                 ):
                     resp = trades_client.get(
-                        "/portfolio/summary", params={"accountId": "a1"}
+                        "/portfolio/summary", params={"accountId": a1_id}
                     )
 
         assert resp.status_code == 200
-        assert captured_kwargs.get("account_id") == "a1"
+        assert captured_kwargs.get("account_id") == a1_id
 
         body = resp.json()
         # 글로벌 계좌가 2개라도 hasAccounts 는 true (정상)
         assert body["hasAccounts"] is True
         # snapshots 는 선택 계좌(a1)만 1개로 좁혀짐
         assert len(body["snapshots"]) == 1
-        assert body["snapshots"][0]["account"]["id"] == "a1"
+        assert body["snapshots"][0]["account"]["id"] == a1_id
 
     def test_summary_without_account_filter_passes_none(self, trades_client):
         """accountId 미지정 시 list_trades_with_account 에 account_id=None 이 전달되고 모든 계좌의 snapshots 반환."""
-        account_a1 = _make_account_row(id_="a1")
-        account_a2 = _make_account_row(id_="a2")
+        account_a1 = _make_account_row(id_="00000000-0000-0000-0000-000000000001")
+        account_a2 = _make_account_row(id_="00000000-0000-0000-0000-000000000002")
 
         conn = FakeConnection(
             [_to_record(account_a1), _to_record(account_a2)],
@@ -252,7 +254,7 @@ class TestPortfolioSummary:
 
     def test_summary_with_nonexistent_account_filter(self, trades_client):
         """존재하지 않는 accountId 가 들어와도 has_accounts 는 글로벌 기준으로 true, has_trades 는 false."""
-        account_a1 = _make_account_row(id_="a1")
+        account_a1 = _make_account_row(id_="00000000-0000-0000-0000-000000000001")
 
         conn = FakeConnection(
             [_to_record(account_a1)],  # accounts (글로벌)
@@ -274,7 +276,8 @@ class TestPortfolioSummary:
                     mock_quotes,
                 ):
                     resp = trades_client.get(
-                        "/portfolio/summary", params={"accountId": "ghost"}
+                        "/portfolio/summary",
+                        params={"accountId": "00000000-0000-0000-0000-000000000099"},
                     )
 
         assert resp.status_code == 200
@@ -283,3 +286,10 @@ class TestPortfolioSummary:
         assert body["hasTrades"] is False
         assert body["snapshots"] == []
         assert body["positions"] == []
+
+    def test_summary_rejects_malformed_account_id(self, trades_client):
+        """비-UUID accountId 는 FastAPI 단에서 422 로 차단된다 (SQL 까지 도달 X)."""
+        resp = trades_client.get(
+            "/portfolio/summary", params={"accountId": "not-a-uuid"}
+        )
+        assert resp.status_code == 422

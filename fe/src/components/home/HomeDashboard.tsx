@@ -102,7 +102,6 @@ export function HomeDashboard() {
 
   return (
     <PullToRefresh onRefresh={refetch}>
-      {/* records 와 동일하게 PageHeader + AccountFilter 를 같은 sticky 컨테이너로 묶는다. */}
       <div className="sticky top-0 z-10 bg-background">
         <PageHeader sticky={false}>{renderHeaderInner()}</PageHeader>
         {showFilter && (
