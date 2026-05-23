@@ -1,7 +1,10 @@
 """순수 함수 단위 테스트 — domain/analysis/"""
+from datetime import datetime, timedelta
+
 import pytest
 
 from invest_note_api.domain.trade_types import Trade
+from invest_note_api.domain.trade_utils import KST
 from invest_note_api.domain.analysis.period import parse_period, filter_by_period
 from invest_note_api.domain.analysis.holding_period import compute_holding_days_map
 from invest_note_api.domain.analysis.aggregate import compute_summary, AnalysisSummary
@@ -63,10 +66,12 @@ class TestParsePeriod:
 
 class TestFilterByPeriod:
     def _make_trades(self):
+        # "now"는 실행 시각 기준 상대(5일 전) — 시간이 흘러도 1m 안에 유지
+        recent = datetime.now(KST) - timedelta(days=5)
         return [
             make_trade(id="old", traded_at=_dt("2024-01-01T00:00:00Z")),
             make_trade(id="mid", traded_at=_dt("2026-01-15T00:00:00Z")),
-            make_trade(id="now", traded_at=_dt("2026-04-22T00:00:00Z")),
+            make_trade(id="now", traded_at=recent),
         ]
 
     def test_all_returns_all(self):
