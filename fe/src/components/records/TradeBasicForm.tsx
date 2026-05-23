@@ -200,7 +200,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
       });
       window.localStorage.setItem(STORAGE_KEYS.LAST_ACCOUNT_ID, values.account_id);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.portfolioSummary }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
         queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
       ]);
       onTradeCreated(result.id, result.trade_type);

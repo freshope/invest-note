@@ -308,7 +308,12 @@ export interface PortfolioHoldingResponse {
 }
 
 export const portfolioApi = {
-  summary: () => apiFetch<PortfolioSummaryResponse>(ROUTES.portfolio.summary),
+  summary: (accountId?: string | null) => {
+    const url = accountId
+      ? `${ROUTES.portfolio.summary}?accountId=${encodeURIComponent(accountId)}`
+      : ROUTES.portfolio.summary;
+    return apiFetch<PortfolioSummaryResponse>(url);
+  },
 
   holding: (params: PortfolioHoldingParams) => {
     const entries: Record<string, string> = {

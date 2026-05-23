@@ -100,8 +100,9 @@ async def list_trades_with_account(
     *,
     ticker: str | None = None,
     country: str | None = None,
+    account_id: str | None = None,
 ) -> list[TradeWithAccount]:
-    """user 의 거래 + 계좌 join. `ticker` / `country` 가 지정되면 SQL WHERE 로 push.
+    """user 의 거래 + 계좌 join. `ticker` / `country` / `account_id` 가 지정되면 SQL WHERE 로 push.
 
     `country` 정규화는 `domain.trade_types.trade_country` 와 같은 의미의
     `COALESCE(NULLIF(country_code, ''), 'KR')` 사용.
@@ -114,6 +115,9 @@ async def list_trades_with_account(
     if country is not None:
         params.append(country)
         where.append(f"COALESCE(NULLIF(t.country_code, ''), 'KR') = ${len(params)}")
+    if account_id is not None:
+        params.append(account_id)
+        where.append(f"t.account_id = ${len(params)}")
     rows = await conn.fetch(
         f"""
         SELECT t.*,
