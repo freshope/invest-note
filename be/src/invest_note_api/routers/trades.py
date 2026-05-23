@@ -525,9 +525,14 @@ async def bulk_delete_trades(
 
     async with acquire_for_user(pool, user.id) as conn:
         # 1) 모든 id 조회 — 누락이 하나라도 있으면 즉시 404, 이후 단계 진입 없음.
+        # malformed UUID 는 asyncpg 가 InvalidTextRepresentationError 를 던지므로
+        # 사용자용 422 로 변환한다 (그대로 두면 핸들링 안 된 500 으로 새어 나감).
         targets: list[Trade] = []
         for tid in unique_ids:
-            t = await get_trade_by_id(conn, tid, user.id)
+            try:
+                t = await get_trade_by_id(conn, tid, user.id)
+            except asyncpg.exceptions.InvalidTextRepresentationError:
+                raise APIError("거래 ID 형식이 올바르지 않습니다.", 422)
             if t is None:
                 raise APIError("일부 거래를 찾을 수 없습니다.", 404)
             targets.append(t)

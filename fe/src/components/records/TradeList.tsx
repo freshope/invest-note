@@ -94,6 +94,13 @@ export function TradeList({ trades, accounts }: TradeListProps) {
     () =>
       deleteDialog.run(async () => {
         const ids = [...selectedIds];
+        // 다이얼로그 표시 도중 accounts refetch → useEffect clearAll 로 selection 이 비워진
+        // 좁은 race 에 대비. 빈 배열로 호출하면 BE 가 422 로 응답해 사용자에게 무의미한
+        // 에러를 노출하므로 여기서 조용히 다이얼로그만 닫는다.
+        if (ids.length === 0) {
+          deleteDialog.setOpen(false);
+          return;
+        }
         await tradesApi.bulkDelete(ids);
         // BUY meta cascade → trades + portfolio + analysis 모두 무효화.
         await Promise.all([

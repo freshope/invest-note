@@ -1217,6 +1217,28 @@ class TestTradeBulkDelete:
             )
         assert resp.status_code == 204
 
+    def test_bulk_delete_malformed_uuid_422(self, trades_client, monkeypatch):
+        """malformed UUID 가 들어오면 asyncpg 예외가 500 으로 새지 않고 422 로 떨어진다."""
+        import asyncpg
+
+        async def raise_invalid_uuid(*args, **kwargs):
+            raise asyncpg.exceptions.InvalidTextRepresentationError(
+                'invalid input syntax for type uuid: "not-a-uuid"'
+            )
+
+        monkeypatch.setattr(
+            "invest_note_api.routers.trades.get_trade_by_id",
+            raise_invalid_uuid,
+        )
+        # acquire_for_user 만 통과시키면 됨 — get_trade_by_id 가 raise 하므로 conn 미사용.
+        conn = FakeConnection()
+        with _patch_trades(conn):
+            resp = trades_client.post(
+                "/trades/bulk-delete", json={"ids": ["not-a-uuid"]}
+            )
+        assert resp.status_code == 422
+        assert "올바르지" in resp.json()["error"]
+
 
 class TestTradeSummary:
     def test_summary_non_sell_400(self, trades_client):
