@@ -66,7 +66,7 @@ from invest_note_api.domain.trade_types import (
     Trade,
 )
 from invest_note_api.errors import ERR_TRADE_NOT_FOUND, APIError
-from invest_note_api.schemas.trade import TradeCreate, TradeUpdate
+from invest_note_api.schemas.trade import TradeBulkDeleteRequest, TradeCreate, TradeUpdate
 from invest_note_api.schemas.trade_import import (
     ImportCommitRequest,
     ImportCommitResponse,
@@ -467,6 +467,116 @@ async def delete_trade_endpoint(
 
         remaining = [t for t in group_trades if t.id != trade_id]
         await recalc_group_pnl(conn, remaining, key)
+
+    return Response(status_code=204)
+
+
+def _find_bulk_delete_oversell(
+    remaining_trades: list[Trade],
+    key: TradeGroupKey,
+    account_name: str,
+) -> str | None:
+    """가상 제거 후 trades 에 oversell/no_holding SELL 이 있으면 사용자용 사유 문자열 반환.
+
+    `validate_mutation` 은 단일 mutation 만 검증하므로, 다건 가상 삭제는 walk_trades 로 직접 순회한다.
+    `_find_import_oversell` 와 동일 패턴이지만 메시지 prefix 가 계좌명을 포함하고 import 의 안내
+    문구가 빠진다 — 라우터에서 그룹 단위 메시지를 모아 한 번에 안내한다.
+    """
+    for ev in walk_trades(
+        remaining_trades,
+        group_filter=lambda t: is_same_group(t, key),
+        sort_fn=sort_for_calc,
+        track_fifo_lots=False,
+    ):
+        if ev.kind != "SELL":
+            continue
+        asset = ev.trade.asset_name or key.asset_name
+        traded_date = ev.trade.traded_at.date().isoformat()
+        if ev.no_holding:
+            return (
+                f"{account_name} · {asset} {traded_date} "
+                "매도 거래에 해당하는 보유 수량이 없습니다"
+            )
+        if ev.oversell:
+            return (
+                f"{account_name} · {asset} {traded_date} "
+                "매도 수량이 보유 수량을 초과합니다"
+            )
+    return None
+
+
+@router.post("/bulk-delete", status_code=204)
+async def bulk_delete_trades(
+    body: TradeBulkDeleteRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> Response:
+    """다중 거래 일괄 삭제 — 단일 트랜잭션, 전부 성공 or 전부 롤백.
+
+    1. 모든 id 조회 → 누락이면 404 (DELETE 실행 없음).
+    2. 영향 그룹 키 수집 → **결정적 정렬 순서**(account_id, country, ticker or "", asset_name)
+       로 acquire_trade_group_lock — 동시 요청 데드락 회피.
+    3. 그룹별 list_trades_in_group → 가상 제거 → walk_trades 로 oversell 검증.
+       충돌이 하나라도 있으면 400 raise → 트랜잭션 롤백 (DELETE 실행 전).
+    4. 통과 시 그룹별로 delete_trade 일괄 + recalc_group_pnl 1회.
+    """
+    # 같은 id 가 두 번 들어와도 단건만 처리되도록 dedup (입력 순서 유지).
+    unique_ids = list(dict.fromkeys(body.ids))
+
+    async with acquire_for_user(pool, user.id) as conn:
+        # 1) 모든 id 조회 — 누락이 하나라도 있으면 즉시 404, 이후 단계 진입 없음.
+        targets: list[Trade] = []
+        for tid in unique_ids:
+            t = await get_trade_by_id(conn, tid, user.id)
+            if t is None:
+                raise APIError("일부 거래를 찾을 수 없습니다.", 404)
+            targets.append(t)
+
+        # 2) 영향 그룹 키 수집 + 그룹 → 삭제 대상 id 매핑.
+        delete_ids_by_group: dict[TradeGroupKey, set[str]] = defaultdict(set)
+        for t in targets:
+            delete_ids_by_group[trade_to_group_key(t)].add(t.id)
+
+        # 메시지 prefix 용 account_id → name 맵 (1회 fetch).
+        accounts = await repo_list_accounts(conn)
+        account_name_by_id: dict[str, str] = {
+            str(a["id"]): a.get("name") or "" for a in accounts
+        }
+
+        # 데드락 회피: (account_id, country, ticker or "", asset_name) 결정적 정렬 순서로 lock 획득.
+        sorted_keys = sorted(
+            delete_ids_by_group.keys(),
+            key=lambda k: (k.account_id, k.country, k.ticker or "", k.asset_name),
+        )
+
+        # 3) 그룹별 락 → list → 가상 제거 → 검증. 충돌 메시지 누적.
+        group_remaining: dict[TradeGroupKey, list[Trade]] = {}
+        conflict_msgs: list[str] = []
+        for key in sorted_keys:
+            await acquire_trade_group_lock(conn, str(user.id), key)
+            group_trades = await list_trades_in_group(conn, user.id, key)
+            delete_ids = delete_ids_by_group[key]
+            remaining = [t for t in group_trades if t.id not in delete_ids]
+            group_remaining[key] = remaining
+
+            account_name = account_name_by_id.get(key.account_id, "")
+            msg = _find_bulk_delete_oversell(remaining, key, account_name)
+            if msg is not None:
+                conflict_msgs.append(msg)
+
+        if conflict_msgs:
+            # 최대 3 그룹 노출, 그 이상은 "외 N건" 축약.
+            head = conflict_msgs[:3]
+            joined = "; ".join(head)
+            if len(conflict_msgs) > 3:
+                joined += f" 외 {len(conflict_msgs) - 3}건"
+            raise APIError(f"{joined}. 일부 거래를 삭제하지 못했습니다.", 400)
+
+        # 4) 검증 통과 → 실제 DELETE + recalc.
+        for key in sorted_keys:
+            for tid in delete_ids_by_group[key]:
+                await delete_trade(conn, tid, user.id)
+            await recalc_group_pnl(conn, group_remaining[key], key)
 
     return Response(status_code=204)
 

@@ -44,7 +44,11 @@ export function ConfirmDeleteDialog({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && (
+          <p className="text-sm text-destructive whitespace-pre-line break-keep">
+            {error.replace(/; /g, "\n")}
+          </p>
+        )}
 
         <DialogFooter>
           <Button

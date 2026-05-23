@@ -8,6 +8,7 @@ import {
   NavRecordsIcon,
   NavSettingsIcon,
 } from "@/components/base/NavIcons";
+import { useBottomNavHidden } from "@/components/providers/BottomNavProvider";
 import { cn } from "@/lib/utils";
 
 const tabs = [
@@ -19,6 +20,9 @@ const tabs = [
 
 export function BottomNav() {
   const pathname = usePathname();
+  const hidden = useBottomNavHidden();
+
+  if (hidden) return null;
 
   return (
     <nav
