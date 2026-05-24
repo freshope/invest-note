@@ -43,7 +43,13 @@ export function TradeList({ trades, accounts }: TradeListProps) {
 
   const selection = useTradeSelection();
   const { isSelectMode, selectedIds, enter, exit, toggle, selectAll, clearAll } = selection;
-  const deleteDialog = useDialogState();
+  const bulkDeleteDialog = useDialogState();
+  const singleDeleteDialog = useDialogState();
+  // 단건 삭제 다이얼로그가 띄워진 대상 trade. 다이얼로그 표시 도중 trade 가
+  // 사라지는 좁은 race 에 대비해 따로 보관한다.
+  const [pendingDelete, setPendingDelete] = useState<TradeWithAccount | null>(null);
+  // 스와이프가 열린 카드 ID. 한 번에 하나만 열린다.
+  const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
   useHideBottomNav(isSelectMode);
 
   const openForm = useCallback(() => {
@@ -66,19 +72,43 @@ export function TradeList({ trades, accounts }: TradeListProps) {
 
   const grouped = useMemo(() => groupByDate(filteredTrades), [filteredTrades]);
 
-  // AccountFilter 변경 시 선택만 초기화 (모드는 유지).
+  // AccountFilter 변경 시 선택/열린 스와이프 모두 초기화 (모드는 유지).
   useEffect(() => {
     clearAll();
+    setOpenSwipeId(null);
   }, [effectiveAccountId, clearAll]);
+
+  // 선택 모드에 진입하면 열린 스와이프 카드가 시각적으로 어색하므로 닫는다.
+  useEffect(() => {
+    if (isSelectMode) setOpenSwipeId(null);
+  }, [isSelectMode]);
+
+  // 페이지 스크롤 시 열린 카드를 닫는다.
+  useEffect(() => {
+    if (openSwipeId === null) return;
+    const onScroll = () => setOpenSwipeId(null);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [openSwipeId]);
 
   const handleTradePress = useCallback(
     (trade: TradeWithAccount) => openTrade({ trade, accounts, allTrades: trades }),
     [openTrade, accounts, trades],
   );
 
-  const handleLongPress = useCallback(
-    (trade: TradeWithAccount) => enter(trade.id),
-    [enter],
+  const handleSwipeOpenChange = useCallback((id: string, open: boolean) => {
+    setOpenSwipeId((current) => {
+      if (open) return id;
+      return current === id ? null : current;
+    });
+  }, []);
+
+  const handleRequestDelete = useCallback(
+    (trade: TradeWithAccount) => {
+      setPendingDelete(trade);
+      singleDeleteDialog.setOpen(true);
+    },
+    [singleDeleteDialog],
   );
 
   const allSelected =
@@ -92,13 +122,13 @@ export function TradeList({ trades, accounts }: TradeListProps) {
 
   const onConfirmBulkDelete = useCallback(
     () =>
-      deleteDialog.run(async () => {
+      bulkDeleteDialog.run(async () => {
         const ids = [...selectedIds];
         // 다이얼로그 표시 도중 accounts refetch → useEffect clearAll 로 selection 이 비워진
         // 좁은 race 에 대비. 빈 배열로 호출하면 BE 가 422 로 응답해 사용자에게 무의미한
         // 에러를 노출하므로 여기서 조용히 다이얼로그만 닫는다.
         if (ids.length === 0) {
-          deleteDialog.setOpen(false);
+          bulkDeleteDialog.setOpen(false);
           return;
         }
         await tradesApi.bulkDelete(ids);
@@ -111,7 +141,29 @@ export function TradeList({ trades, accounts }: TradeListProps) {
         toast.success(`${ids.length}건의 거래를 삭제했어요`);
         exit();
       }, "삭제할 수 없습니다."),
-    [deleteDialog, selectedIds, queryClient, exit],
+    [bulkDeleteDialog, selectedIds, queryClient, exit],
+  );
+
+  const onConfirmSingleDelete = useCallback(
+    () =>
+      singleDeleteDialog.run(async () => {
+        // 다이얼로그 표시 도중 race 로 pendingDelete 가 사라진 경우 조용히 닫는다.
+        const target = pendingDelete;
+        if (!target) {
+          singleDeleteDialog.setOpen(false);
+          return;
+        }
+        await tradesApi.delete(target.id);
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
+          queryClient.invalidateQueries({ queryKey: ["analysis"] }),
+        ]);
+        toast.success("거래를 삭제했어요");
+        setOpenSwipeId(null);
+        setPendingDelete(null);
+      }, "삭제할 수 없습니다."),
+    [singleDeleteDialog, pendingDelete, queryClient],
   );
 
   return (
@@ -132,7 +184,7 @@ export function TradeList({ trades, accounts }: TradeListProps) {
               </span>
               <button
                 type="button"
-                onClick={() => deleteDialog.setOpen(true)}
+                onClick={() => bulkDeleteDialog.setOpen(true)}
                 disabled={selectedCount === 0}
                 className="text-[14px] font-semibold text-destructive disabled:text-muted-foreground px-2 py-1 -mx-2"
               >
@@ -179,7 +231,10 @@ export function TradeList({ trades, accounts }: TradeListProps) {
         )}
       </div>
 
-      <div className="px-5 pb-6">
+      <div
+        className="px-5 pb-6"
+        onClick={() => setOpenSwipeId(null)}
+      >
         {trades.length === 0 ? (
           <EmptyCard
             className="mt-2"
@@ -216,7 +271,9 @@ export function TradeList({ trades, accounts }: TradeListProps) {
                       selectionMode={isSelectMode}
                       selected={selectedIds.has(trade.id)}
                       onSelectToggle={toggle}
-                      onLongPress={handleLongPress}
+                      swipeOpen={openSwipeId === trade.id}
+                      onSwipeOpenChange={handleSwipeOpenChange}
+                      onRequestDelete={handleRequestDelete}
                     />
                   ))}
                 </div>
@@ -255,8 +312,8 @@ export function TradeList({ trades, accounts }: TradeListProps) {
       />
 
       <ConfirmDeleteDialog
-        open={deleteDialog.open}
-        onOpenChange={deleteDialog.setOpen}
+        open={bulkDeleteDialog.open}
+        onOpenChange={bulkDeleteDialog.setOpen}
         title="거래 일괄 삭제"
         description={
           <>
@@ -265,9 +322,28 @@ export function TradeList({ trades, accounts }: TradeListProps) {
             이 작업은 되돌릴 수 없습니다.
           </>
         }
-        pending={deleteDialog.pending}
-        error={deleteDialog.error}
+        pending={bulkDeleteDialog.pending}
+        error={bulkDeleteDialog.error}
         onConfirm={onConfirmBulkDelete}
+      />
+
+      <ConfirmDeleteDialog
+        open={singleDeleteDialog.open}
+        onOpenChange={(open) => {
+          singleDeleteDialog.setOpen(open);
+          if (!open) setPendingDelete(null);
+        }}
+        title="거래 삭제"
+        description={
+          <>
+            <strong>{pendingDelete?.asset_name ?? ""}</strong> 거래를 삭제하시겠습니까?
+            <br />
+            이 작업은 되돌릴 수 없습니다.
+          </>
+        }
+        pending={singleDeleteDialog.pending}
+        error={singleDeleteDialog.error}
+        onConfirm={onConfirmSingleDelete}
       />
     </>
   );

@@ -459,9 +459,13 @@ async def delete_trade_endpoint(
         await acquire_trade_group_lock(conn, str(user.id), key)
 
         group_trades = await list_trades_in_group(conn, user.id, key)
-        ok, msg, _ = validate_mutation(group_trades, "delete", target)
+        ok, _, _ = validate_mutation(group_trades, "delete", target)
         if not ok:
-            raise APIError(msg, 400)
+            # validate_mutation 의 메시지는 "매도 시점" 관점이라 삭제 컨텍스트에서 오인을 일으킨다.
+            raise APIError(
+                "매도 거래에 매칭되어 있어 삭제할 수 없습니다. 매도 거래를 먼저 삭제해 주세요.",
+                400,
+            )
 
         await delete_trade(conn, trade_id, user.id)
 
