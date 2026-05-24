@@ -50,10 +50,12 @@ export function ConfirmDeleteDialog({
           </p>
         )}
 
-        <DialogFooter>
+        <DialogFooter className="flex-row gap-2 sm:justify-end">
           <Button
             type="button"
             variant="outline"
+            size="xl"
+            className="flex-1 sm:flex-none"
             onClick={() => onOpenChange(false)}
             disabled={pending}
           >
@@ -62,6 +64,8 @@ export function ConfirmDeleteDialog({
           <Button
             type="button"
             variant="destructive"
+            size="xl"
+            className="flex-1 sm:flex-none"
             onClick={onConfirm}
             disabled={pending}
           >
