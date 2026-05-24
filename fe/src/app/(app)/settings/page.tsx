@@ -9,9 +9,11 @@ import { UserInfoSection } from "@/components/settings/UserInfoSection";
 import { DeleteAccountSection } from "@/components/settings/DeleteAccountSection";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ErrorState } from "@/components/shared/ErrorState";
+import { useAppVersion } from "@/hooks/useAppVersion";
 
 export default function SettingsPage() {
   const { user } = useAuth();
+  const { version, build } = useAppVersion();
 
   const { data: accounts, isLoading, isError, refetch } = useQuery({
     queryKey: queryKeys.accounts,
@@ -60,7 +62,8 @@ export default function SettingsPage() {
         </section>
 
         <p className="text-xs text-center text-muted-foreground">
-          투자노트 v{process.env.NEXT_PUBLIC_APP_VERSION}
+          투자노트 v{version}
+          {build ? ` (${build})` : ""}
         </p>
       </div>
     </>
