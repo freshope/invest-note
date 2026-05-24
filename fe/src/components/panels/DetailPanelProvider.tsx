@@ -68,6 +68,8 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
 
   const pathname = usePathname();
   useEffect(() => {
+    // 라우터(외부 상태) 변경 시 오버레이 패널을 닫는 것은 정당한 effect 사용.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTradePayload(null);
     setStockPayload(null);
   }, [pathname]);
@@ -206,11 +208,12 @@ function StockPanelContent({ open, payload, onClose, openTrade }: StockPanelCont
 
   // 거래 mutation 후 queryKeys.trades 가 invalidate 되면 prefix 매칭으로 함께 refetch 되도록
   // 종목 필터 리스트를 react-query 로 구독한다. 패널 오픈 시 이미 가져온 데이터는 initialData 로 주입.
+  const [mountedAt] = useState(() => Date.now());
   const { data } = useQuery({
     queryKey: [...queryKeys.trades, ticker, country],
     queryFn: () => tradesApi.list({ ticker, country }),
     initialData: { trades: initialTrades, accounts: initialAccounts },
-    initialDataUpdatedAt: Date.now(),
+    initialDataUpdatedAt: mountedAt,
   });
   const allTrades = data?.trades ?? initialTrades;
   const accounts = data?.accounts ?? initialAccounts;

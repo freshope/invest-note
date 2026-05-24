@@ -243,7 +243,9 @@ export function useStaggeredPanel<T>(externalPayload: T | null): {
 
   // useEffect 클로저에서 "이미 열린 상태였는지" 체크용 — state 직접 읽기는 stale closure 위험
   const internalPayloadRef = React.useRef<T | null>(null);
-  internalPayloadRef.current = payload;
+  React.useEffect(() => {
+    internalPayloadRef.current = payload;
+  });
 
   const closeTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 

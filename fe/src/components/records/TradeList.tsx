@@ -73,13 +73,17 @@ export function TradeList({ trades, accounts }: TradeListProps) {
   const grouped = useMemo(() => groupByDate(filteredTrades), [filteredTrades]);
 
   // AccountFilter 변경 시 선택/열린 스와이프 모두 초기화 (모드는 유지).
+  // effectiveAccountId 는 사용자 필터 변경 외에 accounts refetch 결과로도 바뀔 수 있어
+  // 단일 이벤트 핸들러로 옮길 수 없음.
   useEffect(() => {
     clearAll();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setOpenSwipeId(null);
   }, [effectiveAccountId, clearAll]);
 
   // 선택 모드에 진입하면 열린 스와이프 카드가 시각적으로 어색하므로 닫는다.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (isSelectMode) setOpenSwipeId(null);
   }, [isSelectMode]);
 
