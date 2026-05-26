@@ -10,10 +10,6 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 수수료 현황 별도 패널 — BUY commission·세금 합계, 순실현손익 vs 총비용 비교
 - [ ] `_rule_high_winrate` 신뢰도 게이트 재검토 — 2026-05-20 `result_input_rate` 게이트 제거 후 현재 `sell_trades >= MIN_HIGH_WINRATE_SELL` + `win_rate >= WIN_THRESHOLD` 만으로 트리거. 실 데이터에서 인사이트가 과도하게 트리거되면 별도 신뢰도 메트릭(SELL 매칭률 등) 도입 검토. 트리거: 사용자 피드백 또는 인사이트 노출 빈도 모니터링에서 노이즈 체감.
 
-## 코드 품질 가드
-
-- [ ] `feature/eslint-cleanup` — `pnpm lint` 가 329 errors / 25,348 warnings 로 실패. 주요: ① `react-hooks/refs` (`fe/src/hooks/useClickOutside.ts:8` 등 render 중 ref.current 변경), ② `react-hooks/incompatible-library` (`useForm.watch()` 사용처들 — `AccountFormPanel.tsx:78`, `TradeBasicForm.tsx` 등), ③ `@typescript-eslint/no-unused-vars` warnings 25k 누적. CI baseline (2026-05-03 `feature/ci-baseline`) 에서 lint 가드 제외하고 분리. fix 후 `.github/workflows/ci.yml` 의 frontend job 에 `pnpm lint` 단계 추가.
-
 ## 운영 / 어드민 도구
 
 - [ ] PnL 저장값 검증 엔드포인트 (이슈 E) — `/admin/verify-pnl` 신설. SELL의 저장된 `profit_loss`/`avg_buy_price`/`holding_days`/`strategy_type`/`reasoning_tags`/`emotion`을 `compute_group_pnl()`로 재계산해 차이 검출. 사용자 단위 batch + 차이 리포트 + (옵션) 자동 보정. 권한은 admin scope. DB 직접 수정·마이그레이션 누락·mutation 경로 우회 시 분석 탭과 거래 기록 합계 불일치를 잡기 위함.
@@ -21,12 +17,11 @@ MVP 이후 구현할 작업 후보 목록.
 ## 배포 / 인프라
 
 - [ ] internal 패키지명 일관화 검토 — `fe/package.json` `"name": "invest-note"` 과 `be/pyproject.toml` `name = "invest-note-api"` 의 BE/FE 명시화 (`invest-note-fe`, `invest-note-be` 등) 검토. 폴더명과 일관성 vs 변경 비용(import 경로, 빌드 설정, 외부 참조) 비교 후 결정.
-- [ ] 운영 환경 `SUPABASE_SECRET_KEY` 주입 확인 — 계정 탈퇴(`DELETE /me`)는 Supabase Admin REST 호출을 위해 `sb_secret_*` 키가 필요. Coolify BE 배포 시크릿에 누락되면 503 ("계정 삭제 기능이 비활성화되었습니다") 반환. 다음 배포 전에 운영 시크릿 등록 여부 확인.
 - [ ] user-scoped 테이블 신규 추가 시 `on delete cascade` 가드 — `auth.users` 삭제 시 cascade 누락된 FK가 있으면 탈퇴가 FK 위반으로 실패. 향후 새 user_id 컬럼을 가진 테이블을 추가하는 마이그레이션은 PR 리뷰 시 cascade 옵션 확인을 체크리스트로 명시. 또는 통합 테스트로 데모 사용자 삭제→재시드 시나리오를 자동화 검토.
 
 ## API 라우터 prefix 마이그레이션
 
-- [ ] BE legacy `/api/*` alias 제거 (sunset) — 2026-05-21 `docs/spec-history/2026-05-21-be-dual-api-prefix.md` 에서 신/구 prefix 동시 지원 등록 (legacy 는 `include_in_schema=False`). FE/웹은 이미 새 경로 전환. **선행 조건**: v2.5 모바일 잔여의 "강제 업데이트 메커니즘" 적용으로 옛 번들 사용자가 새 번들로 모두 이동 + 운영 로그에서 `/api/*` 트래픽이 충분히 줄어든 시점. 작업: `be/src/invest_note_api/main.py` 의 legacy `include_router` 루프 제거 + `tests/test_legacy_api_prefix.py` 폐기.
+- [ ] BE legacy `/api/*` alias 제거 (sunset) — 2026-05-21 `docs/spec-history/2026-05-21-be-dual-api-prefix.md` 에서 신/구 prefix 동시 지원 등록 (legacy 는 `include_in_schema=False`). FE/웹은 이미 새 경로 전환. 강제 업데이트 메커니즘은 2026-05-26 머지(`docs/spec-history/2026-05-26-force-update.md`). **남은 선행 조건**: 양 스토어 승인 + 옛 번들 사용자가 새 번들로 모두 이동 + 운영 로그에서 `/api/*` 트래픽이 충분히 줄어든 시점. 작업: `be/src/invest_note_api/main.py` 의 legacy `include_router` 루프 제거 + `tests/test_legacy_api_prefix.py` 폐기.
 - [ ] `be/README.md` curl 예시 새 경로 갱신 — README 의 `http://localhost:8000/api/{accounts,trades,portfolio,stocks,analysis}` curl 예시 약 20곳을 신 경로로 일괄 갱신. 코스메틱.
 
 ## 거래내역서 임포트 — 후속 과제
