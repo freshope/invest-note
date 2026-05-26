@@ -43,7 +43,7 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 모바일앱 (v2.5) 잔여
 
-- [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리, 강제 업데이트 메커니즘
+- [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리
 - [ ] iOS 상태바 색 동기화 — @capacitor/status-bar 도입 후 다크/라이트 전환 시 status bar style 동기화
 
 ## v2 — KIS API 연동
