@@ -53,7 +53,8 @@ export function HomeDashboard() {
   });
   const { setSelectedAccountId } = useAccountFilter();
   const effectiveAccountId = useEffectiveAccountId(accounts);
-  const { data, loading, error, refetch } = usePortfolioSummary(effectiveAccountId);
+  const { data, loading, reloading, error, refetch } =
+    usePortfolioSummary(effectiveAccountId);
 
   const showFilter = accounts.length >= 2;
 
@@ -63,7 +64,9 @@ export function HomeDashboard() {
   };
 
   const renderBody = () => {
-    if (loading) return <BodySkeleton />;
+    // 초기 로드(loading) + 계좌 필터 전환 재조회(reloading) 모두 스켈레톤.
+    // 헤더는 placeholder 숫자를 유지하다 새 데이터 도착 시 count-up 한다.
+    if (loading || reloading) return <BodySkeleton />;
     if (error) return <ErrorState onRetry={refetch} />;
     if (!data) return null;
 
