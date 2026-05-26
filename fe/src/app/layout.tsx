@@ -4,6 +4,7 @@ import { AuthProvider } from "@/components/providers/AuthProvider";
 import { CapacitorDeepLinkHandler } from "@/components/providers/CapacitorDeepLinkHandler";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 import { AppToaster } from "@/components/providers/AppToaster";
+import { ForceUpdateGate } from "@/components/providers/ForceUpdateGate";
 import "./globals.css";
 
 const pretendard = localFont({
@@ -35,6 +36,7 @@ export default function RootLayout({
   return (
     <html lang="ko" className={`${pretendard.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
+        <ForceUpdateGate />
         <AuthProvider>
           <CapacitorDeepLinkHandler />
           <QueryProvider>{children}</QueryProvider>
