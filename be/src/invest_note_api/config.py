@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     database_url: str = ""
     supabase_secret_key: str = ""
 
+    # 강제 업데이트: 빈 문자열이면 강제하지 않음(no-force). 양 플랫폼 공통 min 버전.
+    min_supported_version: str = ""
+    store_url_ios: str = ""
+    store_url_android: str = ""
+
     model_config = SettingsConfigDict(env_file=".env.local", extra="ignore")
 
     @property

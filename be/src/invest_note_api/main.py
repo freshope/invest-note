@@ -11,7 +11,7 @@ from invest_note_api.db import create_pool
 from invest_note_api.errors import APIError, ERR_LOCK_BUSY, api_error_handler, validation_error_handler
 from invest_note_api.external.http_client import create_http_client
 from invest_note_api.external.quotes import QuoteCacheState
-from invest_note_api.routers import accounts, health, me
+from invest_note_api.routers import accounts, app_config, health, me
 from invest_note_api.routers import trades, portfolio, stocks, analysis
 from invest_note_api.routers.trades import TradeStagingState
 
@@ -54,6 +54,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.add_exception_handler(LockNotAvailableError, lock_not_available_handler)
 
     application.include_router(health.router)
+    application.include_router(app_config.router)
     application.include_router(me.router)
     application.include_router(accounts.router)
     application.include_router(trades.router)
