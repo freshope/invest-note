@@ -19,12 +19,15 @@ export function usePortfolioSummary(accountId: string | null = null) {
   });
 
   // pull-to-refresh / 에러 재시도: 현재 보고 있는 요약을 refresh=1 로 새로 받아(시세 캐시 우회)
-  // 같은 캐시 키에 덮어쓴다. 일반 staleTime 기반 백그라운드 refetch 는 캐시 경로 그대로 사용.
+  // 같은 캐시 키에 덮어쓴다. staleTime:0 으로 fetchQuery 가 전역 기본 staleTime(30s)에
+  // 막혀 캐시를 반환하지 않고 항상 네트워크를 타도록 강제한다 — pull-to-refresh 는 늘 최신.
+  // 일반 staleTime 기반 백그라운드 refetch 는 캐시 경로 그대로 사용.
   const refetch = useCallback(
     () =>
       queryClient.fetchQuery({
         queryKey: queryKeys.portfolioSummary(accountId),
         queryFn: () => portfolioApi.summary(accountId, true),
+        staleTime: 0,
       }),
     [queryClient, accountId]
   );
