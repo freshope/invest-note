@@ -153,6 +153,36 @@ async def get_trade_by_id(conn: Any, trade_id: str, user_id: str) -> Trade | Non
     return _row_to_trade(row)
 
 
+async def list_trades_by_ids(conn: Any, ids: list[str], user_id: str) -> list[Trade]:
+    """여러 거래를 단일 쿼리로 조회 (bulk-delete N+1 회피).
+
+    malformed UUID 는 asyncpg 가 DataError(InvalidTextRepresentationError 포함) 를
+    던지므로 호출자가 422 로 변환한다. 반환 개수가 입력 개수와 다르면 누락 → 호출자가 404.
+    """
+    if not ids:
+        return []
+    rows = await conn.fetch(
+        "SELECT * FROM trades WHERE id = ANY($1::uuid[]) AND user_id = $2",
+        ids,
+        user_id,
+    )
+    return [_row_to_trade(r) for r in rows]
+
+
+async def delete_trades_by_ids(conn: Any, ids: list[str], user_id: str) -> None:
+    """여러 거래를 단일 쿼리로 삭제 (bulk-delete N+1 회피).
+
+    호출자가 이미 list_trades_by_ids 로 소유/존재를 검증한 id 만 넘긴다.
+    """
+    if not ids:
+        return
+    await conn.execute(
+        "DELETE FROM trades WHERE id = ANY($1::uuid[]) AND user_id = $2",
+        ids,
+        user_id,
+    )
+
+
 async def get_trade_with_account(conn: Any, trade_id: str, user_id: str) -> TradeWithAccount | None:
     row = await conn.fetchrow(
         """

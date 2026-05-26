@@ -69,6 +69,7 @@ async def get_holding(
 @router.get("/summary", response_model=PortfolioSummaryResponse)
 async def get_portfolio_summary(
     account_id: UUID | None = Query(default=None, alias="accountId"),
+    refresh: bool = Query(default=False),
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
     quote_state: QuoteCacheState = Depends(get_quote_cache_state),
@@ -93,7 +94,7 @@ async def get_portfolio_summary(
     quotes = {}
     try:
         quotes = await fetch_quotes_by_keys(
-            quote_state, [p.key for p in positions0], client=http_client
+            quote_state, [p.key for p in positions0], client=http_client, force_refresh=refresh
         )
     except Exception:
         logger.warning("fetch_quotes_by_keys 실패 user_id=%s", user.id, exc_info=True)

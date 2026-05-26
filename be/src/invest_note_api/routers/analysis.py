@@ -81,6 +81,7 @@ def _size_bucket(amount: float) -> str:
 )
 async def get_analysis_dashboard(
     period: str = Query(default=DEFAULT_PERIOD),
+    refresh: bool = Query(default=False),
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
     quote_state: QuoteCacheState = Depends(get_quote_cache_state),
@@ -98,7 +99,7 @@ async def get_analysis_dashboard(
     positions = positions0
     try:
         quotes = await fetch_quotes_by_keys(
-            quote_state, [p.key for p in positions0], client=http_client
+            quote_state, [p.key for p in positions0], client=http_client, force_refresh=refresh
         )
         positions = merge_quotes(positions0, quotes)
     except Exception as e:

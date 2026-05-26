@@ -25,11 +25,13 @@ from invest_note_api.db_ops.trades_repo import (
     acquire_trade_group_lock,
     assert_account_exists,
     delete_trade,
+    delete_trades_by_ids,
     get_trade_by_id,
     get_trade_with_account,
     insert_trade,
     insert_trades_bulk,
     list_trades,
+    list_trades_by_ids,
     list_trades_in_group,
     list_trades_with_account,
     patch_trade,
@@ -528,18 +530,17 @@ async def bulk_delete_trades(
     unique_ids = list(dict.fromkeys(body.ids))
 
     async with acquire_for_user(pool, user.id) as conn:
-        # 1) 모든 id 조회 — 누락이 하나라도 있으면 즉시 404, 이후 단계 진입 없음.
-        # malformed UUID 는 asyncpg 가 InvalidTextRepresentationError 를 던지므로
-        # 사용자용 422 로 변환한다 (그대로 두면 핸들링 안 된 500 으로 새어 나감).
-        targets: list[Trade] = []
-        for tid in unique_ids:
-            try:
-                t = await get_trade_by_id(conn, tid, user.id)
-            except asyncpg.exceptions.InvalidTextRepresentationError:
-                raise APIError("거래 ID 형식이 올바르지 않습니다.", 422)
-            if t is None:
-                raise APIError("일부 거래를 찾을 수 없습니다.", 404)
-            targets.append(t)
+        # 1) 모든 id 를 단일 쿼리로 조회 (N+1 회피).
+        # malformed UUID 는 asyncpg 가 DataError(InvalidTextRepresentationError 포함) 를,
+        # 클라이언트 인코딩 실패는 ValueError 를 던지므로 사용자용 422 로 변환한다
+        # (그대로 두면 핸들링 안 된 500 으로 새어 나감).
+        try:
+            targets = await list_trades_by_ids(conn, unique_ids, user.id)
+        except (asyncpg.exceptions.DataError, ValueError):
+            raise APIError("거래 ID 형식이 올바르지 않습니다.", 422)
+        # 누락이 하나라도 있으면 즉시 404, 이후 단계 진입 없음.
+        if len(targets) != len(unique_ids):
+            raise APIError("일부 거래를 찾을 수 없습니다.", 404)
 
         # 2) 영향 그룹 키 수집 + 그룹 → 삭제 대상 id 매핑.
         delete_ids_by_group: dict[TradeGroupKey, set[str]] = defaultdict(set)
@@ -581,10 +582,10 @@ async def bulk_delete_trades(
                 joined += f" 외 {len(conflict_msgs) - 3}건"
             raise APIError(f"{joined}. 일부 거래를 삭제하지 못했습니다.", 400)
 
-        # 4) 검증 통과 → 실제 DELETE + recalc.
+        # 4) 검증 통과 → 실제 DELETE (전체 id 단일 쿼리) + 그룹별 recalc.
+        # recalc 는 in-memory group_remaining 를 입력으로 쓰므로 delete 와 순서 무관.
+        await delete_trades_by_ids(conn, unique_ids, user.id)
         for key in sorted_keys:
-            for tid in delete_ids_by_group[key]:
-                await delete_trade(conn, tid, user.id)
             await recalc_group_pnl(conn, group_remaining[key], key)
 
     return Response(status_code=204)

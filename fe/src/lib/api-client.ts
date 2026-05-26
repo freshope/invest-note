@@ -318,8 +318,12 @@ export interface PortfolioHoldingResponse {
 }
 
 export const portfolioApi = {
-  summary: (accountId?: string | null) => {
-    const qs = accountId ? `?${new URLSearchParams({ accountId })}` : "";
+  // refresh=true (pull-to-refresh) 면 BE 시세 캐시를 우회해 새 시세를 받는다.
+  summary: (accountId?: string | null, refresh = false) => {
+    const params: Record<string, string> = {};
+    if (accountId) params.accountId = accountId;
+    if (refresh) params.refresh = "1";
+    const qs = Object.keys(params).length ? `?${new URLSearchParams(params)}` : "";
     return apiFetch<PortfolioSummaryResponse>(`${ROUTES.portfolio.summary}${qs}`);
   },
 
@@ -385,9 +389,10 @@ export interface AnalysisDashboardData {
 }
 
 export const analysisApi = {
-  dashboard: (period: Period) =>
+  // refresh=true (pull-to-refresh) 면 BE 시세 캐시를 우회해 새 시세를 받는다.
+  dashboard: (period: Period, refresh = false) =>
     apiFetch<AnalysisDashboardData>(
-      `${ROUTES.analysis.dashboard}?period=${period}`,
+      `${ROUTES.analysis.dashboard}?period=${period}${refresh ? "&refresh=1" : ""}`,
     ),
 };
 
