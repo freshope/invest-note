@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from uuid import UUID
 
 import asyncpg
 import httpx
@@ -67,16 +68,24 @@ async def get_holding(
 
 @router.get("/summary", response_model=PortfolioSummaryResponse)
 async def get_portfolio_summary(
+    account_id: UUID | None = Query(default=None, alias="accountId"),
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
     quote_state: QuoteCacheState = Depends(get_quote_cache_state),
     http_client: httpx.AsyncClient = Depends(get_http_client),
 ) -> PortfolioSummaryResponse:
+    account_id_str = str(account_id) if account_id is not None else None
     async with acquire_for_user(pool, user.id) as conn:
-        trades = await list_trades_with_account(conn, user.id)
+        trades = await list_trades_with_account(conn, user.id, account_id=account_id_str)
         account_dicts = await list_accounts(conn)
 
-    accounts = [Account(**d) for d in account_dicts]
+    # has_accounts 는 글로벌 기준이라 응답 직전 account_dicts 길이로 따로 계산한다 —
+    # 필터된 결과가 비어도 "계좌 만드세요" EmptyState 가 잘못 뜨면 안 된다.
+    accounts = [
+        Account(**d)
+        for d in account_dicts
+        if account_id_str is None or d["id"] == account_id_str
+    ]
 
     positions0, lot_map = build_positions(trades)
     pnl_map = build_pnl_map(trades)
@@ -97,6 +106,6 @@ async def get_portfolio_summary(
         "totals": totals,
         "positions": positions,
         "snapshots": snapshots,
-        "has_accounts": len(accounts) > 0,
+        "has_accounts": len(account_dicts) > 0,
         "has_trades": len(trades) > 0,
     })

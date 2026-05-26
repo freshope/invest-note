@@ -1,7 +1,7 @@
 """시세 fetch — Naver Finance (KR).
 
-캐싱: TTLCache(maxsize=512, ttl=60) + asyncio.Lock으로 symbol:country 키별 60초 in-memory 캐시.
-Next.js `fetch(..., { next: { revalidate: 60 } })` 동작과 등가.
+캐싱: TTLCache(maxsize=512, ttl=10) + asyncio.Lock으로 symbol:country 키별 10초 in-memory 캐시.
+pull-to-refresh 직후 새 시세를 받을 수 있도록 짧게 설정.
 
 캐시 상태(`QuoteCacheState`)는 `app.state.quote_cache` 에 보관하고 라우터에서
 `Depends(get_quote_cache_state)` 로 주입한다.
@@ -29,6 +29,7 @@ from invest_note_api.external.constants import (
     QUOTE_CACHE_MAXSIZE,
     QUOTE_CACHE_TTL,
     USER_AGENT,
+    YAHOO_CHART_URL,
 )
 from invest_note_api.utils.numbers import strip_comma_number
 
@@ -75,6 +76,16 @@ def _parse_basic_price(data: dict) -> float:
     return float(raw) if raw else 0.0
 
 
+def _parse_yahoo_chart_price(data: dict) -> float:
+    """Yahoo chart v8: chart.result[0].meta.regularMarketPrice."""
+    result = (data.get("chart") or {}).get("result") or []
+    if not result:
+        return 0.0
+    meta = result[0].get("meta") or {}
+    raw = meta.get("regularMarketPrice")
+    return float(raw) if raw else 0.0
+
+
 async def _try_endpoint(
     client: httpx.AsyncClient,
     url: str,
@@ -107,13 +118,29 @@ async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult |
     )
     if result is not None:
         return result
-    return await _try_endpoint(
+    result = await _try_endpoint(
         client,
         NAVER_BASIC_URL.format(code=code),
         _parse_basic_price,
         "naver basic",
         code,
     )
+    if result is not None:
+        return result
+    # Naver 차단/장애 fallback — KOSPI(.KS) → KOSDAQ(.KQ) 순으로 Yahoo 시도.
+    # market 정보가 없어 두 suffix 모두 확인. 둘 다 200을 주더라도 잘못된 시장은
+    # result.length=0 이라 _parse_yahoo_chart_price 가 0.0 을 반환하여 자동 스킵.
+    for suffix in (".KS", ".KQ"):
+        result = await _try_endpoint(
+            client,
+            YAHOO_CHART_URL.format(symbol=f"{code}{suffix}"),
+            _parse_yahoo_chart_price,
+            f"yahoo {suffix[1:]}",
+            code,
+        )
+        if result is not None:
+            return result
+    return None
 
 
 async def _get_cached(state: QuoteCacheState, key: str, fetch_fn) -> dict | None:

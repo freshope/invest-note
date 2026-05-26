@@ -1083,6 +1083,163 @@ class TestDeleteTrade:
         assert resp.status_code == 400
 
 
+class TestTradeBulkDelete:
+    def test_bulk_delete_empty_ids_422(self, trades_client):
+        resp = trades_client.post("/trades/bulk-delete", json={"ids": []})
+        assert resp.status_code == 422
+
+    def test_bulk_delete_too_many_ids_422(self, trades_client):
+        resp = trades_client.post(
+            "/trades/bulk-delete",
+            json={"ids": [f"id-{i}" for i in range(201)]},
+        )
+        assert resp.status_code == 422
+
+    def test_bulk_delete_single_buy_ok(self, trades_client, monkeypatch):
+        sql_calls = _capture_sql(monkeypatch)
+        buy_row = _make_trade_row(id_="b1", trade_type="BUY", quantity=10)
+        conn = FakeConnection(
+            _to_record(buy_row),         # get_trade_by_id (b1)
+            [{"id": "a1", "name": "주식계좌"}],  # repo_list_accounts
+            [_to_record(buy_row)],       # list_trades_in_group (group 1)
+            "DELETE 1",                  # delete_trade(b1)
+        )
+        with _patch_trades(conn):
+            resp = trades_client.post("/trades/bulk-delete", json={"ids": ["b1"]})
+        assert resp.status_code == 204
+        _assert_lock_before_list(sql_calls)
+
+    def test_bulk_delete_multi_group_ok(self, trades_client, monkeypatch):
+        """서로 다른 그룹 2건 BUY 삭제 — 정렬된 락 순서 + 그룹별 list 호출."""
+        sql_calls = _capture_sql(monkeypatch)
+        # account_id=a1 / 005930 (삼성전자) — sort key ("a1","KR","005930","삼성전자")
+        buy_a = _make_trade_row(
+            id_="b1", trade_type="BUY", quantity=10,
+            account_id="a1", ticker="005930", asset_name="삼성전자",
+        )
+        # account_id=a1 / 000660 (SK하이닉스) — sort key ("a1","KR","000660","SK하이닉스")
+        # → 정렬 시 SK하이닉스 그룹이 먼저 락 획득되어야 한다.
+        buy_b = _make_trade_row(
+            id_="b2", trade_type="BUY", quantity=5,
+            account_id="a1", ticker="000660", asset_name="SK하이닉스",
+        )
+        conn = FakeConnection(
+            _to_record(buy_a),                                # get_trade_by_id(b1)
+            _to_record(buy_b),                                # get_trade_by_id(b2)
+            [{"id": "a1", "name": "주식계좌"}],                 # repo_list_accounts
+            [_to_record(buy_b)],                              # list_trades_in_group (group "000660" — 먼저)
+            [_to_record(buy_a)],                              # list_trades_in_group (group "005930")
+            "DELETE 1",                                       # delete b2 (group "000660")
+            "DELETE 1",                                       # delete b1 (group "005930")
+        )
+        with _patch_trades(conn):
+            resp = trades_client.post(
+                "/trades/bulk-delete", json={"ids": ["b1", "b2"]}
+            )
+        assert resp.status_code == 204
+
+        # 그룹 단위 list_trades_in_group 가 2회 호출되어야 함.
+        list_in_group = [
+            q for q in sql_calls
+            if "from trades" in q.lower()
+            and "user_id = $1" in q.lower()
+            and "account_id = $2" in q.lower()
+        ]
+        assert len(list_in_group) == 2
+
+    def test_bulk_delete_missing_id_404(self, trades_client, monkeypatch):
+        """id 중 하나가 None 반환 → 404, DELETE 한 번도 호출되지 않아야 한다."""
+        sql_calls = _capture_sql(monkeypatch)
+        buy_row = _make_trade_row(id_="b1", trade_type="BUY", quantity=10)
+        conn = FakeConnection(
+            _to_record(buy_row),  # get_trade_by_id(b1) ok
+            None,                  # get_trade_by_id(b2) → None
+        )
+        with _patch_trades(conn):
+            resp = trades_client.post(
+                "/trades/bulk-delete", json={"ids": ["b1", "b2"]}
+            )
+        assert resp.status_code == 404
+        assert "찾을 수 없습니다" in resp.json()["error"]
+
+        deletes = [q for q in sql_calls if q.lower().startswith("delete from trades")]
+        assert deletes == []
+
+    def test_bulk_delete_buy_oversell_400(self, trades_client, monkeypatch):
+        """그룹에 BUY 10 + SELL 8 일 때 BUY 만 삭제 → 400, DELETE 미실행, 메시지에 계좌·종목·날짜 포함."""
+        sql_calls = _capture_sql(monkeypatch)
+        buy_row = _make_trade_row(
+            id_="b1", trade_type="BUY", quantity=10,
+            traded_at=_dt("2024-01-01T09:00:00+09:00"),
+        )
+        sell_row = _make_trade_row(
+            id_="s1", trade_type="SELL", quantity=8,
+            traded_at=_dt("2024-02-01T09:00:00+09:00"),
+        )
+        conn = FakeConnection(
+            _to_record(buy_row),                          # get_trade_by_id(b1)
+            [{"id": "a1", "name": "주식계좌"}],             # repo_list_accounts
+            [_to_record(buy_row), _to_record(sell_row)],  # list_trades_in_group
+        )
+        with _patch_trades(conn):
+            resp = trades_client.post("/trades/bulk-delete", json={"ids": ["b1"]})
+        assert resp.status_code == 400
+        msg = resp.json()["error"]
+        assert "주식계좌" in msg
+        assert "삼성전자" in msg
+        assert "2024-02-01" in msg
+        assert "삭제하지 못했습니다" in msg
+
+        deletes = [q for q in sql_calls if q.lower().startswith("delete from trades")]
+        assert deletes == []
+
+    def test_bulk_delete_both_buy_and_sell_ok(self, trades_client):
+        """BUY+SELL 둘 다 함께 삭제 → 그룹이 비어 oversell 없음 → 204."""
+        buy_row = _make_trade_row(
+            id_="b1", trade_type="BUY", quantity=10,
+            traded_at=_dt("2024-01-01T09:00:00+09:00"),
+        )
+        sell_row = _make_trade_row(
+            id_="s1", trade_type="SELL", quantity=8,
+            traded_at=_dt("2024-02-01T09:00:00+09:00"),
+        )
+        conn = FakeConnection(
+            _to_record(buy_row),                          # get_trade_by_id(b1)
+            _to_record(sell_row),                         # get_trade_by_id(s1)
+            [{"id": "a1", "name": "주식계좌"}],             # repo_list_accounts
+            [_to_record(buy_row), _to_record(sell_row)],  # list_trades_in_group (단일 그룹)
+            "DELETE 1",                                   # delete b1
+            "DELETE 1",                                   # delete s1
+        )
+        with _patch_trades(conn):
+            resp = trades_client.post(
+                "/trades/bulk-delete", json={"ids": ["b1", "s1"]}
+            )
+        assert resp.status_code == 204
+
+    def test_bulk_delete_malformed_uuid_422(self, trades_client, monkeypatch):
+        """malformed UUID 가 들어오면 asyncpg 예외가 500 으로 새지 않고 422 로 떨어진다."""
+        import asyncpg
+
+        async def raise_invalid_uuid(*args, **kwargs):
+            raise asyncpg.exceptions.InvalidTextRepresentationError(
+                'invalid input syntax for type uuid: "not-a-uuid"'
+            )
+
+        monkeypatch.setattr(
+            "invest_note_api.routers.trades.get_trade_by_id",
+            raise_invalid_uuid,
+        )
+        # acquire_for_user 만 통과시키면 됨 — get_trade_by_id 가 raise 하므로 conn 미사용.
+        conn = FakeConnection()
+        with _patch_trades(conn):
+            resp = trades_client.post(
+                "/trades/bulk-delete", json={"ids": ["not-a-uuid"]}
+            )
+        assert resp.status_code == 422
+        assert "올바르지" in resp.json()["error"]
+
+
 class TestTradeSummary:
     def test_summary_non_sell_400(self, trades_client):
         row = _make_trade_row(id_="b1", trade_type="BUY")

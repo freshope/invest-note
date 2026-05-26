@@ -1,6 +1,6 @@
 {
   "name": "invest-note",
-  "version": "1.1.12",
+  "version": "1.1.13",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -33,6 +33,7 @@
     "react-dom": "19.2.4",
     "react-hook-form": "^7.72.1",
     "react-simple-pull-to-refresh": "^1.3.4",
+    "react-swipeable": "^7.0.2",
     "recharts": "^3.8.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",

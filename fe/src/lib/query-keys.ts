@@ -2,7 +2,8 @@ import type { Period } from "@/lib/analysis/period";
 
 export const queryKeys = {
   portfolio: ["portfolio"] as const,
-  portfolioSummary: ["portfolio", "summary"] as const,
+  portfolioSummary: (accountId: string | null) =>
+    ["portfolio", "summary", accountId] as const,
 
   // portfolio 트리 하위로 묶어서 portfolio invalidate 한 번으로 함께 무효화되도록 함
   accounts: ["portfolio", "accounts"] as const,

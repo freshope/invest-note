@@ -1,10 +1,12 @@
 """analysis 라우터 통합 테스트 — FakePool 기반."""
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from unittest.mock import patch, AsyncMock
 
 import pytest
 
+from invest_note_api.domain.trade_utils import KST
 from tests.conftest import TEST_USER_ID, dt as _dt
 from tests.fake_pool import FakeConnection, make_fake_acquire
 
@@ -139,11 +141,13 @@ class TestAnalysisDashboard:
         assert "result" not in input_rates
 
     def test_period_filter(self, trades_client):
+        # recent_sell은 실행 시각 기준 5일 전 — 시간이 흘러도 1m 안에 유지
+        recent_ts = datetime.now(KST) - timedelta(days=5)
         old_buy = _make_trade_row(id_="b1", traded_at=_dt("2024-01-01T09:00:00+09:00"))
         recent_sell = _make_trade_row(
             id_="s1",
             trade_type="SELL",
-            traded_at=_dt("2026-04-22T09:00:00+09:00"),
+            traded_at=recent_ts,
             result="SUCCESS",
         )
         conn = FakeConnection([old_buy, recent_sell])

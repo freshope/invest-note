@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useDialogState } from "@/hooks/useDialogState";
@@ -45,7 +45,7 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
   const [editOpen, setEditOpen] = useState(false);
   const deleteDialog = useDialogState();
 
-  const mountedAt = useMemo(() => Date.now(), []);
+  const [mountedAt] = useState(() => Date.now());
   const { data: trade = initialTrade } = useQuery({
     queryKey: queryKeys.trade(initialTrade.id),
     queryFn: () => tradesApi.get(initialTrade.id),

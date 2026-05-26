@@ -6,7 +6,7 @@ CURRENCY_USD = "USD"
 HTTP_TIMEOUT_SECONDS = 5.0
 
 QUOTE_CACHE_MAXSIZE = 512
-QUOTE_CACHE_TTL = 60
+QUOTE_CACHE_TTL = 10
 
 NAVER_REALTIME_URL = "https://polling.finance.naver.com/api/realtime/domestic/stock/{code}"
 NAVER_BASIC_URL = "https://api.stock.naver.com/stock/{code}/basic"

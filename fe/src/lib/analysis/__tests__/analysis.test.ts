@@ -557,7 +557,6 @@ describe("validateMutation", () => {
 
   it("같은 날 BUY+SELL 삽입: BUY 먼저 처리되어 oversell 오탐 없음", () => {
     const sameDay = "2024-04-01T09:00:00+09:00";
-    const trades: Trade[] = []; // 빈 상태에서 시작
     // BUY 10주 삽입 후 같은 날 SELL 10주 시뮬레이션
     const buy = makeTrade({ id: "b1", trade_type: "BUY",  price: 70000, quantity: 10, traded_at: sameDay, created_at: "2024-04-01T01:00:00Z" });
     const sell = makeTrade({ id: "s1", trade_type: "SELL", price: 80000, quantity: 10, traded_at: sameDay, created_at: "2024-04-01T02:00:00Z" });

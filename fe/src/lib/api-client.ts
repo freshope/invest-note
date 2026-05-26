@@ -46,6 +46,7 @@ const ROUTES = {
     base: "/trades",
     byId: (id: string) => `/trades/${id}`,
     summary: (id: string) => `/trades/${id}/summary`,
+    bulkDelete: "/trades/bulk-delete",
     importPreview: "/trades/import/preview",
     importCommit: "/trades/import/commit",
   },
@@ -212,6 +213,15 @@ export const tradesApi = {
   delete: (id: string) =>
     apiFetch<void>(ROUTES.trades.byId(id), { method: "DELETE" }),
 
+  /**
+   * 거래 일괄 삭제. 1~200건. 단일 트랜잭션 — 전부 성공(204) 또는 전부 롤백(400/404).
+   */
+  bulkDelete: (ids: string[]) =>
+    apiFetch<void>(ROUTES.trades.bulkDelete, {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    }),
+
   summary: (id: string) => apiFetch<TradeSummary>(ROUTES.trades.summary(id)),
 };
 
@@ -308,7 +318,10 @@ export interface PortfolioHoldingResponse {
 }
 
 export const portfolioApi = {
-  summary: () => apiFetch<PortfolioSummaryResponse>(ROUTES.portfolio.summary),
+  summary: (accountId?: string | null) => {
+    const qs = accountId ? `?${new URLSearchParams({ accountId })}` : "";
+    return apiFetch<PortfolioSummaryResponse>(`${ROUTES.portfolio.summary}${qs}`);
+  },
 
   holding: (params: PortfolioHoldingParams) => {
     const entries: Record<string, string> = {

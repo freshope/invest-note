@@ -5,7 +5,9 @@ export function useClickOutside<T extends HTMLElement>(
   onOutside: () => void,
 ): void {
   const callbackRef = useRef(onOutside);
-  callbackRef.current = onOutside;
+  useEffect(() => {
+    callbackRef.current = onOutside;
+  });
 
   useEffect(() => {
     function handleMouseDown(e: MouseEvent) {

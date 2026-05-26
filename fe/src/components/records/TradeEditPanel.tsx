@@ -33,8 +33,8 @@ import { TradeHeaderCard } from "./TradeHeaderCard";
 import { CompactRow } from "./trade-display";
 import { ToggleChipGrid } from "@/components/shared/ToggleChipGrid";
 import { AccountChip } from "@/components/shared/AccountChip";
-import { fmt, fmtNumberInput, parseNumberInput } from "@/lib/format";
-import { cn, getFirstFormError } from "@/lib/utils";
+import { fmtNumberInput, parseNumberInput } from "@/lib/format";
+import { getFirstFormError } from "@/lib/utils";
 import type { Trade, Account, ReasoningTag, StrategyType, EmotionType } from "@/types/database";
 import { formatTradedAtLabel } from "@/lib/trade-utils";
 import { TradeFreeTextField } from "./TradeFreeTextField";
@@ -143,7 +143,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.trade(trade.id) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.tradeSummary(trade.id) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.portfolioSummary }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
         queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
       ]);
       onOpenChange(false);
