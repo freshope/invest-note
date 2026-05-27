@@ -70,6 +70,7 @@ async def get_holding(
 async def get_portfolio_summary(
     account_id: UUID | None = Query(default=None, alias="accountId"),
     refresh: bool = Query(default=False),
+    with_quotes: bool = Query(default=True, alias="withQuotes"),
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
     quote_state: QuoteCacheState = Depends(get_quote_cache_state),
@@ -91,13 +92,18 @@ async def get_portfolio_summary(
     positions0, lot_map = build_positions(trades)
     pnl_map = build_pnl_map(trades)
 
+    # with_quotes=False (신규 FE): 시세 fetch 를 임계 경로에서 떼어내고 빈 quotes 로
+    # 진행한다. 이후 merge_quotes / build_account_snapshots / build_totals 는 빈 quotes 를
+    # graceful 하게 처리(가격/평가=null, 평가합=0)하며, FE 가 /stocks/quote overlay 로 채운다.
+    # 파라미터 미전송(default True)인 구버전 앱은 기존 동작(시세 포함) 유지.
     quotes = {}
-    try:
-        quotes = await fetch_quotes_by_keys(
-            quote_state, [p.key for p in positions0], client=http_client, force_refresh=refresh
-        )
-    except Exception:
-        logger.warning("fetch_quotes_by_keys 실패 user_id=%s", user.id, exc_info=True)
+    if with_quotes:
+        try:
+            quotes = await fetch_quotes_by_keys(
+                quote_state, [p.key for p in positions0], client=http_client, force_refresh=refresh
+            )
+        except Exception:
+            logger.warning("fetch_quotes_by_keys 실패 user_id=%s", user.id, exc_info=True)
 
     positions = merge_quotes(positions0, quotes)
     snapshots = build_account_snapshots(accounts, lot_map, quotes)

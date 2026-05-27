@@ -21,6 +21,9 @@ export const queryKeys = {
 
   stockSearch: (q: string) => ["stocks", "search", q] as const,
 
+  // 시세는 portfolio 트리와 별개 — 독립 staleTime(45s). keys 는 정렬해 안정적 캐시 키 보장.
+  quotes: (keys: string[]) => ["quotes", [...keys].sort().join(",")] as const,
+
   analysisDashboard: (period: Period) =>
     ["analysis", "dashboard", period] as const,
 };
