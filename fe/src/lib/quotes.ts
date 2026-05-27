@@ -4,7 +4,7 @@ import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 export interface QuoteResult {
   price: number;
   currency: string;
-  asOf: string;
+  as_of: string;
 }
 
 export async function fetchKRPrice(code: string): Promise<QuoteResult | null> {
@@ -19,7 +19,7 @@ export async function fetchKRPrice(code: string): Promise<QuoteResult | null> {
       const item = data?.datas?.[0] ?? data?.data ?? data;
       // closePriceRaw는 쉼표 없는 숫자 문자열, closePrice는 "216,500" 형태라 NaN
       const price = Number(item?.closePriceRaw ?? item?.now ?? item?.closePrice?.replace?.(/,/g, ""));
-      if (price > 0) return { price, currency: "KRW", asOf: new Date().toISOString() };
+      if (price > 0) return { price, currency: "KRW", as_of: new Date().toISOString() };
     }
   } catch {
     // fall through to backup
@@ -37,7 +37,7 @@ export async function fetchKRPrice(code: string): Promise<QuoteResult | null> {
       // stockEndPrice는 쉼표 포함 가능, 쉼표 제거 후 파싱
       const raw = data?.closePriceRaw ?? data?.stockEndPrice?.replace?.(/,/g, "") ?? data?.closePrice?.replace?.(/,/g, "");
       const price = Number(raw);
-      if (price > 0) return { price, currency: "KRW", asOf: new Date().toISOString() };
+      if (price > 0) return { price, currency: "KRW", as_of: new Date().toISOString() };
     }
   } catch {
     // ignore

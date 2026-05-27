@@ -214,6 +214,47 @@ class TestBuildAccountSnapshots:
         assert snapshots[0].stock_evaluation == 0.0
         assert snapshots[0].total_value == 1000000.0
 
+    def test_snapshot_holdings_single_account(self):
+        """holdings 에 running_qty>0 종목 {key, quantity} 가 담긴다 (key=ticker:country)."""
+        account = make_account(id="a1", cash_balance=500000.0)
+        buy = make_trade(id="b1", account_id="a1", quantity=10, price=70000)
+        _, lot_map = build_positions([buy])
+        snapshots = build_account_snapshots([account], lot_map, {})
+        holdings = snapshots[0].holdings
+        assert len(holdings) == 1
+        assert holdings[0].key == "005930:KR"
+        assert holdings[0].quantity == 10.0
+
+    def test_snapshot_holdings_multi_account_same_ticker(self):
+        """동일 종목이 여러 계좌에 걸칠 때 각 계좌 snapshot 은 자기 계좌 수량만 담는다.
+
+        positions 의 holding_quantity(8) 는 합산값이지만 holdings 는 계좌별 분배(5/3) —
+        FE 가 계좌별 totalValue 를 재계산하려면 이 분배가 필수다.
+        """
+        a1 = make_account(id="a1", cash_balance=0.0)
+        a2 = make_account(id="a2", cash_balance=0.0)
+        b1 = make_trade(id="b1", account_id="a1", quantity=5, price=70000)
+        b2 = make_trade(id="b2", account_id="a2", quantity=3, price=70000)
+        _, lot_map = build_positions([b1, b2])
+        snapshots = build_account_snapshots([a1, a2], lot_map, {})
+        by_id = {s.account.id: s for s in snapshots}
+        assert [h.quantity for h in by_id["a1"].holdings] == [5.0]
+        assert [h.quantity for h in by_id["a2"].holdings] == [3.0]
+        assert by_id["a1"].holdings[0].key == "005930:KR"
+        assert by_id["a2"].holdings[0].key == "005930:KR"
+
+    def test_snapshot_holdings_excludes_zero_qty(self):
+        """전량 매도(running_qty=0)된 lot 은 holdings 에 나타나지 않는다."""
+        account = make_account(id="a1", cash_balance=1000000.0)
+        buy = make_trade(id="b1", account_id="a1", trade_type="BUY", quantity=10,
+                         traded_at=_dt("2024-01-01T09:00:00+09:00"))
+        sell = make_trade(id="s1", account_id="a1", trade_type="SELL", quantity=10,
+                          avg_buy_price=70000.0, profit_loss=0.0,
+                          traded_at=_dt("2024-02-01T09:00:00+09:00"))
+        _, lot_map = build_positions([buy, sell])
+        snapshots = build_account_snapshots([account], lot_map, {})
+        assert snapshots[0].holdings == []
+
     def test_snapshot_uuid_account_id(self):
         """UUID account.id should match str trade.account_id (asyncpg returns UUID objects)."""
         uid = UUID("00000000-0000-0000-0000-000000000001")

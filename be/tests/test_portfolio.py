@@ -147,6 +147,73 @@ class TestPortfolioSummary:
         assert "user_id" in snap_account
         assert "cash_balance" in snap_account
 
+    def test_summary_default_includes_holdings(self, trades_client):
+        """파라미터 미전송(default withQuotes=true) → 기존 시세 동작 유지 + holdings additive 필드 존재."""
+        trade = _make_trade_row()
+        account = _make_account_row()
+
+        conn = FakeConnection(
+            [_to_record(trade)],
+            [_to_record(account)],
+        )
+
+        async def mock_quotes(state, keys, *, client=None, force_refresh=False):
+            return {"005930:KR": {"price": 75000.0, "currency": "KRW", "as_of": ""}}
+
+        with _patch_portfolio(conn):
+            with patch("invest_note_api.routers.portfolio.fetch_quotes_by_keys", mock_quotes):
+                resp = trades_client.get("/portfolio/summary")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        # 기존 시세 동작 유지 (현재가 채워짐)
+        assert body["positions"][0]["currentPrice"] == 75000.0
+        # additive 계약: snapshots[].holdings 존재 + key/quantity 일치
+        snap = body["snapshots"][0]
+        assert "holdings" in snap
+        assert snap["holdings"] == [{"key": "005930:KR", "quantity": 10.0}]
+
+    def test_summary_with_quotes_false_skips_fetch(self, trades_client):
+        """withQuotes=false → fetch_quotes_by_keys 미호출, positions 가격 null, holdings 채워짐, totals 현금 기준."""
+        trade = _make_trade_row()
+        account = _make_account_row()
+
+        conn = FakeConnection(
+            [_to_record(trade)],
+            [_to_record(account)],
+        )
+
+        called = {"hit": False}
+
+        async def must_not_call(state, keys, *, client=None, force_refresh=False):
+            called["hit"] = True
+            return {"005930:KR": {"price": 99999.0, "currency": "KRW", "as_of": ""}}
+
+        with _patch_portfolio(conn):
+            with patch("invest_note_api.routers.portfolio.fetch_quotes_by_keys", must_not_call):
+                resp = trades_client.get(
+                    "/portfolio/summary", params={"withQuotes": "false"}
+                )
+
+        assert resp.status_code == 200
+        assert called["hit"] is False, "withQuotes=false 인데 시세 fetch 가 호출됨"
+        body = resp.json()
+        # 시세 의존 값은 null/0
+        pos = body["positions"][0]
+        assert pos["currentPrice"] is None
+        assert pos["evaluation"] is None
+        assert pos["unrealizedPnL"] is None
+        # 시세 비의존 값은 그대로 (수량/원가)
+        assert pos["holdingQuantity"] == 10.0
+        totals = body["totals"]
+        assert totals["totalEvaluation"] == 0.0
+        assert totals["totalAssets"] == totals["totalCash"]  # 현금 기준
+        # holdings 는 채워짐 + 계좌 snapshot 의 stockEvaluation/totalValue 는 현금 기준
+        snap = body["snapshots"][0]
+        assert snap["holdings"] == [{"key": "005930:KR", "quantity": 10.0}]
+        assert snap["stockEvaluation"] == 0.0
+        assert snap["totalValue"] == snap["cashBalance"]
+
     def test_summary_quote_failure_fallback(self, trades_client):
         """시세 fetch 실패 시에도 200 반환 (evaluation=null 허용)."""
         trade = _make_trade_row()

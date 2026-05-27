@@ -77,12 +77,19 @@ class Position:
     account_ids: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class AccountHolding:
+    key: str        # "TICKER:COUNTRY" — position.key 와 동일 규칙
+    quantity: float
+
+
 @dataclass
 class AccountSnapshot:
     account: Account
     stock_evaluation: float
     cash_balance: float
     total_value: float
+    holdings: list[AccountHolding] = field(default_factory=list)
 
 
 @dataclass
@@ -268,10 +275,12 @@ def build_account_snapshots(
     for account in accounts:
         account_lots = by_account.get(str(account.id), [])
         stock_evaluation = 0.0
+        holdings: list[AccountHolding] = []
         for lot in account_lots:
             if lot.running_qty <= 0:
                 continue
             quote_key = position_key(lot.ticker, lot.country)
+            holdings.append(AccountHolding(key=quote_key, quantity=lot.running_qty))
             quote = quotes.get(quote_key)
             if quote:
                 stock_evaluation += quote["price"] * lot.running_qty
@@ -281,6 +290,7 @@ def build_account_snapshots(
             stock_evaluation=stock_evaluation,
             cash_balance=account.cash_balance,
             total_value=stock_evaluation + account.cash_balance,
+            holdings=holdings,
         ))
 
     return snapshots

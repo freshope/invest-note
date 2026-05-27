@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { DashboardTitle, DashboardBody } from "./DashboardSummary";
 import { AllocationTabs } from "./AllocationTabs";
 import { HoldingsList } from "./HoldingsList";
@@ -14,8 +15,14 @@ import {
   useEffectiveAccountId,
 } from "@/components/providers/AccountFilterProvider";
 import { usePortfolioSummary } from "@/hooks/usePortfolioSummary";
+import { useQuotes } from "@/hooks/useQuotes";
 import { accountsApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
+import {
+  mergeQuotes,
+  applyQuotesToTotals,
+  applyQuotesToSnapshots,
+} from "@/lib/portfolio";
 
 function HeaderSkeleton() {
   return (
@@ -56,11 +63,41 @@ export function HomeDashboard() {
   const { data, loading, reloading, error, refetch } =
     usePortfolioSummary(effectiveAccountId);
 
+  // 시세 조회 대상 key 목록 — summary(lite) 의 positions 에서 추출. 정렬 join 을 memo dep 로
+  // 써서 매 렌더마다 새 배열이 만들어져도 쿼리 키가 churn 하지 않도록 안정화한다.
+  const positions = data?.positions;
+  const quoteKeysSig = positions
+    ? [...positions.map((p) => p.key)].sort().join(",")
+    : "";
+  const quoteKeys = useMemo(
+    () => (quoteKeysSig ? quoteKeysSig.split(",") : []),
+    [quoteKeysSig],
+  );
+
+  const { quotes, refetch: refetchQuotes } = useQuotes(quoteKeys);
+
+  // summary(lite) + quotes 결합: 시세 도착 전엔 base(시세 null), 도착하면 overlay 값으로 교체.
+  // HoldingCard 가 null→"—" 처리하므로 깜빡임 없이 점진 렌더.
+  const view = useMemo(() => {
+    if (!data) return null;
+    const mergedPositions = mergeQuotes(data.positions, quotes);
+    return {
+      totals: applyQuotesToTotals(data.totals, mergedPositions),
+      positions: mergedPositions,
+      snapshots: applyQuotesToSnapshots(data.snapshots, quotes),
+      hasAccounts: data.hasAccounts,
+      hasTrades: data.hasTrades,
+    };
+  }, [data, quotes]);
+
+  // pull-to-refresh: 요약(거래/계좌 변경 반영) + 시세(refresh=1) 둘 다 갱신.
+  const handleRefresh = () => Promise.all([refetch(), refetchQuotes()]);
+
   const showFilter = accounts.length >= 2;
 
   const renderHeaderInner = () => {
-    if (loading || error || !data) return <HeaderSkeleton />;
-    return <DashboardTitle totals={data.totals} />;
+    if (loading || error || !view) return <HeaderSkeleton />;
+    return <DashboardTitle totals={view.totals} />;
   };
 
   const renderBody = () => {
@@ -68,9 +105,9 @@ export function HomeDashboard() {
     // 헤더는 placeholder 숫자를 유지하다 새 데이터 도착 시 count-up 한다.
     if (loading || reloading) return <BodySkeleton />;
     if (error) return <ErrorState onRetry={refetch} />;
-    if (!data) return null;
+    if (!view) return null;
 
-    const { totals, positions, snapshots, hasAccounts, hasTrades } = data;
+    const { totals, positions, snapshots, hasAccounts, hasTrades } = view;
 
     if (!hasAccounts) {
       return (
@@ -104,7 +141,7 @@ export function HomeDashboard() {
   };
 
   return (
-    <PullToRefresh onRefresh={refetch}>
+    <PullToRefresh onRefresh={handleRefresh}>
       <div className="sticky top-0 z-10 bg-background">
         <PageHeader sticky={false}>{renderHeaderInner()}</PageHeader>
         {showFilter && (

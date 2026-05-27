@@ -15,7 +15,7 @@ import type { AnalysisSummary } from "@/lib/analysis/aggregate";
 import type { BehaviorProfile, ProfileInputRates } from "@/lib/analysis/profile";
 import type { ConcentrationData } from "@/lib/analysis/concentration";
 import type { Suggestion } from "@/lib/analysis/rules";
-import type { DashboardTotals, Position, AccountSnapshot } from "@/lib/portfolio";
+import type { DashboardTotals, Position, AccountSnapshot, QuoteMap } from "@/lib/portfolio";
 import { createClient } from "@/lib/supabase/client";
 
 // ============================================================
@@ -318,11 +318,15 @@ export interface PortfolioHoldingResponse {
 }
 
 export const portfolioApi = {
-  // refresh=true (pull-to-refresh) 면 BE 시세 캐시를 우회해 새 시세를 받는다.
-  summary: (accountId?: string | null, refresh = false) => {
+  // withQuotes=false (옵션 B) 면 BE 가 시세 fetch 를 건너뛰고 즉시 응답한다.
+  // 신규 FE 는 항상 false 를 보내고 시세는 stocksApi.quote 로 병렬 조회해 overlay 한다.
+  // refresh=true (pull-to-refresh) 는 withQuotes=false 에서 no-op(시세 fetch 자체 skip)이나
+  // 시그니처는 유지한다.
+  summary: (accountId?: string | null, refresh = false, withQuotes = true) => {
     const params: Record<string, string> = {};
     if (accountId) params.accountId = accountId;
     if (refresh) params.refresh = "1";
+    if (!withQuotes) params.withQuotes = "false";
     const qs = Object.keys(params).length ? `?${new URLSearchParams(params)}` : "";
     return apiFetch<PortfolioSummaryResponse>(`${ROUTES.portfolio.summary}${qs}`);
   },
@@ -356,9 +360,10 @@ export const stocksApi = {
   search: (q: string) =>
     apiFetch<StockSearchResult[]>(`${ROUTES.stocks.search}?q=${encodeURIComponent(q)}`),
 
-  quote: (symbols: string) =>
-    apiFetch<Record<string, { price: number; currency: string; as_of: string }>>(
-      `${ROUTES.stocks.quote}?symbols=${encodeURIComponent(symbols)}`
+  // refresh=true (pull-to-refresh) 면 BE 시세 캐시(45s)를 우회해 새 시세를 받는다.
+  quote: (symbols: string, refresh = false) =>
+    apiFetch<QuoteMap>(
+      `${ROUTES.stocks.quote}?symbols=${encodeURIComponent(symbols)}${refresh ? "&refresh=1" : ""}`
     ),
 };
 
