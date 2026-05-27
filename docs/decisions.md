@@ -4,6 +4,23 @@
 
 ---
 
+## 2026-05-27 | 포트폴리오 요약 시세 조회를 요청 경로에서 분리 (옵션 B) — withQuotes opt-in + holdings additive
+
+- **맥락:** "API 성능 개선" 요청. `/portfolio/summary`(홈 대시보드 단일 데이터 소스)가 요청 처리 중 네이버/야후 시세를 동기 fetch(개별 2s/전체 5s deadline)한 뒤 평가금액·평가손익·총계를 계산 → 외부 API 지연·캐시 미스 시 홈 응답이 통째로 지연. "현재 시세 로직을 BE→FE 이전"과 "API 속도 개선"은 동치가 아님을 확인하고(전자는 옵션 A=FE 네이버 직접 호출, CapacitorHttp/CORS·도메인 중복 부담), 목표가 후자임을 받아 결정.
+- **결정 (옵션 B):**
+  - **`/portfolio/summary` 에 `withQuotes` opt-in 파라미터(default True)** 추가. 신규 FE 만 `withQuotes=false` 전송 → `fetch_quotes_by_keys` skip(시세 의존 필드 null/0, 빠른 응답). 파라미터 미전송 구버전 앱은 기존 시세 포함 응답 그대로 = 하위호환.
+  - **FE 가 기존 BE `/stocks/quote` 를 병렬 호출** → `mergeQuotes`/`applyQuotesToTotals`/`applyQuotesToSnapshots` 로 **시세 의존 필드만** 클라이언트 overlay. 시세 비의존 값(수량/원가/실현손익/현금/월거래수)은 BE 값 그대로.
+  - **`AccountSnapshotResponse.holdings: [{key, quantity}]` additive 필드** 신설 — 계좌별 `totalValue`(계좌 allocation 탭) overlay 에 계좌별 종목 수량이 필요(positions 의 `account_ids` 만으론 다계좌 종목 분배 불가). 2026-05-23 결정문이 "계좌별 수량 미직렬화 → 클라 집계 불가" 를 이유로 BE 필터링을 택했는데, 이번엔 **snapshots 한정**으로 계좌별 수량을 직렬화(`Position` 은 그대로 `account_ids` 만 유지).
+  - **옵션 A(FE 네이버 직접 호출) 기각** — CapacitorHttp/CORS·도메인 중복·웹 dev 분기 부담이 목표 대비 과함.
+- **이유:** ① 두 엔드포인트 모두 BE라 신규 CORS/CapacitorHttp 표면 0, FE trade walker 부활 불필요(`buildPositions` 는 BE 가 제공) → `sort_for_calc` 패리티 리스크 없음. ② additive `holdings` + `withQuotes` default True 로 구버전 앱 무영향(강제 업데이트 불필요). ③ 시세 의존 필드만 overlay → BE `merge_quotes`/`build_totals` 와 공식 동일, shape drift 최소. `buildTotals`/`buildAccountSnapshots`(trades 재순회) 는 BE 불일치 위험으로 재사용 금지.
+- **트레이드오프:**
+  - **버전 skew 크래시(실제 발생·수정 완료):** 신규 FE 가 `.env.production` 으로 빌드돼 **미배포 구 BE** 를 치면 응답에 `holdings` 부재 → `applyQuotesToSnapshots` 가 `undefined` 순회로 `TypeError` → 홈 렌더 크래시(Next.js global-error "This page couldn't load"). `snapshot.holdings ?? []` 가드로 graceful degrade(stockEvaluation 0/현금) 처리. **배포 순서: BE 먼저 → FE.**
+  - 시세 캐시 주체가 summary → `/stocks/quote` 로 이동(여전히 BE 45s single-flight 공유, 외부 호출량 증가 없음).
+  - 계좌별 탭 `stockEvaluation` 은 BE 배포 전까지 0(graceful). **측정(Step 0)은 사용자 결정으로 생략** — 배포 후 효과 미확인 시 진짜 병목 재조사 필요.
+- **재평가 트리거:** ① 분석 대시보드 `/analysis/dashboard` 도 동일 동기 fetch → 같은 패턴 적용 검토(backlog, concentration cost_basis fallback 차이로 별도). ② 배포 후 summary 응답시간 개선이 체감 안 되면 진짜 병목(DB 전량 로드/콜드부트/네트워크 RTT) 재조사 — backlog "포트폴리오/분석 읽기 경로 전량 로드 최적화" 와 연계.
+
+---
+
 ## 2026-05-26 | 앱 강제 업데이트 메커니즘 — BE env 계약 + plain div 오버레이 + 2중 fail-open
 
 - **맥락:** Capacitor 단일 배포 앱은 JS 번들이 빌드 시 박혀 설치되므로, 호환성 깨는 변경(예: BE legacy `/api/*` alias 제거, 2026-05-20 결정문)을 안전하게 진행하려면 옛 번들 사용자를 강제로 새 번들로 이동시키는 수단이 필요했다. 기존엔 그 수단이 없었음.
