@@ -1099,10 +1099,10 @@ class TestTradeBulkDelete:
         sql_calls = _capture_sql(monkeypatch)
         buy_row = _make_trade_row(id_="b1", trade_type="BUY", quantity=10)
         conn = FakeConnection(
-            _to_record(buy_row),         # get_trade_by_id (b1)
+            [_to_record(buy_row)],       # list_trades_by_ids (b1)
             [{"id": "a1", "name": "주식계좌"}],  # repo_list_accounts
             [_to_record(buy_row)],       # list_trades_in_group (group 1)
-            "DELETE 1",                  # delete_trade(b1)
+            "DELETE 1",                  # delete_trades_by_ids
         )
         with _patch_trades(conn):
             resp = trades_client.post("/trades/bulk-delete", json={"ids": ["b1"]})
@@ -1124,13 +1124,11 @@ class TestTradeBulkDelete:
             account_id="a1", ticker="000660", asset_name="SK하이닉스",
         )
         conn = FakeConnection(
-            _to_record(buy_a),                                # get_trade_by_id(b1)
-            _to_record(buy_b),                                # get_trade_by_id(b2)
+            [_to_record(buy_a), _to_record(buy_b)],           # list_trades_by_ids(b1, b2)
             [{"id": "a1", "name": "주식계좌"}],                 # repo_list_accounts
             [_to_record(buy_b)],                              # list_trades_in_group (group "000660" — 먼저)
             [_to_record(buy_a)],                              # list_trades_in_group (group "005930")
-            "DELETE 1",                                       # delete b2 (group "000660")
-            "DELETE 1",                                       # delete b1 (group "005930")
+            "DELETE 2",                                       # delete_trades_by_ids (전체 단일 쿼리)
         )
         with _patch_trades(conn):
             resp = trades_client.post(
@@ -1148,12 +1146,11 @@ class TestTradeBulkDelete:
         assert len(list_in_group) == 2
 
     def test_bulk_delete_missing_id_404(self, trades_client, monkeypatch):
-        """id 중 하나가 None 반환 → 404, DELETE 한 번도 호출되지 않아야 한다."""
+        """조회 결과 개수가 요청보다 적으면 → 404, DELETE 한 번도 호출되지 않아야 한다."""
         sql_calls = _capture_sql(monkeypatch)
         buy_row = _make_trade_row(id_="b1", trade_type="BUY", quantity=10)
         conn = FakeConnection(
-            _to_record(buy_row),  # get_trade_by_id(b1) ok
-            None,                  # get_trade_by_id(b2) → None
+            [_to_record(buy_row)],  # list_trades_by_ids → b1 만 반환 (b2 누락)
         )
         with _patch_trades(conn):
             resp = trades_client.post(
@@ -1177,7 +1174,7 @@ class TestTradeBulkDelete:
             traded_at=_dt("2024-02-01T09:00:00+09:00"),
         )
         conn = FakeConnection(
-            _to_record(buy_row),                          # get_trade_by_id(b1)
+            [_to_record(buy_row)],                        # list_trades_by_ids(b1)
             [{"id": "a1", "name": "주식계좌"}],             # repo_list_accounts
             [_to_record(buy_row), _to_record(sell_row)],  # list_trades_in_group
         )
@@ -1204,12 +1201,10 @@ class TestTradeBulkDelete:
             traded_at=_dt("2024-02-01T09:00:00+09:00"),
         )
         conn = FakeConnection(
-            _to_record(buy_row),                          # get_trade_by_id(b1)
-            _to_record(sell_row),                         # get_trade_by_id(s1)
+            [_to_record(buy_row), _to_record(sell_row)],  # list_trades_by_ids(b1, s1)
             [{"id": "a1", "name": "주식계좌"}],             # repo_list_accounts
             [_to_record(buy_row), _to_record(sell_row)],  # list_trades_in_group (단일 그룹)
-            "DELETE 1",                                   # delete b1
-            "DELETE 1",                                   # delete s1
+            "DELETE 2",                                   # delete_trades_by_ids
         )
         with _patch_trades(conn):
             resp = trades_client.post(
@@ -1227,10 +1222,10 @@ class TestTradeBulkDelete:
             )
 
         monkeypatch.setattr(
-            "invest_note_api.routers.trades.get_trade_by_id",
+            "invest_note_api.routers.trades.list_trades_by_ids",
             raise_invalid_uuid,
         )
-        # acquire_for_user 만 통과시키면 됨 — get_trade_by_id 가 raise 하므로 conn 미사용.
+        # acquire_for_user 만 통과시키면 됨 — list_trades_by_ids 가 raise 하므로 conn 미사용.
         conn = FakeConnection()
         with _patch_trades(conn):
             resp = trades_client.post(

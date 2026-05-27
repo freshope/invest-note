@@ -20,6 +20,7 @@ router = APIRouter(prefix="/stocks")
 @router.get("/quote")
 async def get_quotes(
     symbols: str = Query(default=""),
+    refresh: bool = Query(default=False),
     user: AuthenticatedUser = Depends(get_current_user),
     quote_state: QuoteCacheState = Depends(get_quote_cache_state),
     http_client: httpx.AsyncClient = Depends(get_http_client),
@@ -31,7 +32,7 @@ async def get_quotes(
     if not keys:
         return {}
 
-    return await fetch_quotes_by_keys(quote_state, keys, client=http_client)
+    return await fetch_quotes_by_keys(quote_state, keys, client=http_client, force_refresh=refresh)
 
 
 @router.get("/search")

@@ -252,6 +252,38 @@ class TestPortfolioSummary:
         body = resp.json()
         assert len(body["snapshots"]) == 2  # 전체 계좌 모두
 
+    def test_summary_refresh_param_forwards_force_refresh(self, trades_client):
+        """refresh=1 (pull-to-refresh) → fetch_quotes_by_keys 에 force_refresh=True 전달.
+
+        BE(`refresh`)↔FE(`refresh=1`) 계약을 잠근다 — 한쪽 이름이 바뀌면 freshness 가
+        조용히 깨지므로(시세 캐시 우회 실패) 회귀로 잡는다.
+        """
+        account = _make_account_row(id_="00000000-0000-0000-0000-000000000001")
+        captured: dict = {}
+
+        async def mock_quotes(state, keys, *, client=None, force_refresh=False):
+            captured["force_refresh"] = force_refresh
+            return {}
+
+        async def empty_list(conn_arg, user_id, **kwargs):
+            return []
+
+        for params, expected in (({"refresh": "1"}, True), ({}, False)):
+            captured.clear()
+            conn = FakeConnection([_to_record(account)])
+            with _patch_portfolio(conn):
+                with patch(
+                    "invest_note_api.routers.portfolio.list_trades_with_account",
+                    empty_list,
+                ):
+                    with patch(
+                        "invest_note_api.routers.portfolio.fetch_quotes_by_keys",
+                        mock_quotes,
+                    ):
+                        resp = trades_client.get("/portfolio/summary", params=params)
+            assert resp.status_code == 200
+            assert captured["force_refresh"] is expected
+
     def test_summary_with_nonexistent_account_filter(self, trades_client):
         """존재하지 않는 accountId 가 들어와도 has_accounts 는 글로벌 기준으로 true, has_trades 는 false."""
         account_a1 = _make_account_row(id_="00000000-0000-0000-0000-000000000001")

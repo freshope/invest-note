@@ -4,6 +4,24 @@
 
 ---
 
+## 2026-05-26 | 앱 강제 업데이트 메커니즘 — BE env 계약 + plain div 오버레이 + 2중 fail-open
+
+- **맥락:** Capacitor 단일 배포 앱은 JS 번들이 빌드 시 박혀 설치되므로, 호환성 깨는 변경(예: BE legacy `/api/*` alias 제거, 2026-05-20 결정문)을 안전하게 진행하려면 옛 번들 사용자를 강제로 새 번들로 이동시키는 수단이 필요했다. 기존엔 그 수단이 없었음.
+- **결정:**
+  - **저장소·계약:** BE env `MIN_SUPPORTED_VERSION`(단일, 양 플랫폼 공통) + `STORE_URL_IOS`/`STORE_URL_ANDROID`. 인증 없는 `GET /app-config` 가 `{minSupportedVersion, storeUrl:{ios,android}}`(CamelModel) 로 응답. legacy `/api/*` alias 등록 루프에서는 제외.
+  - **비교 단위:** `versionName`(semver "1.1.13") — `App.getInfo().version`(iOS `CFBundleShortVersionString` / Android `versionName`). build/`versionCode` 는 플랫폼별로 갈리고 재심사 시 변동되어 미사용.
+  - **단일 min 버전:** 플랫폼별 분리 대신 공통 단일값. lockout 방지는 "양 스토어 모두 신버전 승인 후에만 min 인상" 운영 규칙으로 처리.
+  - **오버레이:** Radix Dialog 가 아닌 plain fixed `inset-0` div — ESC·외부 클릭이 본래 동작하지 않아 자동 차단. Android 하드웨어 백버튼만 명시적으로 swallow.
+  - **하드 업데이트만:** 해제 불가 강제만 구현. "최신 버전" 안내·소프트(권장) 업데이트는 제외.
+- **이유:** ① `versionName` 은 양 스토어가 공유하는 유일한 안정 식별자 — `versionCode`/build 는 플랫폼·재심사마다 어긋남. ② plain div 오버레이는 Dialog 의 dismiss 경로(ESC/backdrop)를 원천적으로 갖지 않아 가장 단순하게 해제 불가를 보장 — Dialog 를 쓰면 오히려 dismiss 를 막는 코드를 추가해야 함. ③ 단일 min + 운영 규칙이 플랫폼별 min 관리보다 단순하고 lockout 표면적이 작음. ④ public `/app-config` 는 인증 의존이 없어 로그인 전에도 게이트가 동작.
+- **트레이드오프:**
+  - **baseline 한계:** 체크 로직이 포함된 이번 릴리즈 이후 번들부터만 강제 가능. 이미 배포된 옛 번들은 `/app-config` 를 호출하지 않으므로 강제 불가 — 설계상 불가피하며 이번 릴리즈가 향후 강제 업데이트의 baseline.
+  - **fail-open 2중 방어:** env 미설정(빈 문자열) → 강제 안 함, 네트워크 실패 → 강제 안 함. lockout 위험을 낮추는 대신 BE 장애 시 강제 업데이트가 일시 무력화됨.
+  - 단일 min 버전이라 한 플랫폼만 먼저 승인된 상황에서 min 을 올리면 미승인 플랫폼 사용자가 lockout — "양 스토어 승인 후 인상" 운영 규칙 준수에 의존. Apple App ID 미발급 상태라 `STORE_URL_IOS` 주입은 첫 출시 후로 미뤄짐(빈 URL 모달 방지 위해 URL 먼저 설정 후 min 인상).
+- **재평가 트리거:** ① 플랫폼별 출시 주기가 크게 어긋나 단일 min 운영이 부담되면 플랫폼별 min 분리. ② 소프트(권장) 업데이트 UX 요구가 생기면 강제/권장 2단계로 확장. ③ 강제 업데이트 게이트가 모든 사용자를 새 번들로 옮긴 시점 → legacy `/api/*` alias 제거(2026-05-20 결정문 3단계) 진행.
+
+---
+
 ## 2026-05-23 | 홈 계좌 필터 — BE `/portfolio/summary` 에 accountId 도입 + invalidate scope 확대
 
 - **맥락:** 메인(`HomeDashboard`)에 계좌 필터 칩을 추가. 2026-05-03 결정문은 AccountFilter 를 "클라 메모리 필터링(BE 영향 0)" 으로 정의했으나, 이는 기록 페이지(`TradeList`)의 단순 리스트 필터에만 한정된 결정이었음. 메인의 집계는 BE 도메인 로직(`build_positions`/`build_account_snapshots`/`build_totals`)을 거쳐 다단계로 계산되므로 클라이언트만으로는 정확히 좁힐 수 없음.

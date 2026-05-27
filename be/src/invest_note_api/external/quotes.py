@@ -1,7 +1,8 @@
 """시세 fetch — Naver Finance (KR).
 
-캐싱: TTLCache(maxsize=512, ttl=10) + asyncio.Lock으로 symbol:country 키별 10초 in-memory 캐시.
-pull-to-refresh 직후 새 시세를 받을 수 있도록 짧게 설정.
+캐싱: TTLCache(maxsize, ttl) + asyncio.Lock으로 symbol:country 키별 in-memory 캐시.
+baseline TTL 은 길게 두고, pull-to-refresh 는 `force_refresh=True`(라우터의 `refresh=1`)로
+캐시를 우회해 새 시세를 받는다.
 
 캐시 상태(`QuoteCacheState`)는 `app.state.quote_cache` 에 보관하고 라우터에서
 `Depends(get_quote_cache_state)` 로 주입한다.
@@ -23,11 +24,12 @@ from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, MAX_CODE_LEN
 from invest_note_api.domain.trade_utils import position_key
 from invest_note_api.external.constants import (
     CURRENCY_KRW,
-    HTTP_TIMEOUT_SECONDS,
     NAVER_BASIC_URL,
     NAVER_REALTIME_URL,
+    QUOTE_ATTEMPT_TIMEOUT,
     QUOTE_CACHE_MAXSIZE,
     QUOTE_CACHE_TTL,
+    QUOTE_FETCH_DEADLINE,
     USER_AGENT,
     YAHOO_CHART_URL,
 )
@@ -94,7 +96,7 @@ async def _try_endpoint(
     code: str,
 ) -> QuoteResult | None:
     try:
-        res = await client.get(url, headers=_HEADERS, timeout=HTTP_TIMEOUT_SECONDS)
+        res = await client.get(url, headers=_HEADERS, timeout=QUOTE_ATTEMPT_TIMEOUT)
         if res.status_code == 200:
             price = parse_price(res.json())
             if price > 0:
@@ -143,10 +145,16 @@ async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult |
     return None
 
 
-async def _get_cached(state: QuoteCacheState, key: str, fetch_fn) -> dict | None:
-    """동일 키 동시 요청은 single-flight — 첫 호출자만 fetch_fn 실행."""
+async def _get_cached(
+    state: QuoteCacheState, key: str, fetch_fn, *, force_refresh: bool = False
+) -> dict | None:
+    """동일 키 동시 요청은 single-flight — 첫 호출자만 fetch_fn 실행.
+
+    force_refresh=True 면 캐시 hit 을 무시하고 새로 fetch 한다 (단, 진행 중인 fetch 가
+    있으면 stampede 회피를 위해 그 결과를 공유). fetch 는 QUOTE_FETCH_DEADLINE 으로 캡.
+    """
     async with state.lock:
-        if key in state.cache:
+        if not force_refresh and key in state.cache:
             return state.cache[key]
         existing = state.inflight.get(key)
         if existing is not None:
@@ -160,7 +168,7 @@ async def _get_cached(state: QuoteCacheState, key: str, fetch_fn) -> dict | None
         return await future
 
     try:
-        result = await fetch_fn()
+        result = await asyncio.wait_for(fetch_fn(), QUOTE_FETCH_DEADLINE)
     except Exception as exc:
         async with state.lock:
             state.inflight.pop(key, None)
@@ -181,10 +189,12 @@ async def fetch_quotes_by_keys(
     keys: list[str],
     *,
     client: httpx.AsyncClient,
+    force_refresh: bool = False,
 ) -> dict[str, QuoteResult | None]:
     """keys 형식: "종목코드:국가" (예: "005930:KR"). KR 외 국가는 MVP에서 null.
 
     `client` 는 라우터의 `Depends(get_http_client)` 로 주입받은 lifespan-managed 공유 인스턴스.
+    `force_refresh=True` (pull-to-refresh) 면 캐시를 우회해 새 시세를 받는다.
     """
     if not keys:
         return {}
@@ -203,6 +213,7 @@ async def fetch_quotes_by_keys(
             state,
             position_key(e["code"], DEFAULT_COUNTRY),
             lambda code=e["code"]: _fetch_kr_price(client, code),
+            force_refresh=force_refresh,
         )
         for e in kr_entries
     ]
