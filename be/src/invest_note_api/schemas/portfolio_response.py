@@ -35,11 +35,17 @@ class PositionResponse(CamelModel):
     account_ids: list[str]
 
 
+class AccountHoldingResponse(CamelModel):
+    key: str
+    quantity: float
+
+
 class AccountSnapshotResponse(CamelModel):
     account: AccountSnakeResponse
     stock_evaluation: float
     cash_balance: float
     total_value: float
+    holdings: list[AccountHoldingResponse]
 
 
 class DashboardTotalsResponse(CamelModel):
