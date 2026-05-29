@@ -878,6 +878,73 @@ class TestImportPreviewValidation:
         assert excluded_count == 3
 
 
+class TestImportPreviewExchange:
+    """회귀: 일괄 import staging 시 exchange 가 Naver 매칭 결과로 채워져야 한다.
+
+    과거엔 라우터가 exchange 를 ''로 하드코딩하고 resolve_tickers 도 code 만 반환해
+    import 된 모든 거래의 exchange 가 빈 값이 되던 버그가 있었다.
+    """
+
+    def _preview(self, trades_client, *, ticker_hint=None, match_exchange="KOSPI"):
+        from invest_note_api.broker_import.base import ParsedTrade, ParseResult
+
+        parse_result = ParseResult(trades=[
+            ParsedTrade(
+                source_row_no=1,
+                traded_at_kst="2024-01-10",
+                trade_type="BUY",
+                asset_name="삼성전자",
+                quantity=10,
+                price=70000,
+                ticker_hint=ticker_hint,
+            )
+        ])
+
+        class _FakeParser:
+            key = "toss"
+            display_name = "토스증권"
+
+            def parse(self, file_bytes, filename):
+                return parse_result
+
+        async def fake_match(_q, **_kw):
+            return {
+                "code": "005930",
+                "name": "삼성전자",
+                "market": "KR",
+                "exchange": match_exchange,
+            }
+
+        conn = FakeConnection()  # list_trades → []
+        with patch.dict(
+            "invest_note_api.routers.trades.PARSERS",
+            {"toss": _FakeParser()}, clear=False,
+        ), patch(
+            "invest_note_api.broker_import.ticker_resolver.find_first_kr_match",
+            fake_match,
+        ), _patch_trades(conn):
+            resp = trades_client.post(
+                "/trades/import/preview?broker_key=toss",
+                files={"file": ("toss.pdf", b"%PDF-1.4 dummy", "application/pdf")},
+            )
+
+        assert resp.status_code == 200, resp.text
+        staging_id = resp.json()["staging_id"]
+        return trades_client.app.state.trade_staging.cache[staging_id]["rows"]
+
+    def test_naver_resolved_exchange_is_staged(self, trades_client):
+        rows = self._preview(trades_client)
+        assert len(rows) == 1
+        assert rows[0]["exchange"] == "KOSPI"
+
+    def test_hinted_ticker_still_gets_exchange_from_naver(self, trades_client):
+        # 토스 PDF 처럼 파일에 코드(hint)가 박혀 있어도 exchange 는 Naver 에서 채워야 한다.
+        rows = self._preview(trades_client, ticker_hint="005930", match_exchange="KOSDAQ")
+        assert len(rows) == 1
+        assert rows[0]["ticker_symbol"] == "005930"
+        assert rows[0]["exchange"] == "KOSDAQ"
+
+
 class TestGetTrade:
     def test_get_404(self, trades_client):
         conn = FakeConnection(None)

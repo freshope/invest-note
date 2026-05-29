@@ -666,14 +666,15 @@ async def import_preview(
     ]
 
     for pt in parse_result.trades:
-        ticker = ticker_map.get(pt.asset_name)
-        if ticker is None:
+        resolved = ticker_map.get(pt.asset_name)
+        if resolved is None:
             unresolved_ticker_count += 1
             parse_errors.append(ImportError(
                 row_no=pt.source_row_no,
                 reason=f"ticker 미해결: {pt.asset_name} — 종목명에서 코드를 찾지 못함",
             ))
             continue
+        ticker = resolved["code"]
 
         # traded_at 파싱 (KST → UTC)
         traded_date = parse_kst_date(pt.traded_at_kst)
@@ -712,7 +713,7 @@ async def import_preview(
             "commission": pt.commission,
             "tax": pt.tax,
             "country_code": DEFAULT_COUNTRY,
-            "exchange": "",
+            "exchange": resolved["exchange"],
             "_sig_date": kst_str,
             "_sig_ticker": ticker,
             "_sig_asset": pt.asset_name,

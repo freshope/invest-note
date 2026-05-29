@@ -11,23 +11,38 @@ from invest_note_api.external import naver_search
 
 
 @pytest.mark.asyncio
-async def test_ticker_hint_takes_priority_over_naver():
-    """ticker_hints 에 코드가 있으면 Naver 호출 없이 그대로 사용."""
-    async def boom(_q, **_kw):
-        raise AssertionError("Naver 호출 발생")
+async def test_ticker_hint_provides_code_naver_provides_exchange():
+    """ticker_hints 의 코드는 권위로 쓰되, exchange 는 Naver 매칭에서 채운다."""
+    async def fake_match(_q, **_kw):
+        return {"code": "005930", "name": "삼성전자", "market": "KR", "exchange": "KOSPI"}
 
-    with patch("invest_note_api.broker_import.ticker_resolver.find_first_kr_match", boom):
+    with patch("invest_note_api.broker_import.ticker_resolver.find_first_kr_match", fake_match):
         result = await resolve_tickers(
             asset_names={"삼성전자"},
             ticker_hints={"삼성전자": "005930"},
         )
 
-    assert result == {"삼성전자": "005930"}
+    assert result == {"삼성전자": {"code": "005930", "exchange": "KOSPI"}}
+
+
+@pytest.mark.asyncio
+async def test_ticker_hint_keeps_code_when_naver_misses():
+    """hint 코드가 있는데 Naver 가 매칭 못하면 code 는 유지, exchange 만 빈 값."""
+    async def fake_match(_q, **_kw):
+        return None
+
+    with patch("invest_note_api.broker_import.ticker_resolver.find_first_kr_match", fake_match):
+        result = await resolve_tickers(
+            asset_names={"삼성전자"},
+            ticker_hints={"삼성전자": "005930"},
+        )
+
+    assert result == {"삼성전자": {"code": "005930", "exchange": ""}}
 
 
 @pytest.mark.asyncio
 async def test_naver_match_short_alias():
-    """약칭 '현대차' → Naver 1순위 '현대자동차' 매칭."""
+    """약칭 '현대차' → Naver 1순위 '현대자동차' 매칭 (code + exchange)."""
     async def fake_match(_q, **_kw):
         return {"code": "FAKE_HMC", "name": "현대자동차", "market": "KR", "exchange": "KOSPI"}
 
@@ -37,12 +52,12 @@ async def test_naver_match_short_alias():
             ticker_hints={},
         )
 
-    assert result == {"현대차": "FAKE_HMC"}
+    assert result == {"현대차": {"code": "FAKE_HMC", "exchange": "KOSPI"}}
 
 
 @pytest.mark.asyncio
 async def test_naver_match_etf_full_name():
-    """ETF 정확명 'TIGER 미국S&P500' → mock 코드 매핑 검증."""
+    """ETF 정확명 'TIGER 미국S&P500' → mock 코드 + exchange 매핑 검증."""
     async def fake_match(_q, **_kw):
         return {"code": "FAKE_TIGER", "name": "TIGER 미국S&P500", "market": "KR", "exchange": "ETF"}
 
@@ -52,7 +67,7 @@ async def test_naver_match_etf_full_name():
             ticker_hints={},
         )
 
-    assert result == {"TIGER 미국S&P500": "FAKE_TIGER"}
+    assert result == {"TIGER 미국S&P500": {"code": "FAKE_TIGER", "exchange": "ETF"}}
 
 
 @pytest.mark.asyncio
@@ -75,7 +90,7 @@ async def test_parallel_lookup_for_multiple_names():
     """미해결 이름들이 asyncio.gather 로 병렬 조회되어 모두 매핑됨."""
     fake_db = {
         "삼성전자": {"code": "FAKE_SS", "name": "삼성전자", "market": "KR", "exchange": "KOSPI"},
-        "카카오": {"code": "FAKE_KAKAO", "name": "카카오", "market": "KR", "exchange": "KOSPI"},
+        "카카오": {"code": "FAKE_KAKAO", "name": "카카오", "market": "KR", "exchange": "KOSDAQ"},
         "없는종목": None,
     }
 
@@ -88,15 +103,21 @@ async def test_parallel_lookup_for_multiple_names():
             ticker_hints={},
         )
 
-    assert result == {"삼성전자": "FAKE_SS", "카카오": "FAKE_KAKAO", "없는종목": None}
+    assert result == {
+        "삼성전자": {"code": "FAKE_SS", "exchange": "KOSPI"},
+        "카카오": {"code": "FAKE_KAKAO", "exchange": "KOSDAQ"},
+        "없는종목": None,
+    }
 
 
 @pytest.mark.asyncio
 async def test_mixed_hints_and_naver_fallback():
-    """ticker_hints + Naver fallback 혼합 케이스."""
+    """ticker_hints(코드 권위) + Naver(exchange) 혼합 케이스."""
     async def fake_match(q, **_kw):
         if q == "현대차":
             return {"code": "FAKE_HMC", "name": "현대자동차", "market": "KR", "exchange": "KOSPI"}
+        if q == "삼성전자":
+            return {"code": "005930", "name": "삼성전자", "market": "KR", "exchange": "KOSPI"}
         return None
 
     with patch("invest_note_api.broker_import.ticker_resolver.find_first_kr_match", fake_match):
@@ -105,7 +126,10 @@ async def test_mixed_hints_and_naver_fallback():
             ticker_hints={"삼성전자": "005930"},
         )
 
-    assert result == {"삼성전자": "005930", "현대차": "FAKE_HMC"}
+    assert result == {
+        "삼성전자": {"code": "005930", "exchange": "KOSPI"},
+        "현대차": {"code": "FAKE_HMC", "exchange": "KOSPI"},
+    }
 
 
 @pytest.mark.asyncio
