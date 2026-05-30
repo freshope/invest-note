@@ -11,7 +11,7 @@ import pytest
 
 from invest_note_api.schemas.trade import TRADE_FREE_TEXT_MAX_LEN, TradeCreate
 from tests.conftest import TEST_USER_ID
-from tests.fake_pool import FakeConnection, make_fake_acquire
+from tests.fake_pool import FakeConnection, make_fake_acquire, make_fake_pool
 
 
 def _dt(s: str) -> datetime:
@@ -907,21 +907,25 @@ class TestImportPreviewExchange:
             def parse(self, file_bytes, filename):
                 return parse_result
 
-        async def fake_match(_q, **_kw):
+        async def fake_lookup(_conn, names, **_kw):
             return {
-                "code": "005930",
-                "name": "삼성전자",
-                "market": "KR",
-                "exchange": match_exchange,
+                "삼성전자": {
+                    "code": "005930",
+                    "name": "삼성전자",
+                    "market": "KR",
+                    "exchange": match_exchange,
+                }
             }
 
         conn = FakeConnection()  # list_trades → []
+        from invest_note_api.db import get_pool
+        trades_client.app.dependency_overrides[get_pool] = lambda: make_fake_pool()
         with patch.dict(
             "invest_note_api.routers.trades.PARSERS",
             {"toss": _FakeParser()}, clear=False,
         ), patch(
-            "invest_note_api.broker_import.ticker_resolver.find_first_kr_match",
-            fake_match,
+            "invest_note_api.db_ops.stocks_repo.lookup_by_names",
+            fake_lookup,
         ), _patch_trades(conn):
             resp = trades_client.post(
                 "/trades/import/preview?broker_key=toss",

@@ -10,7 +10,6 @@ from datetime import date, datetime, time, timedelta, timezone
 
 import asyncpg
 import cachetools
-import httpx
 from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 
@@ -18,7 +17,6 @@ from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.db import acquire_for_user, get_pool
 from invest_note_api.db_ops.accounts_repo import list_accounts as repo_list_accounts
-from invest_note_api.external.http_client import get_http_client
 from invest_note_api.db_ops.pnl_sync import recalc_group_pnl
 from invest_note_api.db_ops.trades_repo import (
     PNL_AFFECTING_FIELDS,
@@ -601,7 +599,6 @@ async def import_preview(
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
     staging: TradeStagingState = Depends(get_trade_staging_state),
-    http_client: httpx.AsyncClient = Depends(get_http_client),
 ) -> ImportPreviewResponse:
     """파일을 파싱해 중복 체크 후 staging cache에 저장한다. commit 전에 호출."""
     filename = file.filename or ""
@@ -626,11 +623,12 @@ async def import_preview(
 
     now_utc = datetime.now(timezone.utc)
 
-    # ticker 해결 (lifespan-managed 공유 httpx client 사용)
+    # ticker 해결 (로컬 stocks 마스터 조회 — public 테이블이라 plain connection)
     asset_names = {t.asset_name for t in parse_result.trades}
     ticker_hints = {t.asset_name: t.ticker_hint for t in parse_result.trades if t.ticker_hint}
 
-    ticker_map = await resolve_tickers(asset_names, ticker_hints, client=http_client)
+    async with pool.acquire() as conn:
+        ticker_map = await resolve_tickers(asset_names, ticker_hints, conn=conn)
 
     # 기존 거래에서 시그니처 셋 구성 (중복 판단용)
     # 파싱 결과의 KST 일자 min/max 범위로만 fetch — 사용자 전체 trades fetch 회피.
