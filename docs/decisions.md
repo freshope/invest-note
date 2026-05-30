@@ -4,6 +4,26 @@
 
 ---
 
+## 2026-05-30 | 종목 검색/매칭을 자체 stocks 마스터로 전환 (2026-04-28 Naver 단일화 역전)
+
+- **맥락:** 2026-04-28 에 종목 검색·일괄 import 매칭을 Naver 자동완성 단일 경로로 단순화하고 `stocks` 마스터를 폐기(`016_drop_stocks.sql`)했었다. 폐기 사유는 ① coverage(KIND 시드가 ETF/ETN/우선주 누락), ② matchability(정확 일치만 → 약칭 불가). 이번에 backlog 재도입 트리거 ①(ETF/약칭 커버 소스 확보)을 동기로, 자체 데이터 운영으로 재추진. 사용자 결정: **런타임 Naver 완전 대체** + 검색·import 양쪽 적용 + 해외 포함 설계 + **주기 갱신** + **다중 소스** + **Naver 도 적재 소스로 사용**.
+- **결정:**
+  - `stocks` 마스터 재도입(`020_recreate_stocks.sql`): (country_code, ticker) PK, `market` CHECK 제거(ETF/ETN 수용), `pg_trgm` + `name_chosung`(초성) + `stock_aliases`(alias_chosung 포함).
+  - **런타임은 로컬 DB 만 조회**(외부 호출 0): `routers/stocks.py:/search` → `stocks_repo.search`, `broker_import/ticker_resolver.py` → `stocks_repo.lookup_by_names`. 검색 우선순위 ticker/명 prefix/별칭/초성(명+별칭)/부분일치(trgm).
+  - **Naver 는 런타임 fallback 이 아니라 적재(batch) enrichment 소스**: `scripts/seed_stocks.py` 가 다중 소스(공공데이터포털 금융위 coverage + Naver 약칭 + 교차 소스 명칭 변형)를 멱등 UPSERT 하고, 상폐는 `is_active` soft-delete. `external/naver_search.py` 는 런타임에서 빠지고 seed enrichment 용으로만 유지.
+  - 약칭(공식 소스에 없음)은 **수동 시드 + 종목별 Naver 교차검증(이름 변형) + 교차 소스 변형명**으로 자체 소유.
+- **이유:** ① "런타임 완전 대체 + Naver 적재" 를 분리하면 검색/import 가 외부 의존·지연 0 이면서도 Naver 의 약칭 해소력을 offline 으로 흡수 → 폐기 사유(matchability)를 정면 해소. ② trades 가 stocks 를 FK 참조 안 함(`001_initial_schema.sql`) → 거래 데이터 무영향. stocks/aliases 는 public read-only 라 RLS 미적용. ③ 응답 shape(`code/name/market/exchange`) 를 Naver 검색과 동일하게 유지 → FE 무변경(`exchange`=보드 KOSPI/ETF 는 `stocks.market` 에서 매핑, `stocks.exchange`='KRX' 아님).
+- **트레이드오프:**
+  - **데이터 미적재 시 검색/import 가 degraded**(빈 결과). 마이그레이션+코드 배포 후 seed 가 1회 돌기 전까지 비어 있다. **배포 순서: 마이그레이션 → seed 1회 실행 → 기능 정상.**
+  - **coverage = 다중 소스 순차 병합(`021_seed_source_state.sql`).** fallback(택1) 아님 — 우선순위 순으로 모든 소스를 병합: 첫 번째로 데이터를 반환한 소스가 canonical(이름 authority, overwrite), 이후 소스는 신규 ticker 추가 + 같은 ticker 인데 이름 다르면 그 이름을 `stock_aliases(source=소스명)` 로 등록. soft-delete 는 어떤 소스에도 없는 ticker 기준(`updated_at` 아님 — skip 과 양립). 소스 우선순위: data.go.kr(공식, 키 필요) → FDR(`finance-datareader`, 키 불필요, `seed` poetry 그룹). data.go.kr 다운이면 FDR 가 authority.
+  - **효율화(변경 드문 데이터):** 소스별 내용 fingerprint(sha256) 를 `seed_source_state` 에 저장 → 무변경 소스는 UPSERT/별칭 skip, 아무 소스도 안 바뀌면 soft-delete 도 skip. 무변경 run = fetch + 해시비교만. 가드: `stocks` 가 비어있으면(db reset/out-of-band wipe) stale fingerprint 를 무효화해 전체 재적재.
+  - **종목별 출처 기록(`023`, `stocks.source`):** canonical(이름·시장)을 소유한 authority 소스를 종목마다 기록(`fdr`|`data_go_kr`|...). authority 가 overwrite 시 갱신, 하위 소스 preserve 시 보존. 어느 소스 분류를 신뢰 중인지 추적 → market 불일치 판정·소스 전환 추적에 활용.
+  - **종목별 Naver 교차검증(`022`, `stocks.naver_checked_at`):** 미검증 종목을 코드로 Naver 조회해 ① 이름 변형→별칭, ② 시장(typeCode) 교차검증. `naver_checked_at` 으로 종목당 1회만(신규만 추가 질의), 병렬(동시 8) + run 당 batch(1500)로 rate-limit·전수호출 비용 가드. 실측: 이름은 거의 일치(별칭 ~0), 시장 불일치 다수(FDR 가 ETF/KR 에 포함한 알파벳코드 종목을 Naver 는 KOSPI 로 분류 — ELW/파생 오분류 의심). 현재는 불일치 **집계·보고만**(자동 수정 안 함).
+  - 실측: FDR 로 주식 2878 + ETF 1130 = **ETF 포함 확인**(스파이크 해소). **ETN 은 FDR 미지원 → 미커버(후속, 별도 소스).** data.go.kr 은 2026-05-30 키 체계 변경(base64→64hex)·신규 키 활성화 지연(401→403)으로 당일 사용 불가 → FDR 만으로 운영 가능. KRX 공식 OpenAPI 는 "비상업적" 제약이라 상업 앱엔 부적합(제외).
+  - 약칭 초기 커버리지 < Naver(수동 시드 수준) → 수동 시드 확충으로 보완(자동 약칭 수집/검색-miss 환류는 미도입).
+  - 주기 batch(cron 1일 1회) 유지 비용 = 이전 폐기의 "마스터 유지 비용". 멱등 스크립트로 최소화.
+- **재평가 트리거:** ① data.go.kr 가 ETF/ETN 미포함으로 확인되면 ETF/ETN 별도 소스 wiring. ② Naver 적재 차단/포맷 변경 시 enrichment 만 graceful skip(런타임 검색은 무중단). ③ 해외 종목 적재 착수 시 currency/거래소/환율 설계.
+
 ## 2026-05-27 | 포트폴리오 요약 시세 조회를 요청 경로에서 분리 (옵션 B) — withQuotes opt-in + holdings additive
 
 - **맥락:** "API 성능 개선" 요청. `/portfolio/summary`(홈 대시보드 단일 데이터 소스)가 요청 처리 중 네이버/야후 시세를 동기 fetch(개별 2s/전체 5s deadline)한 뒤 평가금액·평가손익·총계를 계산 → 외부 API 지연·캐시 미스 시 홈 응답이 통째로 지연. "현재 시세 로직을 BE→FE 이전"과 "API 속도 개선"은 동치가 아님을 확인하고(전자는 옵션 A=FE 네이버 직접 호출, CapacitorHttp/CORS·도메인 중복 부담), 목표가 후자임을 받아 결정.

@@ -3,6 +3,14 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from invest_note_api.db import get_pool
+from tests.fake_pool import FakeConnection, make_fake_pool
+
+
+def _use_fake_pool(client, conn: FakeConnection | None = None) -> None:
+    """search 엔드포인트의 pool.acquire() 가 동작하도록 get_pool 을 fake pool 로 override."""
+    client.app.dependency_overrides[get_pool] = lambda: make_fake_pool(conn)
+
 
 class TestStocksQuote:
     def test_quote_ok(self, trades_client):
@@ -58,32 +66,35 @@ class TestStocksQuote:
 
 
 class TestStocksSearch:
-    def test_search_kr_by_korean(self, trades_client):
-        async def mock_search_kr(q, *, client=None):
+    def test_search_by_korean(self, trades_client):
+        async def mock_search(conn, q, **kw):
             return [{"code": "005930", "name": "삼성전자", "market": "KR", "exchange": "KOSPI"}]
 
-        with patch("invest_note_api.routers.stocks.search_kr", mock_search_kr):
+        _use_fake_pool(trades_client)
+        with patch("invest_note_api.db_ops.stocks_repo.search", mock_search):
             resp = trades_client.get("/stocks/search", params={"q": "삼성"})
 
         assert resp.status_code == 200
         assert resp.json()[0]["code"] == "005930"
         assert resp.json()[0]["market"] == "KR"
 
-    def test_search_kr_by_6digit_code(self, trades_client):
-        async def mock_search_kr(q, *, client=None):
-            return [{"code": "005930", "name": "삼성전자", "market": "KR", "exchange": ""}]
+    def test_search_by_6digit_code(self, trades_client):
+        async def mock_search(conn, q, **kw):
+            return [{"code": "005930", "name": "삼성전자", "market": "KR", "exchange": "KOSPI"}]
 
-        with patch("invest_note_api.routers.stocks.search_kr", mock_search_kr):
+        _use_fake_pool(trades_client)
+        with patch("invest_note_api.db_ops.stocks_repo.search", mock_search):
             resp = trades_client.get("/stocks/search", params={"q": "005930"})
 
         assert resp.status_code == 200
         assert resp.json()[0]["market"] == "KR"
 
-    def test_search_english_returns_empty_in_mvp(self, trades_client):
-        async def mock_search_kr(q, *, client=None):
+    def test_search_no_match_returns_empty(self, trades_client):
+        async def mock_search(conn, q, **kw):
             return []
 
-        with patch("invest_note_api.routers.stocks.search_kr", mock_search_kr):
+        _use_fake_pool(trades_client)
+        with patch("invest_note_api.db_ops.stocks_repo.search", mock_search):
             resp = trades_client.get("/stocks/search", params={"q": "apple"})
         assert resp.status_code == 200
         assert resp.json() == []

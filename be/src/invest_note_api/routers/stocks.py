@@ -1,13 +1,16 @@
 """stocks 라우터 — quote + search."""
 from __future__ import annotations
 
+import asyncpg
 import httpx
 from fastapi import APIRouter, Depends, Query
 
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
+from invest_note_api.db import get_pool
+from invest_note_api.db_ops import stocks_repo
+from invest_note_api.db_ops.stocks_repo import StockSearchResult
 from invest_note_api.external.http_client import get_http_client
-from invest_note_api.external.naver_search import StockSearchResult, search_kr
 from invest_note_api.external.quotes import (
     QuoteCacheState,
     fetch_quotes_by_keys,
@@ -39,10 +42,12 @@ async def get_quotes(
 async def search_stocks(
     q: str = Query(default=""),
     user: AuthenticatedUser = Depends(get_current_user),
-    http_client: httpx.AsyncClient = Depends(get_http_client),
+    pool: asyncpg.Pool = Depends(get_pool),
 ) -> list[StockSearchResult]:
     q = q.strip()
     if not q or len(q) > 100:
         return []
 
-    return await search_kr(q, client=http_client)
+    # stocks 는 public read-only 마스터 — RLS 미적용이라 plain connection 으로 조회.
+    async with pool.acquire() as conn:
+        return await stocks_repo.search(conn, q)
