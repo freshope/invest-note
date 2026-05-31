@@ -394,6 +394,12 @@ def _build_pipeline(api_key: str) -> list[tuple[str, Callable[[], Awaitable[list
 async def seed(db_url: str, *, api_key: str) -> None:
     conn = await asyncpg.connect(db_url, statement_cache_size=0)
     try:
+        # 다중 인스턴스 동시 실행 가드 — Coolify scheduled task 는 replica 마다 cron 을 붙이므로
+        # 같은 시각에 여러 인스턴스가 이 스크립트를 동시 실행할 수 있다. session advisory lock 을
+        # 못 잡으면 이미 다른 인스턴스가 실행 중이니 즉시 no-op 으로 빠진다(deadlock·중복 Naver 호출 방지).
+        if not await conn.fetchval("select pg_try_advisory_lock(hashtext('seed_stocks'))"):
+            print("다른 인스턴스가 실행 중 — skip")
+            return
         # fingerprint skip 은 "seed_source_state 가 stocks 내용을 반영한다"를 전제한다.
         # DB 가 out-of-band 로 비워지면(db reset/수동 wipe) stale fingerprint 가 재적재를 막으므로,
         # stocks 가 비어있으면 state 를 무효화해 전체 재적재를 강제한다.
@@ -451,6 +457,7 @@ async def seed(db_url: str, *, api_key: str) -> None:
 
         print("완료.")
     finally:
+        # session advisory lock 은 conn.close() 로 세션이 닫히면 자동 해제된다.
         await conn.close()
 
 
