@@ -4,6 +4,23 @@
 
 ---
 
+## 2026-06-01 | 종목 적재 data.go.kr 단일화(FDR 폐기) + 시가총액 + 국민연금 + 웹 라우터 실행
+
+- **맥락:** stocks 마스터 적재가 data.go.kr(authority) + FDR(fallback) 2소스였고 CLI로만 실행, 스케줄 미설정. 사용자 결정: **FDR 폐기**하고 data.go.kr 공식 OpenAPI로 단일화, 시가총액·시총순위 보강, 적재를 **웹 라우터(+스케줄)로 트리거**. UI는 미변경(아이콘 노출은 후속 FE). **국민연금 적재는 조사 후 보류 → backlog**.
+- **결정:**
+  - **FDR 제거**: `fetch_finance_data_reader`·`finance-datareader`(seed poetry 그룹) 삭제. 키 없는 fallback이 사라져 **data.go.kr 키가 hard 의존성으로 격상**.
+  - **소스 = data.go.kr 3개 서비스(상호보완)**: KRX상장종목정보(`getItemInfo`, 주식 name authority) + 증권상품시세(`getETF/ETNPriceInfo`, **ETF/ETN coverage = FDR 대체** + 시총) + 주식시세(`getStockPriceInfo`, 주식 시총). 증권상품시세는 coverage 파이프라인(preserve 소스)과 marcap 단계 양쪽에 사용. 기존 authority/preserve/fingerprint/Naver 프레임워크 유지.
+  - **시총(`024_stocks_marcap.sql`)**: `marcap`(bigint), `marcap_rank`(int, 주식 KOSPI+KOSDAQ 시총 내림차순 window 순위; ETF/ETN·미적재 NULL), `marcap_as_of`(basDt). marcap은 매일 변동 → **fingerprint skip 우회 always-run**. 시세 API는 **basDt(직전 영업일) 날짜키** + T+1 발행이라 빈 응답 시 최대 7일 거슬러 fallback. basDt(YYYYMMDD str)는 date 컬럼이라 `_basdt_to_date`로 변환(실DB 검증으로 잡은 버그).
+  - **웹 라우터**: `POST /admin/seed/stocks` — `X-Admin-Token` 헤더(env `ADMIN_TOKEN`, constant-time 비교) guard → `BackgroundTasks`로 즉시 202. **백그라운드 seed는 `Depends(get_pool)` 미사용** — CLI처럼 자체 `asyncpg.connect()`(session advisory lock 수 분 보유 → 풀 차용 시 고갈·lock leak 방지).
+  - **모듈 이동**: seed 본체 `scripts/seed_stocks.py` → `src/invest_note_api/services/stock_seed.py`(라우터·CLI 공유). scripts는 thin shim(sys.path 보존).
+  - **국민연금 적재 보류**: 단일 컬럼/수동 업로드 설계까지 마쳤으나, odcloud 자동 fetch가 **연도별 uddi 상이·최신 지칭 엔드포인트 없음**으로 자동화 부적합 + 연 1회 데이터라 가치 대비 비용 큼 → 이번 범위에서 제외하고 backlog 이관(조사 결과 `docs/backlog.md` 보존).
+- **스케줄:** 외부 cron / Coolify scheduled task가 매일 ~14:00 KST(FSC T+1 발행 이후) 호출. 중복=advisory lock, 무변경=fingerprint-skip 가드.
+  ```
+  curl -fsS -X POST -H "X-Admin-Token: $ADMIN_TOKEN" https://<api>/admin/seed/stocks
+  ```
+- **트레이드오프/리스크:** ① 증권상품시세·주식시세는 **서비스별 활용신청 별도 필요**(같은 serviceKey) — 누락 시 `SERVICE_KEY_IS_NOT_REGISTERED`(403). ② 신규 fetcher 응답 키(`srtnCd`/`itmsNm`/`mrktTotAmt`)는 **스파이크 미해소**(실서버 확인 필요, 코드에 ⚠️ 주석). ③ marcap_rank는 verbatim SQL이라 이전에 순위 있던 종목이 marcap fetch에서 빠지면 stale rank 잔존(엣지).
+- **재평가 트리거:** getItemInfo의 ETF/ETN 포함 여부 실측 → 포함 시 증권상품시세는 marcap 전용으로 축소 가능.
+
 ## 2026-05-30 | 종목 검색/매칭을 자체 stocks 마스터로 전환 (2026-04-28 Naver 단일화 역전)
 
 - **맥락:** 2026-04-28 에 종목 검색·일괄 import 매칭을 Naver 자동완성 단일 경로로 단순화하고 `stocks` 마스터를 폐기(`016_drop_stocks.sql`)했었다. 폐기 사유는 ① coverage(KIND 시드가 ETF/ETN/우선주 누락), ② matchability(정확 일치만 → 약칭 불가). 이번에 backlog 재도입 트리거 ①(ETF/약칭 커버 소스 확보)을 동기로, 자체 데이터 운영으로 재추진. 사용자 결정: **런타임 Naver 완전 대체** + 검색·import 양쪽 적용 + 해외 포함 설계 + **주기 갱신** + **다중 소스** + **Naver 도 적재 소스로 사용**.

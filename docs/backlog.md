@@ -40,6 +40,17 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 머지 갱신 범위 확장 재검토 — 현재 머지는 `commission`/`tax`/`traded_at` 만 update, `market_type`/`country_code`/`exchange` 는 사용자 분류를 우선해 **보존**(`docs/decisions.md` 2026-05-18 참고). 다음 트리거 발생 시 재검토: ① 사용자가 거래내역서로 분류 자동 보정을 명시적으로 원함, ② 증권사 파서가 사용자 수동 분류보다 더 정확한 케이스가 다수 보고됨. 재검토 시 `update_trade_from_import` 화이트리스트와 `build_merge_patch` 비교 필드를 함께 확장
 - [ ] 다운로드 가이드 콘텐츠 검수 — `fe/src/components/records/ImportTradesPanel/brokers.ts` 의 `downloadGuide` 는 AI 1차 초안(`TODO` 주석 표시). 삼성증권 mPOP/토스 앱과 실제 화면 대조 후 단계 텍스트·`helpUrl` 수정. 증권사 앱 UI 개편 시 깨질 수 있어 분기별 점검 또는 사용자 신고 트리거 시 갱신. 캡처 이미지 단계 안내가 더 효과적이라 판단되면 별도 spec 으로 보강
 
+## 종목 메타데이터 — 국민연금 보유 표시 (2026-06-01 조사 완료, 적재 보류)
+
+시총(marcap/marcap_rank)·마켓 적재는 `feature/stocks-data-go-kr-nps`(data.go.kr 단일화)에서 구현. **국민연금 보유 적재는 사용자 결정으로 보류** → 아래 조사 결과 보존(재조사 방지).
+
+- [ ] **국민연금 보유종목 적재** — `stocks.nps_holding` 단일 컬럼(null=미보유 / `'held'`=보유 / `'major'`=5%+) + `POST /admin/seed/nps` **수동 CSV 업로드**(전체보유/5%+ 두 파일). 전체 KR 종목 일괄 재계산(새 스냅샷에 없으면 null 리셋) + 빈 스냅샷 skip 가드(전체보유 0건이면 전체 null 방지).
+  - **자료원 3계층:** Tier1 전체보유(data.go.kr [3070507](https://www.data.go.kr/data/3070507/fileData.do), 연1회·~9개월 지연, 유일한 전체 커버리지) / Tier2 5%+ 대량보유([15106890](https://www.data.go.kr/data/15106890/fileData.do), 분기·이벤트, 커버리지 ~23%·~276종목) / Tier0 월간 자산군 합계(종목단위 없음 → 사용 불가).
+  - **자동 fetch 불가 결론:** odcloud 자동변환 API는 **연도별 uddi가 전부 다르고**(최신 지칭 엔드포인트 없음, UUID라 유추 불가), 데이터셋의 uddi 목록을 주는 공개 API 없음, 상세페이지는 JS 셸이라 정적 스크래핑 불가. 연 1회 데이터라 **수동 업로드가 적합**(스케줄 자동화 제외).
+  - **스파이크(실파일 확인 필요):** NPS CSV 컬럼명·인코딩(cp949 가능)·**종목코드 유무**. 종목코드 없이 종목명만 오면 `stocks_repo.lookup_by_names`로 해소하되 ~1200행 직렬 검색은 batch 처리 필요.
+  - **의미 주의:** "국민연금 보유"는 최대 ~1.7년 지연 스냅샷 → 아이콘/UI에 **기준일 명시** 필요(현재 보유로 오인 방지).
+- [ ] **종목명 옆 메타 아이콘 표시 (FE)** — 마켓(KOSPI/KOSDAQ, 이미 `stocks.market`)·시총순위(`marcap_rank`)·국민연금(`nps_holding`) 아이콘. `/stocks/search` 등 응답 shape 확장 + FE 뱃지(기존 `ExchangeBadge`/`CountryBadge` 패턴). 위 적재 선행.
+
 ## 모바일앱 (v2.5) 잔여
 
 - [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리
