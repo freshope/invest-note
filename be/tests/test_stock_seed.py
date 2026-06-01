@@ -1,0 +1,215 @@
+"""stock_seed 시세 fetcher · basDt fallback · admin 토큰 검증 테스트.
+
+네트워크 의존은 httpx.MockTransport 로 차단. DB 통합(marcap_rank window)은 실DB 미사용이라 생략.
+"""
+from __future__ import annotations
+
+from unittest.mock import AsyncMock
+
+import httpx
+import pytest
+
+from invest_note_api.services import stock_seed
+
+
+def _body(items: list[dict]) -> dict:
+    """data.go.kr JSON 응답 envelope 로 감싼다."""
+    return {"response": {"body": {"items": {"item": items}}}}
+
+
+def _mock_client(handler) -> httpx.AsyncClient:
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+# ─────────────────────────── fetch_stock_prices ───────────────────────────
+
+
+async def test_fetch_stock_prices_parses_ticker_and_marcap():
+    def handler(req: httpx.Request) -> httpx.Response:
+        # 첫 후보 basDt 에서 바로 응답.
+        return httpx.Response(
+            200,
+            json=_body(
+                [
+                    {"srtnCd": "A005930", "mrktTotAmt": "400000000000000"},
+                    {"srtnCd": "000660", "mrktTotAmt": "90000000000000"},
+                ]
+            ),
+        )
+
+    async with _mock_client(handler) as client:
+        rows = await stock_seed.fetch_stock_prices("key", client=client)
+
+    assert {r["ticker"]: r["marcap"] for r in rows} == {
+        "005930": 400000000000000,
+        "000660": 90000000000000,
+    }
+    assert all(r["bas_dt"] for r in rows)
+
+
+async def test_fetch_stock_prices_empty_response_returns_empty():
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_body([]))
+
+    async with _mock_client(handler) as client:
+        rows = await stock_seed.fetch_stock_prices("key", client=client)
+
+    assert rows == []
+
+
+async def test_fetch_stock_prices_pages_through_full_pages():
+    calls: list[int] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        page = int(req.url.params["pageNo"])
+        calls.append(page)
+        if page == 1:
+            items = [{"srtnCd": f"{i:06d}", "mrktTotAmt": "1000"} for i in range(stock_seed._PAGE_SIZE)]
+            return httpx.Response(200, json=_body(items))
+        return httpx.Response(200, json=_body([{"srtnCd": "999999", "mrktTotAmt": "2000"}]))
+
+    async with _mock_client(handler) as client:
+        rows = await stock_seed.fetch_stock_prices("key", client=client)
+
+    assert calls[:2] == [1, 2]
+    assert len(rows) == stock_seed._PAGE_SIZE + 1
+    assert rows[-1] == {"ticker": "999999", "marcap": 2000, "bas_dt": rows[-1]["bas_dt"]}
+
+
+# ─────────────────────────── fetch_securities_products ───────────────────────────
+
+
+async def test_fetch_securities_products_tags_etf_and_etn():
+    def handler(req: httpx.Request) -> httpx.Response:
+        if "getETFPriceInfo" in str(req.url):
+            return httpx.Response(
+                200, json=_body([{"srtnCd": "069500", "itmsNm": "KODEX 200", "mrktTotAmt": "5000000"}])
+            )
+        if "getETNPriceInfo" in str(req.url):
+            return httpx.Response(
+                200, json=_body([{"srtnCd": "530031", "itmsNm": "신한 ETN", "mrktTotAmt": "300000"}])
+            )
+        return httpx.Response(200, json=_body([]))
+
+    async with _mock_client(handler) as client:
+        rows = await stock_seed.fetch_securities_products("key", client=client)
+
+    by_ticker = {r["ticker"]: r for r in rows}
+    assert by_ticker["069500"]["market"] == "ETF"
+    assert by_ticker["069500"]["marcap"] == 5000000
+    assert by_ticker["069500"]["asset_name"] == "KODEX 200"
+    assert by_ticker["530031"]["market"] == "ETN"
+    assert by_ticker["530031"]["marcap"] == 300000
+
+
+async def test_fetch_securities_products_missing_marcap_is_none():
+    def handler(req: httpx.Request) -> httpx.Response:
+        if "getETFPriceInfo" in str(req.url):
+            return httpx.Response(200, json=_body([{"srtnCd": "069500", "itmsNm": "KODEX 200"}]))
+        return httpx.Response(200, json=_body([]))
+
+    async with _mock_client(handler) as client:
+        rows = await stock_seed.fetch_securities_products("key", client=client)
+
+    assert rows[0]["marcap"] is None
+
+
+# ─────────────────────────── basDt fallback ───────────────────────────
+
+
+async def test_basdt_fallback_retries_earlier_dates_on_empty():
+    """첫 후보(직전일)가 빈 응답이면 이전 날짜를 시도하고, 첫 비어있지 않은 응답을 채택."""
+    seen: list[str] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        bas_dt = req.url.params["basDt"]
+        seen.append(bas_dt)
+        # 처음 2개 후보는 빈 응답(주말/미발행), 3번째에 데이터.
+        if len(seen) <= 2:
+            return httpx.Response(200, json=_body([]))
+        return httpx.Response(200, json=_body([{"srtnCd": "005930", "mrktTotAmt": "100"}]))
+
+    async with _mock_client(handler) as client:
+        items, bas_dt = await stock_seed._fetch_with_basdt_fallback(
+            client, stock_seed._STOCK_PRICE_URL, "key"
+        )
+
+    assert len(seen) == 3
+    assert bas_dt == seen[2]
+    assert items[0]["srtnCd"] == "005930"
+
+
+async def test_basdt_fallback_all_empty_returns_none():
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_body([]))
+
+    async with _mock_client(handler) as client:
+        items, bas_dt = await stock_seed._fetch_with_basdt_fallback(
+            client, stock_seed._STOCK_PRICE_URL, "key"
+        )
+
+    assert items == []
+    assert bas_dt is None
+
+
+def test_recent_basdt_candidates_are_descending_and_bounded():
+    cands = stock_seed._recent_basdt_candidates()
+    assert len(cands) == stock_seed._BASDT_MAX_LOOKBACK
+    # 최신(직전일)이 먼저, 거슬러 갈수록 작아진다.
+    assert cands == sorted(cands, reverse=True)
+
+
+def test_basdt_to_date_converts_yyyymmdd():
+    # marcap_as_of 는 date 컬럼 — basDt 문자열을 date 로 변환해야 asyncpg DataError 가 안 난다.
+    from datetime import date
+
+    assert stock_seed._basdt_to_date("20260530") == date(2026, 5, 30)
+    assert stock_seed._basdt_to_date(None) is None
+    assert stock_seed._basdt_to_date("") is None
+    assert stock_seed._basdt_to_date("bad") is None
+
+
+# ─────────────────────────── require_admin_token ───────────────────────────
+
+
+def _admin_client(admin_token: str):
+    from fastapi.testclient import TestClient
+
+    from invest_note_api.config import Settings, get_settings
+    from invest_note_api.main import create_app
+
+    settings = Settings(supabase_url="https://test.supabase.co", admin_token=admin_token)
+    app = create_app(settings)
+    app.dependency_overrides[get_settings] = lambda: settings
+    return TestClient(app)
+
+
+def test_admin_seed_rejects_missing_token():
+    client = _admin_client("secret")
+    r = client.post("/admin/seed/stocks")
+    assert r.status_code == 403
+
+
+def test_admin_seed_rejects_wrong_token():
+    client = _admin_client("secret")
+    r = client.post("/admin/seed/stocks", headers={"X-Admin-Token": "wrong"})
+    assert r.status_code == 403
+
+
+def test_admin_seed_rejects_when_token_unset_even_with_empty_header():
+    # admin_token 미설정 → compare_digest("","") 함정 방어. 빈 헤더로도 통과하면 안 된다.
+    client = _admin_client("")
+    r = client.post("/admin/seed/stocks", headers={"X-Admin-Token": ""})
+    assert r.status_code == 403
+
+
+def test_admin_seed_accepts_valid_token_returns_202(monkeypatch):
+    # run_seed 가 실제 DB 에 연결하지 않도록 BackgroundTasks 진입점을 no-op 으로 교체.
+    async def noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr("invest_note_api.routers.admin.run_seed", noop)
+    client = _admin_client("secret")
+    r = client.post("/admin/seed/stocks", headers={"X-Admin-Token": "secret"})
+    assert r.status_code == 202
+    assert r.json() == {"status": "started"}

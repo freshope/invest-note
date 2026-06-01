@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     # 빈 값이면 data.go.kr coverage pass 를 건너뛴다(다른 소스만 적재).
     data_go_kr_api_key: str = ""
 
+    # 관리자 트리거 라우터(POST /admin/seed/*) 인증 토큰. X-Admin-Token 헤더와 constant-time 비교.
+    # 빈 값이면 admin 엔드포인트는 항상 거부(미설정=차단).
+    admin_token: str = ""
+
     model_config = SettingsConfigDict(env_file=".env.local", extra="ignore")
 
     @property
