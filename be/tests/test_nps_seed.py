@@ -53,6 +53,17 @@ def test_clean_name_strips_annotations():
     assert nps_seed.clean_name("삼성전자") == "삼성전자"  # 주석 없으면 그대로
 
 
+def test_clean_name_strips_corp_prefix():
+    # major(발행기관명) 접두 법인격 표기 제거 — '(주)녹십자'→'녹십자'
+    assert nps_seed.clean_name("(주)녹십자") == "녹십자"
+    assert nps_seed.clean_name("㈜케이씨씨") == "케이씨씨"
+    assert nps_seed.clean_name("(주) 농심") == "농심"
+    # 접미 '(주)'는 기존 _ANNOTATION_RE 가 제거(회귀 보존)
+    assert nps_seed.clean_name("엘지이노텍(주)") == "엘지이노텍"
+    # 우선주명의 '우' 는 보존(접두 표기만 제거)
+    assert nps_seed.clean_name("CJ4우(전환)") == "CJ4우"
+
+
 def test_latest_path_picks_max_date():
     oas = {
         "paths": {

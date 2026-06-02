@@ -19,8 +19,8 @@
   - Naver 교차검증은 naver_checked_at 으로 종목당 1회만(신규 종목만 추가 질의).
   - 단, marcap 은 매일 변동하므로 fingerprint 와 무관하게 항상 갱신.
 
-현재 소스: data.go.kr(공공데이터, 키 필요) — KRX상장종목정보(주식 authority) + 증권상품시세(ETF/ETN coverage)
-+ 주식/증권상품시세 marcap. FDR 폐기.
+현재 소스: data.go.kr(공공데이터, 키 필요) — KRX상장종목정보(주식 authority, 보통주) + 주식시세(우선주 coverage)
++ 증권상품시세(ETF/ETN coverage) + 주식/증권상품시세 marcap. FDR 폐기.
 """
 
 import asyncio
@@ -466,12 +466,13 @@ async def fetch_securities_products(
 async def fetch_stock_prices(
     api_key: str, *, client: httpx.AsyncClient | None = None
 ) -> list[dict]:
-    """주식시세(15094808) getStockPriceInfo — 주식 시가총액 조회.
+    """주식시세(15094808) getStockPriceInfo — 주식 시가총액 + 종목명/시장 조회.
 
-    basDt 직전 영업일 fallback 으로 호출. 반환 item: {ticker, marcap, bas_dt}.
+    basDt 직전 영업일 fallback 으로 호출. 반환 item: {ticker, asset_name, market, marcap, bas_dt}.
 
-    ⚠️ 스파이크: 실제 응답 키 확인 필요 — srtnCd(코드)/mrktTotAmt(시총)로 추정.
-    serviceKey 가 예외 메시지로 새지 않도록 호출자(update_marcap)가 status code 만 로깅한다.
+    getItemInfo(authority)와 달리 우선주(005935 등, mrktCtg=KOSPI/KOSDAQ)를 포함하므로
+    종목 마스터 보강 소스(stock_prices)로도 쓰인다. marcap 은 update_marcap 이 ticker 로만 머지한다.
+    응답 키: srtnCd(코드)/itmsNm(종목명)/mrktCtg(시장)/mrktTotAmt(시총).
     """
     rows: list[dict] = []
 
@@ -481,7 +482,13 @@ async def fetch_stock_prices(
             ticker = _parse_ticker(it)
             if not ticker:
                 continue
-            rows.append({"ticker": ticker, "marcap": _parse_marcap_item(it), "bas_dt": bas_dt})
+            rows.append({
+                "ticker": ticker,
+                "asset_name": (it.get("itmsNm") or "").strip(),
+                "market": (it.get("mrktCtg") or "").strip(),
+                "marcap": _parse_marcap_item(it),
+                "bas_dt": bas_dt,
+            })
 
     if client is None:
         async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT}, timeout=_DATA_GO_KR_TIMEOUT) as owned:
@@ -658,6 +665,25 @@ def _build_pipeline(api_key: str) -> list[tuple[str, Callable[[], Awaitable[list
             print(f"  [data_go_kr] 실패({f'HTTP {status}' if status else type(e).__name__}) — skip")
             return []
 
+    async def _stock_prices() -> list[dict]:
+        # 주식시세 = 우선주 coverage. authority(getItemInfo)는 우선주를 반환하지 않으므로,
+        # 하위(preserve) 소스로 우선주(005935 등) 신규 ticker 를 이름·시장과 함께 보강한다.
+        # 기존 보통주 ticker 는 canonical 보존 + 변형명 별칭. marcap 은 여기서 무시(이름·market 만)
+        # — 시총은 always-run update_marcap 단계가 담당(fingerprint 안정성).
+        if not api_key:
+            return []
+        try:
+            rows = await fetch_stock_prices(api_key)
+        except Exception as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            print(f"  [stock_prices] 실패({f'HTTP {status}' if status else type(e).__name__}) — skip")
+            return []
+        return [
+            {"ticker": r["ticker"], "asset_name": r["asset_name"], "market": r["market"]}
+            for r in rows
+            if r.get("ticker") and r.get("asset_name")
+        ]
+
     async def _securities() -> list[dict]:
         # 증권상품시세 = ETF/ETN coverage(FDR 대체). 하위(preserve) 소스라 신규 ticker(ETF/ETN)는
         # 이름과 함께 insert 되고, data_go_kr 가 이미 가진 ticker 는 canonical 보존 + 변형명 별칭.
@@ -677,7 +703,7 @@ def _build_pipeline(api_key: str) -> list[tuple[str, Callable[[], Awaitable[list
             if r.get("ticker") and r.get("asset_name")
         ]
 
-    return [("data_go_kr", _dgk), ("securities", _securities)]
+    return [("data_go_kr", _dgk), ("stock_prices", _stock_prices), ("securities", _securities)]
 
 
 async def seed(db_url: str, *, api_key: str) -> None:

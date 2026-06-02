@@ -64,11 +64,14 @@ _MAJOR = {
 
 # NPS 종목명 후행 부기 주석 — '(배당)'/'(무상)'/'(전환)'/'무상(보)' 등. 매칭 전 제거.
 _ANNOTATION_RE = re.compile(r"\s*(?:무상|배당|유상)?\([^)]*\)\s*$")
+# major(발행기관명)에만 붙는 접두 법인격 표기 '(주)'/'㈜'. 접미 '(주)'는 _ANNOTATION_RE 가 처리.
+_CORP_PREFIX_RE = re.compile(r"^\s*(?:\(주\)|㈜)\s*")
 
 
 def clean_name(name: str) -> str:
-    """NPS 종목명에서 후행 부기 주석 제거. '셀트리온(배당)'→'셀트리온', '동원산업무상(보)'→'동원산업'."""
-    return _ANNOTATION_RE.sub("", name or "").strip()
+    """NPS 종목명 정제. '셀트리온(배당)'→'셀트리온', '동원산업무상(보)'→'동원산업', '(주)녹십자'→'녹십자'."""
+    s = _CORP_PREFIX_RE.sub("", name or "")
+    return _ANNOTATION_RE.sub("", s).strip()
 
 
 def _to_date(yyyymmdd: str) -> date | None:

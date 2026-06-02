@@ -22,15 +22,15 @@ def _mock_client(handler) -> httpx.AsyncClient:
 # ─────────────────────────── fetch_stock_prices ───────────────────────────
 
 
-async def test_fetch_stock_prices_parses_ticker_and_marcap():
+async def test_fetch_stock_prices_parses_ticker_marcap_name_market():
     def handler(req: httpx.Request) -> httpx.Response:
-        # 첫 후보 basDt 에서 바로 응답.
+        # 첫 후보 basDt 에서 바로 응답. 우선주(005935)도 mrktCtg 와 함께 포함.
         return httpx.Response(
             200,
             json=_body(
                 [
-                    {"srtnCd": "A005930", "mrktTotAmt": "400000000000000"},
-                    {"srtnCd": "000660", "mrktTotAmt": "90000000000000"},
+                    {"srtnCd": "A005930", "itmsNm": "삼성전자", "mrktCtg": "KOSPI", "mrktTotAmt": "400000000000000"},
+                    {"srtnCd": "A005935", "itmsNm": "삼성전자우", "mrktCtg": "KOSPI", "mrktTotAmt": "50000000000000"},
                 ]
             ),
         )
@@ -38,10 +38,11 @@ async def test_fetch_stock_prices_parses_ticker_and_marcap():
     async with _mock_client(handler) as client:
         rows = await stock_seed.fetch_stock_prices("key", client=client)
 
-    assert {r["ticker"]: r["marcap"] for r in rows} == {
-        "005930": 400000000000000,
-        "000660": 90000000000000,
-    }
+    by_ticker = {r["ticker"]: r for r in rows}
+    assert by_ticker["005930"]["marcap"] == 400000000000000
+    # 우선주 종목명/시장이 종목 마스터 보강에 쓰이도록 파싱된다.
+    assert by_ticker["005935"]["asset_name"] == "삼성전자우"
+    assert by_ticker["005935"]["market"] == "KOSPI"
     assert all(r["bas_dt"] for r in rows)
 
 
@@ -71,7 +72,8 @@ async def test_fetch_stock_prices_pages_through_full_pages():
 
     assert calls[:2] == [1, 2]
     assert len(rows) == stock_seed._PAGE_SIZE + 1
-    assert rows[-1] == {"ticker": "999999", "marcap": 2000, "bas_dt": rows[-1]["bas_dt"]}
+    assert rows[-1]["ticker"] == "999999"
+    assert rows[-1]["marcap"] == 2000
 
 
 # ─────────────────────────── fetch_securities_products ───────────────────────────
@@ -141,7 +143,9 @@ async def test_fetch_stock_prices_handles_single_item_dict():
     async with _mock_client(handler) as client:
         rows = await stock_seed.fetch_stock_prices("key", client=client)
 
-    assert rows == [{"ticker": "005930", "marcap": 100, "bas_dt": rows[0]["bas_dt"]}]
+    assert len(rows) == 1
+    assert rows[0]["ticker"] == "005930"
+    assert rows[0]["marcap"] == 100
 
 
 # ─────────────────────────── basDt fallback ───────────────────────────
@@ -180,6 +184,13 @@ async def test_basdt_fallback_all_empty_returns_none():
 
     assert items == []
     assert bas_dt is None
+
+
+def test_pipeline_order_authority_then_stock_prices_then_securities():
+    # data_go_kr(authority, 보통주) 다음에 stock_prices(우선주 보강), securities(ETF/ETN) 순.
+    # authority 가 첫 소스여야 종목명이 canonical 로 확립되고, 우선주는 preserve 로 보강된다.
+    names = [name for name, _ in stock_seed._build_pipeline("key")]
+    assert names == ["data_go_kr", "stock_prices", "securities"]
 
 
 def test_recent_basdt_candidates_are_descending_and_bounded():
