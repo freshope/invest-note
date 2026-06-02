@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 
 from invest_note_api.auth.admin import require_admin_token
 from invest_note_api.config import Settings, get_settings
+from invest_note_api.services.nps_seed import seed_nps
 from invest_note_api.services.stock_seed import seed
 
 logger = logging.getLogger(__name__)
@@ -34,4 +35,23 @@ async def trigger_seed_stocks(
 ) -> dict:
     db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
     background_tasks.add_task(run_seed, db_url, settings.data_go_kr_api_key)
+    return {"status": "started"}
+
+
+async def run_seed_nps(db_url: str, api_key: str) -> None:
+    """백그라운드 NPS 적재 래퍼 — seed_nps 가 자체 asyncpg.connect 로 동작(seed/stocks 와 동일 이유)."""
+    try:
+        await seed_nps(db_url, api_key=api_key)
+    except Exception:
+        logger.exception("admin seed/nps 백그라운드 실행 실패")
+
+
+@router.post("/seed/nps", status_code=202)
+async def trigger_seed_nps(
+    background_tasks: BackgroundTasks,
+    _: None = Depends(require_admin_token),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+    background_tasks.add_task(run_seed_nps, db_url, settings.data_go_kr_api_key)
     return {"status": "started"}

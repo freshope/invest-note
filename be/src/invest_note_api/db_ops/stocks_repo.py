@@ -115,3 +115,56 @@ async def lookup_by_names(
         if matches:
             result[name] = matches[0]
     return result
+
+
+# ─────────────────────────── 국민연금(NPS) 보유 적재 ───────────────────────────
+
+
+async def reset_nps_holding(conn: Any, *, country_code: str = DEFAULT_COUNTRY) -> int:
+    """전체 KR 종목의 nps_holding/nps_as_of 를 NULL 로 초기화. 새 스냅샷 재계산 직전 호출."""
+    result = await conn.execute(
+        "update stocks set nps_holding = null, nps_as_of = null, updated_at = now() "
+        "where country_code = $1 and nps_holding is not null",
+        country_code,
+    )
+    return int(result.split()[-1]) if result.startswith("UPDATE") else 0
+
+
+async def set_nps_holding(
+    conn: Any,
+    tickers: set[str],
+    level: str,
+    as_of: Any,
+    *,
+    country_code: str = DEFAULT_COUNTRY,
+) -> int:
+    """주어진 ticker 들의 nps_holding=level, nps_as_of=as_of 설정.
+
+    'held' 먼저 → 'major' 로 덮어쓰는 순서로 호출하면 둘 다 보유한 종목은 'major' 가 우선한다.
+    """
+    if not tickers:
+        return 0
+    result = await conn.execute(
+        "update stocks set nps_holding = $3, nps_as_of = $4, updated_at = now() "
+        "where country_code = $1 and ticker = any($2::text[])",
+        country_code,
+        list(tickers),
+        level,
+        as_of,
+    )
+    return int(result.split()[-1]) if result.startswith("UPDATE") else 0
+
+
+async def upsert_nps_unmatched(conn: Any, rows: list[dict]) -> int:
+    """종목명→ticker 매칭 실패분을 reconcile 큐(nps_unmatched)에 upsert.
+
+    rows: [{nps_name, nps_as_of(date), holding_level}]. PK(nps_name, nps_as_of) 멱등.
+    """
+    if not rows:
+        return 0
+    await conn.executemany(
+        "insert into nps_unmatched (nps_name, nps_as_of, holding_level) values ($1, $2, $3) "
+        "on conflict (nps_name, nps_as_of) do update set holding_level = excluded.holding_level",
+        [(r["nps_name"], r["nps_as_of"], r["holding_level"]) for r in rows],
+    )
+    return len(rows)

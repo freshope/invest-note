@@ -49,6 +49,9 @@ _STOCK_PRICE_URL = (
     "https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getStockPriceInfo"
 )
 _PAGE_SIZE = 1000
+# apis.data.go.kr 게이트웨이는 정상 응답도 느리고(0.7~20초) 종종 30초를 넘긴다. 느린 응답이
+# ReadTimeout 으로 버려지지 않게 data.go.kr 호출 클라이언트는 timeout 을 넉넉히 둔다.
+_DATA_GO_KR_TIMEOUT = 60
 _NAVER_CONCURRENCY = 8          # Naver 자동완성 동시 호출 상한(rate-limit 가드)
 _NAVER_STOCK_BATCH = 1500       # 종목별 교차검증 1회 run 당 처리 상한(첫 전수 검증은 여러 run 분산)
 _BASDT_MAX_LOOKBACK = 7         # basDt 직전 영업일 fallback 최대 거슬러 일수(주말/휴장 대응)
@@ -244,36 +247,91 @@ def _extract_items(payload: dict) -> list[dict]:
     return item if isinstance(item, list) else []
 
 
-async def fetch_data_go_kr(api_key: str) -> list[dict]:
-    """공공데이터포털 금융위 KRX상장종목정보 — coverage(전 종목) 조회.
+# apis.data.go.kr(금융위 1160100 게이트웨이)는 정상 응답도 14~18초로 느리고, 같은 요청이
+# 404 HTML 오류페이지·무응답을 간헐적으로 반환한다(엔드포인트·키는 정상). 일시 장애로 보이는
+# 상태코드/전송오류만 재시도한다.
+_RETRYABLE_STATUS = {404, 408, 429, 500, 502, 503, 504}
 
-    ⚠️ 첫 실행 검증(스파이크): 응답 필드명(srtnCd/itmsNm/mrktCtg)·ETF/ETN 포함 여부를 실제 키로 확인.
+
+async def _get_with_retry(
+    client: httpx.AsyncClient, url: str, params: dict, *, retries: int = 6
+) -> httpx.Response:
+    """data.go.kr 게이트웨이 간헐 장애(404/타임아웃)를 backoff 재시도로 흡수.
+
+    재시도 대상이 아닌 4xx(파라미터 오류 등)는 즉시 raise 한다. 마지막 시도 실패도 raise.
+    """
+    for attempt in range(retries):
+        try:
+            res = await client.get(url, params=params)
+            res.raise_for_status()
+            return res
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code not in _RETRYABLE_STATUS or attempt == retries - 1:
+                raise
+        except httpx.TransportError:
+            if attempt == retries - 1:
+                raise
+        await asyncio.sleep(1.5 * (attempt + 1))
+    raise RuntimeError("unreachable")  # 루프가 항상 return/raise 로 끝난다(타입체커용).
+
+
+def _parse_item(it: dict) -> dict | None:
+    """getItemInfo item → {ticker, asset_name, market}. ticker/name 결측은 None."""
+    ticker = (it.get("srtnCd") or "").strip().lstrip("A")[-6:]
+    name = (it.get("itmsNm") or "").strip()
+    market = (it.get("mrktCtg") or "").strip()
+    if ticker and name:
+        return {"ticker": ticker, "asset_name": name, "market": market}
+    return None
+
+
+async def fetch_data_go_kr(api_key: str) -> list[dict]:
+    """공공데이터포털 금융위 KRX상장종목정보 getItemInfo — 직전 영업일 basDt 의 전 종목 coverage.
+
+    ⚠️ basDt 미지정 시 전체 과거 이력(수백만 행)이 와 사실상 무한 페이징이 된다. 반드시 직전
+    영업일을 지정하고, 주말·휴장은 _recent_basdt_candidates 로 거슬러 fallback 한다.
+    게이트웨이 간헐 404/타임아웃은 _get_with_retry 가 흡수한다.
     """
     rows: list[dict] = []
-    page = 1
-    async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT}, timeout=30) as client:
-        while True:
-            res = await client.get(
+    async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT}, timeout=_DATA_GO_KR_TIMEOUT) as client:
+        # basDt fallback: 첫 후보로 1페이지 받아 비어있지 않으면 그 basDt 로 확정 후 전 페이지 수집.
+        items: list[dict] = []
+        bas_dt: str | None = None
+        for candidate in _recent_basdt_candidates():
+            res = await _get_with_retry(
+                client,
                 _DATA_GO_KR_URL,
-                params={
+                {
+                    "serviceKey": api_key,
+                    "resultType": "json",
+                    "numOfRows": _PAGE_SIZE,
+                    "pageNo": 1,
+                    "basDt": candidate,
+                },
+            )
+            items = _extract_items(res.json())
+            if items:
+                bas_dt = candidate
+                break
+        if bas_dt is None:
+            return []  # 최근 영업일 후보 전부 빈 응답
+        rows.extend(r for it in items if (r := _parse_item(it)))
+
+        page = 2
+        while len(items) == _PAGE_SIZE:
+            res = await _get_with_retry(
+                client,
+                _DATA_GO_KR_URL,
+                {
                     "serviceKey": api_key,
                     "resultType": "json",
                     "numOfRows": _PAGE_SIZE,
                     "pageNo": page,
+                    "basDt": bas_dt,
                 },
             )
-            res.raise_for_status()
             items = _extract_items(res.json())
-            if not items:
-                break
-            for it in items:
-                ticker = (it.get("srtnCd") or "").strip().lstrip("A")[-6:]
-                name = (it.get("itmsNm") or "").strip()
-                market = (it.get("mrktCtg") or "").strip()
-                if ticker and name:
-                    rows.append({"ticker": ticker, "asset_name": name, "market": market})
-            if len(items) < _PAGE_SIZE:
-                break
+            rows.extend(r for it in items if (r := _parse_item(it)))
             page += 1
     return rows
 
@@ -311,9 +369,10 @@ async def _fetch_marcap_page(
     rows: list[dict] = []
     page = 1
     while True:
-        res = await client.get(
+        res = await _get_with_retry(
+            client,
             url,
-            params={
+            {
                 "serviceKey": api_key,
                 "resultType": "json",
                 "numOfRows": _PAGE_SIZE,
@@ -321,7 +380,6 @@ async def _fetch_marcap_page(
                 "basDt": bas_dt,
             },
         )
-        res.raise_for_status()
         items = _extract_items(res.json())
         if not items:
             break
@@ -398,7 +456,7 @@ async def fetch_securities_products(
                 )
 
     if client is None:
-        async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT}, timeout=30) as owned:
+        async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT}, timeout=_DATA_GO_KR_TIMEOUT) as owned:
             await _run(owned)
     else:
         await _run(client)
@@ -426,7 +484,7 @@ async def fetch_stock_prices(
             rows.append({"ticker": ticker, "marcap": _parse_marcap_item(it), "bas_dt": bas_dt})
 
     if client is None:
-        async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT}, timeout=30) as owned:
+        async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT}, timeout=_DATA_GO_KR_TIMEOUT) as owned:
             await _run(owned)
     else:
         await _run(client)
