@@ -4,6 +4,25 @@
 
 ---
 
+## 2026-06-02 | 국민연금 적재 "자동 fetch 불가" 판정 철회 — odcloud OpenAPI 자동화 가능
+
+- **맥락:** 2026-06-01 결정에서 국민연금 적재를 "odcloud 자동 fetch 부적합(연도별 uddi 상이·최신 지칭 엔드포인트 없음·목록 조회 공개 API 없음)" 이유로 보류했다. 재조사 결과 **그 4개 근거 중 "목록 조회 공개 API 없음" 하나가 오류**였다. 이전 조사는 data.go.kr `fileData`(JS 셸) 페이지만 보고 **`infuser.odcloud.kr/oas/docs?namespace=<id>/v1`** 라는 인증 불필요·기계판독 OpenAPI 목록 엔드포인트를 놓쳤다. 나머지(연도별 uddi 상이 등)는 여전히 사실이나 OAS 목록+날짜 정렬로 우회된다.
+- **실호출 검증(2026-06-02, 활성 키):**
+  - **Discovery:** `GET infuser.odcloud.kr/oas/docs?namespace=3070507/v1`(key 불필요, 200) → `paths` 각 summary 의 날짜를 `max(20\d{6})` 로 정렬 → 최신 uddi 자동 선택. (3070507 최신=20241231, 15106890 최신=20251231)
+  - **Fetch:** `GET api.odcloud.kr/api/{uddi-path}?serviceKey=&page=&perPage=&returnType=JSON` 정상. 3070507(전체보유)=1,200건, 15106890(5%+)=111건. perPage=1200 한 번에 수신(페이지네이션 부담 없음).
+  - **활용신청:** 두 데이터셋(국내주식 투자정보 3070507 / 대량보유주식 15106890) 모두 승인 완료(같은 serviceKey).
+- **확정된 제약(자동화로도 안 사라짐):** 응답에 **종목코드 없음**(3070507=`종목명`만, 15106890=`발행기관명`만). 안정 키가 없어 종목명→ticker 매칭이 필요하고, 실측 매칭률은 정확 93.6%→주석 정제 후 94.8%(로컬 stale DB 기준). 미매칭 잔여 원인: ① 부기 주석 `(배당)(무상)(전환)`[정제 가능] ② 약칭 vs 정식명(금호석유↔금호석유화학) ③ **시점 사명 드리프트**(NPS 스냅샷은 기준일 시점의 과거 이름, stocks 마스터는 현재 이름 → 사명 변경 종목은 미스) ④ 폐지/합병. ②③④는 자동 완전 해소 불가 → **미매칭 reconcile 경로 필수**.
+- **권고:** CSV 업로드 대신 **API fetch 자동화 채택**(인코딩/컬럼 추측 제거). 단 3070507은 연 1회 데이터라 **타이트한 cron 불필요**(수동 트리거 또는 저빈도 OAS 신규 uddi 체크로 충분). infuser OAS 는 Swagger 문서 백엔드지 보증 데이터 API 가 아니므로 discovery 는 **soft dependency**(깨지면 uddi 수동 설정 폴백).
+- **후속:** 구현은 `docs/spec-current.md`. CSV 업로드 방식은 폐기가 아니라 **백로그 보류**(`docs/backlog.md`).
+
+## 2026-06-02 | stocks seed 라이브 검증 — getItemInfo basDt 버그 + data.go.kr 게이트웨이 재시도
+
+- **맥락:** NPS 적재 시연을 위해 로컬 DB를 비우고 stocks→NPS 재적재를 시도하니 stocks seed가 data.go.kr 전 소스에서 실패(404/422/ReadTimeout). 2026-06-01 "실서버 확인 필요"로 남긴 미해소 스파이크의 실체였다.
+- **버그 ① getItemInfo basDt 누락:** `fetch_data_go_kr`가 basDt를 안 넘겨 getItemInfo가 **전체 과거 이력(~4,026,153행)** 을 반환 → 사실상 무한 페이징. basDt(직전 영업일, `_recent_basdt_candidates` fallback) 지정 시 ~2,763행으로 정상화. 시세 3종(getStockPriceInfo/getETF·ETNPriceInfo)은 이미 basDt 사용.
+- **문제 ② 게이트웨이 불안정:** `apis.data.go.kr`(금융위 1160100)는 200은 0.7초(캐시)지만 간헐 404 HTML 오류페이지가 ~20초 만에 오고 종종 30초 초과 ReadTimeout(성공률 ~50%). → `_get_with_retry`(404/408/429/5xx·TransportError backoff 재시도 6회) + data.go.kr 클라이언트 timeout 60초(`_DATA_GO_KR_TIMEOUT`). 비재시도 4xx(파라미터 오류)는 즉시 raise.
+- **결과:** stocks 4,276 + marcap 4,390 적재 성공. NPS 실 적재: held 1085/major 50 matched, 미매칭 160(우선주·사명 드리프트·폐지) → `nps_unmatched`. 동일 스냅샷 재호출은 fingerprint(`nps_held`/`nps_major`) skip. 테스트 364 passed.
+- **참고:** NPS의 `api.odcloud.kr`는 안정적 — 불안정은 `apis.data.go.kr` 게이트웨이에 국한.
+
 ## 2026-06-01 | 종목 적재 data.go.kr 단일화(FDR 폐기) + 시가총액 + 국민연금 + 웹 라우터 실행
 
 - **맥락:** stocks 마스터 적재가 data.go.kr(authority) + FDR(fallback) 2소스였고 CLI로만 실행, 스케줄 미설정. 사용자 결정: **FDR 폐기**하고 data.go.kr 공식 OpenAPI로 단일화, 시가총액·시총순위 보강, 적재를 **웹 라우터(+스케줄)로 트리거**. UI는 미변경(아이콘 노출은 후속 FE). **국민연금 적재는 조사 후 보류 → backlog**.
@@ -13,7 +32,7 @@
   - **시총(`024_stocks_marcap.sql`)**: `marcap`(bigint), `marcap_rank`(int, 주식 KOSPI+KOSDAQ 시총 내림차순 window 순위; ETF/ETN·미적재 NULL), `marcap_as_of`(basDt). marcap은 매일 변동 → **fingerprint skip 우회 always-run**. 시세 API는 **basDt(직전 영업일) 날짜키** + T+1 발행이라 빈 응답 시 최대 7일 거슬러 fallback. basDt(YYYYMMDD str)는 date 컬럼이라 `_basdt_to_date`로 변환(실DB 검증으로 잡은 버그).
   - **웹 라우터**: `POST /admin/seed/stocks` — `X-Admin-Token` 헤더(env `ADMIN_TOKEN`, constant-time 비교) guard → `BackgroundTasks`로 즉시 202. **백그라운드 seed는 `Depends(get_pool)` 미사용** — CLI처럼 자체 `asyncpg.connect()`(session advisory lock 수 분 보유 → 풀 차용 시 고갈·lock leak 방지).
   - **모듈 이동**: seed 본체 `scripts/seed_stocks.py` → `src/invest_note_api/services/stock_seed.py`(라우터·CLI 공유). scripts는 thin shim(sys.path 보존).
-  - **국민연금 적재 보류**: 단일 컬럼/수동 업로드 설계까지 마쳤으나, odcloud 자동 fetch가 **연도별 uddi 상이·최신 지칭 엔드포인트 없음**으로 자동화 부적합 + 연 1회 데이터라 가치 대비 비용 큼 → 이번 범위에서 제외하고 backlog 이관(조사 결과 `docs/backlog.md` 보존).
+  - **국민연금 적재 보류**: 단일 컬럼/수동 업로드 설계까지 마쳤으나, odcloud 자동 fetch가 **연도별 uddi 상이·최신 지칭 엔드포인트 없음**으로 자동화 부적합 + 연 1회 데이터라 가치 대비 비용 큼 → 이번 범위에서 제외하고 backlog 이관(조사 결과 `docs/backlog.md` 보존). **(⚠️ 2026-06-02 이 "자동 fetch 부적합" 판정은 철회됨 — 상단 항목 참고. infuser OAS 엔드포인트를 놓친 오판.)**
 - **스케줄:** 외부 cron / Coolify scheduled task가 매일 ~14:00 KST(FSC T+1 발행 이후) 호출. 중복=advisory lock, 무변경=fingerprint-skip 가드.
   ```
   curl -fsS -X POST -H "X-Admin-Token: $ADMIN_TOKEN" https://<api>/admin/seed/stocks
