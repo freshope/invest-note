@@ -168,3 +168,28 @@ async def upsert_nps_unmatched(conn: Any, rows: list[dict]) -> int:
         [(r["nps_name"], r["nps_as_of"], r["holding_level"]) for r in rows],
     )
     return len(rows)
+
+
+async def fetch_resolved_unmatched(
+    conn: Any, *, country_code: str = DEFAULT_COUNTRY
+) -> list[dict]:
+    """관리자가 resolved_ticker 를 채운 미해소 행을 reconcile 대상으로 조회.
+
+    반환: [{nps_name, nps_as_of, holding_level, resolved_ticker}]. country_code 는 stocks 와
+    무관(nps_unmatched 는 KR 전용)하지만 시그니처 일관성 위해 받는다.
+    """
+    rows = await conn.fetch(
+        "select nps_name, nps_as_of, holding_level, resolved_ticker from nps_unmatched "
+        "where resolved_ticker is not null"
+    )
+    return [dict(r) for r in rows]
+
+
+async def delete_nps_unmatched(conn: Any, keys: list[tuple]) -> int:
+    """해소 완료한 (nps_name, nps_as_of) 행 삭제. keys 비면 no-op."""
+    if not keys:
+        return 0
+    await conn.executemany(
+        "delete from nps_unmatched where nps_name = $1 and nps_as_of = $2", keys
+    )
+    return len(keys)

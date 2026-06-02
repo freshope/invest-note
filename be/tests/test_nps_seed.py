@@ -17,8 +17,15 @@ def _mock_client(handler) -> httpx.AsyncClient:
 class FakeConn:
     """apply/seed_nps 테스트용 최소 conn. transaction()·fetchval()·close() 만 제공."""
 
-    def __init__(self, fingerprints: dict | None = None):
+    def __init__(
+        self,
+        fingerprints: dict | None = None,
+        stocks_present: list | None = None,
+        canonical_as_of: object = None,
+    ):
         self.fps = fingerprints or {}
+        self.stocks_present = stocks_present or []
+        self.canonical_as_of = canonical_as_of
 
     def transaction(self):
         conn = self
@@ -37,6 +44,10 @@ class FakeConn:
             return True
         if "seed_source_state" in query:
             return self.fps.get(args[0])
+        if "array_agg" in query:  # reconcile: stocks 존재 ticker 조회
+            return self.stocks_present
+        if "max(nps_as_of)" in query:  # reconcile: held 기준일(canonical) 조회
+            return self.canonical_as_of
         return None
 
     async def close(self):
@@ -276,6 +287,87 @@ async def test_seed_nps_skips_without_api_key():
 
 
 # ─────────────────────────── admin 토큰 (/seed/nps) ───────────────────────────
+
+
+# ─────────────────────────── reconcile_nps_unmatched ───────────────────────────
+
+
+async def test_reconcile_resolves_present_and_skips_missing(monkeypatch):
+    # 036570: stocks 존재(held+major 두 행) → 해소. 049770: stocks 부재(상폐) → skip+행 보존.
+    resolved = [
+        {"nps_name": "엔씨소프트", "nps_as_of": nps_seed._to_date("20241231"),
+         "holding_level": "held", "resolved_ticker": "036570"},
+        {"nps_name": "(주)엔씨소프트", "nps_as_of": nps_seed._to_date("20251231"),
+         "holding_level": "major", "resolved_ticker": "036570"},
+        {"nps_name": "동원F&B", "nps_as_of": nps_seed._to_date("20241231"),
+         "holding_level": "held", "resolved_ticker": "049770"},
+    ]
+    rec = {"alias": [], "set": [], "deleted": []}
+
+    async def fake_fetch(conn, **kw):
+        return resolved
+
+    async def fake_alias(conn, aliases, **kw):
+        rec["alias"] = aliases
+        return len(aliases)
+
+    async def fake_set(conn, tickers, level, as_of, **kw):
+        rec["set"].append((set(tickers), level, as_of))
+        return len(tickers)
+
+    async def fake_delete(conn, keys):
+        rec["deleted"] = keys
+        return len(keys)
+
+    held_basis = nps_seed._to_date("20241231")  # stocks 에 박힌 held 기준일(seed 통일값)
+
+    async def fake_connect(*a, **kw):
+        return FakeConn(stocks_present=["036570"], canonical_as_of=held_basis)  # 049770 미존재(상폐)
+
+    monkeypatch.setattr(nps_seed.stocks_repo, "fetch_resolved_unmatched", fake_fetch)
+    monkeypatch.setattr(nps_seed, "upsert_aliases", fake_alias)
+    monkeypatch.setattr(nps_seed.stocks_repo, "set_nps_holding", fake_set)
+    monkeypatch.setattr(nps_seed.stocks_repo, "delete_nps_unmatched", fake_delete)
+    monkeypatch.setattr(nps_seed.asyncpg, "connect", fake_connect)
+
+    stats = await nps_seed.reconcile_nps_unmatched("postgresql://x")
+
+    assert stats == {"reconciled": 2, "aliases": 2, "skipped_no_stock": 1}
+    # 별칭은 clean_name 적용 → '(주)엔씨소프트'·'엔씨소프트' 모두 '엔씨소프트'. 상폐 049770 은 제외.
+    assert {(a["ticker"], a["alias"]) for a in rec["alias"]} == {("036570", "엔씨소프트")}
+    # held 먼저 → major 순서. 둘 다 036570. major 행도 nps_as_of 는 held 기준일로 통일(major 기준일 아님).
+    assert rec["set"] == [({"036570"}, "held", held_basis), ({"036570"}, "major", held_basis)]
+    # 해소된 두 행만 삭제(상폐 동원F&B 행은 보존).
+    assert ("동원F&B", nps_seed._to_date("20241231")) not in rec["deleted"]
+    assert len(rec["deleted"]) == 2
+
+
+async def test_reconcile_noop_when_no_resolved(monkeypatch):
+    async def fake_fetch(conn, **kw):
+        return []
+
+    async def fake_connect(*a, **kw):
+        return FakeConn()
+
+    monkeypatch.setattr(nps_seed.stocks_repo, "fetch_resolved_unmatched", fake_fetch)
+    monkeypatch.setattr(nps_seed.asyncpg, "connect", fake_connect)
+    stats = await nps_seed.reconcile_nps_unmatched("postgresql://x")
+    assert stats == {"reconciled": 0, "aliases": 0, "skipped_no_stock": 0}
+
+
+def test_admin_reconcile_nps_rejects_missing_token():
+    assert _admin_client("secret").post("/admin/reconcile/nps").status_code == 403
+
+
+def test_admin_reconcile_nps_accepts_valid_token_returns_stats(monkeypatch):
+    async def fake_reconcile(*_a, **_k):
+        return {"reconciled": 3, "aliases": 3, "skipped_no_stock": 1}
+
+    monkeypatch.setattr("invest_note_api.routers.admin.reconcile_nps_unmatched", fake_reconcile)
+    client = _admin_client("secret")
+    r = client.post("/admin/reconcile/nps", headers={"X-Admin-Token": "secret"})
+    assert r.status_code == 200
+    assert r.json() == {"reconciled": 3, "aliases": 3, "skipped_no_stock": 1}
 
 
 def _admin_client(admin_token: str):

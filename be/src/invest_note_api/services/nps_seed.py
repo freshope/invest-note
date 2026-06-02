@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+from collections import defaultdict
 from datetime import date
 from typing import Any
 
@@ -35,7 +36,11 @@ from invest_note_api.config import Settings
 from invest_note_api.db_ops import stocks_repo
 from invest_note_api.domain.trade_types import DEFAULT_COUNTRY
 from invest_note_api.external.constants import USER_AGENT
-from invest_note_api.services.stock_seed import get_source_fingerprint, set_source_fingerprint
+from invest_note_api.services.stock_seed import (
+    get_source_fingerprint,
+    set_source_fingerprint,
+    upsert_aliases,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -281,6 +286,80 @@ async def seed_nps(db_url: str, *, api_key: str, country_code: str = DEFAULT_COU
         await set_source_fingerprint(conn, _HELD["source"], held_fp, len(held_rows))
         await set_source_fingerprint(conn, _MAJOR["source"], major_fp, len(major_rows))
         logger.info("NPS 적재 완료 — %s", stats)
+        return stats
+    finally:
+        await conn.close()
+
+
+# ─────────────────────────── reconcile (과거사명 수동 매핑) ───────────────────────────
+
+
+async def reconcile_nps_unmatched(
+    db_url: str, *, country_code: str = DEFAULT_COUNTRY
+) -> dict:
+    """관리자가 resolved_ticker 를 채운 nps_unmatched 를 해소.
+
+    NPS seed 는 fingerprint-skip(스냅샷 연1회)이라 다음 적재에 위임할 수 없어 자기완결로 처리한다.
+    행마다(단일 트랜잭션): ① resolved_ticker 가 stocks 에 존재하는지 검증(없으면 skip+행 보존)
+    ② stock_aliases 에 clean_name(nps_name) 별칭 등록(재발 방지 보험) ③ set_nps_holding 즉시 반영
+    ④ 해소 행 삭제. 통계 dict 반환.
+    """
+    conn = await asyncpg.connect(db_url, statement_cache_size=0)
+    try:
+        rows = await stocks_repo.fetch_resolved_unmatched(conn, country_code=country_code)
+        if not rows:
+            return {"reconciled": 0, "aliases": 0, "skipped_no_stock": 0}
+
+        async with conn.transaction():
+            # ① stocks 에 실존하는 resolved_ticker 만 처리(상폐/오타는 skip → 행 보존).
+            tickers = {r["resolved_ticker"] for r in rows}
+            present = set(
+                await conn.fetchval(
+                    "select coalesce(array_agg(ticker), '{}') from stocks "
+                    "where country_code = $1 and ticker = any($2::text[])",
+                    country_code,
+                    list(tickers),
+                )
+            )
+
+            # ② 별칭 등록(보험). upsert_aliases 의 existing 필터가 present 와 동일하게 동작.
+            aliases = [
+                {"ticker": r["resolved_ticker"], "alias": clean_name(r["nps_name"]), "source": "nps_reconcile"}
+                for r in rows
+                if r["resolved_ticker"] in present and clean_name(r["nps_name"])
+            ]
+            n_alias = await upsert_aliases(conn, aliases, country_code=country_code)
+
+            # nps_as_of 는 seed(apply_snapshot)와 동일하게 held 기준일로 통일(major 는 보조 플래그).
+            # 행별 nps_as_of(major 행은 major 기준일)를 그대로 쓰면 seed-매칭분과 날짜가 갈리므로,
+            # 현재 stocks 에 박힌 기준일(seed 통일값)을 조회해 사용한다.
+            canonical_as_of = await conn.fetchval(
+                "select max(nps_as_of) from stocks where country_code = $1 and nps_holding is not null",
+                country_code,
+            )
+
+            # ③ nps_holding 즉시 반영 — level 그룹화. held 먼저→major 덮어쓰기 순서 유지.
+            groups: dict[str, set[str]] = defaultdict(set)
+            resolved_keys: list[tuple] = []
+            for r in rows:
+                if r["resolved_ticker"] not in present:
+                    continue
+                groups[r["holding_level"]].add(r["resolved_ticker"])
+                resolved_keys.append((r["nps_name"], r["nps_as_of"]))
+            for level in sorted(groups):  # 'held' < 'major'
+                await stocks_repo.set_nps_holding(
+                    conn, groups[level], level, canonical_as_of, country_code=country_code
+                )
+
+            # ④ 해소 행 삭제(stale 방지). present 아닌 행은 남겨 재확인 유도.
+            await stocks_repo.delete_nps_unmatched(conn, resolved_keys)
+
+        stats = {
+            "reconciled": len(resolved_keys),
+            "aliases": n_alias,
+            "skipped_no_stock": len(rows) - len(resolved_keys),
+        }
+        logger.info("NPS reconcile 완료 — %s", stats)
         return stats
     finally:
         await conn.close()

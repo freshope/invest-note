@@ -7,7 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 
 from invest_note_api.auth.admin import require_admin_token
 from invest_note_api.config import Settings, get_settings
-from invest_note_api.services.nps_seed import seed_nps
+from invest_note_api.services.nps_seed import reconcile_nps_unmatched, seed_nps
 from invest_note_api.services.stock_seed import seed
 
 logger = logging.getLogger(__name__)
@@ -55,3 +55,16 @@ async def trigger_seed_nps(
     db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
     background_tasks.add_task(run_seed_nps, db_url, settings.data_go_kr_api_key)
     return {"status": "started"}
+
+
+@router.post("/reconcile/nps")
+async def trigger_reconcile_nps(
+    _: None = Depends(require_admin_token),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """관리자가 nps_unmatched.resolved_ticker 를 채운 뒤 호출 — 과거사명 매핑을 즉시 해소.
+
+    seed 와 달리 가볍고(자체 connect, 수십 건) 결과 확인이 유용하므로 동기 실행 후 통계를 반환한다.
+    """
+    db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+    return await reconcile_nps_unmatched(db_url)
