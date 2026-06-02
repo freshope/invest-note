@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import httpx
+import pytest
 
 from invest_note_api.services import stock_seed
 
@@ -242,3 +243,89 @@ def test_admin_seed_accepts_valid_token_returns_202(monkeypatch):
     r = client.post("/admin/seed/stocks", headers={"X-Admin-Token": "secret"})
     assert r.status_code == 202
     assert r.json() == {"status": "started"}
+
+
+# ─────────────────────────── _get_with_retry (게이트웨이 간헐 장애) ───────────────────────────
+
+
+async def _instant_sleep(*_a):
+    return None
+
+
+async def test_get_with_retry_retries_transient_404_then_succeeds(monkeypatch):
+    monkeypatch.setattr(stock_seed.asyncio, "sleep", _instant_sleep)
+    calls = {"n": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(404, text="<html>gateway error</html>")
+        return httpx.Response(200, json=_body([]))
+
+    async with _mock_client(handler) as client:
+        res = await stock_seed._get_with_retry(client, "https://x", {"a": 1})
+    assert res.status_code == 200
+    assert calls["n"] == 2  # 첫 404 → 재시도 → 200
+
+
+async def test_get_with_retry_raises_on_non_retryable_4xx(monkeypatch):
+    monkeypatch.setattr(stock_seed.asyncio, "sleep", _instant_sleep)
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={})  # 파라미터 오류는 재시도 대상 아님 → 즉시 raise
+
+    async with _mock_client(handler) as client:
+        with pytest.raises(httpx.HTTPStatusError):
+            await stock_seed._get_with_retry(client, "https://x", {})
+
+
+# ─────────────────────────── fetch_data_go_kr (basDt 필수) ───────────────────────────
+
+
+def _patch_internal_client(monkeypatch, handler):
+    """fetch_data_go_kr 가 자체 생성하는 httpx.AsyncClient 를 MockTransport 로 교체."""
+    real = httpx.AsyncClient  # 패치 전 원본 캡처(자기참조 재귀 방지)
+    monkeypatch.setattr(
+        stock_seed.httpx,
+        "AsyncClient",
+        lambda *a, **k: real(transport=httpx.MockTransport(handler)),
+    )
+
+
+async def test_fetch_data_go_kr_sends_basdt_and_parses(monkeypatch):
+    monkeypatch.setattr(stock_seed.asyncio, "sleep", _instant_sleep)
+    seen = {"basDt": None}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["basDt"] = req.url.params.get("basDt")
+        if req.url.params.get("pageNo") == "1":
+            return httpx.Response(
+                200, json=_body([{"srtnCd": "A005930", "itmsNm": "삼성전자", "mrktCtg": "KOSPI"}])
+            )
+        return httpx.Response(200, json=_body([]))
+
+    _patch_internal_client(monkeypatch, handler)
+    rows = await stock_seed.fetch_data_go_kr("key")
+    assert seen["basDt"] and len(seen["basDt"]) == 8  # basDt(YYYYMMDD) 전달됨
+    assert rows == [{"ticker": "005930", "asset_name": "삼성전자", "market": "KOSPI"}]
+
+
+async def test_fetch_data_go_kr_falls_back_when_first_basdt_empty(monkeypatch):
+    monkeypatch.setattr(stock_seed.asyncio, "sleep", _instant_sleep)
+    seen: list[str] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        bd = req.url.params.get("basDt")
+        seen.append(bd)
+        if bd == seen[0]:  # 첫 후보(최신 영업일)는 빈 응답 → 다음 후보로 fallback
+            return httpx.Response(200, json=_body([]))
+        if req.url.params.get("pageNo") == "1":
+            return httpx.Response(
+                200, json=_body([{"srtnCd": "000660", "itmsNm": "SK하이닉스", "mrktCtg": "KOSPI"}])
+            )
+        return httpx.Response(200, json=_body([]))
+
+    _patch_internal_client(monkeypatch, handler)
+    rows = await stock_seed.fetch_data_go_kr("key")
+    assert rows == [{"ticker": "000660", "asset_name": "SK하이닉스", "market": "KOSPI"}]
+    assert len(set(seen)) >= 2  # 최소 2개 basDt 후보 시도
