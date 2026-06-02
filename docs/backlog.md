@@ -40,11 +40,12 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 머지 갱신 범위 확장 재검토 — 현재 머지는 `commission`/`tax`/`traded_at` 만 update, `market_type`/`country_code`/`exchange` 는 사용자 분류를 우선해 **보존**(`docs/decisions.md` 2026-05-18 참고). 다음 트리거 발생 시 재검토: ① 사용자가 거래내역서로 분류 자동 보정을 명시적으로 원함, ② 증권사 파서가 사용자 수동 분류보다 더 정확한 케이스가 다수 보고됨. 재검토 시 `update_trade_from_import` 화이트리스트와 `build_merge_patch` 비교 필드를 함께 확장
 - [ ] 다운로드 가이드 콘텐츠 검수 — `fe/src/components/records/ImportTradesPanel/brokers.ts` 의 `downloadGuide` 는 AI 1차 초안(`TODO` 주석 표시). 삼성증권 mPOP/토스 앱과 실제 화면 대조 후 단계 텍스트·`helpUrl` 수정. 증권사 앱 UI 개편 시 깨질 수 있어 분기별 점검 또는 사용자 신고 트리거 시 갱신. 캡처 이미지 단계 안내가 더 효과적이라 판단되면 별도 spec 으로 보강
 
-## 종목 메타데이터 — 국민연금 보유 표시 (2026-06-02 자동화 가능 확인 → 적재 구현 착수)
+## 종목 메타데이터 — 국민연금 보유 표시 (2026-06-02 적재 + 우선주 보강 + 미매칭 reconcile 완료, FE 아이콘만 잔여)
 
-시총(marcap/marcap_rank)·마켓 적재는 `feature/stocks-data-go-kr-nps`(data.go.kr 단일화)에서 구현. **국민연금 보유 적재는 odcloud OpenAPI 자동화로 진행** → 구현은 `docs/spec-current.md`. 2026-06-01 "자동 fetch 불가" 판정은 철회(infuser OAS 엔드포인트를 놓친 오판, `docs/decisions.md` 2026-06-02 참고). 아래는 조사·실측 결과 보존(재조사 방지).
+시총(marcap/marcap_rank)·마켓 적재는 `feature/stocks-data-go-kr-nps`(data.go.kr 단일화)에서 구현. **국민연금 보유 적재는 odcloud OpenAPI 자동화로 완료**(spec-history). 2026-06-01 "자동 fetch 불가" 판정은 철회(infuser OAS 엔드포인트를 놓친 오판, `docs/decisions.md` 2026-06-02 참고). 아래는 조사·실측 결과 보존(재조사 방지).
 
-- [→ spec-current] **국민연금 보유종목 적재 (odcloud API 자동화)** — `stocks.nps_holding`(null/`'held'`/`'major'`) + `nps_as_of`(기준일) + `POST /admin/seed/nps`(API fetch). discovery=`infuser.odcloud.kr/oas/docs?namespace=<id>/v1`(key 불필요, summary 날짜 max 정렬로 최신 uddi 선택) → fetch=`api.odcloud.kr/api/{uddi}`(serviceKey). 전체 KR 종목 일괄 재계산 + 빈 스냅샷 skip 가드.
+- [x] **국민연금 보유종목 적재 (odcloud API 자동화)** (2026-06-02 완료) — `stocks.nps_holding`(null/`'held'`/`'major'`) + `nps_as_of`(기준일) + `POST /admin/seed/nps`(API fetch). discovery=`infuser.odcloud.kr/oas/docs?namespace=<id>/v1`(key 불필요, summary 날짜 max 정렬로 최신 uddi 선택) → fetch=`api.odcloud.kr/api/{uddi}`(serviceKey). 전체 KR 종목 일괄 재계산 + 빈 스냅샷 skip 가드.
+- [x] **우선주 보강 + 미매칭 reconcile** (2026-06-02 완료, `docs/decisions.md` 참고) — `getStockPriceInfo`(우선주 114건)를 종목 파이프라인 preserve 소스로 추가 + `clean_name` 접두 `(주)` 제거 → 미매칭 160→69. `resolved_ticker` 기반 `reconcile_nps_unmatched`(`POST /admin/reconcile/nps`)로 과거사명 드리프트 수동 해소. **잔여=상폐 종목은 영구 미매칭이 정상**(억지 매칭 금지). Naver 는 현재 등록명 prefix 한계로 해소책 아님(잔여 69 중 4건만).
   - **자료원 3계층:** Tier1 전체보유([3070507](https://www.data.go.kr/data/3070507/fileData.do), 연1회·~9개월 지연, 유일한 전체 커버리지, 최신=20241231·1,200건) / Tier2 5%+ 대량보유([15106890](https://www.data.go.kr/data/15106890/fileData.do), 분기, 최신=20251231·111건) / Tier0 월간 자산군 합계(종목단위 없음 → 사용 불가). 두 데이터셋 활용신청 승인 완료(같은 serviceKey).
   - **실측 매칭(2026-06-02, 로컬 stale DB 기준):** 응답에 **종목코드 없음**(`종목명`/`발행기관명`만) → 종목명→ticker 필요. 정확 93.6% → 주석 정제 후 94.8%. 미매칭 잔여 원인: 부기 주석 `(배당)(무상)(전환)`[정제] / 약칭↔정식명 / **시점 사명 드리프트**(스냅샷=과거 이름, 마스터=현재 이름) / 폐지·합병 → **미매칭 reconcile 경로 필수**.
   - **의미 주의:** "국민연금 보유"는 최대 ~1.7년 지연 스냅샷 → 아이콘/UI에 **기준일(`nps_as_of`) 명시** 필요(현재 보유로 오인 방지).

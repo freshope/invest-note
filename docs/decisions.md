@@ -4,6 +4,19 @@
 
 ---
 
+## 2026-06-02 | NPS 우선주 보강(getStockPriceInfo) + 미매칭 reconcile(과거사명 alias)
+
+- **맥락:** NPS 적재 후 `nps_unmatched` 160건 잔류. 원인 검증 → (a) **우선주가 stocks 에 0건** — authority `getItemInfo` 응답에 우선주 미포함(삼성전자만, 삼성전자우 005935 없음), (b) major 발행기관명 접두 `(주)`, (c) 시점 사명 드리프트(스냅샷=과거명, 마스터=현재명). "Naver 로 해소 가능한가" 재검증 → Naver 자동완성은 **현재 등록명 prefix 만 인덱스**해 과거명에 무력(160 중 4건·잔여 69 중 4건만 매칭).
+- **결정:**
+  - **우선주 보강:** `getStockPriceInfo`(이미 시총용으로 같은 키 호출, 우선주 114건·영문코드 21 포함)를 종목 파이프라인 **preserve 소스(`stock_prices`)** 로 추가. pykrx·Naver 등 새 의존성 불필요. `fetch_stock_prices` 에 asset_name/market 파싱 추가.
+  - **(주) 전처리:** `nps_seed.clean_name` 에 접두 `(주)`/`㈜` 제거(접미는 기존 `_ANNOTATION_RE`).
+  - **미매칭 reconcile:** `resolved_ticker`(관리자 수동 매핑) 기반 **자기완결** reconcile(`reconcile_nps_unmatched` + `POST /admin/reconcile/nps`). NPS fingerprint-skip 이라 다음 적재 위임 불가 → 즉시 `set_nps_holding` + 행 삭제. `stock_aliases` 등록은 강제 재적재 `reset_nps_holding` 후 재매칭 보험. **`nps_as_of` 는 seed 와 통일**(stocks `max(nps_as_of)` 조회 = held 기준일) — major 행의 major 기준일을 그대로 쓰면 seed-매칭분과 날짜 분기.
+  - **상폐 가드:** `resolved_ticker` 가 stocks 부재면 skip + 행 보존. 억지 매칭 금지(데이터 오염).
+- **이유:** 우선주·`(주)` 는 자동 해소 가능하나, 사명 드리프트는 ticker 확정이 큐레이터 판단(유사도로 못 잡음) → 수동 매핑 + 자동 반영이 안전. Naver 는 동일 한계라 해법 아님.
+- **트레이드오프:** ① `getStockPriceInfo` 가 종목소스+marcap 양쪽 호출(중복 — 기존 `securities` 패턴과 동일). ② `marcap_rank` 에 우선주 포함(현재 소비처 없어 무해, 회사단위 순위 원하면 우선주 ticker 제외 필요). ③ reconcile 큐레이션은 운영 수작업(`resolved_ticker` SQL UPDATE).
+- **실측:** 미매칭 160→69(우선주 47 + `(주)` 44 해소) → reconcile 4건 추가 해소 → 65. major `nps_as_of` 단일(2024-12-31) 통일 확인. 테스트 370 passed.
+- **후속:** 잔여 상폐 종목은 영구 미매칭(정상). FE 종목 메타 아이콘(`docs/backlog.md`).
+
 ## 2026-06-02 | 국민연금 적재 "자동 fetch 불가" 판정 철회 — odcloud OpenAPI 자동화 가능
 
 - **맥락:** 2026-06-01 결정에서 국민연금 적재를 "odcloud 자동 fetch 부적합(연도별 uddi 상이·최신 지칭 엔드포인트 없음·목록 조회 공개 API 없음)" 이유로 보류했다. 재조사 결과 **그 4개 근거 중 "목록 조회 공개 API 없음" 하나가 오류**였다. 이전 조사는 data.go.kr `fileData`(JS 셸) 페이지만 보고 **`infuser.odcloud.kr/oas/docs?namespace=<id>/v1`** 라는 인증 불필요·기계판독 OpenAPI 목록 엔드포인트를 놓쳤다. 나머지(연도별 uddi 상이 등)는 여전히 사실이나 OAS 목록+날짜 정렬로 우회된다.
