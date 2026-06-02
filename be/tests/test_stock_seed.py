@@ -4,10 +4,7 @@
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
-
 import httpx
-import pytest
 
 from invest_note_api.services import stock_seed
 
@@ -112,6 +109,38 @@ async def test_fetch_securities_products_missing_marcap_is_none():
         rows = await stock_seed.fetch_securities_products("key", client=client)
 
     assert rows[0]["marcap"] is None
+
+
+# ─────────────────────────── 단일 item dict quirk ───────────────────────────
+
+
+def test_extract_items_normalizes_single_item_dict():
+    # data.go.kr 는 결과 1건이면 item 을 list 가 아닌 단일 dict 로 준다 → [item] 정규화.
+    one = {"response": {"body": {"items": {"item": {"srtnCd": "005930"}}}}}
+    assert stock_seed._extract_items(one) == [{"srtnCd": "005930"}]
+
+
+def test_extract_items_handles_list_and_empty_shapes():
+    many = {"response": {"body": {"items": {"item": [{"srtnCd": "A"}, {"srtnCd": "B"}]}}}}
+    assert stock_seed._extract_items(many) == [{"srtnCd": "A"}, {"srtnCd": "B"}]
+    # 0건이면 items 가 "" 로 오기도 한다 → [].
+    assert stock_seed._extract_items({"response": {"body": {"items": ""}}}) == []
+    assert stock_seed._extract_items({"response": {"body": {}}}) == []
+    assert stock_seed._extract_items({}) == []
+
+
+async def test_fetch_stock_prices_handles_single_item_dict():
+    # 한 페이지에 종목이 1건이면 item 이 단일 dict — 과거엔 for-loop 가 키를 돌아 크래시했다.
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"response": {"body": {"items": {"item": {"srtnCd": "A005930", "mrktTotAmt": "100"}}}}},
+        )
+
+    async with _mock_client(handler) as client:
+        rows = await stock_seed.fetch_stock_prices("key", client=client)
+
+    assert rows == [{"ticker": "005930", "marcap": 100, "bas_dt": rows[0]["bas_dt"]}]
 
 
 # ─────────────────────────── basDt fallback ───────────────────────────

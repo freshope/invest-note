@@ -226,6 +226,24 @@ async def set_source_fingerprint(conn: Any, source: str, fp: str, row_count: int
 # ─────────────────────────── 소스 fetcher ───────────────────────────
 
 
+def _extract_items(payload: dict) -> list[dict]:
+    """data.go.kr 응답 envelope 에서 item 리스트를 추출(정규화).
+
+    공공데이터포털 공통 quirk:
+      - 결과 1건이면 item 이 list 가 아닌 단일 dict 로 온다 → [item] 으로 정규화.
+        (정규화 안 하면 `for it in items` 가 dict 키(str)를 돌아 it.get() 에서 AttributeError.)
+      - 결과 0건이면 items 가 "" 또는 누락 → [].
+    """
+    body = payload.get("response", {}).get("body", {})
+    items = body.get("items") if isinstance(body, dict) else None
+    if not isinstance(items, dict):
+        return []  # items 가 ""/None/누락(0건)
+    item = items.get("item", [])
+    if isinstance(item, dict):
+        return [item]
+    return item if isinstance(item, list) else []
+
+
 async def fetch_data_go_kr(api_key: str) -> list[dict]:
     """공공데이터포털 금융위 KRX상장종목정보 — coverage(전 종목) 조회.
 
@@ -245,9 +263,7 @@ async def fetch_data_go_kr(api_key: str) -> list[dict]:
                 },
             )
             res.raise_for_status()
-            items = (
-                res.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
-            )
+            items = _extract_items(res.json())
             if not items:
                 break
             for it in items:
@@ -306,9 +322,7 @@ async def _fetch_marcap_page(
             },
         )
         res.raise_for_status()
-        items = (
-            res.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
-        )
+        items = _extract_items(res.json())
         if not items:
             break
         rows.extend(items)
@@ -426,7 +440,15 @@ update stocks set marcap = $2, marcap_as_of = $3, updated_at = now()
 where country_code = $1 and ticker = $4
 """
 
-# 주식(KOSPI+KOSDAQ)만 시총 내림차순 순위. ETF/ETN·미적재는 NULL 로 리셋.
+# 순위 집합에서 빠진 종목(상폐/ETF·ETN 재분류/marcap 결측)의 stale rank 를 먼저 NULL 로 리셋.
+# _RECALC_RANK_SQL 은 자격 종목만 UPDATE 하므로, 이 리셋 없이는 빠진 종목이 옛 순위를 유지한다.
+_RESET_RANK_SQL = """
+update stocks set marcap_rank = null
+where country_code = $1 and marcap_rank is not null
+    and not (is_active and market in ('KOSPI', 'KOSDAQ') and marcap is not null)
+"""
+
+# 주식(KOSPI+KOSDAQ)만 시총 내림차순 순위. ETF/ETN·미적재·상폐는 위 리셋으로 NULL 유지.
 _RECALC_RANK_SQL = """
 update stocks s set marcap_rank = r.rn
 from (
@@ -443,7 +465,8 @@ async def update_marcap(conn: Any, api_key: str, *, country_code: str = DEFAULT_
 
     - api_key 없으면 skip(coverage pipeline 과 동일 가드).
     - 빈 응답이면 기존 marcap 보존(UPDATE·rank 재계산 둘 다 skip).
-    - 적재 후 marcap_rank 를 주식(KOSPI+KOSDAQ) 대상 window function 으로 재계산(spec verbatim SQL).
+    - 적재 후 순위 집합에서 빠진 종목의 stale rank 를 리셋하고, 주식(KOSPI+KOSDAQ) 대상
+      window function 으로 marcap_rank 를 재계산한다.
 
     반환: UPDATE 시도한 ticker 수.
     """
@@ -478,6 +501,7 @@ async def update_marcap(conn: Any, api_key: str, *, country_code: str = DEFAULT_
             for ticker, (marcap, bas_dt) in merged.items()
         ],
     )
+    await conn.execute(_RESET_RANK_SQL, country_code)
     await conn.execute(_RECALC_RANK_SQL, country_code)
     print(f"  [marcap] {len(merged)}건 갱신 + 순위 재계산")
     return len(merged)
@@ -519,10 +543,14 @@ async def crossvalidate_stocks_with_naver(
         async def _one(ticker: str, name: str, market: str) -> None:
             async with sem:
                 results = await search_kr(ticker, client=client)
+            if not results:
+                return  # 빈 응답(네트워크/rate-limit 추정) → 미체크(다음 run 재시도)
+            # Naver 가 응답함 → 정확 코드 매칭이 없어도 "검증함"으로 기록한다.
+            # (미발견까지 재질의하면 Naver 에 없는 종목을 매 run 무한 재조회 → 수렴 안 함.)
+            checked.append(ticker)
             match = next((r for r in results if r["code"] == ticker), None)
             if match is None:
-                return  # 미응답/미발견 → 미체크(다음 run 재시도)
-            checked.append(ticker)
+                return  # 응답엔 있으나 해당 코드 없음 → 별칭/시장 보강 없이 종료
             if match["name"] and match["name"] != name:
                 aliases.append({"ticker": ticker, "alias": match["name"], "source": "naver"})
             if match["exchange"] and market and match["exchange"] != market:
@@ -611,6 +639,7 @@ async def seed(db_url: str, *, api_key: str) -> None:
 
         union: set[str] = set()
         any_changed = False
+        all_sources_ok = True    # 한 소스라도 빈/실패 응답이면 union 이 불완전 → soft-delete 위험
         authority_used = False   # 첫 번째로 데이터를 반환한 소스 = canonical authority(overwrite)
         upstream_changed = False  # 앞선 소스가 바뀌면 canonical 이 이동했을 수 있어 하위 변형명 재계산 필요
 
@@ -618,6 +647,8 @@ async def seed(db_url: str, *, api_key: str) -> None:
         for name, fetch in _build_pipeline(api_key):
             rows = await fetch()
             if not rows:
+                # 빈 응답(API 실패/키 미설정/일시 장애) → 이 소스의 종목이 union 에서 누락된다.
+                all_sources_ok = False
                 continue
             union.update(r["ticker"] for r in rows if r.get("ticker"))
             is_authority = not authority_used
@@ -643,11 +674,14 @@ async def seed(db_url: str, *, api_key: str) -> None:
             upstream_changed = True
             print(f"  [{name}] {n}건 반영, 변형 별칭 {va}건" + (" (authority)" if is_authority else ""))
 
-        # 3) soft-delete — 변경이 있었을 때만(어떤 소스에도 없는 종목 비활성화)
-        if any_changed and union:
+        # 3) soft-delete — 모든 소스가 정상 응답(union 완전)했고 변경이 있을 때만.
+        # 한 소스라도 빈/실패 응답이면 그 소스의 종목이 union 에서 통째로 빠져, 실제로는
+        # 존재하는 종목(예: ETF/ETN 소스 실패 시 전 ETF, authority 실패 시 전 주식)을 대량
+        # 오상폐할 수 있으므로 skip 한다. 누락분은 다음 정상 run 에서 다시 활성화/정리된다.
+        if not all_sources_ok:
+            print("  [soft-delete] 일부 소스 빈/실패 응답 — union 불완전, skip(대량 오상폐 방지)")
+        elif any_changed and union:
             print(f"  [soft-delete] {await soft_delete_not_in(conn, DEFAULT_COUNTRY, union)}건")
-        elif not union:
-            print("  [soft-delete] 유효 소스 없음 — skip")
         else:
             print("  [soft-delete] 변경 없음 — skip")
 
