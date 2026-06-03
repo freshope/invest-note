@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-06-03 | 종목 검색 provider env 토글 — Naver 임시 복귀(data.go.kr 모니터링)
+
+- **맥락:** stocks 검색은 `bffc39d`(2026-05-30)에서 Naver 라이브 호출 → 로컬 stocks 마스터 조회로 전환됐다. 그러나 그 마스터를 채우는 data.go.kr 게이트웨이(`apis.data.go.kr` 금융위 1160100)가 간헐 404/30초 ReadTimeout으로 **성공률 ~50%**(2026-06-02 기록). seed가 불안정한 동안 로컬 검색 데이터가 stale/불완전해질 수 있어, 사용자 대면 검색만 안정적인 이전 Naver 방식으로 되돌리되 코드 폐기 없이 env로 즉시 복귀 가능하게 한다.
+- **결정:** `Settings.stock_search_provider`(env `STOCK_SEARCH_PROVIDER`, `"naver"`|`"db"`, **기본 naver**) 추가. `routers/stocks.py:search_stocks`에서 분기 — `db`면 `stocks_repo.search`(로컬), 그 외 `external/naver_search.search_kr`(라이브). Naver 구현은 `bffc39d`에서 보존돼 있어 재연결만. 두 provider 응답 shape 동일(`{code,name,market,exchange}`) → **FE 무변경**.
+- **이유:** seed 안정성 모니터링과 사용자 검색 품질을 분리. 코드 양쪽 보존으로 모니터링 종료 후 `STOCK_SEARCH_PROVIDER=db` 한 줄로 복귀(롤백 비용 0).
+- **트레이드오프:** ① Naver는 외부 라이브 호출이라 지연/실패 재노출(실패는 빈 리스트로 흡수 — 500 아님, 빈 결과 가능). ② **검색만** 토글 — 거래 import 매칭(`ticker_resolver.lookup_by_names`)·NPS seed(`stocks_repo.search`)·marcap은 여전히 로컬 stocks(stale 가능) 의존. seed를 장기 중단하면 이들이 stale해짐(범위 외, backlog 추적).
+- **검증:** `tests/test_stocks.py` 두 경로(db override + naver 기본값) 추가, 12 passed / 전체 372 passed.
+- **후속:** 모니터링 종료 후 db 복귀 + import/NPS stale 추적(`docs/backlog.md`).
+
+---
+
 ## 2026-06-03 | 안드로이드 safe-area — 네이티브 WindowInsets 주입 (플러그인 미사용)
 
 - **맥락:** 구형 안드로이드(<15) 기기에서 edge-to-edge 가 자동 강제되지 않아 상단 상태바/카메라 영역이 앱 배경으로 안 채워짐(빈 `MainActivity` stub). today-alive 는 `capacitor-plugin-safe-area` 로 해결했으나 invest-note 는 **AGP 9.2.0 / Gradle 9.4.1**(today-alive 는 AGP 8.13)이라, 그 플러그인(및 `@capacitor-community/safe-area`)의 구식 `getDefaultProguardFile('proguard-android.txt')` 가 빌드를 깨뜨려 **설치 불가**. `@capawesome/...edge-to-edge-support` 는 AGP-9 호환이나 철학이 반대(웹뷰 인셋 + 단색 바, full-bleed 아님). `@capacitor/status-bar` 는 styling 전용이라 <140 폴리필 미제공.

@@ -30,6 +30,7 @@ MVP 이후 구현할 작업 후보 목록.
 - [x] stocks 마스터 재도입 (2026-05-30 완료, 트리거 ① 발생) — Naver 단일 매칭을 자체 stocks 마스터로 전환. `020_recreate_stocks.sql` + `scripts/seed_stocks.py`(다중 소스 주기 적재) + `db_ops/stocks_repo.py`(검색/매칭). 런타임 Naver 완전 대체, Naver 는 적재 enrichment 로만. 상세 `docs/decisions.md` 2026-05-30 참고.
   - **후속:** ① 현재 운영 소스는 FDR fallback(ETF 포함, ETN 미커버). data.go.kr 키 활성화되면 공식 소스로 전환 + ETN 보강(별도 소스). ② 주기 실행(cron/Coolify scheduled) 설정.
   - [ ] **종목 market 분류 불일치 검토** — Naver 교차검증(`crossvalidate_stocks_with_naver`)에서 FDR `ETF/KR` 리스팅의 알파벳 코드 종목(0004G0 등) 약 249건을 Naver 는 KOSPI 로 분류(ELW/파생 오분류 의심). 현재 집계·보고만 함. 어느 소스가 맞는지 확인 후 ① Naver 신뢰해 market 재분류, 또는 ② ETF 리스팅에서 ELW 제외 중 결정. data.go.kr 활성화 시 3번째 소스로 교차검증하면 판정 쉬워짐.
+- [ ] **종목 검색 provider db 복귀 + import/NPS stale 추적** (2026-06-03 Naver 임시 복귀, `docs/decisions.md` 참고) — data.go.kr 게이트웨이(~50% 성공률) 안정성 모니터링 후 `STOCK_SEARCH_PROVIDER=db` 로 복귀(코드 변경 없이 env 한 줄). **잔여 리스크:** 검색만 토글했으므로 seed 를 장기 중단하면 거래 import 매칭(`ticker_resolver.lookup_by_names`)·NPS(`stocks_repo.search`)·marcap 이 stale 로컬 stocks 에 의존해 조용히 낡음. 트리거: ① seed 게이트웨이 성공률 안정화 확인 시 db 복귀, 또는 ② import 매칭률 저하/NPS·시총 stale 체감 시 seed 재개 우선순위 상향.
 - [ ] 미해결 종목 수동 매칭 UI — Naver 자동매칭 실패 또는 부분일치 오매칭 케이스에 대비, PreviewStep에서 사용자가 직접 종목 검색하여 매칭하는 UI 추가 검토
 - [ ] Preview staging 멀티 워커 대응 — 현재 `TTLCache` (단일 워커 메모리). 멀티 워커 배포 전 DB 임시 테이블 또는 Redis로 교체 필요
 - [ ] 임포트 통합 테스트 — `/import/preview`, `/import/commit` HTTP 엔드포인트 단위 테스트 (DB mock 또는 테스트 DB)
