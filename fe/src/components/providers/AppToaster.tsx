@@ -8,7 +8,7 @@ export function AppToaster() {
       position="top-center"
       offset="16px"
       mobileOffset={{
-        top: "calc(env(safe-area-inset-top) + 16px)",
+        top: "calc(var(--safe-area-inset-top, env(safe-area-inset-top)) + 16px)",
         right: "16px",
         bottom: "16px",
         left: "16px",

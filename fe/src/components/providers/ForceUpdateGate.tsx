@@ -63,7 +63,7 @@ export function ForceUpdateGate() {
   return (
     <div
       className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-6 bg-background px-8 text-center"
-      style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}
+      style={{ paddingTop: "var(--safe-area-inset-top, env(safe-area-inset-top))", paddingBottom: "var(--safe-area-inset-bottom, env(safe-area-inset-bottom))" }}
     >
       <div className="flex flex-col gap-3">
         <h1 className="text-xl font-bold">업데이트가 필요합니다</h1>

@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-06-03 | 안드로이드 safe-area — 네이티브 WindowInsets 주입 (플러그인 미사용)
+
+- **맥락:** 구형 안드로이드(<15) 기기에서 edge-to-edge 가 자동 강제되지 않아 상단 상태바/카메라 영역이 앱 배경으로 안 채워짐(빈 `MainActivity` stub). today-alive 는 `capacitor-plugin-safe-area` 로 해결했으나 invest-note 는 **AGP 9.2.0 / Gradle 9.4.1**(today-alive 는 AGP 8.13)이라, 그 플러그인(및 `@capacitor-community/safe-area`)의 구식 `getDefaultProguardFile('proguard-android.txt')` 가 빌드를 깨뜨려 **설치 불가**. `@capawesome/...edge-to-edge-support` 는 AGP-9 호환이나 철학이 반대(웹뷰 인셋 + 단색 바, full-bleed 아님). `@capacitor/status-bar` 는 styling 전용이라 <140 폴리필 미제공.
+- **결정:** 외부 플러그인 없이 **`MainActivity` 에서 네이티브 WindowInsets 를 직접 읽어 `--safe-area-inset-*` CSS 변수로 주입**.
+  - `EdgeToEdge.enable(this)` — 모든 버전에서 full-bleed.
+  - `capacitor.config` `SystemBars.insetsHandling: "disable"` — 코어 인셋 패딩 방지(full-bleed 유지).
+  - `getRootWindowInsets`(상위 뷰 소비 전 루트)로 `systemBars|displayCutout` 조회 → dp 변환 후 `evaluateJavascript` 로 주입.
+  - `BridgeWebViewClient.onPageFinished` 마다 재주입 — 콜드 런치 시 인셋 패스가 SPA 로드 전 실행돼 `about:blank` documentElement 에 주입·소실되는 레이스 방지.
+  - FE 는 `env(safe-area-inset-*)` → `var(--safe-area-inset-*, env(...))` 마이그레이션(주입 변수 우선, iOS/web 은 env 폴백).
+- **이유:** AGP 9 에선 플러그인 proguard 줄 패치가 per-plugin·생태계 공통 비호환이라 취약하고 fe 분리 시 이전 부담. 네이티브 주입은 외부 의존성·패치·버전충돌 0.
+- **트레이드오프:** ① `MainActivity` 에 ~50줄 Java(today-alive 와 코드 분기). ② Android 에서 env() 를 항상 덮어쓰므로 네이티브 읽기 실패 시 0 주입 위험 → null 가드로 완화(못 읽으면 env 폴백 유지).
+- **검증:** Galaxy S20 / **WebView 111 (<140 버그 기기)** 에서 adb + CDP 직접 확인 — `--safe-area-inset-top: 28px`, bottom 48px 주입(깨진 env()=0 덮어씀). `assembleDebug` SUCCESS.
+
+---
+
 ## 2026-06-02 | NPS 우선주 보강(getStockPriceInfo) + 미매칭 reconcile(과거사명 alias)
 
 - **맥락:** NPS 적재 후 `nps_unmatched` 160건 잔류. 원인 검증 → (a) **우선주가 stocks 에 0건** — authority `getItemInfo` 응답에 우선주 미포함(삼성전자만, 삼성전자우 005935 없음), (b) major 발행기관명 접두 `(주)`, (c) 시점 사명 드리프트(스냅샷=과거명, 마스터=현재명). "Naver 로 해소 가능한가" 재검증 → Naver 자동완성은 **현재 등록명 prefix 만 인덱스**해 과거명에 무력(160 중 4건·잔여 69 중 4건만 매칭).
