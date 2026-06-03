@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "invest-note-api"
-version = "1.1.15"
+version = "1.1.16"
 description = "FastAPI backend for invest-note"
 authors = ["jwlee <support@pixelwave.app>"]
 package-mode = false
@@ -23,6 +23,7 @@ pytest = "^8.3"
 pytest-asyncio = "^0.24"
 types-cachetools = "^5.3"
 ruff = "^0.15.11"
+
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

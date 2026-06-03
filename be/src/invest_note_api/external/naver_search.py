@@ -70,6 +70,11 @@ async def search_kr(
                 "exchange": type_code,
             })
         return results
+    except httpx.HTTPError as e:
+        # 타임아웃·연결 실패 등 일시적 네트워크 예외 — 대량 교차검증 중 흔하며 다음 run 재시도된다.
+        # 트레이스백 없이 한 줄만 남겨 콘솔 노이즈를 줄인다.
+        logger.info("naver_search 네트워크 예외 q=%r: %s", q, type(e).__name__)
+        return []
     except Exception:
         logger.warning("naver_search 실패 q=%r", q, exc_info=True)
         return []

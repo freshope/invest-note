@@ -64,3 +64,26 @@ def make_fake_acquire(conn: FakeConnection):
         yield conn
 
     return _fake
+
+
+class FakePool:
+    """plain pool.acquire() 를 흉내 내는 fake — get_pool override 용.
+
+    stocks(public) 조회처럼 acquire_for_user 가 아닌 `pool.acquire()` 를 쓰는 경로 테스트에 사용.
+    """
+
+    def __init__(self, conn: FakeConnection | None = None) -> None:
+        self._conn = conn or FakeConnection()
+
+    def acquire(self):
+        conn = self._conn
+
+        @asynccontextmanager
+        async def _cm() -> AsyncGenerator[FakeConnection, None]:
+            yield conn
+
+        return _cm()
+
+
+def make_fake_pool(conn: FakeConnection | None = None) -> FakePool:
+    return FakePool(conn)

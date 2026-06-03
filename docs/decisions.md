@@ -4,6 +4,101 @@
 
 ---
 
+## 2026-06-03 | 종목 검색 provider env 토글 — Naver 임시 복귀(data.go.kr 모니터링)
+
+- **맥락:** stocks 검색은 `bffc39d`(2026-05-30)에서 Naver 라이브 호출 → 로컬 stocks 마스터 조회로 전환됐다. 그러나 그 마스터를 채우는 data.go.kr 게이트웨이(`apis.data.go.kr` 금융위 1160100)가 간헐 404/30초 ReadTimeout으로 **성공률 ~50%**(2026-06-02 기록). seed가 불안정한 동안 로컬 검색 데이터가 stale/불완전해질 수 있어, 사용자 대면 검색만 안정적인 이전 Naver 방식으로 되돌리되 코드 폐기 없이 env로 즉시 복귀 가능하게 한다.
+- **결정:** `Settings.stock_search_provider`(env `STOCK_SEARCH_PROVIDER`, `"naver"`|`"db"`, **기본 naver**) 추가. `routers/stocks.py:search_stocks`에서 분기 — `db`면 `stocks_repo.search`(로컬), 그 외 `external/naver_search.search_kr`(라이브). Naver 구현은 `bffc39d`에서 보존돼 있어 재연결만. 두 provider 응답 shape 동일(`{code,name,market,exchange}`) → **FE 무변경**.
+- **이유:** seed 안정성 모니터링과 사용자 검색 품질을 분리. 코드 양쪽 보존으로 모니터링 종료 후 `STOCK_SEARCH_PROVIDER=db` 한 줄로 복귀(롤백 비용 0).
+- **트레이드오프:** ① Naver는 외부 라이브 호출이라 지연/실패 재노출(실패는 빈 리스트로 흡수 — 500 아님, 빈 결과 가능). ② **검색만** 토글 — 거래 import 매칭(`ticker_resolver.lookup_by_names`)·NPS seed(`stocks_repo.search`)·marcap은 여전히 로컬 stocks(stale 가능) 의존. seed를 장기 중단하면 이들이 stale해짐(범위 외, backlog 추적).
+- **검증:** `tests/test_stocks.py` 두 경로(db override + naver 기본값) 추가, 12 passed / 전체 372 passed.
+- **후속:** 모니터링 종료 후 db 복귀 + import/NPS stale 추적(`docs/backlog.md`).
+
+---
+
+## 2026-06-03 | 안드로이드 safe-area — 네이티브 WindowInsets 주입 (플러그인 미사용)
+
+- **맥락:** 구형 안드로이드(<15) 기기에서 edge-to-edge 가 자동 강제되지 않아 상단 상태바/카메라 영역이 앱 배경으로 안 채워짐(빈 `MainActivity` stub). today-alive 는 `capacitor-plugin-safe-area` 로 해결했으나 invest-note 는 **AGP 9.2.0 / Gradle 9.4.1**(today-alive 는 AGP 8.13)이라, 그 플러그인(및 `@capacitor-community/safe-area`)의 구식 `getDefaultProguardFile('proguard-android.txt')` 가 빌드를 깨뜨려 **설치 불가**. `@capawesome/...edge-to-edge-support` 는 AGP-9 호환이나 철학이 반대(웹뷰 인셋 + 단색 바, full-bleed 아님). `@capacitor/status-bar` 는 styling 전용이라 <140 폴리필 미제공.
+- **결정:** 외부 플러그인 없이 **`MainActivity` 에서 네이티브 WindowInsets 를 직접 읽어 `--safe-area-inset-*` CSS 변수로 주입**.
+  - `EdgeToEdge.enable(this)` — 모든 버전에서 full-bleed.
+  - `capacitor.config` `SystemBars.insetsHandling: "disable"` — 코어 인셋 패딩 방지(full-bleed 유지).
+  - `getRootWindowInsets`(상위 뷰 소비 전 루트)로 `systemBars|displayCutout` 조회 → dp 변환 후 `evaluateJavascript` 로 주입.
+  - `BridgeWebViewClient.onPageFinished` 마다 재주입 — 콜드 런치 시 인셋 패스가 SPA 로드 전 실행돼 `about:blank` documentElement 에 주입·소실되는 레이스 방지.
+  - FE 는 `env(safe-area-inset-*)` → `var(--safe-area-inset-*, env(...))` 마이그레이션(주입 변수 우선, iOS/web 은 env 폴백).
+- **이유:** AGP 9 에선 플러그인 proguard 줄 패치가 per-plugin·생태계 공통 비호환이라 취약하고 fe 분리 시 이전 부담. 네이티브 주입은 외부 의존성·패치·버전충돌 0.
+- **트레이드오프:** ① `MainActivity` 에 ~50줄 Java(today-alive 와 코드 분기). ② Android 에서 env() 를 항상 덮어쓰므로 네이티브 읽기 실패 시 0 주입 위험 → null 가드로 완화(못 읽으면 env 폴백 유지).
+- **검증:** Galaxy S20 / **WebView 111 (<140 버그 기기)** 에서 adb + CDP 직접 확인 — `--safe-area-inset-top: 28px`, bottom 48px 주입(깨진 env()=0 덮어씀). `assembleDebug` SUCCESS.
+
+---
+
+## 2026-06-02 | NPS 우선주 보강(getStockPriceInfo) + 미매칭 reconcile(과거사명 alias)
+
+- **맥락:** NPS 적재 후 `nps_unmatched` 160건 잔류. 원인 검증 → (a) **우선주가 stocks 에 0건** — authority `getItemInfo` 응답에 우선주 미포함(삼성전자만, 삼성전자우 005935 없음), (b) major 발행기관명 접두 `(주)`, (c) 시점 사명 드리프트(스냅샷=과거명, 마스터=현재명). "Naver 로 해소 가능한가" 재검증 → Naver 자동완성은 **현재 등록명 prefix 만 인덱스**해 과거명에 무력(160 중 4건·잔여 69 중 4건만 매칭).
+- **결정:**
+  - **우선주 보강:** `getStockPriceInfo`(이미 시총용으로 같은 키 호출, 우선주 114건·영문코드 21 포함)를 종목 파이프라인 **preserve 소스(`stock_prices`)** 로 추가. pykrx·Naver 등 새 의존성 불필요. `fetch_stock_prices` 에 asset_name/market 파싱 추가.
+  - **(주) 전처리:** `nps_seed.clean_name` 에 접두 `(주)`/`㈜` 제거(접미는 기존 `_ANNOTATION_RE`).
+  - **미매칭 reconcile:** `resolved_ticker`(관리자 수동 매핑) 기반 **자기완결** reconcile(`reconcile_nps_unmatched` + `POST /admin/reconcile/nps`). NPS fingerprint-skip 이라 다음 적재 위임 불가 → 즉시 `set_nps_holding` + 행 삭제. `stock_aliases` 등록은 강제 재적재 `reset_nps_holding` 후 재매칭 보험. **`nps_as_of` 는 seed 와 통일**(stocks `max(nps_as_of)` 조회 = held 기준일) — major 행의 major 기준일을 그대로 쓰면 seed-매칭분과 날짜 분기.
+  - **상폐 가드:** `resolved_ticker` 가 stocks 부재면 skip + 행 보존. 억지 매칭 금지(데이터 오염).
+- **이유:** 우선주·`(주)` 는 자동 해소 가능하나, 사명 드리프트는 ticker 확정이 큐레이터 판단(유사도로 못 잡음) → 수동 매핑 + 자동 반영이 안전. Naver 는 동일 한계라 해법 아님.
+- **트레이드오프:** ① `getStockPriceInfo` 가 종목소스+marcap 양쪽 호출(중복 — 기존 `securities` 패턴과 동일). ② `marcap_rank` 에 우선주 포함(현재 소비처 없어 무해, 회사단위 순위 원하면 우선주 ticker 제외 필요). ③ reconcile 큐레이션은 운영 수작업(`resolved_ticker` SQL UPDATE).
+- **실측:** 미매칭 160→69(우선주 47 + `(주)` 44 해소) → reconcile 4건 추가 해소 → 65. major `nps_as_of` 단일(2024-12-31) 통일 확인. 테스트 370 passed.
+- **후속:** 잔여 상폐 종목은 영구 미매칭(정상). FE 종목 메타 아이콘(`docs/backlog.md`).
+
+## 2026-06-02 | 국민연금 적재 "자동 fetch 불가" 판정 철회 — odcloud OpenAPI 자동화 가능
+
+- **맥락:** 2026-06-01 결정에서 국민연금 적재를 "odcloud 자동 fetch 부적합(연도별 uddi 상이·최신 지칭 엔드포인트 없음·목록 조회 공개 API 없음)" 이유로 보류했다. 재조사 결과 **그 4개 근거 중 "목록 조회 공개 API 없음" 하나가 오류**였다. 이전 조사는 data.go.kr `fileData`(JS 셸) 페이지만 보고 **`infuser.odcloud.kr/oas/docs?namespace=<id>/v1`** 라는 인증 불필요·기계판독 OpenAPI 목록 엔드포인트를 놓쳤다. 나머지(연도별 uddi 상이 등)는 여전히 사실이나 OAS 목록+날짜 정렬로 우회된다.
+- **실호출 검증(2026-06-02, 활성 키):**
+  - **Discovery:** `GET infuser.odcloud.kr/oas/docs?namespace=3070507/v1`(key 불필요, 200) → `paths` 각 summary 의 날짜를 `max(20\d{6})` 로 정렬 → 최신 uddi 자동 선택. (3070507 최신=20241231, 15106890 최신=20251231)
+  - **Fetch:** `GET api.odcloud.kr/api/{uddi-path}?serviceKey=&page=&perPage=&returnType=JSON` 정상. 3070507(전체보유)=1,200건, 15106890(5%+)=111건. perPage=1200 한 번에 수신(페이지네이션 부담 없음).
+  - **활용신청:** 두 데이터셋(국내주식 투자정보 3070507 / 대량보유주식 15106890) 모두 승인 완료(같은 serviceKey).
+- **확정된 제약(자동화로도 안 사라짐):** 응답에 **종목코드 없음**(3070507=`종목명`만, 15106890=`발행기관명`만). 안정 키가 없어 종목명→ticker 매칭이 필요하고, 실측 매칭률은 정확 93.6%→주석 정제 후 94.8%(로컬 stale DB 기준). 미매칭 잔여 원인: ① 부기 주석 `(배당)(무상)(전환)`[정제 가능] ② 약칭 vs 정식명(금호석유↔금호석유화학) ③ **시점 사명 드리프트**(NPS 스냅샷은 기준일 시점의 과거 이름, stocks 마스터는 현재 이름 → 사명 변경 종목은 미스) ④ 폐지/합병. ②③④는 자동 완전 해소 불가 → **미매칭 reconcile 경로 필수**.
+- **권고:** CSV 업로드 대신 **API fetch 자동화 채택**(인코딩/컬럼 추측 제거). 단 3070507은 연 1회 데이터라 **타이트한 cron 불필요**(수동 트리거 또는 저빈도 OAS 신규 uddi 체크로 충분). infuser OAS 는 Swagger 문서 백엔드지 보증 데이터 API 가 아니므로 discovery 는 **soft dependency**(깨지면 uddi 수동 설정 폴백).
+- **후속:** 구현은 `docs/spec-current.md`. CSV 업로드 방식은 폐기가 아니라 **백로그 보류**(`docs/backlog.md`).
+
+## 2026-06-02 | stocks seed 라이브 검증 — getItemInfo basDt 버그 + data.go.kr 게이트웨이 재시도
+
+- **맥락:** NPS 적재 시연을 위해 로컬 DB를 비우고 stocks→NPS 재적재를 시도하니 stocks seed가 data.go.kr 전 소스에서 실패(404/422/ReadTimeout). 2026-06-01 "실서버 확인 필요"로 남긴 미해소 스파이크의 실체였다.
+- **버그 ① getItemInfo basDt 누락:** `fetch_data_go_kr`가 basDt를 안 넘겨 getItemInfo가 **전체 과거 이력(~4,026,153행)** 을 반환 → 사실상 무한 페이징. basDt(직전 영업일, `_recent_basdt_candidates` fallback) 지정 시 ~2,763행으로 정상화. 시세 3종(getStockPriceInfo/getETF·ETNPriceInfo)은 이미 basDt 사용.
+- **문제 ② 게이트웨이 불안정:** `apis.data.go.kr`(금융위 1160100)는 200은 0.7초(캐시)지만 간헐 404 HTML 오류페이지가 ~20초 만에 오고 종종 30초 초과 ReadTimeout(성공률 ~50%). → `_get_with_retry`(404/408/429/5xx·TransportError backoff 재시도 6회) + data.go.kr 클라이언트 timeout 60초(`_DATA_GO_KR_TIMEOUT`). 비재시도 4xx(파라미터 오류)는 즉시 raise.
+- **결과:** stocks 4,276 + marcap 4,390 적재 성공. NPS 실 적재: held 1085/major 50 matched, 미매칭 160(우선주·사명 드리프트·폐지) → `nps_unmatched`. 동일 스냅샷 재호출은 fingerprint(`nps_held`/`nps_major`) skip. 테스트 364 passed.
+- **참고:** NPS의 `api.odcloud.kr`는 안정적 — 불안정은 `apis.data.go.kr` 게이트웨이에 국한.
+
+## 2026-06-01 | 종목 적재 data.go.kr 단일화(FDR 폐기) + 시가총액 + 국민연금 + 웹 라우터 실행
+
+- **맥락:** stocks 마스터 적재가 data.go.kr(authority) + FDR(fallback) 2소스였고 CLI로만 실행, 스케줄 미설정. 사용자 결정: **FDR 폐기**하고 data.go.kr 공식 OpenAPI로 단일화, 시가총액·시총순위 보강, 적재를 **웹 라우터(+스케줄)로 트리거**. UI는 미변경(아이콘 노출은 후속 FE). **국민연금 적재는 조사 후 보류 → backlog**.
+- **결정:**
+  - **FDR 제거**: `fetch_finance_data_reader`·`finance-datareader`(seed poetry 그룹) 삭제. 키 없는 fallback이 사라져 **data.go.kr 키가 hard 의존성으로 격상**.
+  - **소스 = data.go.kr 3개 서비스(상호보완)**: KRX상장종목정보(`getItemInfo`, 주식 name authority) + 증권상품시세(`getETF/ETNPriceInfo`, **ETF/ETN coverage = FDR 대체** + 시총) + 주식시세(`getStockPriceInfo`, 주식 시총). 증권상품시세는 coverage 파이프라인(preserve 소스)과 marcap 단계 양쪽에 사용. 기존 authority/preserve/fingerprint/Naver 프레임워크 유지.
+  - **시총(`024_stocks_marcap.sql`)**: `marcap`(bigint), `marcap_rank`(int, 주식 KOSPI+KOSDAQ 시총 내림차순 window 순위; ETF/ETN·미적재 NULL), `marcap_as_of`(basDt). marcap은 매일 변동 → **fingerprint skip 우회 always-run**. 시세 API는 **basDt(직전 영업일) 날짜키** + T+1 발행이라 빈 응답 시 최대 7일 거슬러 fallback. basDt(YYYYMMDD str)는 date 컬럼이라 `_basdt_to_date`로 변환(실DB 검증으로 잡은 버그).
+  - **웹 라우터**: `POST /admin/seed/stocks` — `X-Admin-Token` 헤더(env `ADMIN_TOKEN`, constant-time 비교) guard → `BackgroundTasks`로 즉시 202. **백그라운드 seed는 `Depends(get_pool)` 미사용** — CLI처럼 자체 `asyncpg.connect()`(session advisory lock 수 분 보유 → 풀 차용 시 고갈·lock leak 방지).
+  - **모듈 이동**: seed 본체 `scripts/seed_stocks.py` → `src/invest_note_api/services/stock_seed.py`(라우터·CLI 공유). scripts는 thin shim(sys.path 보존).
+  - **국민연금 적재 보류**: 단일 컬럼/수동 업로드 설계까지 마쳤으나, odcloud 자동 fetch가 **연도별 uddi 상이·최신 지칭 엔드포인트 없음**으로 자동화 부적합 + 연 1회 데이터라 가치 대비 비용 큼 → 이번 범위에서 제외하고 backlog 이관(조사 결과 `docs/backlog.md` 보존). **(⚠️ 2026-06-02 이 "자동 fetch 부적합" 판정은 철회됨 — 상단 항목 참고. infuser OAS 엔드포인트를 놓친 오판.)**
+- **스케줄:** 외부 cron / Coolify scheduled task가 매일 ~14:00 KST(FSC T+1 발행 이후) 호출. 중복=advisory lock, 무변경=fingerprint-skip 가드.
+  ```
+  curl -fsS -X POST -H "X-Admin-Token: $ADMIN_TOKEN" https://<api>/admin/seed/stocks
+  ```
+- **트레이드오프/리스크:** ① 증권상품시세·주식시세는 **서비스별 활용신청 별도 필요**(같은 serviceKey) — 누락 시 `SERVICE_KEY_IS_NOT_REGISTERED`(403). ② 신규 fetcher 응답 키(`srtnCd`/`itmsNm`/`mrktTotAmt`)는 **스파이크 미해소**(실서버 확인 필요, 코드에 ⚠️ 주석). ③ marcap_rank는 verbatim SQL이라 이전에 순위 있던 종목이 marcap fetch에서 빠지면 stale rank 잔존(엣지).
+- **재평가 트리거:** getItemInfo의 ETF/ETN 포함 여부 실측 → 포함 시 증권상품시세는 marcap 전용으로 축소 가능.
+
+## 2026-05-30 | 종목 검색/매칭을 자체 stocks 마스터로 전환 (2026-04-28 Naver 단일화 역전)
+
+- **맥락:** 2026-04-28 에 종목 검색·일괄 import 매칭을 Naver 자동완성 단일 경로로 단순화하고 `stocks` 마스터를 폐기(`016_drop_stocks.sql`)했었다. 폐기 사유는 ① coverage(KIND 시드가 ETF/ETN/우선주 누락), ② matchability(정확 일치만 → 약칭 불가). 이번에 backlog 재도입 트리거 ①(ETF/약칭 커버 소스 확보)을 동기로, 자체 데이터 운영으로 재추진. 사용자 결정: **런타임 Naver 완전 대체** + 검색·import 양쪽 적용 + 해외 포함 설계 + **주기 갱신** + **다중 소스** + **Naver 도 적재 소스로 사용**.
+- **결정:**
+  - `stocks` 마스터 재도입(`020_recreate_stocks.sql`): (country_code, ticker) PK, `market` CHECK 제거(ETF/ETN 수용), `pg_trgm` + `name_chosung`(초성) + `stock_aliases`(alias_chosung 포함).
+  - **런타임은 로컬 DB 만 조회**(외부 호출 0): `routers/stocks.py:/search` → `stocks_repo.search`, `broker_import/ticker_resolver.py` → `stocks_repo.lookup_by_names`. 검색 우선순위 ticker/명 prefix/별칭/초성(명+별칭)/부분일치(trgm).
+  - **Naver 는 런타임 fallback 이 아니라 적재(batch) enrichment 소스**: `scripts/seed_stocks.py` 가 다중 소스(공공데이터포털 금융위 coverage + Naver 약칭 + 교차 소스 명칭 변형)를 멱등 UPSERT 하고, 상폐는 `is_active` soft-delete. `external/naver_search.py` 는 런타임에서 빠지고 seed enrichment 용으로만 유지.
+  - 약칭(공식 소스에 없음)은 **수동 시드 + 종목별 Naver 교차검증(이름 변형) + 교차 소스 변형명**으로 자체 소유.
+- **이유:** ① "런타임 완전 대체 + Naver 적재" 를 분리하면 검색/import 가 외부 의존·지연 0 이면서도 Naver 의 약칭 해소력을 offline 으로 흡수 → 폐기 사유(matchability)를 정면 해소. ② trades 가 stocks 를 FK 참조 안 함(`001_initial_schema.sql`) → 거래 데이터 무영향. stocks/aliases 는 public read-only 라 RLS 미적용. ③ 응답 shape(`code/name/market/exchange`) 를 Naver 검색과 동일하게 유지 → FE 무변경(`exchange`=보드 KOSPI/ETF 는 `stocks.market` 에서 매핑, `stocks.exchange`='KRX' 아님).
+- **트레이드오프:**
+  - **데이터 미적재 시 검색/import 가 degraded**(빈 결과). 마이그레이션+코드 배포 후 seed 가 1회 돌기 전까지 비어 있다. **배포 순서: 마이그레이션 → seed 1회 실행 → 기능 정상.**
+  - **coverage = 다중 소스 순차 병합(`021_seed_source_state.sql`).** fallback(택1) 아님 — 우선순위 순으로 모든 소스를 병합: 첫 번째로 데이터를 반환한 소스가 canonical(이름 authority, overwrite), 이후 소스는 신규 ticker 추가 + 같은 ticker 인데 이름 다르면 그 이름을 `stock_aliases(source=소스명)` 로 등록. soft-delete 는 어떤 소스에도 없는 ticker 기준(`updated_at` 아님 — skip 과 양립). 소스 우선순위: data.go.kr(공식, 키 필요) → FDR(`finance-datareader`, 키 불필요, `seed` poetry 그룹). data.go.kr 다운이면 FDR 가 authority.
+  - **효율화(변경 드문 데이터):** 소스별 내용 fingerprint(sha256) 를 `seed_source_state` 에 저장 → 무변경 소스는 UPSERT/별칭 skip, 아무 소스도 안 바뀌면 soft-delete 도 skip. 무변경 run = fetch + 해시비교만. 가드: `stocks` 가 비어있으면(db reset/out-of-band wipe) stale fingerprint 를 무효화해 전체 재적재.
+  - **종목별 출처 기록(`023`, `stocks.source`):** canonical(이름·시장)을 소유한 authority 소스를 종목마다 기록(`fdr`|`data_go_kr`|...). authority 가 overwrite 시 갱신, 하위 소스 preserve 시 보존. 어느 소스 분류를 신뢰 중인지 추적 → market 불일치 판정·소스 전환 추적에 활용.
+  - **종목별 Naver 교차검증(`022`, `stocks.naver_checked_at`):** 미검증 종목을 코드로 Naver 조회해 ① 이름 변형→별칭, ② 시장(typeCode) 교차검증. `naver_checked_at` 으로 종목당 1회만(신규만 추가 질의), 병렬(동시 8) + run 당 batch(1500)로 rate-limit·전수호출 비용 가드. 실측: 이름은 거의 일치(별칭 ~0), 시장 불일치 다수(FDR 가 ETF/KR 에 포함한 알파벳코드 종목을 Naver 는 KOSPI 로 분류 — ELW/파생 오분류 의심). 현재는 불일치 **집계·보고만**(자동 수정 안 함).
+  - 실측: FDR 로 주식 2878 + ETF 1130 = **ETF 포함 확인**(스파이크 해소). **ETN 은 FDR 미지원 → 미커버(후속, 별도 소스).** data.go.kr 은 2026-05-30 키 체계 변경(base64→64hex)·신규 키 활성화 지연(401→403)으로 당일 사용 불가 → FDR 만으로 운영 가능. KRX 공식 OpenAPI 는 "비상업적" 제약이라 상업 앱엔 부적합(제외).
+  - 약칭 초기 커버리지 < Naver(수동 시드 수준) → 수동 시드 확충으로 보완(자동 약칭 수집/검색-miss 환류는 미도입).
+  - 주기 batch(cron 1일 1회) 유지 비용 = 이전 폐기의 "마스터 유지 비용". 멱등 스크립트로 최소화.
+- **재평가 트리거:** ① data.go.kr 가 ETF/ETN 미포함으로 확인되면 ETF/ETN 별도 소스 wiring. ② Naver 적재 차단/포맷 변경 시 enrichment 만 graceful skip(런타임 검색은 무중단). ③ 해외 종목 적재 착수 시 currency/거래소/환율 설계.
+
 ## 2026-05-27 | 포트폴리오 요약 시세 조회를 요청 경로에서 분리 (옵션 B) — withQuotes opt-in + holdings additive
 
 - **맥락:** "API 성능 개선" 요청. `/portfolio/summary`(홈 대시보드 단일 데이터 소스)가 요청 처리 중 네이버/야후 시세를 동기 fetch(개별 2s/전체 5s deadline)한 뒤 평가금액·평가손익·총계를 계산 → 외부 API 지연·캐시 미스 시 홈 응답이 통째로 지연. "현재 시세 로직을 BE→FE 이전"과 "API 속도 개선"은 동치가 아님을 확인하고(전자는 옵션 A=FE 네이버 직접 호출, CapacitorHttp/CORS·도메인 중복 부담), 목표가 후자임을 받아 결정.

@@ -47,7 +47,7 @@ export function StockDetail({ assetName, ticker, country, trades, stats, account
       {/* 헤더 */}
       <div
         className="sticky top-0 z-10 bg-background"
-        style={{ paddingTop: "env(safe-area-inset-top)" }}
+        style={{ paddingTop: "var(--safe-area-inset-top, env(safe-area-inset-top))" }}
       >
         <div className="relative flex h-14 items-center px-2">
           <button

@@ -11,7 +11,7 @@ from invest_note_api.db import create_pool
 from invest_note_api.errors import APIError, ERR_LOCK_BUSY, api_error_handler, validation_error_handler
 from invest_note_api.external.http_client import create_http_client
 from invest_note_api.external.quotes import QuoteCacheState
-from invest_note_api.routers import accounts, app_config, health, me
+from invest_note_api.routers import accounts, admin, app_config, health, me
 from invest_note_api.routers import trades, portfolio, stocks, analysis
 from invest_note_api.routers.trades import TradeStagingState
 
@@ -61,6 +61,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(portfolio.router)
     application.include_router(stocks.router)
     application.include_router(analysis.router)
+    # admin 트리거 라우터 — legacy `/api/*` alias 에 포함하지 않는다(관리용 신규 경로).
+    application.include_router(admin.router)
 
     # Legacy `/api/*` 경로 alias — FE/모바일 앱 마이그레이션 완료 후 제거 예정.
     # 스키마 중복 노출 방지를 위해 include_in_schema=False.

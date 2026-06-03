@@ -40,7 +40,7 @@ export function PageHeader({
         "bg-background px-5 pt-6 pb-3",
         className,
       )}
-      style={{ paddingTop: "calc(1.5rem + env(safe-area-inset-top))" }}
+      style={{ paddingTop: "calc(1.5rem + var(--safe-area-inset-top, env(safe-area-inset-top)))" }}
     >
       {children ?? (
         <div className="flex items-center justify-between gap-3">
