@@ -86,7 +86,7 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
       {/* 헤더 */}
       <div
         className="flex-none bg-background"
-        style={{ paddingTop: "env(safe-area-inset-top)" }}
+        style={{ paddingTop: "var(--safe-area-inset-top, env(safe-area-inset-top))" }}
       >
         <div className="relative flex h-14 items-center px-2">
           <button

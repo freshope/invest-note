@@ -146,7 +146,7 @@ function FullScreenPanelHeader({ title, className }: FullScreenPanelHeaderProps)
     <div
       data-slot="full-screen-panel-header"
       className={cn("sticky top-0 z-10 bg-background", className)}
-      style={{ paddingTop: "env(safe-area-inset-top)" }}
+      style={{ paddingTop: "var(--safe-area-inset-top, env(safe-area-inset-top))" }}
     >
       <div className="relative flex h-14 items-center px-2">
         <button
@@ -213,7 +213,7 @@ function FullScreenPanelFooter({
         sticky && "sticky bottom-0",
         className,
       )}
-      style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
+      style={{ paddingBottom: "calc(1rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))" }}
     >
       {children}
     </div>

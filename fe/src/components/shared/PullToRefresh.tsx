@@ -15,7 +15,7 @@ function Indicator({ spinning }: { spinning: boolean }) {
   return (
     <div
       className="flex items-start justify-center text-muted-foreground"
-      style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.5rem)" }}
+      style={{ paddingTop: "calc(var(--safe-area-inset-top, env(safe-area-inset-top)) + 0.5rem)" }}
     >
       <Loader2
         className={`size-5 ${spinning ? "animate-spin" : "opacity-70"}`}
