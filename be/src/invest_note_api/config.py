@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     # 빈 값이면 data.go.kr coverage pass 를 건너뛴다(다른 소스만 적재).
     data_go_kr_api_key: str = ""
 
+    # 종목 검색(GET /stocks/search) provider. "naver" | "db".
+    # "naver": Naver 자동완성 라이브 호출(external/naver_search.search_kr).
+    # "db": 로컬 stocks 마스터 조회(data.go.kr seed). data.go.kr 모니터링 후 "db"로 복귀.
+    stock_search_provider: str = "naver"
+
     # 관리자 트리거 라우터(POST /admin/seed/*) 인증 토큰. X-Admin-Token 헤더와 constant-time 비교.
     # 빈 값이면 admin 엔드포인트는 항상 거부(미설정=차단).
     admin_token: str = ""

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import get_pool
 from tests.fake_pool import FakeConnection, make_fake_pool
 
@@ -10,6 +11,13 @@ from tests.fake_pool import FakeConnection, make_fake_pool
 def _use_fake_pool(client, conn: FakeConnection | None = None) -> None:
     """search 엔드포인트의 pool.acquire() 가 동작하도록 get_pool 을 fake pool 로 override."""
     client.app.dependency_overrides[get_pool] = lambda: make_fake_pool(conn)
+
+
+def _use_db_provider(client) -> None:
+    """search 엔드포인트를 로컬 DB 경로로 고정 (기본값은 naver 이므로 명시 override)."""
+    client.app.dependency_overrides[get_settings] = lambda: Settings(
+        supabase_url="https://test.supabase.co", stock_search_provider="db"
+    )
 
 
 class TestStocksQuote:
@@ -65,11 +73,14 @@ class TestStocksQuote:
         assert resp.status_code == 401
 
 
-class TestStocksSearch:
+class TestStocksSearchDb:
+    """provider=db — 로컬 stocks 마스터 조회 경로."""
+
     def test_search_by_korean(self, trades_client):
         async def mock_search(conn, q, **kw):
             return [{"code": "005930", "name": "삼성전자", "market": "KR", "exchange": "KOSPI"}]
 
+        _use_db_provider(trades_client)
         _use_fake_pool(trades_client)
         with patch("invest_note_api.db_ops.stocks_repo.search", mock_search):
             resp = trades_client.get("/stocks/search", params={"q": "삼성"})
@@ -82,6 +93,7 @@ class TestStocksSearch:
         async def mock_search(conn, q, **kw):
             return [{"code": "005930", "name": "삼성전자", "market": "KR", "exchange": "KOSPI"}]
 
+        _use_db_provider(trades_client)
         _use_fake_pool(trades_client)
         with patch("invest_note_api.db_ops.stocks_repo.search", mock_search):
             resp = trades_client.get("/stocks/search", params={"q": "005930"})
@@ -93,12 +105,43 @@ class TestStocksSearch:
         async def mock_search(conn, q, **kw):
             return []
 
+        _use_db_provider(trades_client)
         _use_fake_pool(trades_client)
         with patch("invest_note_api.db_ops.stocks_repo.search", mock_search):
             resp = trades_client.get("/stocks/search", params={"q": "apple"})
         assert resp.status_code == 200
         assert resp.json() == []
 
+
+class TestStocksSearchNaver:
+    """provider=naver (기본값) — Naver 자동완성 라이브 호출 경로."""
+
+    def test_default_provider_uses_naver(self, trades_client):
+        captured: dict = {}
+
+        async def mock_naver(q, *, client=None):
+            captured["q"] = q
+            return [{"code": "005930", "name": "삼성전자", "market": "KR", "exchange": "KOSPI"}]
+
+        # 기본값(provider 미설정)이 naver 임을 검증 — get_settings override 없음.
+        with patch("invest_note_api.routers.stocks.search_kr", mock_naver):
+            resp = trades_client.get("/stocks/search", params={"q": "삼성"})
+
+        assert resp.status_code == 200
+        assert captured["q"] == "삼성"
+        assert resp.json()[0]["code"] == "005930"
+
+    def test_naver_no_match_returns_empty(self, trades_client):
+        async def mock_naver(q, *, client=None):
+            return []
+
+        with patch("invest_note_api.routers.stocks.search_kr", mock_naver):
+            resp = trades_client.get("/stocks/search", params={"q": "apple"})
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+
+class TestStocksSearch:
     def test_search_empty_query_empty_result(self, trades_client):
         resp = trades_client.get("/stocks/search", params={"q": ""})
         assert resp.status_code == 200
