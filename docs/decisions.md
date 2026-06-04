@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-06-04 | 자산 추이 backfill — sync_state 마커로 빈-범위 재질의 차단(cron 대신 B)
+
+- **맥락:** 종가가 적재돼 있어도 `/assets/history` 가 매 요청 12초까지 걸렸다. backfill skip 조건이 "마지막 거래일"이 아닌 **달력상 어제**와 비교(`begin > yesterday`)해, 어제가 비거래일(예: 6/3 지방선거 휴장)이면 watermark(6/2)<어제라 종가가 있어도 fetch 가 발사됐다. 휴장 응답은 거래일이 없어 `if rows:` 로 upsert 가 안 돼 watermark 가 영구 정체 → 매 요청 전 종목을 순차로 data.go.kr 에 재질의(쿼터 소진 위험). 실측: backfill 이 응답시간의 93%, compute/quotes/DB 는 무관.
+- **결정:** cron(사전적재)으로 우회하지 않고, backfill 진행상태를 "종가 존재"와 분리해 `daily_price_sync_state(checked_through_date, checked_at)` 마커에 기록한다(**빈 응답도 기록**). 어제까지 최근 확인했으면 쿨다운(6h) 내 재질의 skip. 종목 fetch 는 `Semaphore` 로 병렬화.
+- **이유:** 버그의 뿌리는 실행 위치(cron)가 아니라 "확인했지만 비었음"을 기록 못 하는 상태 모델. 마커는 ① 신규 종목도 첫 요청 1회 적재 후 skip(cron 불필요), ② 호출수를 트래픽 비례 → "종목수 × 쿨다운당 1회" 상한으로 고정(쿼터 안전), ③ 휴장/발행지연 무한 재질의 제거를 한 번에 해결. 기존 stocks `naver_checked_at`(빈 응답도 확인 기록) 과 동일 패턴.
+- **트레이드오프:** 쿨다운 6h — 짧으면 늦은 발행(T+1 ~14:00) 반영 빠르나 호출↑, 길면 반영 지연↑·쿼터↓. 오늘 점은 라이브 시세라 과거 점의 일시 carry-forward(incomplete)만 영향. asyncpg 단일 커넥션 동시쿼리 불가로 **fetch 만 병렬, upsert 는 순차**. cron(사전적재)은 범위 제외 — 마커로 콜드스타트 완화, 첫-오픈 지연이 남으면 후속 옵션.
+- **검증:** 로컬 휴장일 재현 1.37s → 2회차 0.01s. `be/tests/test_daily_price_seed.py` 신규 5케이스. 마이그레이션 `027_daily_price_sync_state.sql`(운영 적용 필요).
+
+---
+
 ## 2026-06-04 | data.go.kr "성공률 50%" 재진단 — 상시 장애 아님, 무한페이징 버그 자가유발
 
 - **맥락:** "data.go.kr 불안정으로 데이터가 적재되지 않는다"는 인식으로 게이트웨이(`apis.data.go.kr` 금융위 1160100) 안정성을 실측 진단했다. 2026-06-03 결정문이 "성공률 ~50%"를 게이트웨이 상시 불안정으로 기술해 검색 provider를 Naver로 임시 복귀시킨 바 있다.
