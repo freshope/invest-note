@@ -105,7 +105,7 @@ export default function AssetHistoryChartInner({
         dragRef.current = null;
       }}
     >
-      <ResponsiveContainer width="100%" height={220}>
+      <ResponsiveContainer width="100%" height={170}>
         <AreaChart data={visible} margin={{ top: 8, right: 8, bottom: 4, left: 8 }}>
           <defs>
             {/* 라인 아래 세로 그라데이션 — 위쪽 진하고 아래로 투명 */}
