@@ -26,4 +26,7 @@ export const queryKeys = {
 
   analysisDashboard: (period: Period) =>
     ["analysis", "dashboard", period] as const,
+
+  assetHistory: (accountId: string | null, ticker: string | null) =>
+    ["assets", "history", accountId, ticker] as const,
 };

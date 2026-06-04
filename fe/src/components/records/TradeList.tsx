@@ -21,7 +21,7 @@ import { tradesApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import type { Account } from "@/types/database";
-import { PlusIcon } from "lucide-react";
+import { ListChecks, PlusIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 
 interface TradeListProps {
@@ -209,6 +209,7 @@ export function TradeList({ trades, accounts }: TradeListProps) {
                   onClick={() => enter()}
                   disabled={filteredTrades.length === 0}
                 >
+                  <ListChecks />
                   선택
                 </Button>
               </div>

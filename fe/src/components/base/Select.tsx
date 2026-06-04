@@ -35,7 +35,7 @@ function SelectContent({ className, ...props }: ComponentProps<typeof SelectCont
   return (
     <SelectContentUI
       className={cn(
-        "max-w-[var(--radix-select-trigger-width)] rounded-xl",
+        "max-w-(--radix-select-trigger-width) rounded-xl",
         className,
       )}
       {...props}

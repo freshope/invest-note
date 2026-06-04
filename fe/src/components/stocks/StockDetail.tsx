@@ -6,8 +6,9 @@ import { cn } from "@/lib/utils";
 import { signColor } from "@/lib/format";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import { TradeCard } from "@/components/records/TradeCard";
-import { ChevronLeftIcon } from "lucide-react";
+import { ChevronLeftIcon, ChartSplineIcon } from "lucide-react";
 import { CountryBadge } from "@/components/records/trade-display";
+import { Button } from "@/components/base/Button";
 import { AccountFilter } from "@/components/shared/AccountFilter";
 import { EmptyCard } from "@/components/shared/EmptyCard";
 import { useAccountFilter, useEffectiveAccountId } from "@/components/providers/AccountFilterProvider";
@@ -29,9 +30,10 @@ interface StockDetailProps {
   accounts: Account[];
   onBack?: () => void;
   onTradePress?: (trade: TradeWithAccount) => void;
+  onAssetHistoryPress?: () => void;
 }
 
-export function StockDetail({ assetName, ticker, country, trades, stats, accounts, onBack, onTradePress }: StockDetailProps) {
+export function StockDetail({ assetName, ticker, country, trades, stats, accounts, onBack, onTradePress, onAssetHistoryPress }: StockDetailProps) {
   const router = useRouter();
   const { setSelectedAccountId } = useAccountFilter();
   const effectiveAccountId = useEffectiveAccountId(accounts);
@@ -58,9 +60,21 @@ export function StockDetail({ assetName, ticker, country, trades, stats, account
           >
             <ChevronLeftIcon className="h-6 w-6" strokeWidth={2.2} />
           </button>
-          <span className="absolute inset-x-0 text-center text-[17px] font-bold text-foreground pointer-events-none truncate px-14">
+          <span className="absolute inset-x-0 text-center text-[17px] font-bold text-foreground pointer-events-none truncate px-24">
             {assetName}
           </span>
+          {onAssetHistoryPress && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onAssetHistoryPress}
+              className="ml-auto"
+            >
+              <ChartSplineIcon />
+              자산 추이
+            </Button>
+          )}
         </div>
         {accounts.length >= 2 && (
           <AccountFilter accounts={accounts} value={effectiveAccountId} onChange={setSelectedAccountId} />

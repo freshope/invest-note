@@ -2,6 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
+import Link from "next/link";
+import { ChartSplineIcon } from "lucide-react";
+import { Button } from "@/components/base/Button";
 import { DashboardTitle, DashboardBody } from "./DashboardSummary";
 import { AllocationTabs } from "./AllocationTabs";
 import { HoldingsList } from "./HoldingsList";
@@ -143,7 +146,23 @@ export function HomeDashboard() {
   return (
     <PullToRefresh onRefresh={handleRefresh}>
       <div className="sticky top-0 z-10 bg-background">
-        <PageHeader sticky={false}>{renderHeaderInner()}</PageHeader>
+        <PageHeader sticky={false}>
+          {/* 자산 변화 페이지 진입 — 기록탭 헤더 액션과 동일 계열(outline sm pill). skeleton swap 과 무관하게 항상 노출 */}
+          <div className="relative">
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="absolute right-0 top-0"
+            >
+              <Link href="/assets">
+                <ChartSplineIcon />
+                자산 추이
+              </Link>
+            </Button>
+            <div className="pr-24">{renderHeaderInner()}</div>
+          </div>
+        </PageHeader>
         {showFilter && (
           <AccountFilter
             accounts={accounts}
