@@ -5,7 +5,8 @@ fetch 유틸(`_get_with_retry`/`_extract_items`/`_basdt_to_date`)은 stock_seed.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+import asyncio
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import asyncpg
@@ -33,6 +34,11 @@ _SECURITIES_PRODUCT_BASE = (
 _ETF_PRICE_URL = f"{_SECURITIES_PRODUCT_BASE}/getETFPriceInfo"
 _ETN_PRICE_URL = f"{_SECURITIES_PRODUCT_BASE}/getETNPriceInfo"
 _PAGE_SIZE = 1000
+# data.go.kr 동시 호출 상한(게이트웨이 429 가드). stock_seed._NAVER_CONCURRENCY 선례.
+_BACKFILL_CONCURRENCY = 8
+# 어제까지 조회 완료(빈 응답 포함)한 종목의 재probe 쿨다운. 짧으면 늦은 발행(T+1 ~14:00 KST)을
+# 빨리 반영하나 호출 수↑, 길면 호출↓·반영 지연↑. 오늘 점은 라이브 시세라 과거 점만 영향.
+_BACKFILL_RECHECK_COOLDOWN = timedelta(hours=6)
 
 
 def _price_url_for_market(market: str | None) -> str:
@@ -132,12 +138,23 @@ async def backfill_closes(
     *,
     country_code: str = "KR",
 ) -> bool:
-    """종목별 watermark 이후~어제 구간만 fetch→upsert. 종목 단위 실패는 skip.
+    """종목별 결측 구간(watermark 이후~어제)만 fetch→upsert. 종목 fetch 는 병렬.
 
-    - 각 종목: begin = max(earliest, watermark+1일), end = 어제(today-1). 적재 종료일은 어제
-      (오늘은 라이브 시세 사용 — 적재 안 함).
-    - begin > end 면 채울 게 없으므로 skip(이미 최신).
-    - 종목 fetch 실패는 그 종목만 건너뛰고 incomplete 플래그를 세운다(부분 표시).
+    skip 규칙(종목별):
+      - begin = max(earliest, watermark+1일). watermark = 적재된 실데이터 max(close_date).
+      - begin > 어제 → skip(실데이터로 어제까지 채움 — 정상 평일).
+      - sync_state.checked_through_date >= 어제 이고 checked_at 이 쿨다운 내 → skip
+        (휴장/빈 범위를 최근 확인함 → data.go.kr 불필요. 빈 응답이 watermark 를 못 올려
+         매 요청 재질의하던 문제를 차단).
+      - 그 외 → fetch 대상.
+
+    단계 분리(asyncpg 단일 커넥션은 동시 쿼리 불가):
+      1) DB 순차 — watermark/sync_state/market 일괄 조회.
+      2) 네트워크 병렬 — Semaphore 로 동시성 제한해 fetch_daily_closes.
+      3) DB 순차 — upsert_closes + upsert_sync_state.
+
+    sync_state 는 fetch 성공(빈 응답 포함) 시에만 기록한다 — 실패(예외)는 미기록해 다음 요청
+    재시도를 보장한다.
 
     반환: incomplete (하나라도 fetch 실패해 결측 가능 시 True).
     """
@@ -148,7 +165,11 @@ async def backfill_closes(
     if earliest > yesterday:
         return False  # 적재 대상 과거 구간 없음(오늘만 관심).
 
+    # 1) DB 순차 — 상태 일괄 조회.
     watermarks = await daily_prices_repo.get_watermarks(
+        conn, tickers, country_code=country_code
+    )
+    sync_state = await daily_prices_repo.get_sync_state(
         conn, tickers, country_code=country_code
     )
     # 종목 마켓 조회 → ETF/ETN 은 증권상품시세, 그 외는 주식시세 엔드포인트로 라우팅.
@@ -158,16 +179,33 @@ async def backfill_closes(
         list(tickers),
     )
     market_of = {r["ticker"]: r["market"] for r in market_rows}
-    incomplete = False
 
-    async with httpx.AsyncClient(
-        headers={"User-Agent": USER_AGENT}, timeout=_DATA_GO_KR_TIMEOUT
-    ) as client:
-        for ticker in tickers:
-            wm = watermarks.get(ticker)
-            begin = max(earliest, wm + timedelta(days=1)) if wm else earliest
-            if begin > yesterday:
-                continue  # 이 종목은 이미 어제까지 적재됨.
+    now = datetime.now(timezone.utc)
+    to_fetch: list[tuple[str, date]] = []
+    for ticker in tickers:
+        wm = watermarks.get(ticker)
+        begin = max(earliest, wm + timedelta(days=1)) if wm else earliest
+        if begin > yesterday:
+            continue  # 실데이터로 어제까지 적재됨.
+        st = sync_state.get(ticker)
+        if (
+            st
+            and st["checked_through_date"] >= yesterday
+            and now - st["checked_at"] < _BACKFILL_RECHECK_COOLDOWN
+        ):
+            continue  # 어제까지 최근 확인함(빈 범위) → 쿨다운 내 재질의 안 함.
+        to_fetch.append((ticker, begin))
+
+    if not to_fetch:
+        return False
+
+    # 2) 네트워크 병렬 — fetch 만 동시 실행(conn 미사용). Semaphore 로 게이트웨이 보호.
+    sem = asyncio.Semaphore(_BACKFILL_CONCURRENCY)
+
+    async def _fetch_one(
+        ticker: str, begin: date, client: httpx.AsyncClient
+    ) -> tuple[str, list[dict] | None]:
+        async with sem:
             try:
                 rows = await fetch_daily_closes(
                     api_key,
@@ -177,13 +215,33 @@ async def backfill_closes(
                     url=_price_url_for_market(market_of.get(ticker)),
                     client=client,
                 )
+                return ticker, rows
             except Exception:
-                incomplete = True  # 이 종목 결측 가능 → 부분 표시.
-                continue
-            if rows:
-                await daily_prices_repo.upsert_closes(
-                    conn, rows, country_code=country_code
-                )
+                return ticker, None  # 실패 → sync_state 미기록(다음 요청 재시도).
+
+    async with httpx.AsyncClient(
+        headers={"User-Agent": USER_AGENT}, timeout=_DATA_GO_KR_TIMEOUT
+    ) as client:
+        results = await asyncio.gather(
+            *(_fetch_one(tk, bg, client) for tk, bg in to_fetch)
+        )
+
+    # 3) DB 순차 — upsert + sync_state. 실패 종목은 incomplete + 상태 미기록.
+    incomplete = False
+    state_rows: list[dict] = []
+    for ticker, rows in results:
+        if rows is None:
+            incomplete = True
+            continue
+        if rows:
+            await daily_prices_repo.upsert_closes(
+                conn, rows, country_code=country_code
+            )
+        state_rows.append({"ticker": ticker, "checked_through_date": yesterday})
+    if state_rows:
+        await daily_prices_repo.upsert_sync_state(
+            conn, state_rows, country_code=country_code
+        )
 
     return incomplete
 
