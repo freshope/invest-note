@@ -39,7 +39,19 @@ async def trigger_seed_stocks(
 
 
 async def run_seed_nps(db_url: str, api_key: str) -> None:
-    """백그라운드 NPS 적재 래퍼 — seed_nps 가 자체 asyncpg.connect 로 동작(seed/stocks 와 동일 이유)."""
+    """백그라운드 NPS 적재 래퍼 — reconcile(과거사명 매핑) 선행 후 seed_nps.
+
+    reconcile 이 관리자가 채운 resolved_ticker 를 먼저 해소하며 과거사명을 stock_aliases 에
+    등록하면, 스냅샷 갱신 시 이어지는 seed 매칭(resolve_tickers→stocks_repo.search, 별칭 통합
+    검색)이 그 별칭으로 자동 해소해 같은 종목이 nps_unmatched 에 다시 쌓이지 않는다.
+    reconcile 실패는 seed 를 막지 않는다(독립 로깅) — upsert_nps_unmatched 가 resolved_ticker
+    를 보존(holding_level 만 갱신)해 큐레이션 유실이 없다. 둘 다 자체 asyncpg.connect 로 순차
+    동작(seed/stocks 와 동일 이유, advisory lock 충돌 없음).
+    """
+    try:
+        await reconcile_nps_unmatched(db_url)
+    except Exception:
+        logger.exception("admin seed/nps 선행 reconcile 실패 — seed 는 계속 진행")
     try:
         await seed_nps(db_url, api_key=api_key)
     except Exception:
