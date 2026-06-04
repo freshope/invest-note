@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { signColor } from "@/lib/format";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import { TradeCard } from "@/components/records/TradeCard";
-import { ChevronLeftIcon, ChartSplineIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronDownIcon, ChartSplineIcon } from "lucide-react";
 import { CountryBadge } from "@/components/records/trade-display";
 import { Button } from "@/components/base/Button";
 import { AccountFilter } from "@/components/shared/AccountFilter";
@@ -31,9 +31,10 @@ interface StockDetailProps {
   onBack?: () => void;
   onTradePress?: (trade: TradeWithAccount) => void;
   onAssetHistoryPress?: () => void;
+  onSwitchStock?: () => void;
 }
 
-export function StockDetail({ assetName, ticker, country, trades, stats, accounts, onBack, onTradePress, onAssetHistoryPress }: StockDetailProps) {
+export function StockDetail({ assetName, ticker, country, trades, stats, accounts, onBack, onTradePress, onAssetHistoryPress, onSwitchStock }: StockDetailProps) {
   const router = useRouter();
   const { setSelectedAccountId } = useAccountFilter();
   const effectiveAccountId = useEffectiveAccountId(accounts);
@@ -60,9 +61,22 @@ export function StockDetail({ assetName, ticker, country, trades, stats, account
           >
             <ChevronLeftIcon className="h-6 w-6" strokeWidth={2.2} />
           </button>
-          <span className="absolute inset-x-0 text-center text-[17px] font-bold text-foreground pointer-events-none truncate px-24">
-            {assetName}
-          </span>
+          {/* 컨테이너는 pointer-events-none 유지 → 클릭이 좌/우 버튼으로 통과. 중앙 버튼만 pointer-events-auto */}
+          <div className="absolute inset-x-0 flex justify-center px-24 pointer-events-none">
+            {onSwitchStock ? (
+              <button
+                type="button"
+                onClick={onSwitchStock}
+                className="pointer-events-auto inline-flex max-w-full items-center gap-1 text-[17px] font-bold text-foreground"
+                aria-label="종목 변경"
+              >
+                <span className="min-w-0 truncate">{assetName}</span>
+                <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" strokeWidth={2.4} />
+              </button>
+            ) : (
+              <span className="min-w-0 truncate text-[17px] font-bold text-foreground">{assetName}</span>
+            )}
+          </div>
           {onAssetHistoryPress && (
             <Button
               type="button"

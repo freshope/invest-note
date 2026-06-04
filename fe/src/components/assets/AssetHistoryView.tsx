@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeftIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronDownIcon } from "lucide-react";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { AccountFilter } from "@/components/shared/AccountFilter";
 import { CountUpNumber } from "@/components/shared/CountUpNumber";
@@ -36,6 +36,8 @@ interface AssetHistoryViewProps {
   country: string | null;
   name: string | null;
   onBack: () => void;
+  /** 종목 view(패널)에서만 전달 — 헤더 종목명으로 종목 전환 바텀시트를 연다. 라우트(계좌 view)는 미전달. */
+  onSwitchStock?: () => void;
 }
 
 /**
@@ -43,7 +45,7 @@ interface AssetHistoryViewProps {
  * 전체 높이 flex 컬럼: 헤더·요약차트 카드는 고정, 일별 내역 목록만 내부 스크롤(테이블 헤더 sticky).
  * 부모(라우트 fixed 래퍼 / FullScreenPanelContent)가 뷰포트 높이를 제공한다.
  */
-export function AssetHistoryView({ ticker, country, name, onBack }: AssetHistoryViewProps) {
+export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock }: AssetHistoryViewProps) {
   const isStockView = ticker != null;
 
   const { data: accounts = [] } = useQuery({
@@ -89,9 +91,22 @@ export function AssetHistoryView({ ticker, country, name, onBack }: AssetHistory
           >
             <ChevronLeftIcon className="h-6 w-6" strokeWidth={2.2} />
           </button>
-          <span className="absolute inset-x-0 text-center text-[17px] font-bold text-foreground pointer-events-none truncate px-14">
-            {title}
-          </span>
+          {/* 컨테이너는 pointer-events-none 유지 → 클릭이 뒤로가기 버튼으로 통과. 중앙 버튼만 pointer-events-auto */}
+          <div className="absolute inset-x-0 flex justify-center px-14 pointer-events-none">
+            {isStockView && onSwitchStock ? (
+              <button
+                type="button"
+                onClick={onSwitchStock}
+                className="pointer-events-auto inline-flex max-w-full items-center gap-1 text-[17px] font-bold text-foreground"
+                aria-label="종목 변경"
+              >
+                <span className="min-w-0 truncate">{title}</span>
+                <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" strokeWidth={2.4} />
+              </button>
+            ) : (
+              <span className="min-w-0 truncate text-[17px] font-bold text-foreground">{title}</span>
+            )}
+          </div>
         </div>
         {showFilter && (
           <AccountFilter
