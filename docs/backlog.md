@@ -57,6 +57,7 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [x] **내 자산 추이 페이지 추가** (2026-06-04 완료, `docs/spec-history/2026-06-04-asset-history-page.md`) — 계좌별/종목별 일별 평가액 추이. 진입: 홈 헤더 / 종목상세 헤더(패널 스택). 종가는 `daily_close_prices`(2년) + data.go.kr 진입 시 watermark 증분 백필(ETF/ETN은 마켓별 엔드포인트), 당일은 라이브 시세. 커스텀 팬 차트(3개월 창·연도 구분선·영역 그라데이션·오늘 점)·일별 내역 표·계좌 필터.
 - [ ] **일별 종가 자동 적재 + 2년 prune 운영** — 현재 종가 백필은 페이지 진입 시 동기 실행(종목별 watermark 증분), 전체 사전적재는 `POST /admin/seed/daily-prices`(수동/cron). 콜드스타트 지연 완화·stale 방지를 위해 Coolify scheduled task 로 주기 실행 + `prune_older_than`(2년 윈도우) 운영 연결 검토. (`seed_daily_prices` 가 prune 까지 수행하므로 cron 만 걸면 됨.)
+  - **2026-06-04 갱신:** 진입 backfill 에 `daily_price_sync_state` 마커 + 종목 병렬화 적용(`docs/decisions.md` 참고). 휴장/발행지연 무한 재질의 제거·data.go.kr 호출수 상한 고정·신규 종목 자동 처리로 **cron 우선순위 하향**. cron 은 콜드스타트 첫-오픈 지연을 더 줄이고 싶을 때의 옵션으로 남음.
 
 ## 모바일앱 (v2.5) 잔여
 

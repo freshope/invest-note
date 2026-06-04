@@ -18,6 +18,15 @@ on conflict (country_code, ticker, close_date) do update set
     updated_at  = now()
 """
 
+# (country, ticker) 충돌 시 조회 완료일·시각 갱신. 빈 응답도 "확인함"으로 기록(재질의 방지).
+_UPSERT_SYNC_STATE_SQL = """
+insert into daily_price_sync_state (country_code, ticker, checked_through_date, checked_at)
+values ($1, $2, $3, now())
+on conflict (country_code, ticker) do update set
+    checked_through_date = excluded.checked_through_date,
+    checked_at           = now()
+"""
+
 
 async def get_watermarks(
     conn: Any, tickers: list[str], *, country_code: str = DEFAULT_COUNTRY
@@ -39,6 +48,34 @@ async def get_watermarks(
         tickers,
     )
     return {r["ticker"]: r["max_date"] for r in rows}
+
+
+async def get_sync_state(
+    conn: Any, tickers: list[str], *, country_code: str = DEFAULT_COUNTRY
+) -> dict[str, dict]:
+    """종목별 backfill 조회 완료 상태. 반환: {ticker: {checked_through_date, checked_at}}.
+
+    미조회 종목은 키 없음. backfill 이 "이미 어제까지 조회했고(빈 응답 포함) 쿨다운 내" 인
+    종목의 data.go.kr 재질의를 skip 하는 기준.
+    """
+    if not tickers:
+        return {}
+    rows = await conn.fetch(
+        """
+        select ticker, checked_through_date, checked_at
+        from daily_price_sync_state
+        where country_code = $1 and ticker = any($2::text[])
+        """,
+        country_code,
+        tickers,
+    )
+    return {
+        r["ticker"]: {
+            "checked_through_date": r["checked_through_date"],
+            "checked_at": r["checked_at"],
+        }
+        for r in rows
+    }
 
 
 async def get_closes(
@@ -90,6 +127,24 @@ async def upsert_closes(
     if not tuples:
         return 0
     await conn.executemany(_UPSERT_SQL, tuples)
+    return len(tuples)
+
+
+async def upsert_sync_state(
+    conn: Any, rows: list[dict], *, country_code: str = DEFAULT_COUNTRY
+) -> int:
+    """조회 완료 상태 멱등 UPSERT. rows item: {ticker, checked_through_date(date)}.
+
+    checked_at 은 SQL now() 로 기록한다(빈 응답이어도 "확인 시각" 전진 — 쿨다운 재probe 기준).
+    """
+    tuples = [
+        (country_code, r["ticker"], r["checked_through_date"])
+        for r in rows
+        if r.get("ticker") and r.get("checked_through_date") is not None
+    ]
+    if not tuples:
+        return 0
+    await conn.executemany(_UPSERT_SYNC_STATE_SQL, tuples)
     return len(tuples)
 
 
