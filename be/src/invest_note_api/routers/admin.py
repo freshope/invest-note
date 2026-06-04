@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 
 from invest_note_api.auth.admin import require_admin_token
 from invest_note_api.config import Settings, get_settings
+from invest_note_api.services.daily_price_seed import seed_daily_prices
 from invest_note_api.services.nps_seed import reconcile_nps_unmatched, seed_nps
 from invest_note_api.services.stock_seed import seed
 
@@ -66,6 +67,26 @@ async def trigger_seed_nps(
 ) -> dict:
     db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
     background_tasks.add_task(run_seed_nps, db_url, settings.data_go_kr_api_key)
+    return {"status": "started"}
+
+
+async def run_seed_daily_prices(db_url: str, api_key: str) -> None:
+    """백그라운드 일별 종가 사전 적재 래퍼 — 전체 유저 보유종목 union 2년치."""
+    try:
+        await seed_daily_prices(db_url, api_key=api_key)
+    except Exception:
+        logger.exception("admin seed/daily-prices 백그라운드 실행 실패")
+
+
+@router.post("/seed/daily-prices", status_code=202)
+async def trigger_seed_daily_prices(
+    background_tasks: BackgroundTasks,
+    _: None = Depends(require_admin_token),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """자산 변화 페이지 콜드스타트 완화 — 보유종목 종가 사전 적재(cron pre-warm)."""
+    db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+    background_tasks.add_task(run_seed_daily_prices, db_url, settings.data_go_kr_api_key)
     return {"status": "started"}
 
 

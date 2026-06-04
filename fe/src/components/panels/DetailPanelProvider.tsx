@@ -17,6 +17,7 @@ import {
 } from "@/components/base/FullScreenPanel";
 import { TradeDetail } from "@/components/records/TradeDetail";
 import { StockDetail } from "@/components/stocks/StockDetail";
+import { AssetHistoryView } from "@/components/assets/AssetHistoryView";
 import { buildPnlMap } from "@/lib/analysis/realized-pnl";
 import { queryKeys } from "@/lib/query-keys";
 import { tradesApi } from "@/lib/api-client";
@@ -40,9 +41,16 @@ export type StockPayload = {
   accounts: Account[];
 };
 
+export type AssetHistoryPayload = {
+  assetName: string;
+  ticker: string;
+  country: string;
+};
+
 interface DetailPanelContextValue {
   openTrade: (payload: TradePayload) => void;
   openStock: (payload: StockPayload) => void;
+  openAssetHistory: (payload: AssetHistoryPayload) => void;
 }
 
 const DetailPanelContext = createContext<DetailPanelContextValue | null>(null);
@@ -60,11 +68,17 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
 
   const [tradePayload, setTradePayload] = useState<TradePayload | null>(null);
   const [stockPayload, setStockPayload] = useState<StockPayload | null>(null);
+  const [assetPayload, setAssetPayload] = useState<AssetHistoryPayload | null>(null);
 
   const openTrade = useCallback((payload: TradePayload) => setTradePayload(payload), []);
   const openStock = useCallback((payload: StockPayload) => setStockPayload(payload), []);
+  const openAssetHistory = useCallback(
+    (payload: AssetHistoryPayload) => setAssetPayload(payload),
+    [],
+  );
   const closeTrade = useCallback(() => setTradePayload(null), []);
   const closeStock = useCallback(() => setStockPayload(null), []);
+  const closeAssetHistory = useCallback(() => setAssetPayload(null), []);
 
   const pathname = usePathname();
   useEffect(() => {
@@ -72,6 +86,7 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setTradePayload(null);
     setStockPayload(null);
+    setAssetPayload(null);
   }, [pathname]);
 
   const handleTradeMutated = useCallback(() => {
@@ -86,8 +101,8 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
   }, [queryClient]);
 
   const value = useMemo<DetailPanelContextValue>(
-    () => ({ openTrade, openStock }),
-    [openTrade, openStock],
+    () => ({ openTrade, openStock, openAssetHistory }),
+    [openTrade, openStock, openAssetHistory],
   );
 
   return (
@@ -104,6 +119,11 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
         externalPayload={stockPayload}
         onClose={closeStock}
         openTrade={openTrade}
+        openAssetHistory={openAssetHistory}
+      />
+      <AssetHistoryPanel
+        externalPayload={assetPayload}
+        onClose={closeAssetHistory}
       />
     </DetailPanelContext.Provider>
   );
@@ -180,9 +200,10 @@ interface StockPanelProps {
   externalPayload: StockPayload | null;
   onClose: () => void;
   openTrade: (p: TradePayload) => void;
+  openAssetHistory: (p: AssetHistoryPayload) => void;
 }
 
-function StockPanel({ externalPayload, onClose, openTrade }: StockPanelProps) {
+function StockPanel({ externalPayload, onClose, openTrade, openAssetHistory }: StockPanelProps) {
   const { open, payload, remountKey } = useStaggeredPanel(externalPayload);
   if (payload === null) return null;
   return (
@@ -192,6 +213,7 @@ function StockPanel({ externalPayload, onClose, openTrade }: StockPanelProps) {
       payload={payload}
       onClose={onClose}
       openTrade={openTrade}
+      openAssetHistory={openAssetHistory}
     />
   );
 }
@@ -201,9 +223,10 @@ interface StockPanelContentProps {
   payload: StockPayload;
   onClose: () => void;
   openTrade: (p: TradePayload) => void;
+  openAssetHistory: (p: AssetHistoryPayload) => void;
 }
 
-function StockPanelContent({ open, payload, onClose, openTrade }: StockPanelContentProps) {
+function StockPanelContent({ open, payload, onClose, openTrade, openAssetHistory }: StockPanelContentProps) {
   const { assetName, ticker, country, allTrades: initialTrades, accounts: initialAccounts } = payload;
 
   // 거래 mutation 후 queryKeys.trades 가 invalidate 되면 prefix 매칭으로 함께 refetch 되도록
@@ -267,6 +290,29 @@ function StockPanelContent({ open, payload, onClose, openTrade }: StockPanelCont
           accounts={accounts}
           onBack={onClose}
           onTradePress={handleTradePress}
+          onAssetHistoryPress={() => openAssetHistory({ assetName, ticker, country })}
+        />
+      </FullScreenPanelContent>
+    </FullScreenPanel>
+  );
+}
+
+interface AssetHistoryPanelProps {
+  externalPayload: AssetHistoryPayload | null;
+  onClose: () => void;
+}
+
+function AssetHistoryPanel({ externalPayload, onClose }: AssetHistoryPanelProps) {
+  const { open, payload, remountKey } = useStaggeredPanel(externalPayload);
+  if (payload === null) return null;
+  return (
+    <FullScreenPanel key={`asset-${remountKey}`} open={open} onOpenChange={onClose}>
+      <FullScreenPanelContent>
+        <AssetHistoryView
+          ticker={payload.ticker}
+          country={payload.country}
+          name={payload.assetName}
+          onBack={onClose}
         />
       </FullScreenPanelContent>
     </FullScreenPanel>

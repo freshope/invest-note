@@ -61,6 +61,9 @@ const ROUTES = {
   analysis: {
     dashboard: "/analysis/dashboard",
   },
+  assets: {
+    history: "/assets/history",
+  },
   me: {
     base: "/me",
   },
@@ -399,6 +402,54 @@ export const analysisApi = {
     apiFetch<AnalysisDashboardData>(
       `${ROUTES.analysis.dashboard}?period=${period}${refresh ? "&refresh=1" : ""}`,
     ),
+};
+
+// ============================================================
+// Assets (일별 자산 변화)
+// ============================================================
+
+/** 차트 점: 일별 자산(보유 종목 평가액 합) */
+export interface AssetHistoryPoint {
+  date: string;
+  value: number;
+}
+
+/**
+ * 목록 행. `change` 는 전일대비 value 차(첫 항목 0).
+ * 종목뷰(ticker 지정)일 때만 `close`(그 날 종가)·`qty`(보유수량)를 포함한다.
+ */
+export interface AssetHistoryItem {
+  date: string;
+  value: number;
+  change: number;
+  close?: number | null;
+  qty?: number;
+}
+
+export interface AssetHistoryResponse {
+  series: AssetHistoryPoint[];
+  items: AssetHistoryItem[];
+  /** 일부 종목 fetch 실패로 carry-forward/결측 존재 시 true (부분표시 배지) */
+  incomplete: boolean;
+  /** 마지막 점 기준시각(오늘 점은 라이브 시세). ISO 문자열. */
+  asOf: string;
+}
+
+export interface AssetHistoryParams {
+  accountId?: string | null;
+  ticker?: string | null;
+  country?: string | null;
+}
+
+export const assetsApi = {
+  history: (params: AssetHistoryParams) => {
+    const entries: Record<string, string> = {};
+    if (params.accountId) entries.accountId = params.accountId;
+    if (params.ticker) entries.ticker = params.ticker;
+    if (params.country) entries.country = params.country;
+    const qs = Object.keys(entries).length ? `?${new URLSearchParams(entries)}` : "";
+    return apiFetch<AssetHistoryResponse>(`${ROUTES.assets.history}${qs}`);
+  },
 };
 
 // ============================================================
