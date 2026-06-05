@@ -42,7 +42,7 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 머지 갱신 범위 확장 재검토 — 현재 머지는 `commission`/`tax`/`traded_at` 만 update, `market_type`/`country_code`/`exchange` 는 사용자 분류를 우선해 **보존**(`docs/decisions.md` 2026-05-18 참고). 다음 트리거 발생 시 재검토: ① 사용자가 거래내역서로 분류 자동 보정을 명시적으로 원함, ② 증권사 파서가 사용자 수동 분류보다 더 정확한 케이스가 다수 보고됨. 재검토 시 `update_trade_from_import` 화이트리스트와 `build_merge_patch` 비교 필드를 함께 확장
 - [ ] 다운로드 가이드 콘텐츠 검수 — `fe/src/components/records/ImportTradesPanel/brokers.ts` 의 `downloadGuide` 는 AI 1차 초안(`TODO` 주석 표시). 삼성증권 mPOP/토스 앱과 실제 화면 대조 후 단계 텍스트·`helpUrl` 수정. 증권사 앱 UI 개편 시 깨질 수 있어 분기별 점검 또는 사용자 신고 트리거 시 갱신. 캡처 이미지 단계 안내가 더 효과적이라 판단되면 별도 spec 으로 보강
 
-## 종목 메타데이터 — 국민연금 보유 표시 (2026-06-02 적재 + 우선주 보강 + 미매칭 reconcile 완료, FE 아이콘만 잔여)
+## 종목 메타데이터 — 국민연금 보유 표시 (2026-06-05 FE 뱃지까지 완료 — CSV 폴백 보류 항목만 잔여)
 
 시총(marcap/marcap_rank)·마켓 적재는 `feature/stocks-data-go-kr-nps`(data.go.kr 단일화)에서 구현. **국민연금 보유 적재는 odcloud OpenAPI 자동화로 완료**(spec-history). 2026-06-01 "자동 fetch 불가" 판정은 철회(infuser OAS 엔드포인트를 놓친 오판, `docs/decisions.md` 2026-06-02 참고). 아래는 조사·실측 결과 보존(재조사 방지).
 
@@ -52,7 +52,7 @@ MVP 이후 구현할 작업 후보 목록.
   - **실측 매칭(2026-06-02, 로컬 stale DB 기준):** 응답에 **종목코드 없음**(`종목명`/`발행기관명`만) → 종목명→ticker 필요. 정확 93.6% → 주석 정제 후 94.8%. 미매칭 잔여 원인: 부기 주석 `(배당)(무상)(전환)`[정제] / 약칭↔정식명 / **시점 사명 드리프트**(스냅샷=과거 이름, 마스터=현재 이름) / 폐지·합병 → **미매칭 reconcile 경로 필수**.
   - **의미 주의:** "국민연금 보유"는 최대 ~1.7년 지연 스냅샷 → 아이콘/UI에 **기준일(`nps_as_of`) 명시** 필요(현재 보유로 오인 방지).
 - [ ] **국민연금 수동 CSV 업로드 (대체/폴백) — 보류** — API 자동화 채택으로 **보류**. infuser OAS discovery 가 깨지거나(soft dependency) 특정 과거 연도 스냅샷을 직접 소급 적재해야 할 때를 위한 대체 경로. 설계: `POST /admin/seed/nps` 가 파일 업로드도 수용(전체보유/5%+ 두 CSV). 스파이크: CSV 컬럼명·인코딩(cp949 가능). 트리거: API discovery 장애 또는 과거 스냅샷 소급 적재 필요 시.
-- [ ] **종목명 옆 메타 아이콘 표시 (FE)** — 마켓(KOSPI/KOSDAQ, 이미 `stocks.market`)·시총순위(`marcap_rank`)·국민연금(`nps_holding`·`nps_as_of`) 아이콘. `/stocks/search` 등 응답 shape 확장 + FE 뱃지(기존 `ExchangeBadge`/`CountryBadge` 패턴). 위 적재 선행.
+- [x] **종목명 옆 메타 아이콘 표시 (FE)** (2026-06-05 완료, `docs/spec-history/2026-06-05-stock-meta-badges.md`) — `GET /stocks/meta` 배치 엔드포인트(`fetch_meta`, quote 미러) + `useStockMeta` 훅 + `StockMetaBadges`. 홈/기록/종목상세/거래상세 4개 화면에 마켓·시총순위·연금 뱃지, 탭 시 바텀시트(shadcn Drawer/vaul)로 전체 설명 한 페이지 표시. **기준일(`nps_as_of`) 명시 요건 충족**(연금 보유/5%+ 섹션에 별도 줄 표시).
 
 ## 자산 변화 페이지 (계좌별/종목별 일별 자산 추이)
 

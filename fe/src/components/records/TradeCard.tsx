@@ -9,13 +9,21 @@ import { STRATEGY_LABELS, EMOTION_LABELS, RESULT_LABELS, TRADE_TYPE } from "@/li
 import { PNL_COLORS, getTradeTypeAccent } from "@/lib/constants/colors";
 import { fmt, formatPnL } from "@/lib/format";
 import { CheckIcon, Trash2Icon } from "lucide-react";
+import { StockMetaBadges } from "@/components/stocks/StockMetaBadges";
 import type { TradeWithAccount } from "@/lib/trade-utils";
+import type { StockMeta } from "@/lib/api-client";
 
 // 우측 트레일링 액션(삭제) 버튼 폭. translateX 값과 동일하게 유지한다.
 const ACTION_WIDTH_PX = 88;
 
+// 다른 카드(HoldingCard 등 bg-muted/60)와 동일한 표면색. 스와이프 레이어라 뒤의
+// 삭제 버튼(빨강)이 비치지 않도록 불투명이어야 한다 → muted(#F2F4F6) 60% over
+// background(#FFF) 의 등가 불투명색(#F7F8FA). 라이트 전용이라 고정값으로 둔다.
+const CARD_SURFACE = "bg-[#F7F8FA]";
+
 interface TradeCardProps {
   trade: TradeWithAccount;
+  meta?: StockMeta;
   // 부모가 카드마다 새 클로저를 만들지 않도록 trade 자체를 인자로 전달한다.
   onPress?: (trade: TradeWithAccount) => void;
   /** 선택 모드 여부. true 면 체크박스가 보이고 카드 탭은 선택 토글로 동작한다. */
@@ -37,6 +45,7 @@ interface TradeCardProps {
 
 export const TradeCard = memo(function TradeCard({
   trade,
+  meta,
   onPress,
   selectionMode = false,
   selected = false,
@@ -50,6 +59,9 @@ export const TradeCard = memo(function TradeCard({
   const price = fmt(Number(trade.price));
   const quantity = Number(trade.quantity);
   const totalAmount = fmt(Number(trade.total_amount));
+
+  // 뱃지 줄에 표시할 게 하나라도 있을 때만 줄을 렌더(빈 여백 방지). 마켓은 trade.exchange.
+  const hasMeta = !!trade.exchange || meta?.marcap_rank != null || !!meta?.nps_holding;
 
   // 선택 모드에서는 스와이프 비활성 (체크박스 토글이 우선).
   const swipeEnabled = !selectionMode && !!onSwipeOpenChange;
@@ -135,7 +147,7 @@ export const TradeCard = memo(function TradeCard({
   );
 
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-muted active:scale-[0.99] transition-transform">
+    <div className={cn("relative overflow-hidden rounded-2xl active:scale-[0.99] transition-transform", CARD_SURFACE)}>
       {/* 트레일링 액션 레이어 — 우측 고정. 컨텐츠가 translate 되며 노출된다. */}
       <button
         type="button"
@@ -167,7 +179,8 @@ export const TradeCard = memo(function TradeCard({
           aria-pressed={selectionMode ? selected : undefined}
           aria-label={cardLabel}
           className={cn(
-            "w-full text-left rounded-l-2xl bg-muted overflow-hidden",
+            "w-full text-left rounded-l-2xl overflow-hidden",
+            CARD_SURFACE,
             selectionMode && selected && "ring-2 ring-primary",
           )}
         >
@@ -196,10 +209,22 @@ export const TradeCard = memo(function TradeCard({
 
             <div className="flex-1 p-4">
               <div className="flex items-start justify-between gap-2">
-                {/* 종목명 + 매수/매도 뱃지 */}
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-[16px] font-bold text-foreground truncate">{trade.asset_name}</span>
-                  <TradeTypeBadge tradeType={trade.trade_type} size="sm" />
+                {/* 종목명 + 매수/매도 뱃지, 그 아래 메타 뱃지 줄 */}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[16px] font-bold text-foreground truncate">{trade.asset_name}</span>
+                    <TradeTypeBadge tradeType={trade.trade_type} size="sm" />
+                  </div>
+                  {hasMeta && (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <StockMetaBadges
+                        market={trade.exchange}
+                        rank={meta?.marcap_rank}
+                        nps={meta?.nps_holding}
+                        npsAsOf={meta?.nps_as_of}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* 매도 수익/손실 (우측) */}

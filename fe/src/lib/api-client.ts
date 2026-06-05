@@ -57,6 +57,7 @@ const ROUTES = {
   stocks: {
     search: "/stocks/search",
     quote: "/stocks/quote",
+    meta: "/stocks/meta",
   },
   analysis: {
     dashboard: "/analysis/dashboard",
@@ -359,6 +360,15 @@ export interface StockSearchResult {
   exchange: string;
 }
 
+// 종목 메타(뱃지용). 키는 BE 와 동일하게 snake_case 로 통과시킨다(/stocks/quote 와 일관).
+export interface StockMeta {
+  market: string;
+  marcap_rank: number | null;
+  nps_holding: "held" | "major" | null;
+  nps_as_of: string | null;
+}
+export type StockMetaMap = Record<string, StockMeta>;
+
 export const stocksApi = {
   search: (q: string) =>
     apiFetch<StockSearchResult[]>(`${ROUTES.stocks.search}?q=${encodeURIComponent(q)}`),
@@ -368,6 +378,9 @@ export const stocksApi = {
     apiFetch<QuoteMap>(
       `${ROUTES.stocks.quote}?symbols=${encodeURIComponent(symbols)}${refresh ? "&refresh=1" : ""}`
     ),
+
+  meta: (codes: string) =>
+    apiFetch<StockMetaMap>(`${ROUTES.stocks.meta}?codes=${encodeURIComponent(codes)}`),
 };
 
 // ============================================================

@@ -73,6 +73,35 @@ class TestStocksQuote:
         assert resp.status_code == 401
 
 
+class TestStocksMeta:
+    def test_meta_ok(self, trades_client):
+        async def mock_meta(conn, codes, **kw):
+            return {
+                "005930": {"market": "KOSPI", "marcap_rank": 1,
+                           "nps_holding": "major", "nps_as_of": "2026-03-31"},
+            }
+
+        _use_fake_pool(trades_client)
+        with patch("invest_note_api.db_ops.stocks_repo.fetch_meta", mock_meta):
+            resp = trades_client.get("/stocks/meta", params={"codes": "005930"})
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["005930"]["market"] == "KOSPI"
+        assert body["005930"]["marcap_rank"] == 1
+        assert body["005930"]["nps_holding"] == "major"
+
+    def test_meta_empty_returns_empty(self, trades_client):
+        _use_fake_pool(trades_client)
+        resp = trades_client.get("/stocks/meta", params={"codes": ""})
+        assert resp.status_code == 200
+        assert resp.json() == {}
+
+    def test_meta_401(self, auth_client):
+        resp = auth_client.get("/stocks/meta", params={"codes": "005930"})
+        assert resp.status_code == 401
+
+
 class TestStocksSearchDb:
     """provider=db — 로컬 stocks 마스터 조회 경로."""
 

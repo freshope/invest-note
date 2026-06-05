@@ -21,6 +21,13 @@ class StockSearchResult(TypedDict):
     exchange: str
 
 
+class StockMeta(TypedDict):
+    market: str
+    marcap_rank: int | None
+    nps_holding: str | None
+    nps_as_of: str | None
+
+
 def _row_to_result(row: Any) -> StockSearchResult:
     # 응답 shape 은 기존 Naver 검색(external/naver_search.py)과 동일하게 유지한다:
     #   market   = country_code ('KR'),  exchange = 보드 분류(KOSPI/KOSDAQ/ETF/...).
@@ -115,6 +122,41 @@ async def lookup_by_names(
         if matches:
             result[name] = matches[0]
     return result
+
+
+# ─────────────────────────── 종목 메타 배치 조회 (뱃지용) ───────────────────────────
+
+
+_META_SQL = """
+select ticker, market, marcap_rank, nps_holding, nps_as_of
+from stocks
+where country_code = $1 and ticker = any($2::text[])
+"""
+
+
+async def fetch_meta(
+    conn: Any,
+    codes: list[str],
+    *,
+    country_code: str = DEFAULT_COUNTRY,
+) -> dict[str, StockMeta]:
+    """종목 코드 목록 → {code: 메타}. 매칭된 code 만 키로 포함. 빈 codes 면 DB 조회 생략.
+
+    응답 키는 snake_case 로 통일한다(/stocks/quote 와 동일하게 변환 없이 그대로 통과).
+    marcap_rank 는 ETF/ETN 에서 NULL, nps_holding 은 대부분 NULL.
+    """
+    if not codes:
+        return {}
+    rows = await conn.fetch(_META_SQL, country_code, codes)
+    return {
+        row["ticker"]: {
+            "market": row["market"] or "",
+            "marcap_rank": row["marcap_rank"],
+            "nps_holding": row["nps_holding"],
+            "nps_as_of": row["nps_as_of"].isoformat() if row["nps_as_of"] else None,
+        }
+        for row in rows
+    }
 
 
 # ─────────────────────────── 국민연금(NPS) 보유 적재 ───────────────────────────
