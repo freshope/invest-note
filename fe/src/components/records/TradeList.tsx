@@ -147,11 +147,12 @@ export function TradeList({ trades, accounts }: TradeListProps) {
           return;
         }
         await tradesApi.bulkDelete(ids);
-        // BUY meta cascade → trades + portfolio + analysis 모두 무효화.
+        // BUY meta cascade → trades + portfolio + analysis + assets 모두 무효화.
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
           queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
           queryClient.invalidateQueries({ queryKey: ["analysis"] }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.assets }),
         ]);
         toast.success(`${ids.length}건의 거래를 삭제했어요`);
         exit();
@@ -173,6 +174,7 @@ export function TradeList({ trades, accounts }: TradeListProps) {
           queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
           queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
           queryClient.invalidateQueries({ queryKey: ["analysis"] }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.assets }),
         ]);
         toast.success("거래를 삭제했어요");
         setOpenSwipeId(null);

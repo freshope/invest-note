@@ -24,8 +24,9 @@ from invest_note_api.domain.trade_types import Trade
 from invest_note_api.domain.trade_utils import to_kst
 from invest_note_api.domain.trade_walker import walk_trades
 
-# 최대 2년 윈도우(spec). 오늘 기준 lookback.
-_LOOKBACK_DAYS = 365 * 2
+# 최대 2년 윈도우(spec). 오늘 기준 lookback. 종가 사전적재(daily_price_seed)와 공유 —
+# 히스토리 계산 창과 적재 창이 어긋나지 않도록 단일 정의를 유지한다.
+LOOKBACK_DAYS = 365 * 2
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,11 @@ class AssetHistoryResult:
     series: list[dict]
     items: list[dict]
     incomplete: bool
+
+
+def _pos_or_none(price: float | None) -> float | None:
+    """0/음수 가격은 결측 취급(데이터 오염 가드) — qty×0 이 조용히 합산되지 않고 incomplete 경로로 보낸다."""
+    return price if price is not None and price > 0 else None
 
 
 def _trade_kst_date(trade: Trade) -> date:
@@ -134,7 +140,7 @@ def compute_asset_history(
     first_buy = _first_buy_date(trades)
     if first_buy is None:
         return AssetHistoryResult(series=[], items=[], incomplete=False)
-    range_start = max(first_buy, today - timedelta(days=_LOOKBACK_DAYS))
+    range_start = max(first_buy, today - timedelta(days=LOOKBACK_DAYS))
 
     # 거래일 집합 = 적재 종가 close_date(범위 내) ∪ 오늘.
     trading_days: set[date] = {
@@ -159,12 +165,13 @@ def compute_asset_history(
                     per_day_close_qty[d] = (_close_on(closes_by_ticker.get(gid, []), d), 0.0)
                 continue
             if d == today:
-                price = live_quotes.get(gid)
+                price = _pos_or_none(live_quotes.get(gid))
                 if price is None:
-                    price = _close_on(closes_by_ticker.get(gid, []), d)  # 라이브 결측 → 직전 종가.
+                    # 라이브 결측 → 직전 종가.
+                    price = _pos_or_none(_close_on(closes_by_ticker.get(gid, []), d))
                     incomplete = True
             else:
-                price = _close_on(closes_by_ticker.get(gid, []), d)
+                price = _pos_or_none(_close_on(closes_by_ticker.get(gid, []), d))
             if price is None:
                 incomplete = True  # carry-forward 불가(첫 적재 종가 이전) → 기여 제외.
                 if is_stock_view and gid == stock_gid:
@@ -199,7 +206,7 @@ def compute_asset_history(
 def scope_earliest_date(trades: list[Trade], today: date) -> date:
     """backfill 시작일 = max(최초 매수일, 오늘-2년). 거래 없으면 today(no-op)."""
     first_buy = _first_buy_date(trades)
-    floor = today - timedelta(days=_LOOKBACK_DAYS)
+    floor = today - timedelta(days=LOOKBACK_DAYS)
     if first_buy is None:
         return today
     return max(first_buy, floor)

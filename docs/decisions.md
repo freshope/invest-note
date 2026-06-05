@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-06-05 | 자산 추이 계좌뷰 — country 로 일관 필터 (혼합 국가 보유 부분 누락 대신)
+
+- **맥락:** code-review 에서 발견 — 계좌뷰가 trades 는 전 국가 로드하면서 종가 backfill·라이브 시세는 `country="KR"` 고정이라, 비-KR 보유분이 시리즈 값에서 조용히 빠지고 `incomplete` 플래그만 섰다. 비-KR 티커가 data.go.kr(KR 전용)로 전달돼 쿼터도 낭비.
+- **결정:** 계좌뷰도 `list_trades_with_account` 에 `country` 필터(기본 KR)를 항상 적용해 적재·시세·계산 스코프를 country 로 일관시킨다. NULL/'' country_code 는 SQL `COALESCE(NULLIF(...,''),'KR')` 정규화로 KR 매칭 유지.
+- **이유:** data.go.kr 는 KR 전용이라 비-KR 과거 종가는 어차피 적재 불가 — "전 국가 로드 후 일부 누락 + incomplete 노이즈"보다 "country 단위 일관 스코프"가 정직하다. 수치는 동일(비-KR 은 이전에도 값 미포함), 불필요 외부 호출·플래그 노이즈 제거.
+- **트레이드오프:** 비-KR 전용 계좌는 자산 추이가 빈 시리즈(거래 없음 경로)로 표시. 해외 종가 소스를 붙이면 country 파라미터 분기로 확장.
+
+---
+
 ## 2026-06-04 | 자산 추이 backfill — sync_state 마커로 빈-범위 재질의 차단(cron 대신 B)
 
 - **맥락:** 종가가 적재돼 있어도 `/assets/history` 가 매 요청 12초까지 걸렸다. backfill skip 조건이 "마지막 거래일"이 아닌 **달력상 어제**와 비교(`begin > yesterday`)해, 어제가 비거래일(예: 6/3 지방선거 휴장)이면 watermark(6/2)<어제라 종가가 있어도 fetch 가 발사됐다. 휴장 응답은 거래일이 없어 `if rows:` 로 upsert 가 안 돼 watermark 가 영구 정체 → 매 요청 전 종목을 순차로 data.go.kr 에 재질의(쿼터 소진 위험). 실측: backfill 이 응답시간의 93%, compute/quotes/DB 는 무관.

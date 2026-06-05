@@ -15,7 +15,8 @@ export interface UseAssetHistoryParams {
 /**
  * 일별 자산 변화 조회. usePortfolioSummary 와 동일하게
  * keepPreviousData(필터 전환 시 이전 응답 유지) + portfolio staleTime 을 따른다.
- * 종가는 일별이라 자주 변하지 않고, 거래 등록/수정 시 invalidate 가 보장된다.
+ * 종가는 일별이라 자주 변하지 않고, 평가액에 영향 주는 거래 등록/수정/삭제 시
+ * queryKeys.assets prefix invalidate 가 보장된다(meta 폼은 평가액 무관이라 제외).
  */
 export function useAssetHistory({
   accountId = null,

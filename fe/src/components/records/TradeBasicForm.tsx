@@ -202,6 +202,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
         queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.assets }),
       ]);
       onTradeCreated(result.id, result.trade_type);
     } catch (err) {

@@ -294,6 +294,34 @@ async def test_backfill_fetches_new_ticker_once_and_marks(monkeypatch):
     assert track["sync_rows"] == [{"ticker": "123456", "checked_through_date": yesterday}]
 
 
+async def test_backfill_upserts_all_tickers_in_single_batch(monkeypatch):
+    """여러 종목 rows 는 한 번의 upsert_closes 배치로 적재된다(왕복 N→1)."""
+    from invest_note_api.db_ops import daily_prices_repo
+
+    today = date(2026, 6, 4)
+
+    async def fetch_rows(api_key, ticker, begin, end, *, url=daily_price_seed._STOCK_PRICE_URL, client=None):
+        return [{"ticker": ticker, "close_date": date(2026, 6, 3), "close_price": 100.0}]
+
+    track = _patch_repo(monkeypatch, watermarks={}, sync_state={}, fetch_fn=fetch_rows)
+    calls = {"n": 0}
+    orig_upsert = daily_prices_repo.upsert_closes
+
+    async def counting_upsert(conn, rows, **kw):
+        calls["n"] += 1
+        return await orig_upsert(conn, rows, **kw)
+
+    monkeypatch.setattr(daily_prices_repo, "upsert_closes", counting_upsert)
+    conn = _fake_conn({"005930": "KOSPI", "000660": "KOSPI"})
+
+    await daily_price_seed.backfill_closes(
+        conn, "key", ["005930", "000660"], date(2026, 6, 1), today
+    )
+
+    assert calls["n"] == 1  # 단일 배치.
+    assert {r["ticker"] for r in track["upserted_closes"]} == {"005930", "000660"}
+
+
 async def test_backfill_fetch_exception_keeps_state_unrecorded(monkeypatch):
     """fetch 예외 종목은 sync_state 미기록 + incomplete=True(다음 요청 재시도 보장)."""
     today = date(2026, 6, 4)

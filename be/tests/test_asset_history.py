@@ -110,6 +110,24 @@ def test_incomplete_when_close_before_first():
     assert res.incomplete is True
 
 
+def test_zero_price_treated_as_missing():
+    """0/음수 가격(데이터 오염)은 결측 취급 — qty×0 조용한 합산 대신 incomplete=True."""
+    trades = [make_trade(id="b1", quantity=5, traded_at=_dt("2025-06-02T09:00:00+09:00"))]
+    closes = [
+        _close("005930", "2025-06-02", 100.0),
+        _close("005930", "2025-06-03", 0.0),  # 오염된 0 종가.
+    ]
+    today = date(2025, 6, 4)
+    res = compute_asset_history(
+        trades, closes, live_quotes={"005930": 0.0}, today=today, is_stock_view=True
+    )
+    # 6/3: 0 종가 → 결측 취급(기여 제외). 오늘: 0 라이브 → fallback 도 0(6/3 carry) → 결측.
+    by_date = {p["date"]: p["value"] for p in res.series}
+    assert by_date["2025-06-02"] == 5 * 100.0
+    assert by_date["2025-06-03"] == 0.0  # 기여 제외(0 합산이 아니라 스코프 비어 total 0).
+    assert res.incomplete is True
+
+
 # ─────────────────────────── 계좌뷰(다종목) — 회귀 가드 ───────────────────────────
 
 

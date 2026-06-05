@@ -53,14 +53,16 @@ async def get_asset_history(
     is_stock_view = bool(ticker)
     today = datetime.now(KST).date()
 
-    # 1) 스코프 거래 로드(accountId/ticker/country push). 종목뷰면 country 도 필터.
+    # 1) 스코프 거래 로드(accountId/ticker/country push). 계좌뷰/종목뷰 모두 country 필터 —
+    # 종가 적재(data.go.kr)·시세 조회가 country 단위라, 다른 국가 보유분이 섞이면
+    # 값에서 조용히 빠지면서 incomplete 만 세우게 된다. 스코프를 country 로 일관시킨다.
     async with acquire_for_user(pool, user.id) as conn:
         trades = await list_trades_with_account(
             conn,
             user.id,
             account_id=account_id,
             ticker=ticker if is_stock_view else None,
-            country=country if is_stock_view else None,
+            country=country,
         )
 
     if not trades:

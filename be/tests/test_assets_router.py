@@ -146,7 +146,11 @@ class TestAssetHistory:
         assert captured.get("country") == "KR"
 
     def test_account_id_routing(self, trades_client):
-        """accountId 가 list_trades_with_account 로 전달되고 ticker/country 는 None(계좌뷰)."""
+        """accountId 가 list_trades_with_account 로 전달되고 ticker 는 None(계좌뷰).
+
+        country 는 계좌뷰에서도 필터한다 — 종가 적재/시세가 country 단위라 타국 보유분이
+        섞이면 값에서 조용히 빠지기 때문(기본 KR).
+        """
         captured: dict = {}
 
         async def capturing_list(conn_arg, user_id, **kwargs):
@@ -164,7 +168,7 @@ class TestAssetHistory:
         assert resp.status_code == 200
         assert captured.get("account_id") == "a1"
         assert captured.get("ticker") is None
-        assert captured.get("country") is None
+        assert captured.get("country") == "KR"
 
     def test_empty_trades_returns_empty_series(self, trades_client):
         conn = FakeConnection([])

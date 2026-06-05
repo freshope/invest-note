@@ -96,11 +96,13 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
     setTradePayload(null);
     queryClient.invalidateQueries({ queryKey: queryKeys.portfolio });
     queryClient.invalidateQueries({ queryKey: queryKeys.trades });
+    queryClient.invalidateQueries({ queryKey: queryKeys.assets });
   }, [queryClient]);
 
   const handleTradeSaved = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: queryKeys.portfolio });
     queryClient.invalidateQueries({ queryKey: queryKeys.trades });
+    queryClient.invalidateQueries({ queryKey: queryKeys.assets });
   }, [queryClient]);
 
   const value = useMemo<DetailPanelContextValue>(

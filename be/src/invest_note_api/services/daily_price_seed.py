@@ -13,6 +13,7 @@ import asyncpg
 import httpx
 
 from invest_note_api.db_ops import daily_prices_repo
+from invest_note_api.domain.asset_history import LOOKBACK_DAYS
 from invest_note_api.external.constants import USER_AGENT
 from invest_note_api.services.stock_seed import (
     _DATA_GO_KR_TIMEOUT,
@@ -227,17 +228,20 @@ async def backfill_closes(
         )
 
     # 3) DB 순차 — upsert + sync_state. 실패 종목은 incomplete + 상태 미기록.
+    # 종목별 rows 를 모아 단일 executemany 로 배치(왕복 N→1).
     incomplete = False
+    all_rows: list[dict] = []
     state_rows: list[dict] = []
     for ticker, rows in results:
         if rows is None:
             incomplete = True
             continue
-        if rows:
-            await daily_prices_repo.upsert_closes(
-                conn, rows, country_code=country_code
-            )
+        all_rows.extend(rows)
         state_rows.append({"ticker": ticker, "checked_through_date": yesterday})
+    if all_rows:
+        await daily_prices_repo.upsert_closes(
+            conn, all_rows, country_code=country_code
+        )
     if state_rows:
         await daily_prices_repo.upsert_sync_state(
             conn, state_rows, country_code=country_code
@@ -257,9 +261,6 @@ async def prune_older_than(
 
 # ─────────────────────────── 사전 적재(전체 유저 보유종목 union) ───────────────────────────
 
-_LOOKBACK_DAYS = 365 * 2
-
-
 async def seed_daily_prices(db_url: str, *, api_key: str) -> None:
     """전체 유저 보유종목 union 의 2년치 종가를 사전 적재(cron pre-warm).
 
@@ -268,7 +269,7 @@ async def seed_daily_prices(db_url: str, *, api_key: str) -> None:
     trades 는 RLS 가 걸려있으나 service-role connect 는 RLS 를 우회하므로 전체 유저 종목을 본다.
     """
     today = date.today()
-    earliest = today - timedelta(days=_LOOKBACK_DAYS)
+    earliest = today - timedelta(days=LOOKBACK_DAYS)
     conn = await asyncpg.connect(db_url, statement_cache_size=0)
     try:
         rows = await conn.fetch(

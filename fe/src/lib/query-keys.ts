@@ -30,6 +30,8 @@ export const queryKeys = {
   analysisDashboard: (period: Period) =>
     ["analysis", "dashboard", period] as const,
 
+  // 거래 변경 시 assets prefix invalidate 한 번으로 모든 파라미터 조합을 무효화.
+  assets: ["assets"] as const,
   assetHistory: (accountId: string | null, ticker: string | null) =>
     ["assets", "history", accountId, ticker] as const,
 };
