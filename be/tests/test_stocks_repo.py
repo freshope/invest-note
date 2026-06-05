@@ -1,6 +1,7 @@
 """stocks_repo 단위 테스트 — 검색 가드/파라미터/row 매핑 (SQL 자체는 통합 검증)."""
 from __future__ import annotations
 
+import datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -67,6 +68,30 @@ async def test_search_escapes_like_wildcards():
     args = conn.fetch.call_args.args
     assert args[4] is False  # is_chosung
     assert args[5] == "삼성\\%\\_"  # escaped like term
+
+
+@pytest.mark.asyncio
+async def test_fetch_meta_empty_codes_skips_db():
+    conn = AsyncMock()
+    assert await stocks_repo.fetch_meta(conn, []) == {}
+    conn.fetch.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_fetch_meta_maps_rows_by_ticker():
+    """row→snake_case dict, nps_as_of isoformat, null marcap/nps 유지, 키=ticker."""
+    conn = AsyncMock()
+    conn.fetch.return_value = [
+        {"ticker": "005930", "market": "KOSPI", "marcap_rank": 1,
+         "nps_holding": "major", "nps_as_of": datetime.date(2026, 3, 31)},
+        {"ticker": "069500", "market": "ETF", "marcap_rank": None,
+         "nps_holding": None, "nps_as_of": None},
+    ]
+    res = await stocks_repo.fetch_meta(conn, ["005930", "069500"])
+    assert res == {
+        "005930": {"market": "KOSPI", "marcap_rank": 1, "nps_holding": "major", "nps_as_of": "2026-03-31"},
+        "069500": {"market": "ETF", "marcap_rank": None, "nps_holding": None, "nps_as_of": None},
+    }
 
 
 @pytest.mark.asyncio
