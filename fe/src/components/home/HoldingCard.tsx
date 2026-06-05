@@ -3,15 +3,18 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { calcChangePercent, fmt, formatPctSigned, formatPnL, signColor } from "@/lib/format";
 import type { Position } from "@/lib/portfolio";
+import type { StockMeta } from "@/lib/api-client";
 import { CountryBadge } from "@/components/records/trade-display";
+import { StockMetaBadges } from "@/components/stocks/StockMetaBadges";
 
 interface HoldingCardProps {
   position: Position;
+  meta?: StockMeta;
   // 부모가 카드마다 새 클로저를 만들지 않도록 position 자체를 인자로 전달한다.
   onPress?: (position: Position) => void;
 }
 
-export const HoldingCard = memo(function HoldingCard({ position, onPress }: HoldingCardProps) {
+export const HoldingCard = memo(function HoldingCard({ position, meta, onPress }: HoldingCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [pressing, setPressing] = useState(false);
 
@@ -55,11 +58,19 @@ export const HoldingCard = memo(function HoldingCard({ position, onPress }: Hold
       {/* 헤더 */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-[16px] font-bold text-foreground">{assetName}</span>
-            <CountryBadge countryCode={country} />
+          <div className="flex items-baseline gap-1.5 min-w-0">
+            <span className="text-[16px] font-bold text-foreground truncate">{assetName}</span>
+            <span className="shrink-0 text-[12px] font-mono text-muted-foreground">{ticker}</span>
           </div>
-          <p className="text-[12px] font-mono text-muted-foreground">{ticker}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <CountryBadge countryCode={country} />
+            <StockMetaBadges
+              market={meta?.market}
+              rank={meta?.marcap_rank}
+              nps={meta?.nps_holding}
+              npsAsOf={meta?.nps_as_of}
+            />
+          </div>
         </div>
 
         {/* 평가금액 */}

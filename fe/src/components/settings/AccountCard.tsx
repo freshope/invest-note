@@ -29,6 +29,7 @@ export function AccountCard({ account, tradeCount }: AccountCardProps) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
         queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.assets }),
       ]);
     }, "삭제할 수 없습니다.");
   }

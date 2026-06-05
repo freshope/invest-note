@@ -395,3 +395,43 @@ def test_admin_seed_nps_accepts_valid_token_returns_202(monkeypatch):
     r = client.post("/admin/seed/nps", headers={"X-Admin-Token": "secret"})
     assert r.status_code == 202
     assert r.json() == {"status": "started"}
+
+
+# ─────────────────────────── run_seed_nps (reconcile 선행) ───────────────────────────
+
+
+async def test_run_seed_nps_runs_reconcile_before_seed(monkeypatch):
+    from invest_note_api.routers import admin
+
+    calls: list[str] = []
+
+    async def fake_reconcile(*_a, **_k):
+        calls.append("reconcile")
+        return {"reconciled": 0}
+
+    async def fake_seed(*_a, **_k):
+        calls.append("seed")
+        return {}
+
+    monkeypatch.setattr(admin, "reconcile_nps_unmatched", fake_reconcile)
+    monkeypatch.setattr(admin, "seed_nps", fake_seed)
+    await admin.run_seed_nps("postgresql://x", "key")
+    assert calls == ["reconcile", "seed"]  # reconcile 이 seed 보다 먼저
+
+
+async def test_run_seed_nps_continues_seed_when_reconcile_fails(monkeypatch):
+    from invest_note_api.routers import admin
+
+    calls: list[str] = []
+
+    async def boom_reconcile(*_a, **_k):
+        raise RuntimeError("reconcile boom")
+
+    async def fake_seed(*_a, **_k):
+        calls.append("seed")
+        return {}
+
+    monkeypatch.setattr(admin, "reconcile_nps_unmatched", boom_reconcile)
+    monkeypatch.setattr(admin, "seed_nps", fake_seed)
+    await admin.run_seed_nps("postgresql://x", "key")  # reconcile 예외 흡수
+    assert calls == ["seed"]  # reconcile 실패에도 seed 진행

@@ -366,7 +366,12 @@ async def reconcile_nps_unmatched(
 
 
 def main() -> None:
-    """CLI 진입점 — `cd be && poetry run python -m invest_note_api.services.nps_seed`."""
+    """CLI 진입점 — `cd be && poetry run python -m invest_note_api.services.nps_seed`.
+
+    reconcile(관리자 resolved_ticker 해소) 선행 후 seed_nps — admin /seed/nps 래퍼와 동일 순서.
+    reconcile 이 과거사명을 별칭(nps_reconcile)으로 등록하면 이어지는 seed 매칭이 자동 해소해
+    같은 종목이 nps_unmatched 에 다시 쌓이지 않는다. reconcile 실패는 seed 를 막지 않는다(독립 로깅).
+    """
     import asyncio
 
     settings = Settings()
@@ -374,7 +379,15 @@ def main() -> None:
     if not db_url:
         raise SystemExit("database_url 미설정")
     logging.basicConfig(level=logging.INFO)
-    print(asyncio.run(seed_nps(db_url, api_key=settings.data_go_kr_api_key)))
+
+    async def _run() -> None:
+        try:
+            print(await reconcile_nps_unmatched(db_url))
+        except Exception:
+            logger.exception("nps_seed CLI 선행 reconcile 실패 — seed 는 계속 진행")
+        print(await seed_nps(db_url, api_key=settings.data_go_kr_api_key))
+
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":

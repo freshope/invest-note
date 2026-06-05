@@ -1,14 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { fmt } from "@/lib/format";
 import { getTradeTypeAccent } from "@/lib/constants/colors";
 import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import { TradeTypeBadge } from "@/components/shared/TradeTypeBadge";
+import { StockMetaBadges } from "@/components/stocks/StockMetaBadges";
+import { useStockMeta, isKrStockCode } from "@/hooks/useStockMeta";
 import {
   CountryBadge,
-  ExchangeBadge,
   MarketTypeBadge,
   getQuantityUnit,
 } from "./trade-display";
@@ -40,11 +42,18 @@ export function TradeHeaderCard({
   const hasStock = !!trade.ticker_symbol;
   const interactive = onStockPress && hasStock;
 
+  const metaCodes = useMemo(
+    () => (isKrStockCode(trade.ticker_symbol, trade.country_code) ? [trade.ticker_symbol] : []),
+    [trade.ticker_symbol, trade.country_code],
+  );
+  const { meta } = useStockMeta(metaCodes);
+  const stockMeta = trade.ticker_symbol ? meta[trade.ticker_symbol] : undefined;
+
   return (
     <div className="rounded-2xl overflow-hidden bg-muted/60">
       <div className={cn("h-1", accent.bg)} />
       <div className="p-5">
-        <div className="flex items-center gap-2 mb-1">
+        <div className="flex items-center gap-2 mb-1 flex-wrap">
           {interactive ? (
             <button
               type="button"
@@ -63,19 +72,24 @@ export function TradeHeaderCard({
           ) : (
             <span className="text-[20px] font-bold text-foreground">{trade.asset_name}</span>
           )}
-          <TradeTypeBadge tradeType={tradeType} size="md" />
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
           {trade.ticker_symbol && (
             <span className="text-[13px] font-mono text-muted-foreground">
               {trade.ticker_symbol}
             </span>
           )}
+          <TradeTypeBadge tradeType={tradeType} size="md" />
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
           <MarketTypeBadge marketType={trade.market_type} />
           {trade.market_type === "STOCK" && (
             <>
               <CountryBadge countryCode={trade.country_code ?? DEFAULT_COUNTRY_CODE} />
-              <ExchangeBadge exchange={trade.exchange} />
+              <StockMetaBadges
+                market={trade.exchange}
+                rank={stockMeta?.marcap_rank}
+                nps={stockMeta?.nps_holding}
+                npsAsOf={stockMeta?.nps_as_of}
+              />
             </>
           )}
         </div>

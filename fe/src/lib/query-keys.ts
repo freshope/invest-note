@@ -24,6 +24,14 @@ export const queryKeys = {
   // 시세는 portfolio 트리와 별개 — 독립 staleTime(45s). keys 는 정렬해 안정적 캐시 키 보장.
   quotes: (keys: string[]) => ["quotes", [...keys].sort().join(",")] as const,
 
+  // 종목 메타(마켓/시총순위/연금) — 일단위 갱신이라 긴 staleTime. codes 정렬로 안정적 캐시 키.
+  stockMeta: (codes: string[]) => ["stock-meta", [...codes].sort().join(",")] as const,
+
   analysisDashboard: (period: Period) =>
     ["analysis", "dashboard", period] as const,
+
+  // 거래 변경 시 assets prefix invalidate 한 번으로 모든 파라미터 조합을 무효화.
+  assets: ["assets"] as const,
+  assetHistory: (accountId: string | null, ticker: string | null) =>
+    ["assets", "history", accountId, ticker] as const,
 };

@@ -1,0 +1,232 @@
+"""순수 함수 단위 테스트 — domain/asset_history.py
+
+합성 거래 + 종가맵으로 일별 자산·carry-forward·오늘 라이브점·change 계산 검증(DB 불필요).
+회귀 가드(advisor #1): 2종목·서로 다른 매수/매도일을 종목별 walk 합산으로 산출.
+"""
+from __future__ import annotations
+
+from datetime import date, datetime, timezone
+
+from invest_note_api.domain.asset_history import (
+    compute_asset_history,
+    scope_earliest_date,
+    scope_tickers,
+)
+from invest_note_api.domain.trade_types import Trade
+
+
+def _dt(s: str) -> datetime:
+    return datetime.fromisoformat(s).astimezone(timezone.utc)
+
+
+def make_trade(**kwargs) -> Trade:
+    defaults = dict(
+        id="t1",
+        user_id="u1",
+        account_id="a1",
+        asset_name="삼성전자",
+        ticker_symbol="005930",
+        market_type="STOCK",
+        trade_type="BUY",
+        price=70000.0,
+        quantity=10.0,
+        total_amount=700000.0,
+        traded_at=_dt("2024-01-10T09:00:00+09:00"),
+        country_code="KR",
+        exchange="",
+        commission=0.0,
+        tax=0.0,
+        created_at=_dt("2024-01-01T00:00:00Z"),
+        updated_at=_dt("2024-01-01T00:00:00Z"),
+    )
+    defaults.update(kwargs)
+    return Trade(**defaults)
+
+
+def _close(ticker: str, d: str, price: float) -> dict:
+    return {"ticker": ticker, "close_date": date.fromisoformat(d), "close_price": price}
+
+
+# ─────────────────────────── 종목뷰(단일 종목) ───────────────────────────
+
+
+def test_single_stock_qty_times_close():
+    """1종목 매수 후 일별 자산 = qty × 그 날 종가, change·close·qty 포함(종목뷰)."""
+    trades = [
+        make_trade(id="b1", trade_type="BUY", quantity=10, traded_at=_dt("2025-06-02T09:00:00+09:00")),
+    ]
+    closes = [
+        _close("005930", "2025-06-02", 75000),
+        _close("005930", "2025-06-03", 76000),
+    ]
+    today = date(2025, 6, 3)
+    res = compute_asset_history(
+        trades, closes, live_quotes={"005930": 77000.0}, today=today, is_stock_view=True
+    )
+
+    # series: 2개 거래일(6/2 종가, 6/3=오늘 라이브).
+    assert res.series == [
+        {"date": "2025-06-02", "value": 10 * 75000},
+        {"date": "2025-06-03", "value": 10 * 77000},  # 오늘 라이브.
+    ]
+    # items: 최신 먼저, change = 전 거래일 대비.
+    assert res.items[0]["date"] == "2025-06-03"
+    assert res.items[0]["change"] == 10 * 77000 - 10 * 75000
+    assert res.items[0]["close"] == 77000.0
+    assert res.items[0]["qty"] == 10.0
+    assert res.items[1]["change"] == 0  # 첫 항목(=가장 오래된).
+    assert res.incomplete is False
+
+
+def test_carry_forward_missing_close():
+    """종가 결측일은 직전 종가 carry-forward. 거래일 집합에 없으면 점 자체가 없음."""
+    trades = [make_trade(id="b1", quantity=5, traded_at=_dt("2025-06-02T09:00:00+09:00"))]
+    closes = [
+        _close("005930", "2025-06-02", 100.0),
+        # 6/3 결측 → 거래일 집합에 6/3 없음(오늘 6/4 만 추가).
+        _close("005930", "2025-06-04", 120.0),
+    ]
+    today = date(2025, 6, 4)
+    res = compute_asset_history(
+        trades, closes, live_quotes={"005930": 130.0}, today=today, is_stock_view=True
+    )
+    dates = [p["date"] for p in res.series]
+    assert dates == ["2025-06-02", "2025-06-04"]
+    assert res.series[-1]["value"] == 5 * 130.0  # 오늘 라이브.
+
+
+def test_incomplete_when_close_before_first():
+    """qty>0 인데 그 날 carry-forward 할 종가가 없으면(첫 적재 이전) incomplete=True."""
+    trades = [make_trade(id="b1", quantity=5, traded_at=_dt("2025-06-01T09:00:00+09:00"))]
+    # 매수는 6/1 이지만 종가는 6/2 부터만 적재됨 → 6/2 거래일에는 종가 있음.
+    # 라이브 결측 케이스로 incomplete 유도.
+    closes = [_close("005930", "2025-06-02", 100.0)]
+    today = date(2025, 6, 2)
+    res = compute_asset_history(
+        trades, closes, live_quotes={}, today=today, is_stock_view=True
+    )
+    # 오늘(6/2) 라이브 없음 → 직전 종가 100 fallback + incomplete.
+    assert res.series[-1]["value"] == 5 * 100.0
+    assert res.incomplete is True
+
+
+def test_zero_price_treated_as_missing():
+    """0/음수 가격(데이터 오염)은 결측 취급 — qty×0 조용한 합산 대신 incomplete=True."""
+    trades = [make_trade(id="b1", quantity=5, traded_at=_dt("2025-06-02T09:00:00+09:00"))]
+    closes = [
+        _close("005930", "2025-06-02", 100.0),
+        _close("005930", "2025-06-03", 0.0),  # 오염된 0 종가.
+    ]
+    today = date(2025, 6, 4)
+    res = compute_asset_history(
+        trades, closes, live_quotes={"005930": 0.0}, today=today, is_stock_view=True
+    )
+    # 6/3: 0 종가 → 결측 취급(기여 제외). 오늘: 0 라이브 → fallback 도 0(6/3 carry) → 결측.
+    by_date = {p["date"]: p["value"] for p in res.series}
+    assert by_date["2025-06-02"] == 5 * 100.0
+    assert by_date["2025-06-03"] == 0.0  # 기여 제외(0 합산이 아니라 스코프 비어 total 0).
+    assert res.incomplete is True
+
+
+# ─────────────────────────── 계좌뷰(다종목) — 회귀 가드 ───────────────────────────
+
+
+def test_account_view_two_tickers_summed_per_ticker():
+    """2종목을 종목별 walk 후 날짜별 합산(단일 walk 면 qty 가 섞여 틀림 — advisor #1 가드)."""
+    trades = [
+        make_trade(id="a1b", ticker_symbol="005930", asset_name="삼성전자",
+                   quantity=10, traded_at=_dt("2025-06-02T09:00:00+09:00")),
+        make_trade(id="a2b", ticker_symbol="000660", asset_name="하이닉스",
+                   quantity=3, traded_at=_dt("2025-06-03T09:00:00+09:00")),
+    ]
+    closes = [
+        _close("005930", "2025-06-02", 70000),
+        _close("005930", "2025-06-03", 71000),
+        _close("000660", "2025-06-03", 200000),
+    ]
+    today = date(2025, 6, 3)
+    res = compute_asset_history(
+        trades, closes, live_quotes={"005930": 72000.0, "000660": 210000.0},
+        today=today, is_stock_view=False,
+    )
+    by_date = {p["date"]: p["value"] for p in res.series}
+    # 6/2: 삼성전자만 보유(10주) — 하이닉스 매수는 6/3.
+    assert by_date["2025-06-02"] == 10 * 70000
+    # 6/3(오늘 라이브): 삼성 10×72000 + 하이닉스 3×210000.
+    assert by_date["2025-06-03"] == 10 * 72000 + 3 * 210000
+    # 계좌뷰 items 에는 close/qty 없음.
+    assert "close" not in res.items[0]
+    assert "qty" not in res.items[0]
+
+
+def test_past_day_missing_close_excluded_and_incomplete():
+    """과거일에 qty>0 인데 그 종목 close≤d 가 없으면(첫 적재 이전) 그 종목 기여 제외 + incomplete.
+
+    A·B 둘 다 06-01 매수. A 종가는 06-01 부터, B 종가는 06-03 부터 적재 →
+    06-01 거래일(A 종가로 집합에 존재)에 B 는 carry-forward 할 종가가 없다.
+    """
+    trades = [
+        make_trade(id="ab", ticker_symbol="005930", asset_name="A",
+                   quantity=10, traded_at=_dt("2025-06-01T09:00:00+09:00")),
+        make_trade(id="bb", ticker_symbol="000660", asset_name="B",
+                   quantity=2, traded_at=_dt("2025-06-01T09:00:00+09:00")),
+    ]
+    closes = [
+        _close("005930", "2025-06-01", 100.0),
+        _close("005930", "2025-06-03", 110.0),
+        _close("000660", "2025-06-03", 500.0),  # B 는 06-03 부터만.
+    ]
+    today = date(2025, 6, 3)
+    res = compute_asset_history(
+        trades, closes, live_quotes={"005930": 110.0, "000660": 500.0},
+        today=today, is_stock_view=False,
+    )
+    by_date = {p["date"]: p["value"] for p in res.series}
+    # 06-01: A 만 평가(10×100). B 는 close≤d 없어 제외.
+    assert by_date["2025-06-01"] == 10 * 100.0
+    assert res.incomplete is True
+
+
+def test_sell_reduces_qty():
+    """매도 후 보유수량 감소가 자산에 반영(step function)."""
+    trades = [
+        make_trade(id="b1", trade_type="BUY", quantity=10, traded_at=_dt("2025-06-02T09:00:00+09:00")),
+        make_trade(id="s1", trade_type="SELL", quantity=4, traded_at=_dt("2025-06-03T09:00:00+09:00")),
+    ]
+    closes = [
+        _close("005930", "2025-06-02", 100.0),
+        _close("005930", "2025-06-03", 100.0),
+    ]
+    today = date(2025, 6, 4)
+    res = compute_asset_history(
+        trades, closes, live_quotes={"005930": 100.0}, today=today, is_stock_view=True
+    )
+    by_date = {p["date"]: p["value"] for p in res.series}
+    assert by_date["2025-06-02"] == 10 * 100.0
+    assert by_date["2025-06-03"] == 6 * 100.0  # 4주 매도 후 6주.
+
+
+def test_empty_trades():
+    res = compute_asset_history([], [], {}, today=date(2025, 6, 4), is_stock_view=False)
+    assert res.series == []
+    assert res.items == []
+    assert res.incomplete is False
+
+
+# ─────────────────────────── scope helpers ───────────────────────────
+
+
+def test_scope_earliest_clamped_to_two_years():
+    trades = [make_trade(traded_at=_dt("2020-01-01T09:00:00+09:00"))]
+    today = date(2025, 6, 4)
+    earliest = scope_earliest_date(trades, today)
+    assert earliest == date(2023, 6, 5)  # 오늘-2년(윤년 포함 730일).
+
+
+def test_scope_tickers_dedup():
+    trades = [
+        make_trade(id="t1", ticker_symbol="005930"),
+        make_trade(id="t2", ticker_symbol="005930"),
+        make_trade(id="t3", ticker_symbol="000660"),
+    ]
+    assert scope_tickers(trades) == ["005930", "000660"]

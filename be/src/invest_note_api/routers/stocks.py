@@ -40,6 +40,23 @@ async def get_quotes(
     return await fetch_quotes_by_keys(quote_state, keys, client=http_client, force_refresh=refresh)
 
 
+@router.get("/meta")
+async def get_stock_meta(
+    codes: str = Query(default=""),
+    user: AuthenticatedUser = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict:
+    """종목 코드 목록(콤마 구분, KR 6자리) → {code: 메타}. 뱃지용 배치 조회."""
+    parsed = list(dict.fromkeys(c.strip() for c in codes.split(",") if c.strip()))
+    if not parsed:
+        return {}
+    parsed = parsed[:200]
+
+    # stocks 는 public read-only 마스터 — RLS 미적용이라 plain connection 으로 조회.
+    async with pool.acquire() as conn:
+        return await stocks_repo.fetch_meta(conn, parsed)
+
+
 @router.get("/search")
 async def search_stocks(
     q: str = Query(default=""),
