@@ -1,14 +1,10 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo } from "react";
 import { AreaChart, Area, XAxis, YAxis, ReferenceLine, ResponsiveContainer } from "recharts";
 import type { AssetHistoryPoint } from "@/lib/api-client";
 import { fmtCompact } from "@/lib/format";
-
-/** 한 화면 가시 윈도우 ≈ 3개월(거래일). BE 가 series 를 최대 2년으로 캡하므로 팬 한계 = 배열 경계. */
-const WINDOW = 63;
-/** 한 윈도우 너비를 픽셀로 나눠 스와이프 1포인트 이동에 필요한 거리 산정 */
-const SWIPE_STEP_PX = 6;
+import { useChartPan } from "@/hooks/useChartPan";
 
 function formatTick(date: string): string {
   // "2025-06-04" → "6/4"
@@ -34,19 +30,7 @@ export default function AssetHistoryChartInner({
   /** 가장 우측 가시점(date+value)이 바뀔 때 통지 — 헤더가 그 점을 표시. */
   onFocusChange?: (point: AssetHistoryPoint) => void;
 }) {
-  const len = series.length;
-  // 윈도우 끝 인덱스(최신=len-1 에서 시작). 스와이프로 이동.
-  const [endIndex, setEndIndex] = useState(len - 1);
-  const dragRef = useRef<{ startX: number; startEnd: number } | null>(null);
-
-  // len 변경(데이터 재조회) 시 endIndex 가 범위를 벗어나면 최신으로 보정
-  const clampedEnd = Math.min(Math.max(endIndex, Math.min(WINDOW - 1, len - 1)), len - 1);
-
-  const visible = useMemo(() => {
-    const end = clampedEnd + 1;
-    const start = Math.max(0, end - WINDOW);
-    return series.slice(start, end);
-  }, [series, clampedEnd]);
+  const { visible, panProps } = useChartPan(series);
 
   // 화면에 보이는 가장 우측(최근) 점 — 마커 위치 + 헤더 표시 대상.
   const focus = visible.length ? visible[visible.length - 1] : null;
@@ -121,36 +105,8 @@ export default function AssetHistoryChartInner({
         : FALL
       : solidColor;
 
-  function move(deltaPx: number) {
-    // 오른쪽 스와이프(deltaPx>0) = 과거로(endIndex 감소)
-    const steps = Math.round(deltaPx / SWIPE_STEP_PX);
-    if (steps === 0) return;
-    setEndIndex((prev) => {
-      const base = dragRef.current ? dragRef.current.startEnd : prev;
-      const next = base - steps;
-      return Math.min(Math.max(next, Math.min(WINDOW - 1, len - 1)), len - 1);
-    });
-  }
-
   return (
-    <div
-      // touchAction: pan-y → 가로 스와이프는 차트 팬, 세로는 페이지 스크롤 유지
-      style={{ touchAction: "pan-y" }}
-      onPointerDown={(e) => {
-        dragRef.current = { startX: e.clientX, startEnd: clampedEnd };
-        (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-      }}
-      onPointerMove={(e) => {
-        if (!dragRef.current) return;
-        move(e.clientX - dragRef.current.startX);
-      }}
-      onPointerUp={() => {
-        dragRef.current = null;
-      }}
-      onPointerCancel={() => {
-        dragRef.current = null;
-      }}
-    >
+    <div {...panProps}>
       <ResponsiveContainer width="100%" height={170}>
         <AreaChart data={visible} margin={{ top: 8, right: 8, bottom: 4, left: 8 }}>
           <defs>
