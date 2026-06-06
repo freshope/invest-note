@@ -187,11 +187,12 @@ def _patch_repo(
     watermarks: dict | None = None,
     sync_state: dict | None = None,
     fetch_fn=None,
+    naver_fn=None,
 ):
     """backfill_closes 의 repo 의존성을 monkeypatch 하고, 호출 추적 dict 를 돌려준다."""
     from invest_note_api.db_ops import daily_prices_repo
 
-    track: dict = {"fetched": [], "upserted_closes": [], "sync_rows": []}
+    track: dict = {"fetched": [], "upserted_closes": [], "sync_rows": [], "naver_fetched": []}
 
     async def fake_watermarks(conn, tickers, **kw):
         return watermarks or {}
@@ -211,11 +212,16 @@ def _patch_repo(
         track["fetched"].append((ticker, begin, end, url))
         return []
 
+    async def default_naver(client, ticker, begin, end):
+        track["naver_fetched"].append((ticker, begin, end))
+        return []
+
     monkeypatch.setattr(daily_prices_repo, "get_watermarks", fake_watermarks)
     monkeypatch.setattr(daily_prices_repo, "get_sync_state", fake_sync_state)
     monkeypatch.setattr(daily_prices_repo, "upsert_closes", fake_upsert_closes)
     monkeypatch.setattr(daily_prices_repo, "upsert_sync_state", fake_upsert_sync)
     monkeypatch.setattr(daily_price_seed, "fetch_daily_closes", fetch_fn or default_fetch)
+    monkeypatch.setattr(daily_price_seed, "fetch_naver_daily_closes", naver_fn or default_naver)
     return track
 
 
@@ -363,6 +369,154 @@ async def test_backfill_fetches_in_parallel_within_limit(monkeypatch):
 
     assert state["peak"] > 1  # 실제로 병렬 실행됨(순차였다면 peak=1)
     assert state["peak"] <= daily_price_seed._BACKFILL_CONCURRENCY  # 상한 준수
+
+
+# ─────────────────────────── 네이버 tail-gap 보충 ───────────────────────────
+
+
+async def test_fetch_naver_daily_closes_parses_localdate_closeprice():
+    """실측 응답 shape(localDate/closePrice) 파싱 + 범위 params 전달."""
+    captured: dict = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        captured["path"] = req.url.path
+        captured.update(dict(req.url.params))
+        return httpx.Response(
+            200,
+            json=[
+                {"localDate": "20260604", "closePrice": 351500.0, "openPrice": 349000.0},
+                {"localDate": "20260605", "closePrice": 329000.0, "openPrice": 333500.0},
+            ],
+        )
+
+    async with _mock_client(handler) as client:
+        rows = await daily_price_seed.fetch_naver_daily_closes(
+            client, "005930", date(2026, 6, 4), date(2026, 6, 5)
+        )
+
+    assert captured["path"] == "/chart/domestic/item/005930/day"
+    assert captured["startDateTime"] == "20260604000000"
+    assert captured["endDateTime"] == "20260605000000"
+    assert rows == [
+        {"ticker": "005930", "close_date": date(2026, 6, 4), "close_price": 351500.0},
+        {"ticker": "005930", "close_date": date(2026, 6, 5), "close_price": 329000.0},
+    ]
+
+
+async def test_fetch_naver_daily_closes_skips_bad_and_out_of_range_items():
+    """결측/파싱불가/범위 밖 행 skip — 범위 밖 종가가 watermark 를 오염시키지 않게."""
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=[
+                {"localDate": "20260605", "closePrice": 329000.0},
+                {"localDate": "20260606", "closePrice": 999.0},  # 범위 밖(end 초과)
+                {"localDate": "", "closePrice": 100.0},  # 날짜 결측
+                {"localDate": "20260605", "closePrice": None},  # 종가 결측
+            ],
+        )
+
+    async with _mock_client(handler) as client:
+        rows = await daily_price_seed.fetch_naver_daily_closes(
+            client, "005930", date(2026, 6, 5), date(2026, 6, 5)
+        )
+
+    assert rows == [
+        {"ticker": "005930", "close_date": date(2026, 6, 5), "close_price": 329000.0},
+    ]
+
+
+async def test_fetch_naver_daily_closes_non_list_response_returns_empty():
+    """미지원 종목(ETN 등) 오류 객체 응답 → 빈 배열(보충 없음)."""
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"code": "StockConflict"})
+
+    async with _mock_client(handler) as client:
+        rows = await daily_price_seed.fetch_naver_daily_closes(
+            client, "580011", date(2026, 6, 5), date(2026, 6, 5)
+        )
+
+    assert rows == []
+
+
+async def test_backfill_naver_fills_tail_gap(monkeypatch):
+    """data.go.kr 가 어제 전날까지만 발행(T+1) → 공백(어제)만 네이버로 보충해 함께 upsert."""
+    today = date(2026, 6, 4)
+    yesterday = date(2026, 6, 3)
+
+    async def datagokr_through_0602(api_key, ticker, begin, end, *, url=daily_price_seed._STOCK_PRICE_URL, client=None):
+        return [{"ticker": ticker, "close_date": date(2026, 6, 2), "close_price": 100.0}]
+
+    async def naver_0603(client, ticker, begin, end):
+        track["naver_fetched"].append((ticker, begin, end))
+        return [{"ticker": ticker, "close_date": date(2026, 6, 3), "close_price": 110.0}]
+
+    track = _patch_repo(monkeypatch, watermarks={}, sync_state={}, fetch_fn=datagokr_through_0602, naver_fn=naver_0603)
+    conn = _fake_conn({"005930": "KOSPI"})
+
+    incomplete = await daily_price_seed.backfill_closes(
+        conn, "key", ["005930"], date(2026, 6, 1), today
+    )
+
+    # 공백 구간(6/3~6/3)만 네이버 질의.
+    assert track["naver_fetched"] == [("005930", date(2026, 6, 3), date(2026, 6, 3))]
+    assert {r["close_date"] for r in track["upserted_closes"]} == {date(2026, 6, 2), date(2026, 6, 3)}
+    assert track["sync_rows"] == [{"ticker": "005930", "checked_through_date": yesterday}]
+    assert incomplete is False
+
+
+async def test_backfill_naver_failure_keeps_datagokr_rows_state_unrecorded(monkeypatch):
+    """네이버 보충 실패 → data.go.kr 분은 upsert, sync_state 미기록 + incomplete(재시도 보장)."""
+    today = date(2026, 6, 4)
+
+    async def datagokr_through_0602(api_key, ticker, begin, end, *, url=daily_price_seed._STOCK_PRICE_URL, client=None):
+        return [{"ticker": ticker, "close_date": date(2026, 6, 2), "close_price": 100.0}]
+
+    async def naver_boom(client, ticker, begin, end):
+        raise RuntimeError("naver down")
+
+    track = _patch_repo(monkeypatch, watermarks={}, sync_state={}, fetch_fn=datagokr_through_0602, naver_fn=naver_boom)
+    conn = _fake_conn({"005930": "KOSPI"})
+
+    incomplete = await daily_price_seed.backfill_closes(
+        conn, "key", ["005930"], date(2026, 6, 1), today
+    )
+
+    assert [r["close_date"] for r in track["upserted_closes"]] == [date(2026, 6, 2)]
+    assert track["sync_rows"] == []  # 미기록 → 쿨다운 없이 다음 요청 재시도.
+    assert incomplete is True
+
+
+async def test_backfill_naver_not_called_when_filled_through_yesterday(monkeypatch):
+    """data.go.kr 가 어제까지 채움(발행 완료) → 네이버 미호출."""
+    today = date(2026, 6, 4)
+
+    async def datagokr_through_yesterday(api_key, ticker, begin, end, *, url=daily_price_seed._STOCK_PRICE_URL, client=None):
+        return [{"ticker": ticker, "close_date": date(2026, 6, 3), "close_price": 100.0}]
+
+    track = _patch_repo(monkeypatch, watermarks={}, sync_state={}, fetch_fn=datagokr_through_yesterday)
+    conn = _fake_conn({"005930": "KOSPI"})
+
+    await daily_price_seed.backfill_closes(
+        conn, "key", ["005930"], date(2026, 6, 1), today
+    )
+
+    assert track["naver_fetched"] == []
+
+
+async def test_backfill_naver_not_called_for_non_kr(monkeypatch):
+    """KR 외 country 는 네이버 domestic 경로 미지원 → 보충 skip."""
+    today = date(2026, 6, 4)
+    track = _patch_repo(monkeypatch, watermarks={}, sync_state={})
+    conn = _fake_conn({"AAPL": "STOCK"})
+
+    await daily_price_seed.backfill_closes(
+        conn, "key", ["AAPL"], date(2026, 6, 1), today, country_code="US"
+    )
+
+    assert track["naver_fetched"] == []
 
 
 async def test_fetch_daily_closes_skips_missing_clpr():
