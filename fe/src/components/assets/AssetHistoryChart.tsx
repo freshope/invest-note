@@ -11,9 +11,12 @@ const AssetHistoryChartInner = dynamic(() => import("./AssetHistoryChartInner"),
 
 export function AssetHistoryChart({
   series,
+  investedAmount,
   onFocusChange,
 }: {
   series: AssetHistoryPoint[];
+  /** 매수 원금 가이드 라인 값 — null이면 기존 단색 차트 */
+  investedAmount?: number | null;
   onFocusChange?: (point: AssetHistoryPoint) => void;
 }) {
   if (series.length === 0) {
@@ -23,5 +26,11 @@ export function AssetHistoryChart({
       </div>
     );
   }
-  return <AssetHistoryChartInner series={series} onFocusChange={onFocusChange} />;
+  return (
+    <AssetHistoryChartInner
+      series={series}
+      investedAmount={investedAmount}
+      onFocusChange={onFocusChange}
+    />
+  );
 }

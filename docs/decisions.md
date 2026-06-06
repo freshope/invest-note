@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-06-06 | 자산 추이 차트 매수 금액 기준선 — BE 응답 포함 + baseValue 분할 그라데이션
+
+- **맥락:** 차트에 매수 원금 가이드와 손익 구간 색(위 빨강/아래 파랑)을 넣는데, ① 원금 값을 어디서 가져올지(FE 가 `/portfolio/summary` 재조합 vs BE 가 `/assets/history` 에 포함), ② recharts 에서 기준선 분할 색을 어떻게 그릴지(그라데이션 offset 이 objectBoundingBox 기준이라 stroke/fill 의 bbox 가 다르면 어긋남)가 쟁점.
+- **결정:** ① BE 가 이미 로드한 scoped trades 에 `build_positions()` 를 재사용해 `investedAmount`(보유분 cost_basis 합)를 응답에 포함. ② 원금이 가시 데이터 범위 안일 때만 `Area baseValue=원금` 으로 분할 렌더(이때 stroke/fill bbox 가 [dataMin,dataMax] 로 일치해 단일 offset 공유), 범위 밖이면 단색(수익 빨강=아래로 fade / 손실 파랑=곡선 위로 fade) 3-케이스 분기. 가이드 라인·라벨도 범위 안일 때만 표시해 Y 도메인 불변.
+- **이유:** ① FE 재조합은 scope(accountId/ticker/country) 매칭을 FE 가 중복 구현해야 해 shape drift 위험 — 대시보드 평가손익과 동일 계산 경로(`cost_basis`)를 쓰면 숫자가 항상 일치. ② baseValue 를 쓰지 않으면 fill path bbox(곡선~바닥)와 stroke path bbox(곡선만)가 달라 offset 이 안 맞는다 — 범위 밖 케이스를 분기로 빼면 offset 수학이 항상 정확.
+- **트레이드오프:** 분할 fill 이 곡선~원금 라인 사이만 칠해져 단색 모드와 채움 범위가 다름(시각적으로는 의도된 표현). 그라데이션 SVG id 는 `useId()` 로 인스턴스별 분리(고정 id 는 다중 마운트 시 첫 defs 로 오염).
+
+---
+
 ## 2026-06-05 | 자산 추이 계좌뷰 — country 로 일관 필터 (혼합 국가 보유 부분 누락 대신)
 
 - **맥락:** code-review 에서 발견 — 계좌뷰가 trades 는 전 국가 로드하면서 종가 backfill·라이브 시세는 `country="KR"` 고정이라, 비-KR 보유분이 시리즈 값에서 조용히 빠지고 `incomplete` 플래그만 섰다. 비-KR 티커가 data.go.kr(KR 전용)로 전달돼 쿼터도 낭비.
