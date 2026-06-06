@@ -241,7 +241,8 @@ def test_holiday_excludes_today_point():
 
 def test_market_open_today_by_traded_on():
     """traded_on == 오늘인 시세가 하나라도 있으면 개장, 모두 직전 거래일이면 휴장."""
-    q = lambda d: {"price": 1.0, "currency": "KRW", "as_of": "", "traded_on": d}
+    def q(d):
+        return {"price": 1.0, "currency": "KRW", "as_of": "", "traded_on": d}
     # 개장일: 체결 날짜 == 오늘.
     assert market_open_today([q("2026-06-05")], date(2026, 6, 5)) is True
     # 주말: 마지막 체결이 금요일.
