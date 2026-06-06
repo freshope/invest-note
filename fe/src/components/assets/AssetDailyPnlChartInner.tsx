@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { BarChart, Bar, Cell, XAxis, YAxis, ReferenceLine, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, Rectangle, XAxis, YAxis, ReferenceLine, ResponsiveContainer } from "recharts";
 import type { AssetHistoryPoint } from "@/lib/api-client";
 import { useChartPan } from "@/hooks/useChartPan";
 
@@ -90,16 +90,32 @@ export default function AssetDailyPnlChartInner({
           ))}
           {/* 0 기준선 — 이익/손실 경계 */}
           <ReferenceLine y={0} stroke="var(--border)" />
-          <Bar dataKey="value" isAnimationActive={false}>
-            {/* 포커스(헤더 표시 대상) 막대만 진하게 — 나머지는 흐리게 해 위치를 드러낸다. */}
-            {visible.map((p) => (
-              <Cell
-                key={p.date}
-                fill={p.value >= 0 ? RISE : FALL}
-                fillOpacity={p.date === focusDate ? 1 : 0.4}
-              />
-            ))}
-          </Bar>
+          <Bar
+            dataKey="value"
+            isAnimationActive={false}
+            // 포커스(헤더 표시 대상) 막대만 폭 2배 — 중심 유지를 위해 x 를 보정해 그린다.
+            shape={(props) => {
+              const { x, y, width, height, payload, index } = props as {
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                index?: number;
+                payload: AssetHistoryPoint;
+              };
+              const w = payload.date === focusDate ? width * 2 : width;
+              return (
+                <Rectangle
+                  key={`bar-${index}`}
+                  x={x - (w - width) / 2}
+                  y={y}
+                  width={w}
+                  height={height}
+                  fill={payload.value >= 0 ? RISE : FALL}
+                />
+              );
+            }}
+          />
         </BarChart>
       </ResponsiveContainer>
     </div>
