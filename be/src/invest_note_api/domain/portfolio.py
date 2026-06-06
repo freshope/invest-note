@@ -241,6 +241,16 @@ def build_positions(trades: list["Trade"]) -> tuple[list[Position], LotMap]:
     return positions, lot_map
 
 
+def holding_invested_amount(trades: list["Trade"]) -> float | None:
+    """현재 보유분 매수 원금(cost_basis 합) — 자산 차트 손익 가이드 라인 기준값.
+
+    대시보드 평가손익과 동일한 walker 기반 cost_basis 를 사용한다. 보유가 없으면 None.
+    """
+    positions, _ = build_positions(trades)
+    invested = sum(p.cost_basis for p in positions if p.holding_quantity > 0)
+    return invested if invested > 0 else None
+
+
 def merge_quotes(positions: list[Position], quotes: QuoteMap) -> list[Position]:
     result = []
     for pos in positions:

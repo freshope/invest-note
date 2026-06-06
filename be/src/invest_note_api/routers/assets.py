@@ -25,7 +25,7 @@ from invest_note_api.domain.asset_history import (
     scope_earliest_date,
     scope_tickers,
 )
-from invest_note_api.domain.portfolio import build_positions
+from invest_note_api.domain.portfolio import holding_invested_amount
 from invest_note_api.domain.trade_utils import KST, position_key
 from invest_note_api.external.http_client import get_http_client
 from invest_note_api.external.quotes import (
@@ -75,11 +75,9 @@ async def get_asset_history(
     earliest = scope_earliest_date(trades, today)
     tickers = scope_tickers(trades)
 
-    # 현재 보유분 매수 원금 — 대시보드 평가손익과 동일한 walker 기반 cost_basis 합.
-    # 차트의 손익 기준 가이드 라인 값. 보유가 없으면 None(FE 는 기존 단색 차트 폴백).
-    positions, _ = build_positions(trades)
-    invested = sum(p.cost_basis for p in positions if p.holding_quantity > 0)
-    invested_amount = invested if invested > 0 else None
+    # 현재 보유분 매수 원금 — 차트의 손익 기준 가이드 라인 값.
+    # 보유가 없으면 None(FE 는 기존 단색 차트 폴백).
+    invested_amount = holding_invested_amount(trades)
 
     # 2) backfill(커넥션 보유 — fetch 가 느리지만 콜드스타트는 spec 수용. watermark 증분.)
     incomplete_fetch = False

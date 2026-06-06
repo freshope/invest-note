@@ -5,19 +5,14 @@ import { AreaChart, Area, XAxis, YAxis, ReferenceLine, ResponsiveContainer } fro
 import type { AssetHistoryPoint } from "@/lib/api-client";
 import { fmtCompact } from "@/lib/format";
 import { useChartPan } from "@/hooks/useChartPan";
-
-function formatTick(date: string): string {
-  // "2025-06-04" → "6/4"
-  const [, m, d] = date.split("-");
-  return `${Number(m)}/${Number(d)}`;
-}
+import { formatTick, buildYearMarks } from "./chart-utils";
 
 /** 손익 색상 모드 — 가시 윈도우 데이터 범위와 매수 원금의 위치 관계로 결정. */
 type ChartMode =
   | { kind: "neutral" } // 매수 원금 없음 → 기존 보라 단색
   | { kind: "profit" } // 전 구간 수익 → 빨강 단색
   | { kind: "loss" } // 전 구간 손실 → 파랑 단색
-  | { kind: "split"; offset: number }; // 원금 라인 기준 위 빨강/아래 파랑 분할
+  | { kind: "split"; offset: number; invested: number }; // 원금 라인 기준 위 빨강/아래 파랑 분할
 
 export default function AssetHistoryChartInner({
   series,
@@ -42,16 +37,7 @@ export default function AssetHistoryChartInner({
   }, [focus?.date, focus?.value, onFocusChange]);
 
   // 보이는 구간에서 연도가 바뀌는 첫 거래일 → 연도 구분선 위치(최대 2년 팬 시 방향 표시).
-  const yearMarks = useMemo(() => {
-    const out: { date: string; year: string }[] = [];
-    for (let i = 1; i < visible.length; i++) {
-      const year = visible[i].date.slice(0, 4);
-      if (year !== visible[i - 1].date.slice(0, 4)) {
-        out.push({ date: visible[i].date, year });
-      }
-    }
-    return out;
-  }, [visible]);
+  const yearMarks = useMemo(() => buildYearMarks(visible), [visible]);
 
   // 가시 구간 데이터 범위 — y 도메인과 손익 모드 판정의 공통 입력.
   const [dataMin, dataMax] = useMemo<[number, number]>(() => {
@@ -85,7 +71,7 @@ export default function AssetHistoryChartInner({
     if (invested == null || visible.length === 0) return { kind: "neutral" };
     if (invested <= dataMin) return { kind: "profit" };
     if (invested >= dataMax) return { kind: "loss" };
-    return { kind: "split", offset: (dataMax - invested) / (dataMax - dataMin) };
+    return { kind: "split", offset: (dataMax - invested) / (dataMax - dataMin), invested };
   }, [invested, dataMin, dataMax, visible.length]);
 
   // 인스턴스별 그라데이션 id — 같은 문서에 차트가 2개 이상 떠도 fill 참조가 섞이지 않게.
@@ -100,7 +86,7 @@ export default function AssetHistoryChartInner({
   const solidColor = mode.kind === "profit" ? RISE : mode.kind === "loss" ? FALL : NEUTRAL;
   const dotColor =
     mode.kind === "split" && focus
-      ? focus.value >= (invested as number)
+      ? focus.value >= mode.invested
         ? RISE
         : FALL
       : solidColor;
@@ -169,12 +155,12 @@ export default function AssetHistoryChartInner({
           {/* 매수 원금 가이드 — 가시 데이터 범위 안일 때만(차트 모양 불변). */}
           {mode.kind === "split" && (
             <ReferenceLine
-              y={invested as number}
+              y={mode.invested}
               stroke="var(--muted-foreground)"
               strokeDasharray="4 4"
               strokeOpacity={0.55}
               label={{
-                value: `매수 ${fmtCompact(invested as number)}`,
+                value: `매수 ${fmtCompact(mode.invested)}`,
                 position: "insideBottomLeft",
                 fontSize: 9,
                 fill: "var(--muted-foreground)",
@@ -187,7 +173,7 @@ export default function AssetHistoryChartInner({
             // split: 원금 라인 기준 양면 채움 / loss: 곡선 위(원금 방향)로 채움(도메인 상단까지)
             baseValue={
               mode.kind === "split"
-                ? (invested as number)
+                ? mode.invested
                 : mode.kind === "loss"
                   ? yDomain[1]
                   : undefined

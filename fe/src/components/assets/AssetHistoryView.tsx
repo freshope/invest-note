@@ -168,28 +168,25 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
                   <p className="text-[12px] text-muted-foreground">
                     {display ? display.date.replace(/-/g, ".") : "현재 자산"}
                   </p>
-                  {tab === "daily" ? (
-                    <p
-                      className={cn(
-                        "text-[24px] font-bold tabular-nums",
-                        signColor(display?.value ?? 0, "muted"),
-                      )}
-                    >
-                      {display ? (
-                        <>
-                          {display.value > 0 ? "+" : ""}
-                          <CountUpNumber value={display.value} />
-                        </>
-                      ) : (
-                        0
-                      )}
-                      원
-                    </p>
-                  ) : (
-                    <p className="text-[24px] font-bold tabular-nums text-foreground">
-                      {display ? <CountUpNumber value={display.value} /> : 0}원
-                    </p>
-                  )}
+                  {/* 일별 손익 탭만 부호 색상·'+' 접두 적용, 자산 탭은 고정색 */}
+                  <p
+                    className={cn(
+                      "text-[24px] font-bold tabular-nums",
+                      tab === "daily"
+                        ? signColor(display?.value ?? 0, "muted")
+                        : "text-foreground",
+                    )}
+                  >
+                    {display ? (
+                      <>
+                        {tab === "daily" && display.value > 0 ? "+" : ""}
+                        <CountUpNumber value={display.value} />
+                      </>
+                    ) : (
+                      0
+                    )}
+                    원
+                  </p>
                 </div>
                 {/* 스코프(계좌/종목) 변경 시 remount → 팬 윈도우를 새 데이터의 최신으로 리셋 */}
                 <TabsContent value="asset" className="mt-3">

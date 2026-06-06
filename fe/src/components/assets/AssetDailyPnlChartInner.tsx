@@ -13,12 +13,7 @@ import {
 } from "recharts";
 import type { AssetHistoryPoint } from "@/lib/api-client";
 import { useChartPan } from "@/hooks/useChartPan";
-
-function formatTick(date: string): string {
-  // "2025-06-04" → "6/4"
-  const [, m, d] = date.split("-");
-  return `${Number(m)}/${Number(d)}`;
-}
+import { formatTick, buildYearMarks } from "./chart-utils";
 
 /**
  * 일별 손익 막대 차트 — value = 전일대비(자산 평가액 일간 변화, '일별 내역' 표와 동일 값).
@@ -43,16 +38,7 @@ export default function AssetDailyPnlChartInner({
   }, [focus?.date, focus?.value, onFocusChange]);
 
   // 보이는 구간에서 연도가 바뀌는 첫 거래일 → 연도 구분선 위치(AssetHistoryChartInner와 동일).
-  const yearMarks = useMemo(() => {
-    const out: { date: string; year: string }[] = [];
-    for (let i = 1; i < visible.length; i++) {
-      const year = visible[i].date.slice(0, 4);
-      if (year !== visible[i - 1].date.slice(0, 4)) {
-        out.push({ date: visible[i].date, year });
-      }
-    }
-    return out;
-  }, [visible]);
+  const yearMarks = useMemo(() => buildYearMarks(visible), [visible]);
 
   // y축은 가시 구간 자동 — 0을 항상 포함해 기준선이 보이게 하고, 약간의 여백을 둔다.
   const yDomain = useMemo<[number, number]>(() => {

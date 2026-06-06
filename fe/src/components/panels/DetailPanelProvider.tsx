@@ -44,12 +44,11 @@ export type StockPayload = {
   accounts: Account[];
 };
 
-// 필드가 모두 null 이면 계좌 전체 자산 뷰 (홈 헤더 진입), 값이 있으면 종목 뷰.
-export type AssetHistoryPayload = {
-  assetName: string | null;
-  ticker: string | null;
-  country: string | null;
-};
+// 필드가 모두 null 이면 계좌 전체 자산 뷰 (홈 헤더 진입), 모두 값이 있으면 종목 뷰.
+// 판별 유니온 — 부분 null(예: ticker 만 있고 country 없음)을 타입 레벨에서 차단한다.
+export type AssetHistoryPayload =
+  | { assetName: string; ticker: string; country: string }
+  | { assetName: null; ticker: null; country: null };
 
 interface DetailPanelContextValue {
   openTrade: (payload: TradePayload) => void;
