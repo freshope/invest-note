@@ -44,10 +44,11 @@ export type StockPayload = {
   accounts: Account[];
 };
 
+// 필드가 모두 null 이면 계좌 전체 자산 뷰 (홈 헤더 진입), 값이 있으면 종목 뷰.
 export type AssetHistoryPayload = {
-  assetName: string;
-  ticker: string;
-  country: string;
+  assetName: string | null;
+  ticker: string | null;
+  country: string | null;
 };
 
 interface DetailPanelContextValue {
