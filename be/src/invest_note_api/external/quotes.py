@@ -21,7 +21,7 @@ from cachetools import TTLCache
 from fastapi import Request
 
 from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, MAX_CODE_LEN
-from invest_note_api.domain.trade_utils import position_key
+from invest_note_api.domain.trade_utils import KST, position_key
 from invest_note_api.external.constants import (
     CURRENCY_KRW,
     NAVER_BASIC_URL,
@@ -57,53 +57,64 @@ class QuoteResult(TypedDict):
     price: float
     currency: str
     as_of: str
+    traded_on: str | None  # 마지막 체결 KST 날짜(ISO). 휴장일 판정용 — 소스에 없으면 None.
 
 
-def _parse_realtime_price(data: dict) -> float:
+def _parse_realtime_price(data: dict) -> tuple[float, str | None]:
     item = (data.get("datas") or [{}])[0] if data.get("datas") else data.get("data") or data
     raw = (
         item.get("closePriceRaw")
         or item.get("now")
         or strip_comma_number(item.get("closePrice"))
     )
-    return float(raw) if raw else 0.0
+    # localTradedAt: "2026-06-05T15:30:00+09:00" — 앞 10자가 KST 날짜.
+    traded_at = item.get("localTradedAt")
+    traded_on = traded_at[:10] if isinstance(traded_at, str) and len(traded_at) >= 10 else None
+    return (float(raw) if raw else 0.0, traded_on)
 
 
-def _parse_basic_price(data: dict) -> float:
+def _parse_basic_price(data: dict) -> tuple[float, str | None]:
     raw = (
         data.get("closePriceRaw")
         or strip_comma_number(data.get("stockEndPrice"))
         or strip_comma_number(data.get("closePrice"))
     )
-    return float(raw) if raw else 0.0
+    return (float(raw) if raw else 0.0, None)  # basic 응답엔 체결 일시 필드 없음.
 
 
-def _parse_yahoo_chart_price(data: dict) -> float:
-    """Yahoo chart v8: chart.result[0].meta.regularMarketPrice."""
+def _parse_yahoo_chart_price(data: dict) -> tuple[float, str | None]:
+    """Yahoo chart v8: chart.result[0].meta.regularMarketPrice (+regularMarketTime epoch)."""
     result = (data.get("chart") or {}).get("result") or []
     if not result:
-        return 0.0
+        return (0.0, None)
     meta = result[0].get("meta") or {}
     raw = meta.get("regularMarketPrice")
-    return float(raw) if raw else 0.0
+    ts = meta.get("regularMarketTime")
+    traded_on = (
+        datetime.fromtimestamp(ts, KST).date().isoformat()
+        if isinstance(ts, (int, float)) and ts > 0
+        else None
+    )
+    return (float(raw) if raw else 0.0, traded_on)
 
 
 async def _try_endpoint(
     client: httpx.AsyncClient,
     url: str,
-    parse_price: Callable[[dict], float],
+    parse_price: Callable[[dict], tuple[float, str | None]],
     log_label: str,
     code: str,
 ) -> QuoteResult | None:
     try:
         res = await client.get(url, headers=_HEADERS, timeout=QUOTE_ATTEMPT_TIMEOUT)
         if res.status_code == 200:
-            price = parse_price(res.json())
+            price, traded_on = parse_price(res.json())
             if price > 0:
                 return {
                     "price": price,
                     "currency": CURRENCY_KRW,
                     "as_of": datetime.now(timezone.utc).isoformat(),
+                    "traded_on": traded_on,
                 }
     except Exception:
         logger.warning("%s 시세 실패 code=%s", log_label, code, exc_info=True)

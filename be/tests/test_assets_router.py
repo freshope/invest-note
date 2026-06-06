@@ -8,6 +8,8 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from unittest.mock import patch
 
+from invest_note_api.domain.trade_utils import KST
+
 from tests.conftest import TEST_USER_ID
 from tests.fake_pool import FakeConnection, make_fake_acquire
 
@@ -199,6 +201,43 @@ class TestAssetHistory:
 
         assert resp.status_code == 200
         assert resp.json()["incomplete"] is True
+
+    def test_holiday_excludes_today_from_series(self, trades_client):
+        """휴장일(시세 traded_on ≠ 오늘) → 오늘 점이 series 에 없고 직전 거래일 점은 유지."""
+        trade = _make_trade_row()
+        conn = FakeConnection([_to_record(trade)], _closes_today())
+
+        async def mock_quotes(state, keys, *, client=None):
+            # 마지막 체결 날짜가 과거 거래일 → 오늘은 휴장.
+            return {"005930:KR": {"price": 77000.0, "currency": "KRW", "as_of": "", "traded_on": "2025-06-02"}}
+
+        with _patch_assets(conn):
+            with patch("invest_note_api.routers.assets.daily_price_seed.backfill_closes", _no_backfill):
+                with patch("invest_note_api.routers.assets.fetch_quotes_by_keys", mock_quotes):
+                    resp = trades_client.get("/assets/history")
+
+        assert resp.status_code == 200
+        dates = [p["date"] for p in resp.json()["series"]]
+        assert datetime.now(KST).date().isoformat() not in dates
+        assert dates == ["2025-06-02"]  # 적재 종가 점은 유지.
+
+    def test_trading_day_includes_today_live_point(self, trades_client):
+        """개장일(시세 traded_on == 오늘) → 오늘 점이 라이브 시세로 포함."""
+        trade = _make_trade_row()
+        conn = FakeConnection([_to_record(trade)], _closes_today())
+        today_iso = datetime.now(KST).date().isoformat()
+
+        async def mock_quotes(state, keys, *, client=None):
+            return {"005930:KR": {"price": 77000.0, "currency": "KRW", "as_of": "", "traded_on": today_iso}}
+
+        with _patch_assets(conn):
+            with patch("invest_note_api.routers.assets.daily_price_seed.backfill_closes", _no_backfill):
+                with patch("invest_note_api.routers.assets.fetch_quotes_by_keys", mock_quotes):
+                    resp = trades_client.get("/assets/history")
+
+        assert resp.status_code == 200
+        series = resp.json()["series"]
+        assert series[-1] == {"date": today_iso, "value": 10 * 77000}
 
     def test_401_without_auth(self, auth_client):
         resp = auth_client.get("/assets/history")

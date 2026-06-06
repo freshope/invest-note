@@ -151,6 +151,64 @@ def test_fetch_kr_price_returns_none_when_all_sources_fail():
     assert asyncio.run(runner()) is None
 
 
+def test_fetch_kr_price_extracts_traded_on_from_realtime():
+    """Naver realtime localTradedAt → traded_on(KST 날짜) — 휴장일 판정 신호."""
+    routes = {
+        "https://polling.finance.naver.com": httpx.Response(
+            200,
+            json={"datas": [{"closePriceRaw": "71500", "localTradedAt": "2026-06-05T15:30:00+09:00"}]},
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_kr_price(client, "005930")
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["traded_on"] == "2026-06-05"
+
+
+def test_fetch_kr_price_yahoo_traded_on_from_epoch():
+    """Yahoo regularMarketTime(epoch) → KST 날짜로 변환. 필드 없으면 None."""
+    from datetime import datetime
+
+    ts = int(datetime.fromisoformat("2026-06-05T15:30:00+09:00").timestamp())
+    routes = {
+        "https://polling.finance.naver.com": httpx.Response(503),
+        "https://api.stock.naver.com": httpx.Response(503),
+        "https://query2.finance.yahoo.com/v8/finance/chart/005930.KS": httpx.Response(
+            200,
+            json={"chart": {"result": [{"meta": {"regularMarketPrice": 71000, "regularMarketTime": ts}}]}},
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_kr_price(client, "005930")
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["traded_on"] == "2026-06-05"
+
+
+def test_fetch_kr_price_traded_on_none_when_source_lacks_field():
+    """체결 일시 필드가 없는 응답 → traded_on=None (라우터 fallback 경로)."""
+    routes = {
+        "https://polling.finance.naver.com": httpx.Response(
+            200, json={"datas": [{"closePriceRaw": "71500"}]}
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_kr_price(client, "005930")
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["traded_on"] is None
+
+
 def test_fetch_kr_price_prefers_naver_when_available():
     """Naver realtime 성공 시 Yahoo 호출되지 않아야 한다."""
     yahoo_called = False
