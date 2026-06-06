@@ -1,20 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeftIcon, ChevronDownIcon } from "lucide-react";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { AccountFilter } from "@/components/shared/AccountFilter";
 import { CountUpNumber } from "@/components/shared/CountUpNumber";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/base/Tabs";
 import {
   useAccountFilter,
   useEffectiveAccountId,
 } from "@/components/providers/AccountFilterProvider";
 import { AssetHistoryChart } from "./AssetHistoryChart";
+import { AssetDailyPnlChart } from "./AssetDailyPnlChart";
 import { AssetHistoryList } from "./AssetHistoryList";
 import { useAssetHistory } from "@/hooks/useAssetHistory";
 import { accountsApi, type AssetHistoryPoint } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
+import { signColor } from "@/lib/format";
 import { PNL_COLORS } from "@/lib/constants/pnl-colors";
 import { cn } from "@/lib/utils";
 
@@ -62,7 +65,11 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
     country,
   });
 
-  // 차트에서 보이는 가장 우측(최근) 점 — 헤더가 이 점의 날짜·자산을 표시.
+  // 차트 탭 — 자산(누적 평가액 Area) / 일별 손익(전일대비 Bar).
+  const [tab, setTab] = useState<"asset" | "daily">("asset");
+
+  // 차트에서 보이는 가장 우측(최근) 점 — 헤더가 이 점의 날짜·금액을 표시.
+  // 탭에 따라 value 의 의미가 다름(자산: 평가액 / 일별 손익: 전일대비).
   const [focus, setFocus] = useState<AssetHistoryPoint | null>(null);
   // 스코프(계좌/종목) 전환 시 초기화 → 차트가 새 우측점을 통지할 때까지 최신값 표시.
   // effect 대신 렌더 중 상태 조정 패턴 사용(react-hooks/set-state-in-effect 회피).
@@ -75,9 +82,21 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
 
   const title = isStockView ? `${name ?? "종목"} 자산 추이` : "내 자산 추이";
   const showFilter = accounts.length >= 2;
+
+  // 일별 손익 시계열 — items(최신 먼저)의 change 를 날짜 오름차순으로 변환.
+  // BE 가 계산한 전일대비를 그대로 사용해 '일별 내역' 표와 값이 일치한다.
+  const dailySeries = useMemo<AssetHistoryPoint[]>(
+    () =>
+      data
+        ? [...data.items].reverse().map((it) => ({ date: it.date, value: it.change }))
+        : [],
+    [data],
+  );
+
   const latestPoint =
     data && data.series.length ? data.series[data.series.length - 1] : null;
-  const display = focus ?? latestPoint;
+  const latestDaily = dailySeries.length ? dailySeries[dailySeries.length - 1] : null;
+  const display = focus ?? (tab === "daily" ? latestDaily : latestPoint);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -133,20 +152,59 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
           {/* 요약 + 차트 카드 (홈 도넛 카드와 동일한 rounded-2xl bg-muted/60 패턴) */}
           <div className="shrink-0 px-5 pt-2">
             <div className="rounded-2xl bg-muted/60 p-4 space-y-3">
-              <div>
-                <p className="text-[12px] text-muted-foreground">
-                  {display ? display.date.replace(/-/g, ".") : "현재 자산"}
-                </p>
-                <p className="text-[24px] font-bold tabular-nums text-foreground">
-                  {display ? <CountUpNumber value={display.value} /> : 0}원
-                </p>
-              </div>
-              {/* 스코프(계좌/종목) 변경 시 remount → 팬 윈도우를 새 데이터의 최신으로 리셋 */}
-              <AssetHistoryChart
-                key={`${effectiveAccountId ?? "all"}:${ticker ?? ""}`}
-                series={data.series}
-                onFocusChange={setFocus}
-              />
+              <Tabs
+                value={tab}
+                onValueChange={(v) => {
+                  setTab(v as "asset" | "daily");
+                  // 탭별로 value 의미가 다르므로 리셋 → 새 차트가 우측점을 다시 통지.
+                  setFocus(null);
+                }}
+              >
+                <TabsList>
+                  <TabsTrigger value="asset">자산</TabsTrigger>
+                  <TabsTrigger value="daily">일별 손익</TabsTrigger>
+                </TabsList>
+                <div className="mt-3">
+                  <p className="text-[12px] text-muted-foreground">
+                    {display ? display.date.replace(/-/g, ".") : "현재 자산"}
+                  </p>
+                  {/* 일별 손익 탭만 부호 색상·'+' 접두 적용, 자산 탭은 고정색 */}
+                  <p
+                    className={cn(
+                      "text-[24px] font-bold tabular-nums",
+                      tab === "daily"
+                        ? signColor(display?.value ?? 0, "muted")
+                        : "text-foreground",
+                    )}
+                  >
+                    {display ? (
+                      <>
+                        {tab === "daily" && display.value > 0 ? "+" : ""}
+                        <CountUpNumber value={display.value} />
+                      </>
+                    ) : (
+                      0
+                    )}
+                    원
+                  </p>
+                </div>
+                {/* 스코프(계좌/종목) 변경 시 remount → 팬 윈도우를 새 데이터의 최신으로 리셋 */}
+                <TabsContent value="asset" className="mt-3">
+                  <AssetHistoryChart
+                    key={`${effectiveAccountId ?? "all"}:${ticker ?? ""}`}
+                    series={data.series}
+                    investedAmount={data.investedAmount}
+                    onFocusChange={setFocus}
+                  />
+                </TabsContent>
+                <TabsContent value="daily" className="mt-3">
+                  <AssetDailyPnlChart
+                    key={`${effectiveAccountId ?? "all"}:${ticker ?? ""}`}
+                    series={dailySeries}
+                    onFocusChange={setFocus}
+                  />
+                </TabsContent>
+              </Tabs>
               <div className="space-y-1">
                 <p className="text-[11px] text-muted-foreground">
                   자산은 보유 종목 평가액 합계예요(예수금 제외).

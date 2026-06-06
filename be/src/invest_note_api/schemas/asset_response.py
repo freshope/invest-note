@@ -11,6 +11,8 @@ class AssetHistoryResponse(CamelModel):
     - items: 목록(최신 먼저). 계좌뷰 {date, value, change} / 종목뷰 +{close, qty}.
     - incomplete: 일부 종목 fetch 실패/carry-forward 불가로 결측 가능 시 true(부분 표시 배지).
     - asOf: 마지막 점 기준시각(오늘 점은 라이브 시세). camelCase(NOT as_of).
+    - investedAmount: 현재 보유분 매수 원금(cost_basis 합, 스코프 동일). 차트의
+      손익 기준 가이드 라인. 거래 없음/보유 없음이면 None.
 
     자산 = 보유 종목 평가액(현금 잔고 제외).
     """
@@ -19,3 +21,4 @@ class AssetHistoryResponse(CamelModel):
     items: list[dict]
     incomplete: bool
     as_of: str
+    invested_amount: float | None = None

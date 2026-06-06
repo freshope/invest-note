@@ -446,6 +446,8 @@ export interface AssetHistoryResponse {
   incomplete: boolean;
   /** 마지막 점 기준시각(오늘 점은 라이브 시세). ISO 문자열. */
   asOf: string;
+  /** 현재 보유분 매수 원금(cost_basis 합). 손익 가이드 라인 기준. 보유 없음이면 null. */
+  investedAmount: number | null;
 }
 
 export interface AssetHistoryParams {

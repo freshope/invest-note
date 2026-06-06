@@ -2,7 +2,6 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import Link from "next/link";
 import { ChartSplineIcon } from "lucide-react";
 import { Button } from "@/components/base/Button";
 import { DashboardTitle, DashboardBody } from "./DashboardSummary";
@@ -17,6 +16,7 @@ import {
   useAccountFilter,
   useEffectiveAccountId,
 } from "@/components/providers/AccountFilterProvider";
+import { useDetailPanel } from "@/components/panels/DetailPanelProvider";
 import { usePortfolioSummary } from "@/hooks/usePortfolioSummary";
 import { useQuotes } from "@/hooks/useQuotes";
 import { accountsApi } from "@/lib/api-client";
@@ -62,6 +62,7 @@ export function HomeDashboard() {
     queryFn: accountsApi.list,
   });
   const { setSelectedAccountId } = useAccountFilter();
+  const { openAssetHistory } = useDetailPanel();
   const effectiveAccountId = useEffectiveAccountId(accounts);
   const { data, loading, reloading, error, refetch } =
     usePortfolioSummary(effectiveAccountId);
@@ -147,18 +148,19 @@ export function HomeDashboard() {
     <PullToRefresh onRefresh={handleRefresh}>
       <div className="sticky top-0 z-10 bg-background">
         <PageHeader sticky={false}>
-          {/* 자산 변화 페이지 진입 — 기록탭 헤더 액션과 동일 계열(outline sm pill). skeleton swap 과 무관하게 항상 노출 */}
+          {/* 자산 변화 패널 진입 — 기록탭 헤더 액션과 동일 계열(outline sm pill). skeleton swap 과 무관하게 항상 노출.
+              다른 패널과 동일한 슬라이드 애니메이션을 위해 라우팅 대신 AssetHistoryPanel 을 연다. */}
           <div className="relative">
             <Button
-              asChild
               variant="outline"
               size="sm"
               className="absolute right-0 top-0"
+              onClick={() =>
+                openAssetHistory({ assetName: null, ticker: null, country: null })
+              }
             >
-              <Link href="/assets">
-                <ChartSplineIcon />
-                자산 추이
-              </Link>
+              <ChartSplineIcon />
+              자산 추이
             </Button>
             <div className="pr-24">{renderHeaderInner()}</div>
           </div>

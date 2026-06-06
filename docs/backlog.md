@@ -28,9 +28,6 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 거래내역서 임포트 — 후속 과제
 
-- [x] stocks 마스터 재도입 (2026-05-30 완료, 트리거 ① 발생) — Naver 단일 매칭을 자체 stocks 마스터로 전환. `020_recreate_stocks.sql` + `scripts/seed_stocks.py`(다중 소스 주기 적재) + `db_ops/stocks_repo.py`(검색/매칭). 런타임 Naver 완전 대체, Naver 는 적재 enrichment 로만. 상세 `docs/decisions.md` 2026-05-30 참고.
-  - **후속:** ① 현재 운영 소스는 FDR fallback(ETF 포함, ETN 미커버). data.go.kr 키 활성화되면 공식 소스로 전환 + ETN 보강(별도 소스). ② 주기 실행(cron/Coolify scheduled) 설정.
-  - [ ] **종목 market 분류 불일치 검토** — Naver 교차검증(`crossvalidate_stocks_with_naver`)에서 FDR `ETF/KR` 리스팅의 알파벳 코드 종목(0004G0 등) 약 249건을 Naver 는 KOSPI 로 분류(ELW/파생 오분류 의심). 현재 집계·보고만 함. 어느 소스가 맞는지 확인 후 ① Naver 신뢰해 market 재분류, 또는 ② ETF 리스팅에서 ELW 제외 중 결정. data.go.kr 활성화 시 3번째 소스로 교차검증하면 판정 쉬워짐.
 - [ ] **종목 검색 provider db 복귀 + import/NPS stale 추적** (2026-06-03 Naver 임시 복귀, `docs/decisions.md` 참고) — data.go.kr 게이트웨이(~50% 성공률) 안정성 모니터링 후 `STOCK_SEARCH_PROVIDER=db` 로 복귀(코드 변경 없이 env 한 줄). **잔여 리스크:** 검색만 토글했으므로 seed 를 장기 중단하면 거래 import 매칭(`ticker_resolver.lookup_by_names`)·NPS(`stocks_repo.search`)·marcap 이 stale 로컬 stocks 에 의존해 조용히 낡음. 트리거: ① seed 게이트웨이 성공률 안정화 확인 시 db 복귀, 또는 ② import 매칭률 저하/NPS·시총 stale 체감 시 seed 재개 우선순위 상향.
 - [ ] 미해결 종목 수동 매칭 UI — Naver 자동매칭 실패 또는 부분일치 오매칭 케이스에 대비, PreviewStep에서 사용자가 직접 종목 검색하여 매칭하는 UI 추가 검토
 - [ ] Preview staging 멀티 워커 대응 — 현재 `TTLCache` (단일 워커 메모리). 멀티 워커 배포 전 DB 임시 테이블 또는 Redis로 교체 필요
@@ -42,21 +39,8 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 머지 갱신 범위 확장 재검토 — 현재 머지는 `commission`/`tax`/`traded_at` 만 update, `market_type`/`country_code`/`exchange` 는 사용자 분류를 우선해 **보존**(`docs/decisions.md` 2026-05-18 참고). 다음 트리거 발생 시 재검토: ① 사용자가 거래내역서로 분류 자동 보정을 명시적으로 원함, ② 증권사 파서가 사용자 수동 분류보다 더 정확한 케이스가 다수 보고됨. 재검토 시 `update_trade_from_import` 화이트리스트와 `build_merge_patch` 비교 필드를 함께 확장
 - [ ] 다운로드 가이드 콘텐츠 검수 — `fe/src/components/records/ImportTradesPanel/brokers.ts` 의 `downloadGuide` 는 AI 1차 초안(`TODO` 주석 표시). 삼성증권 mPOP/토스 앱과 실제 화면 대조 후 단계 텍스트·`helpUrl` 수정. 증권사 앱 UI 개편 시 깨질 수 있어 분기별 점검 또는 사용자 신고 트리거 시 갱신. 캡처 이미지 단계 안내가 더 효과적이라 판단되면 별도 spec 으로 보강
 
-## 종목 메타데이터 — 국민연금 보유 표시 (2026-06-05 FE 뱃지까지 완료 — CSV 폴백 보류 항목만 잔여)
-
-시총(marcap/marcap_rank)·마켓 적재는 `feature/stocks-data-go-kr-nps`(data.go.kr 단일화)에서 구현. **국민연금 보유 적재는 odcloud OpenAPI 자동화로 완료**(spec-history). 2026-06-01 "자동 fetch 불가" 판정은 철회(infuser OAS 엔드포인트를 놓친 오판, `docs/decisions.md` 2026-06-02 참고). 아래는 조사·실측 결과 보존(재조사 방지).
-
-- [x] **국민연금 보유종목 적재 (odcloud API 자동화)** (2026-06-02 완료) — `stocks.nps_holding`(null/`'held'`/`'major'`) + `nps_as_of`(기준일) + `POST /admin/seed/nps`(API fetch). discovery=`infuser.odcloud.kr/oas/docs?namespace=<id>/v1`(key 불필요, summary 날짜 max 정렬로 최신 uddi 선택) → fetch=`api.odcloud.kr/api/{uddi}`(serviceKey). 전체 KR 종목 일괄 재계산 + 빈 스냅샷 skip 가드.
-- [x] **우선주 보강 + 미매칭 reconcile** (2026-06-02 완료, `docs/decisions.md` 참고) — `getStockPriceInfo`(우선주 114건)를 종목 파이프라인 preserve 소스로 추가 + `clean_name` 접두 `(주)` 제거 → 미매칭 160→69. `resolved_ticker` 기반 `reconcile_nps_unmatched`(`POST /admin/reconcile/nps`)로 과거사명 드리프트 수동 해소. **잔여=상폐 종목은 영구 미매칭이 정상**(억지 매칭 금지). Naver 는 현재 등록명 prefix 한계로 해소책 아님(잔여 69 중 4건만).
-  - **자료원 3계층:** Tier1 전체보유([3070507](https://www.data.go.kr/data/3070507/fileData.do), 연1회·~9개월 지연, 유일한 전체 커버리지, 최신=20241231·1,200건) / Tier2 5%+ 대량보유([15106890](https://www.data.go.kr/data/15106890/fileData.do), 분기, 최신=20251231·111건) / Tier0 월간 자산군 합계(종목단위 없음 → 사용 불가). 두 데이터셋 활용신청 승인 완료(같은 serviceKey).
-  - **실측 매칭(2026-06-02, 로컬 stale DB 기준):** 응답에 **종목코드 없음**(`종목명`/`발행기관명`만) → 종목명→ticker 필요. 정확 93.6% → 주석 정제 후 94.8%. 미매칭 잔여 원인: 부기 주석 `(배당)(무상)(전환)`[정제] / 약칭↔정식명 / **시점 사명 드리프트**(스냅샷=과거 이름, 마스터=현재 이름) / 폐지·합병 → **미매칭 reconcile 경로 필수**.
-  - **의미 주의:** "국민연금 보유"는 최대 ~1.7년 지연 스냅샷 → 아이콘/UI에 **기준일(`nps_as_of`) 명시** 필요(현재 보유로 오인 방지).
-- [ ] **국민연금 수동 CSV 업로드 (대체/폴백) — 보류** — API 자동화 채택으로 **보류**. infuser OAS discovery 가 깨지거나(soft dependency) 특정 과거 연도 스냅샷을 직접 소급 적재해야 할 때를 위한 대체 경로. 설계: `POST /admin/seed/nps` 가 파일 업로드도 수용(전체보유/5%+ 두 CSV). 스파이크: CSV 컬럼명·인코딩(cp949 가능). 트리거: API discovery 장애 또는 과거 스냅샷 소급 적재 필요 시.
-- [x] **종목명 옆 메타 아이콘 표시 (FE)** (2026-06-05 완료, `docs/spec-history/2026-06-05-stock-meta-badges.md`) — `GET /stocks/meta` 배치 엔드포인트(`fetch_meta`, quote 미러) + `useStockMeta` 훅 + `StockMetaBadges`. 홈/기록/종목상세/거래상세 4개 화면에 마켓·시총순위·연금 뱃지, 탭 시 바텀시트(shadcn Drawer/vaul)로 전체 설명 한 페이지 표시. **기준일(`nps_as_of`) 명시 요건 충족**(연금 보유/5%+ 섹션에 별도 줄 표시).
-
 ## 자산 변화 페이지 (계좌별/종목별 일별 자산 추이)
 
-- [x] **내 자산 추이 페이지 추가** (2026-06-04 완료, `docs/spec-history/2026-06-04-asset-history-page.md`) — 계좌별/종목별 일별 평가액 추이. 진입: 홈 헤더 / 종목상세 헤더(패널 스택). 종가는 `daily_close_prices`(2년) + data.go.kr 진입 시 watermark 증분 백필(ETF/ETN은 마켓별 엔드포인트), 당일은 라이브 시세. 커스텀 팬 차트(3개월 창·연도 구분선·영역 그라데이션·오늘 점)·일별 내역 표·계좌 필터.
 - [ ] **일별 종가 자동 적재 + 2년 prune 운영** — 현재 종가 백필은 페이지 진입 시 동기 실행(종목별 watermark 증분), 전체 사전적재는 `POST /admin/seed/daily-prices`(수동/cron). 콜드스타트 지연 완화·stale 방지를 위해 Coolify scheduled task 로 주기 실행 + `prune_older_than`(2년 윈도우) 운영 연결 검토. (`seed_daily_prices` 가 prune 까지 수행하므로 cron 만 걸면 됨.)
   - **2026-06-04 갱신:** 진입 backfill 에 `daily_price_sync_state` 마커 + 종목 병렬화 적용(`docs/decisions.md` 참고). 휴장/발행지연 무한 재질의 제거·data.go.kr 호출수 상한 고정·신규 종목 자동 처리로 **cron 우선순위 하향**. cron 은 콜드스타트 첫-오픈 지연을 더 줄이고 싶을 때의 옵션으로 남음.
 

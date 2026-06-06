@@ -19,8 +19,9 @@ const config: CapacitorConfig = {
       androidSplashResourceName: "splash",
       androidScaleType: "CENTER_CROP",
       showSpinner: false,
-      splashFullScreen: true,
-      splashImmersive: true,
+      // splashFullScreen/splashImmersive 금지: 활성화 시 스플래시 tearDown 이
+      // setDecorFitsSystemWindows(true) 로 EdgeToEdge 를 해제해, 앱 재오픈 시
+      // 네이티브 인셋 패딩 + CSS 변수가 중복 적용된다 (safe-area 2배 버그).
     },
     Keyboard: {
       resize: KeyboardResize.Native,
