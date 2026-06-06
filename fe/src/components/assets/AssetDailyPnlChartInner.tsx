@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { BarChart, Bar, Rectangle, XAxis, YAxis, ReferenceLine, ResponsiveContainer } from "recharts";
+import {
+  BarChart,
+  Bar,
+  Cell,
+  XAxis,
+  YAxis,
+  ReferenceDot,
+  ReferenceLine,
+  ResponsiveContainer,
+} from "recharts";
 import type { AssetHistoryPoint } from "@/lib/api-client";
 import { useChartPan } from "@/hooks/useChartPan";
 
@@ -25,9 +34,8 @@ export default function AssetDailyPnlChartInner({
 }) {
   const { visible, panProps } = useChartPan(series);
 
-  // 화면에 보이는 가장 우측(최근) 점 — 헤더 표시 대상 + 포커스 막대 강조 기준.
+  // 화면에 보이는 가장 우측(최근) 점 — 헤더 표시 대상 + 화살표 마커 위치.
   const focus = visible.length ? visible[visible.length - 1] : null;
-  const focusDate = focus?.date ?? null;
   useEffect(() => {
     if (focus) onFocusChange?.(focus);
     // focus 객체는 매 렌더 새로 만들어지므로 date/value 원시값으로 의존
@@ -90,32 +98,28 @@ export default function AssetDailyPnlChartInner({
           ))}
           {/* 0 기준선 — 이익/손실 경계 */}
           <ReferenceLine y={0} stroke="var(--border)" />
-          <Bar
-            dataKey="value"
-            isAnimationActive={false}
-            // 포커스(헤더 표시 대상) 막대만 폭 2배 — 중심 유지를 위해 x 를 보정해 그린다.
-            shape={(props) => {
-              const { x, y, width, height, payload, index } = props as {
-                x: number;
-                y: number;
-                width: number;
-                height: number;
-                index?: number;
-                payload: AssetHistoryPoint;
-              };
-              const w = payload.date === focusDate ? width * 2 : width;
-              return (
-                <Rectangle
-                  key={`bar-${index}`}
-                  x={x - (w - width) / 2}
-                  y={y}
-                  width={w}
-                  height={height}
-                  fill={payload.value >= 0 ? RISE : FALL}
-                />
-              );
-            }}
-          />
+          <Bar dataKey="value" isAnimationActive={false}>
+            {visible.map((p) => (
+              <Cell key={p.date} fill={p.value >= 0 ? RISE : FALL} />
+            ))}
+          </Bar>
+          {/* 포커스(헤더 표시 대상) 막대 위 화살표 ▼ — 막대가 얇거나 값이 0이어도 위치가 보인다.
+              음수 막대는 0선 위에서 막대를 가리킨다(y = max(value, 0) = 막대 윗끝). */}
+          {focus && (
+            <ReferenceDot
+              x={focus.date}
+              y={Math.max(focus.value, 0)}
+              shape={(props) => {
+                const { cx, cy } = props as { cx: number; cy: number };
+                return (
+                  <path
+                    d={`M ${cx - 4} ${cy - 9} L ${cx + 4} ${cy - 9} L ${cx} ${cy - 3} Z`}
+                    fill="var(--foreground)"
+                  />
+                );
+              }}
+            />
+          )}
         </BarChart>
       </ResponsiveContainer>
     </div>
