@@ -103,19 +103,23 @@ export default function AssetDailyPnlChartInner({
               <Cell key={p.date} fill={p.value >= 0 ? RISE : FALL} />
             ))}
           </Bar>
-          {/* 포커스(헤더 표시 대상) 막대 위 아래방향 화살표(↓) — 막대가 얇거나 값이 0이어도 위치가 보인다.
-              음수 막대는 0선 위에서 막대를 가리킨다(y = max(value, 0) = 막대 윗끝). */}
+          {/* 포커스(헤더 표시 대상) 막대 화살표 — 막대가 얇거나 값이 0이어도 위치가 보인다.
+              수익: 막대 위에서 ↓ / 손실: 막대 아래에서 ↑. 색상은 막대와 동일(rise/fall). */}
           {focus && (
             <ReferenceDot
               x={focus.date}
-              y={Math.max(focus.value, 0)}
+              y={focus.value}
               shape={(props) => {
                 const { cx, cy } = props as { cx: number; cy: number };
-                // 샤프트(세로선) + 화살촉(꺾쇠) — 끝점이 막대 윗끝 4px 위를 가리킨다.
+                const isRise = focus.value >= 0;
+                // 샤프트(세로선) + 화살촉(꺾쇠) — 끝점이 막대 끝 4px 옆에서 막대를 가리킨다.
+                const d = isRise
+                  ? `M ${cx} ${cy - 12} L ${cx} ${cy - 4} M ${cx - 3} ${cy - 7.5} L ${cx} ${cy - 4} L ${cx + 3} ${cy - 7.5}`
+                  : `M ${cx} ${cy + 12} L ${cx} ${cy + 4} M ${cx - 3} ${cy + 7.5} L ${cx} ${cy + 4} L ${cx + 3} ${cy + 7.5}`;
                 return (
                   <path
-                    d={`M ${cx} ${cy - 12} L ${cx} ${cy - 4} M ${cx - 3} ${cy - 7.5} L ${cx} ${cy - 4} L ${cx + 3} ${cy - 7.5}`}
-                    stroke="var(--foreground)"
+                    d={d}
+                    stroke={isRise ? RISE : FALL}
                     strokeWidth={1.5}
                     strokeLinecap="round"
                     strokeLinejoin="round"
