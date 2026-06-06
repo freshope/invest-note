@@ -145,6 +145,7 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
               <AssetHistoryChart
                 key={`${effectiveAccountId ?? "all"}:${ticker ?? ""}`}
                 series={data.series}
+                investedAmount={data.investedAmount}
                 onFocusChange={setFocus}
               />
               <div className="space-y-1">

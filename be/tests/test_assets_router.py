@@ -98,8 +98,10 @@ class TestAssetHistory:
         # camelCase 계약: asOf (NOT as_of).
         assert "asOf" in body
         assert "as_of" not in body
-        assert set(body.keys()) == {"series", "items", "incomplete", "asOf"}
+        assert set(body.keys()) == {"series", "items", "incomplete", "asOf", "investedAmount"}
         assert body["series"][0] == {"date": "2025-06-02", "value": 10 * 75000}
+        # 보유분 매수 원금(cost_basis 합) — 차트 손익 가이드 라인 값.
+        assert body["investedAmount"] == 10 * 70000
         # 계좌뷰 items: close/qty 없음.
         assert "close" not in body["items"][0]
         assert "change" in body["items"][0]
@@ -182,6 +184,7 @@ class TestAssetHistory:
         assert body["items"] == []
         assert body["incomplete"] is False
         assert "asOf" in body
+        assert body["investedAmount"] is None
 
     def test_backfill_incomplete_propagates(self, trades_client):
         """backfill 이 incomplete=True 반환 시 응답 incomplete=True."""
@@ -238,6 +241,29 @@ class TestAssetHistory:
         assert resp.status_code == 200
         series = resp.json()["series"]
         assert series[-1] == {"date": today_iso, "value": 10 * 77000}
+
+    def test_sold_out_invested_amount_none(self, trades_client):
+        """전량 매도 → 보유분 없음 → investedAmount=None(FE 단색 차트 폴백)."""
+        buy = _make_trade_row()
+        sell = _make_trade_row(
+            id="t2",
+            trade_type="SELL",
+            price=75000.0,
+            total_amount=750000.0,
+            traded_at=_dt("2025-06-03T09:00:00+09:00"),
+        )
+        conn = FakeConnection([_to_record(buy), _to_record(sell)], _closes_today())
+
+        async def mock_quotes(state, keys, *, client=None):
+            return {"005930:KR": {"price": 77000.0, "currency": "KRW", "as_of": ""}}
+
+        with _patch_assets(conn):
+            with patch("invest_note_api.routers.assets.daily_price_seed.backfill_closes", _no_backfill):
+                with patch("invest_note_api.routers.assets.fetch_quotes_by_keys", mock_quotes):
+                    resp = trades_client.get("/assets/history")
+
+        assert resp.status_code == 200
+        assert resp.json()["investedAmount"] is None
 
     def test_401_without_auth(self, auth_client):
         resp = auth_client.get("/assets/history")
