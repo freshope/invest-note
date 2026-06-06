@@ -47,6 +47,7 @@
 - [x] `fe/src/components/assets/AssetDailyPnlChartInner.tsx` 신규 — 막대 차트 (Cell 색상, 0 기준선, 연도 구분선, 포커스 통지)
 - [x] `fe/src/components/assets/AssetDailyPnlChart.tsx` 신규 — dynamic 래퍼
 - [x] `fe/src/components/assets/AssetHistoryView.tsx` — 탭 + 헤더 분기
+- [x] 포커스 막대 강조 — 헤더 표시 대상 막대만 진하게, 나머지 fillOpacity 0.4 (사용자 선택: C안)
 - [x] 타입 체크 통과 (`pnpm -C fe exec tsc --noEmit`)
 - [x] FE 테스트 통과 (`pnpm -C fe test`) — 159개
 

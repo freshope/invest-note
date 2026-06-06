@@ -25,8 +25,9 @@ export default function AssetDailyPnlChartInner({
 }) {
   const { visible, panProps } = useChartPan(series);
 
-  // 화면에 보이는 가장 우측(최근) 점 — 헤더 표시 대상.
+  // 화면에 보이는 가장 우측(최근) 점 — 헤더 표시 대상 + 포커스 막대 강조 기준.
   const focus = visible.length ? visible[visible.length - 1] : null;
+  const focusDate = focus?.date ?? null;
   useEffect(() => {
     if (focus) onFocusChange?.(focus);
     // focus 객체는 매 렌더 새로 만들어지므로 date/value 원시값으로 의존
@@ -90,8 +91,13 @@ export default function AssetDailyPnlChartInner({
           {/* 0 기준선 — 이익/손실 경계 */}
           <ReferenceLine y={0} stroke="var(--border)" />
           <Bar dataKey="value" isAnimationActive={false}>
+            {/* 포커스(헤더 표시 대상) 막대만 진하게 — 나머지는 흐리게 해 위치를 드러낸다. */}
             {visible.map((p) => (
-              <Cell key={p.date} fill={p.value >= 0 ? RISE : FALL} />
+              <Cell
+                key={p.date}
+                fill={p.value >= 0 ? RISE : FALL}
+                fillOpacity={p.date === focusDate ? 1 : 0.4}
+              />
             ))}
           </Bar>
         </BarChart>
