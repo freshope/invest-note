@@ -106,7 +106,8 @@ export default function AssetHistoryChartInner({
       : solidColor;
 
   return (
-    <div {...panProps}>
+    // [&_*:focus]:outline-none — 클릭 시 recharts svg 포커스 테두리 제거 (AllocationTabs 패턴)
+    <div {...panProps} className="[&_*:focus]:outline-none">
       <ResponsiveContainer width="100%" height={170}>
         <AreaChart data={visible} margin={{ top: 8, right: 8, bottom: 4, left: 8 }}>
           <defs>
