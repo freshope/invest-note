@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { OAUTH_BROWSER_FINISHED_EVENT } from "@/components/providers/CapacitorDeepLinkHandler";
-import { isNativePlatform } from "@/lib/platform";
+import { getPlatform, isNativePlatform } from "@/lib/platform";
 import { NATIVE_REDIRECT_URL, WEB_CALLBACK_PATH } from "@/lib/auth/oauth-config";
 
 const KAKAO_BG = "#FEE500";
@@ -45,6 +45,12 @@ function LoginForm() {
   const urlError = searchParams.get("error");
   const [pending, setPending] = useState<"google" | "kakao" | "apple" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Apple 심사 정책상 iOS에서만 Apple 로그인 노출 (hydration mismatch 방지를 위해 effect에서 판별)
+  const [showApple, setShowApple] = useState(false);
+
+  useEffect(() => {
+    setShowApple(getPlatform() === "ios");
+  }, []);
 
   // 네이티브에서 사용자가 인앱 브라우저를 수동으로 닫으면 pending 상태 해제
   useEffect(() => {
@@ -107,15 +113,17 @@ function LoginForm() {
           {pending === "kakao" ? "처리 중..." : "카카오로 계속하기"}
         </button>
 
-        <button
-          type="button"
-          onClick={() => handleSocialLogin("apple")}
-          disabled={pending !== null}
-          className="flex h-12 w-full items-center justify-center gap-3 rounded-2xl bg-black px-4 text-[15px] font-medium text-white transition-opacity disabled:opacity-50 hover:opacity-90"
-        >
-          <AppleIcon />
-          {pending === "apple" ? "처리 중..." : "Apple로 계속하기"}
-        </button>
+        {showApple && (
+          <button
+            type="button"
+            onClick={() => handleSocialLogin("apple")}
+            disabled={pending !== null}
+            className="flex h-12 w-full items-center justify-center gap-3 rounded-2xl bg-black px-4 text-[15px] font-medium text-white transition-opacity disabled:opacity-50 hover:opacity-90"
+          >
+            <AppleIcon />
+            {pending === "apple" ? "처리 중..." : "Apple로 계속하기"}
+          </button>
+        )}
       </div>
 
       {(error ?? urlError) && (

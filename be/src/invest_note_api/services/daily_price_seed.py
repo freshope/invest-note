@@ -1,6 +1,8 @@
 """일별 종가 적재 — data.go.kr getStockPriceInfo 범위 조회 + watermark 증분 backfill.
 
 자산 변화 페이지가 과거 종가를 daily_close_prices 에서 읽고, 결측 구간만 이 모듈이 채운다.
+data.go.kr 는 T+1(~14:00 KST) 발행이라 어제 종가가 비는 tail-gap 이 생긴다 — 이 구간만
+네이버 일별 캔들(T+0 반영)로 보충한다(`fetch_naver_daily_closes`).
 fetch 유틸(`_get_with_retry`/`_extract_items`/`_basdt_to_date`)은 stock_seed.py 와 공유한다.
 """
 from __future__ import annotations
@@ -34,6 +36,9 @@ _SECURITIES_PRODUCT_BASE = (
 )
 _ETF_PRICE_URL = f"{_SECURITIES_PRODUCT_BASE}/getETFPriceInfo"
 _ETN_PRICE_URL = f"{_SECURITIES_PRODUCT_BASE}/getETNPriceInfo"
+# 네이버 일별 캔들 — data.go.kr T+1 발행 전 tail-gap 보충용. 거래일만 반환(주말/휴장 제외).
+# 주식/ETF 동일 경로(KR 전용). item 키: localDate(YYYYMMDD), closePrice(float).
+_NAVER_DAILY_CHART_URL = "https://api.stock.naver.com/chart/domestic/item/{code}/day"
 _PAGE_SIZE = 1000
 # data.go.kr 동시 호출 상한(게이트웨이 429 가드). stock_seed._NAVER_CONCURRENCY 선례.
 _BACKFILL_CONCURRENCY = 8
@@ -130,6 +135,42 @@ async def fetch_daily_closes(
     return rows
 
 
+async def fetch_naver_daily_closes(
+    client: httpx.AsyncClient, ticker: str, begin: date, end: date
+) -> list[dict]:
+    """네이버 일별 캔들에서 [begin, end] 종가 수집 — data.go.kr 미발행(T+1) tail-gap 보충용.
+
+    반환 형태는 fetch_daily_closes 와 동일: [{ticker, close_date, close_price}].
+    ETN 등 이 경로 미지원 종목은 빈 배열 → 보충 없음(data.go.kr 발행 후 자연 수렴).
+    """
+    norm = _normalize_ticker(ticker)
+    res = await client.get(
+        _NAVER_DAILY_CHART_URL.format(code=norm),
+        params={
+            "startDateTime": begin.strftime("%Y%m%d") + "000000",
+            "endDateTime": end.strftime("%Y%m%d") + "000000",
+        },
+    )
+    res.raise_for_status()
+    items = res.json()
+    if not isinstance(items, list):
+        return []
+    rows: list[dict] = []
+    for it in items:
+        close_date = _basdt_to_date((it.get("localDate") or "").strip() or None)
+        raw = it.get("closePrice")
+        if close_date is None or raw in (None, ""):
+            continue
+        try:
+            close_price = float(raw)
+        except (TypeError, ValueError):
+            continue
+        # 범위 밖 행 가드 — watermark 가 어제 너머로 오르는 오염 방지.
+        if begin <= close_date <= end:
+            rows.append({"ticker": norm, "close_date": close_date, "close_price": close_price})
+    return rows
+
+
 async def backfill_closes(
     conn: Any,
     api_key: str,
@@ -148,6 +189,10 @@ async def backfill_closes(
         (휴장/빈 범위를 최근 확인함 → data.go.kr 불필요. 빈 응답이 watermark 를 못 올려
          매 요청 재질의하던 문제를 차단).
       - 그 외 → fetch 대상.
+
+    tail-gap 보충(KR): data.go.kr 가 T+1 발행이라 어제 종가가 빈다 → 그 공백 구간만
+    네이버 일별 캔들로 보충해 같은 upsert 로 적재. 보충되면 watermark 가 올라가
+    data.go.kr 가 그 날짜를 다시 덮지 않는다(종가 값 동일 — 수정주가 코너케이스만 갈릴 수 있음).
 
     단계 분리(asyncpg 단일 커넥션은 동시 쿼리 불가):
       1) DB 순차 — watermark/sync_state/market 일괄 조회.
@@ -205,7 +250,8 @@ async def backfill_closes(
 
     async def _fetch_one(
         ticker: str, begin: date, client: httpx.AsyncClient
-    ) -> tuple[str, list[dict] | None]:
+    ) -> tuple[str, list[dict] | None, bool]:
+        """반환: (ticker, rows, synced). synced=False 면 sync_state 미기록(다음 요청 재시도)."""
         async with sem:
             try:
                 rows = await fetch_daily_closes(
@@ -216,9 +262,23 @@ async def backfill_closes(
                     url=_price_url_for_market(market_of.get(ticker)),
                     client=client,
                 )
-                return ticker, rows
             except Exception:
-                return ticker, None  # 실패 → sync_state 미기록(다음 요청 재시도).
+                return ticker, None, False  # 실패 → sync_state 미기록(다음 요청 재시도).
+            # tail-gap 보충: data.go.kr 가 어제까지 못 채운 구간을 네이버로(KR 전용 경로).
+            if country_code == "KR":
+                gap_begin = (
+                    max((r["close_date"] for r in rows), default=begin - timedelta(days=1))
+                    + timedelta(days=1)
+                )
+                if gap_begin <= yesterday:
+                    try:
+                        rows = rows + await fetch_naver_daily_closes(
+                            client, ticker, gap_begin, yesterday
+                        )
+                    except Exception:
+                        # data.go.kr 분은 upsert 하되 상태 미기록 → 보충 재시도 보장.
+                        return ticker, rows, False
+            return ticker, rows, True
 
     async with httpx.AsyncClient(
         headers={"User-Agent": USER_AGENT}, timeout=_DATA_GO_KR_TIMEOUT
@@ -232,12 +292,15 @@ async def backfill_closes(
     incomplete = False
     all_rows: list[dict] = []
     state_rows: list[dict] = []
-    for ticker, rows in results:
+    for ticker, rows, synced in results:
         if rows is None:
             incomplete = True
             continue
         all_rows.extend(rows)
-        state_rows.append({"ticker": ticker, "checked_through_date": yesterday})
+        if synced:
+            state_rows.append({"ticker": ticker, "checked_through_date": yesterday})
+        else:
+            incomplete = True  # 네이버 보충 실패 — 어제 점 결측 가능.
     if all_rows:
         await daily_prices_repo.upsert_closes(
             conn, all_rows, country_code=country_code

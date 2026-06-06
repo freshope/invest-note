@@ -21,6 +21,7 @@ from invest_note_api.db_ops import daily_prices_repo
 from invest_note_api.db_ops.trades_repo import list_trades_with_account
 from invest_note_api.domain.asset_history import (
     compute_asset_history,
+    market_open_today,
     scope_earliest_date,
     scope_tickers,
 )
@@ -91,6 +92,7 @@ async def get_asset_history(
 
     # 3) 오늘 점 라이브 시세 — ticker → price 맵.
     live_quotes: dict[str, float] = {}
+    quotes: dict = {}
     if tickers:
         keys = [position_key(tk, country) for tk in tickers]
         try:
@@ -105,13 +107,14 @@ async def get_asset_history(
             if q is not None:
                 live_quotes[tk] = q["price"]
 
-    # 4) 순수 계산.
+    # 4) 순수 계산 — 휴장일(시세 traded_on ≠ 오늘)이면 오늘 점 제외.
     result = compute_asset_history(
         trades,
         closes,
         live_quotes,
         today=today,
         is_stock_view=is_stock_view,
+        include_today=market_open_today(list(quotes.values()), today),
     )
 
     return AssetHistoryResponse.model_validate(

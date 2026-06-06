@@ -7,7 +7,7 @@
      ⚠️ walk_trades 는 단일 그룹 walker라 다종목을 한 번에 walk 하면 수량이 섞인다 → 반드시
         종목(ticker+country)별로 따로 walk 후 날짜별 합산한다(G1: sort_for_calc 필수).
   2. 날짜 범위 = [max(스코프 최초 매수일, 오늘-2년), 오늘].
-  3. 거래일 집합 = 적재 종가 close_date 합집합(∪ 오늘).
+  3. 거래일 집합 = 적재 종가 close_date 합집합(∪ 오늘 — 단, 개장일일 때만. 휴장일 점 방지).
   4. 각 거래일 d: 자산(d) = Σ_종목 qty(d) × close≤d(종목)  (종목별 직전 종가 carry-forward).
   5. d=오늘: 저장 종가 대신 라이브 시세(인자 주입).
   6. carry-forward 불가(qty>0 인데 그 종목 close≤d 가 없음)면 그 종목 기여 제외 + incomplete=True.
@@ -104,6 +104,19 @@ def _first_buy_date(trades: list[Trade]) -> date | None:
     return min(buys) if buys else None
 
 
+def market_open_today(quotes: list[dict | None], today: date) -> bool:
+    """오늘 개장 여부 — 시세 응답의 마지막 체결 날짜(traded_on)로 판정.
+
+    하나라도 traded_on == today 면 개장(휴장일이면 모든 종목이 직전 거래일을 가리킴).
+    traded_on 을 아는 시세가 없으면(전체 실패/소스 미지원) 평일 여부로 fallback —
+    이 경로에선 평일 공휴일을 못 거르지만 기존 동작 이상으로 나빠지지 않는다.
+    """
+    known = [q["traded_on"] for q in quotes if q and q.get("traded_on")]
+    if known:
+        return today.isoformat() in known
+    return today.weekday() < 5
+
+
 def compute_asset_history(
     trades: list[Trade],
     closes: list[dict],
@@ -111,6 +124,7 @@ def compute_asset_history(
     *,
     today: date,
     is_stock_view: bool,
+    include_today: bool = True,
 ) -> AssetHistoryResult:
     """자산 변화 series/items 산출.
 
@@ -120,6 +134,7 @@ def compute_asset_history(
         live_quotes: {ticker: 라이브 종가} (오늘 점용). 누락 종목은 직전 종가로 fallback.
         today: KST 오늘 날짜.
         is_stock_view: 종목뷰면 items 에 close/qty 추가(단일 종목 가정).
+        include_today: 오늘 점 포함 여부 — 휴장일(주말/공휴일)이면 False(market_open_today).
 
     Returns:
         AssetHistoryResult(series, items, incomplete).
@@ -142,12 +157,13 @@ def compute_asset_history(
         return AssetHistoryResult(series=[], items=[], incomplete=False)
     range_start = max(first_buy, today - timedelta(days=LOOKBACK_DAYS))
 
-    # 거래일 집합 = 적재 종가 close_date(범위 내) ∪ 오늘.
+    # 거래일 집합 = 적재 종가 close_date(범위 내) ∪ 오늘(개장일만 — 휴장일 점 방지).
     trading_days: set[date] = {
         cd for cd, _ in (item for lst in closes_by_ticker.values() for item in lst)
         if range_start <= cd <= today
     }
-    trading_days.add(today)
+    if include_today:
+        trading_days.add(today)
     days = sorted(d for d in trading_days if range_start <= d <= today)
 
     incomplete = False

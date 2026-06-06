@@ -9,6 +9,7 @@ from datetime import date, datetime, timezone
 
 from invest_note_api.domain.asset_history import (
     compute_asset_history,
+    market_open_today,
     scope_earliest_date,
     scope_tickers,
 )
@@ -211,6 +212,53 @@ def test_empty_trades():
     assert res.series == []
     assert res.items == []
     assert res.incomplete is False
+
+
+# ─────────────────────────── 휴장일(오늘 점 제외) ───────────────────────────
+
+
+def test_holiday_excludes_today_point():
+    """휴장일(include_today=False) → 오늘 점 없음, 마지막 점은 직전 거래일(차트가 비지 않음)."""
+    trades = [
+        make_trade(id="b1", trade_type="BUY", quantity=10, traded_at=_dt("2025-06-02T09:00:00+09:00")),
+    ]
+    closes = [
+        _close("005930", "2025-06-02", 75000),
+        _close("005930", "2025-06-03", 76000),
+    ]
+    today = date(2025, 6, 7)  # 토요일(휴장).
+    res = compute_asset_history(
+        trades, closes, live_quotes={"005930": 77000.0},
+        today=today, is_stock_view=True, include_today=False,
+    )
+
+    dates = [p["date"] for p in res.series]
+    assert "2025-06-07" not in dates
+    assert dates[-1] == "2025-06-03"  # 직전 거래일 점 유지.
+    assert res.series[-1]["value"] == 10 * 76000  # 라이브 시세가 아닌 적재 종가.
+    assert res.incomplete is False
+
+
+def test_market_open_today_by_traded_on():
+    """traded_on == 오늘인 시세가 하나라도 있으면 개장, 모두 직전 거래일이면 휴장."""
+    q = lambda d: {"price": 1.0, "currency": "KRW", "as_of": "", "traded_on": d}
+    # 개장일: 체결 날짜 == 오늘.
+    assert market_open_today([q("2026-06-05")], date(2026, 6, 5)) is True
+    # 주말: 마지막 체결이 금요일.
+    assert market_open_today([q("2026-06-05")], date(2026, 6, 6)) is False
+    # 평일 공휴일(핵심): 수요일이지만 체결은 화요일 — weekday 휴리스틱으론 못 거름.
+    assert market_open_today([q("2026-09-29")], date(2026, 9, 30)) is False
+    # 거래정지 종목 섞임: 하나라도 오늘 체결이면 개장.
+    assert market_open_today([q("2026-06-01"), q("2026-06-05")], date(2026, 6, 5)) is True
+
+
+def test_market_open_today_fallback_weekday():
+    """traded_on 을 아는 시세가 없으면(전체 실패/None) 평일 여부 fallback."""
+    no_date = {"price": 1.0, "currency": "KRW", "as_of": "", "traded_on": None}
+    assert market_open_today([], date(2026, 6, 4)) is True  # 목요일.
+    assert market_open_today([], date(2026, 6, 6)) is False  # 토요일.
+    assert market_open_today([no_date, None], date(2026, 6, 7)) is False  # 일요일.
+    assert market_open_today([no_date], date(2026, 6, 5)) is True  # 금요일.
 
 
 # ─────────────────────────── scope helpers ───────────────────────────
