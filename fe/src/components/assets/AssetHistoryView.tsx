@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeftIcon, ChevronDownIcon } from "lucide-react";
 import { ErrorState } from "@/components/shared/ErrorState";
@@ -65,9 +65,13 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
   // 차트에서 보이는 가장 우측(최근) 점 — 헤더가 이 점의 날짜·자산을 표시.
   const [focus, setFocus] = useState<AssetHistoryPoint | null>(null);
   // 스코프(계좌/종목) 전환 시 초기화 → 차트가 새 우측점을 통지할 때까지 최신값 표시.
-  useEffect(() => {
+  // effect 대신 렌더 중 상태 조정 패턴 사용(react-hooks/set-state-in-effect 회피).
+  const scopeKey = `${effectiveAccountId ?? ""}|${ticker ?? ""}`;
+  const [prevScopeKey, setPrevScopeKey] = useState(scopeKey);
+  if (scopeKey !== prevScopeKey) {
+    setPrevScopeKey(scopeKey);
     setFocus(null);
-  }, [effectiveAccountId, ticker]);
+  }
 
   const title = isStockView ? `${name ?? "종목"} 자산 추이` : "내 자산 추이";
   const showFilter = accounts.length >= 2;
