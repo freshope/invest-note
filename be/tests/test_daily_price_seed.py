@@ -467,6 +467,38 @@ async def test_backfill_naver_fills_tail_gap(monkeypatch):
     assert incomplete is False
 
 
+async def test_backfill_gap_provider_none_disables_naver(monkeypatch):
+    """gap_provider="none" → 공백 구간이 있어도 네이버 보충 미호출(env 비활성 토글)."""
+    today = date(2026, 6, 4)
+
+    async def datagokr_through_0602(api_key, ticker, begin, end, *, url=daily_price_seed._STOCK_PRICE_URL, client=None):
+        return [{"ticker": ticker, "close_date": date(2026, 6, 2), "close_price": 100.0}]
+
+    track = _patch_repo(monkeypatch, watermarks={}, sync_state={}, fetch_fn=datagokr_through_0602)
+    conn = _fake_conn({"005930": "KOSPI"})
+
+    await daily_price_seed.backfill_closes(
+        conn, "key", ["005930"], date(2026, 6, 1), today, gap_provider="none"
+    )
+
+    assert track["naver_fetched"] == []  # 보충 비활성 — primary 분만 upsert.
+    assert [r["close_date"] for r in track["upserted_closes"]] == [date(2026, 6, 2)]
+
+
+async def test_backfill_unknown_provider_raises_value_error(monkeypatch):
+    """registry 에 없는 공급자명(env 오타) → ValueError fail-fast."""
+    import pytest
+
+    track = _patch_repo(monkeypatch)
+    conn = _fake_conn({"005930": "KOSPI"})
+
+    with pytest.raises(ValueError, match="daily_price"):
+        await daily_price_seed.backfill_closes(
+            conn, "key", ["005930"], date(2026, 6, 1), date(2026, 6, 4), primary_provider="kis"
+        )
+    assert track["fetched"] == []
+
+
 async def test_backfill_naver_failure_keeps_datagokr_rows_state_unrecorded(monkeypatch):
     """네이버 보충 실패 → data.go.kr 분은 upsert, sync_state 미기록 + incomplete(재시도 보장)."""
     today = date(2026, 6, 4)

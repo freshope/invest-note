@@ -90,6 +90,8 @@ async def get_asset_history(
                 earliest,
                 today,
                 country_code=country,
+                primary_provider=settings.daily_price_provider,
+                gap_provider=settings.daily_price_gap_provider,
             )
         closes = await daily_prices_repo.get_closes(
             conn, tickers, earliest, today, country_code=country
@@ -102,7 +104,7 @@ async def get_asset_history(
         keys = [position_key(tk, country) for tk in tickers]
         try:
             quotes = await fetch_quotes_by_keys(
-                quote_state, keys, client=http_client
+                quote_state, keys, client=http_client, providers=settings.quote_provider_list
             )
         except Exception:
             logger.warning("asset_history 시세 조회 실패 user_id=%s", user.id, exc_info=True)

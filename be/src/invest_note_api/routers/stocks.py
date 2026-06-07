@@ -29,6 +29,7 @@ async def get_quotes(
     user: AuthenticatedUser = Depends(get_current_user),
     quote_state: QuoteCacheState = Depends(get_quote_cache_state),
     http_client: httpx.AsyncClient = Depends(get_http_client),
+    settings: Settings = Depends(get_settings),
 ) -> dict:
     if not symbols.strip():
         return {}
@@ -37,7 +38,13 @@ async def get_quotes(
     if not keys:
         return {}
 
-    return await fetch_quotes_by_keys(quote_state, keys, client=http_client, force_refresh=refresh)
+    return await fetch_quotes_by_keys(
+        quote_state,
+        keys,
+        client=http_client,
+        force_refresh=refresh,
+        providers=settings.quote_provider_list,
+    )
 
 
 @router.get("/meta")

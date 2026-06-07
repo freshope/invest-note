@@ -10,6 +10,7 @@ import httpx
 from fastapi import APIRouter, Depends, Query
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
+from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import acquire_for_user, get_pool
 from invest_note_api.db_ops.trades_repo import list_trades
 from invest_note_api.domain.analysis.aggregate import compute_summary
@@ -86,6 +87,7 @@ async def get_analysis_dashboard(
     pool: asyncpg.Pool = Depends(get_pool),
     quote_state: QuoteCacheState = Depends(get_quote_cache_state),
     http_client: httpx.AsyncClient = Depends(get_http_client),
+    settings: Settings = Depends(get_settings),
 ) -> AnalysisDashboardResponse:
     async with acquire_for_user(pool, user.id) as conn:
         all_trades = await list_trades(conn, user.id)
@@ -99,7 +101,11 @@ async def get_analysis_dashboard(
     positions = positions0
     try:
         quotes = await fetch_quotes_by_keys(
-            quote_state, [p.key for p in positions0], client=http_client, force_refresh=refresh
+            quote_state,
+            [p.key for p in positions0],
+            client=http_client,
+            force_refresh=refresh,
+            providers=settings.quote_provider_list,
         )
         positions = merge_quotes(positions0, quotes)
     except Exception as e:

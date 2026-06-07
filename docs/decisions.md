@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-06-07 | 외부 데이터 공급자 — 도메인별 dict registry + env 토글 (entry-point threading)
+
+- **맥락:** KIS Open API 도입(시세)과 향후 공급처 추가에 대비해 모든 외부 데이터(시세/종목마스터/일별종가/NPS)의 공급처를 env 로 전환 가능하게 요구. 시세 fallback 체인·seed 파이프라인·tail-gap 보충이 코드에 하드코딩돼 있었고, 검색만 `STOCK_SEARCH_PROVIDER` 토글 전례가 있었다.
+- **결정:** ① 각 도메인 모듈 내 `dict[str, fn]` registry + 공통 `provider_registry.resolve_chain`(unknown 이름 ValueError). ② env 는 `QUOTE_PROVIDERS`(콤마 체인)·`STOCK_SEED_SOURCES`(첫 항목=authority)·`DAILY_PRICE_PROVIDER`/`DAILY_PRICE_GAP_PROVIDER`("none"=비활성)·`NPS_PROVIDER`(registry-of-one). ③ 함수 내부에서 `get_settings()` 를 읽지 않고 entry point(라우터 `Depends`/배치 `main()`)에서 인자로 threading — 체인 함수는 현재 동작과 동일한 리터럴 기본값. ④ quotes 만 lifespan startup 에서 `validate_quote_providers` 검증.
+- **이유:** ① config.py 가 도메인을 import 하면 순환 위험 — 이름 문자열만 방출하고 해석은 도메인이 담당. ③ `Settings()` 는 `supabase_url` 필수라 내부 호출 시 단위 테스트가 깨지고 암묵 의존이 생김 — 리터럴 기본값 덕에 기존 테스트가 무수정 통과해 동작 보존이 증명됨. ④ 시세 요청 경로는 `gather(return_exceptions=True)` 가 ValueError 를 삼켜 env 오타 시 전 종목이 조용히 null — 부팅 fail-fast 필요(타 도메인은 호출 시점 ValueError 로 충분: seed=CLI crash/배치 로깅, daily_price=라우터 500).
+- **트레이드오프:** 공급자 "추가"는 여전히 코드(함수+registry 등록) — env 는 선택/순서만 담당(플러그인/동적 import 같은 과추상화 배제). `update_marcap`·`crossvalidate_stocks_with_naver` 는 seed 의 고정 단계로 토글 제외 — Naver·data.go.kr 고정 의존이 알려진 예외로 남음(backlog 기록). NPS 는 대체 공급처가 없어 registry-of-one(구조 일관성 우선, 사용자 결정).
+
+---
+
 ## 2026-06-06 | 일별 손익 차트 — "손익" = 전일대비(자산 평가액 일간 변화), BE items.change 재사용
 
 - **맥락:** 자산 추이 페이지에 일별 손익 막대 차트 탭을 추가하며 "일별 손익"의 정의가 쟁점. ① 전일대비(자산 평가액 일간 변화 — 추가 매수/매도로 인한 증감도 포함, 기존 '일별 내역' 표와 동일), ② 매수/매도 현금흐름을 제외한 순수 평가손익(보유 수량 × 가격 변화) 두 해석이 가능했다.

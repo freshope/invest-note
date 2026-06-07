@@ -17,6 +17,7 @@ import httpx
 from invest_note_api.db_ops import daily_prices_repo
 from invest_note_api.domain.asset_history import LOOKBACK_DAYS
 from invest_note_api.external.constants import USER_AGENT
+from invest_note_api.external.provider_registry import resolve_chain
 from invest_note_api.services.stock_seed import (
     _DATA_GO_KR_TIMEOUT,
     _basdt_to_date,
@@ -55,6 +56,12 @@ def _price_url_for_market(market: str | None) -> str:
     if m == "ETN":
         return _ETN_PRICE_URL
     return _STOCK_PRICE_URL
+
+
+# 일별 종가 공급자 registry — env DAILY_PRICE_PROVIDER / DAILY_PRICE_GAP_PROVIDER 의 이름이
+# 여기 등록돼 있어야 한다. primary 는 (api_key, ticker, begin, end, market, client) 시그니처,
+# gap 은 (client, ticker, begin, end) 시그니처. 정의는 함수 선언 뒤(모듈 하단 근처) 참조.
+_GAP_DISABLED = ("", "none")  # gap_provider 비활성 값
 
 
 def _normalize_ticker(raw: str | None) -> str:
@@ -171,6 +178,33 @@ async def fetch_naver_daily_closes(
     return rows
 
 
+async def _fetch_data_go_kr_closes(
+    api_key: str,
+    ticker: str,
+    begin: date,
+    end: date,
+    *,
+    market: str | None,
+    client: httpx.AsyncClient,
+) -> list[dict]:
+    """data.go.kr primary 공급자 — 종목 마켓별 엔드포인트 라우팅은 내부 구현 디테일."""
+    return await fetch_daily_closes(
+        api_key, ticker, begin, end, url=_price_url_for_market(market), client=client
+    )
+
+
+async def _fetch_naver_gap_closes(
+    client: httpx.AsyncClient, ticker: str, begin: date, end: date
+) -> list[dict]:
+    """naver gap 공급자 — 모듈 전역을 런타임 조회(late-binding)해 테스트 monkeypatch 를 존중."""
+    return await fetch_naver_daily_closes(client, ticker, begin, end)
+
+
+# 공급자 registry — 새 공급자 추가 시 여기 등록하면 env 변경만으로 전환 가능.
+_PRIMARY_REGISTRY = {"data_go_kr": _fetch_data_go_kr_closes}
+_GAP_REGISTRY = {"naver": _fetch_naver_gap_closes}
+
+
 async def backfill_closes(
     conn: Any,
     api_key: str,
@@ -179,8 +213,14 @@ async def backfill_closes(
     today: date,
     *,
     country_code: str = "KR",
+    primary_provider: str = "data_go_kr",
+    gap_provider: str = "naver",
 ) -> bool:
     """종목별 결측 구간(watermark 이후~어제)만 fetch→upsert. 종목 fetch 는 병렬.
+
+    `primary_provider`/`gap_provider` 는 env(DAILY_PRICE_PROVIDER/DAILY_PRICE_GAP_PROVIDER)에서
+    호출측이 전달 — 내부에서 get_settings() 를 읽지 않는다. gap_provider 가 "none"/빈 값이면
+    tail-gap 보충 비활성.
 
     skip 규칙(종목별):
       - begin = max(earliest, watermark+1일). watermark = 적재된 실데이터 max(close_date).
@@ -206,6 +246,14 @@ async def backfill_closes(
     """
     if not tickers or not api_key:
         return bool(tickers) and not api_key  # 키 없으면 적재 불가 → 종목 있으면 incomplete
+
+    # 공급자 해석 — unknown 이름은 ValueError(fail-fast). gap 은 비활성 값 허용.
+    primary_fetch = resolve_chain([primary_provider], _PRIMARY_REGISTRY, domain="daily_price")[0]
+    gap_fetch = (
+        None
+        if gap_provider in _GAP_DISABLED
+        else resolve_chain([gap_provider], _GAP_REGISTRY, domain="daily_price_gap")[0]
+    )
 
     yesterday = today - timedelta(days=1)
     if earliest > yesterday:
@@ -254,29 +302,27 @@ async def backfill_closes(
         """반환: (ticker, rows, synced). synced=False 면 sync_state 미기록(다음 요청 재시도)."""
         async with sem:
             try:
-                rows = await fetch_daily_closes(
+                rows = await primary_fetch(
                     api_key,
                     ticker,
                     begin,
                     yesterday,
-                    url=_price_url_for_market(market_of.get(ticker)),
+                    market=market_of.get(ticker),
                     client=client,
                 )
             except Exception:
                 return ticker, None, False  # 실패 → sync_state 미기록(다음 요청 재시도).
-            # tail-gap 보충: data.go.kr 가 어제까지 못 채운 구간을 네이버로(KR 전용 경로).
-            if country_code == "KR":
+            # tail-gap 보충: primary 가 어제까지 못 채운 구간을 gap 공급자로(KR 전용 경로).
+            if gap_fetch is not None and country_code == "KR":
                 gap_begin = (
                     max((r["close_date"] for r in rows), default=begin - timedelta(days=1))
                     + timedelta(days=1)
                 )
                 if gap_begin <= yesterday:
                     try:
-                        rows = rows + await fetch_naver_daily_closes(
-                            client, ticker, gap_begin, yesterday
-                        )
+                        rows = rows + await gap_fetch(client, ticker, gap_begin, yesterday)
                     except Exception:
-                        # data.go.kr 분은 upsert 하되 상태 미기록 → 보충 재시도 보장.
+                        # primary 분은 upsert 하되 상태 미기록 → 보충 재시도 보장.
                         return ticker, rows, False
             return ticker, rows, True
 
@@ -324,7 +370,13 @@ async def prune_older_than(
 
 # ─────────────────────────── 사전 적재(전체 유저 보유종목 union) ───────────────────────────
 
-async def seed_daily_prices(db_url: str, *, api_key: str) -> None:
+async def seed_daily_prices(
+    db_url: str,
+    *,
+    api_key: str,
+    primary_provider: str = "data_go_kr",
+    gap_provider: str = "naver",
+) -> None:
     """전체 유저 보유종목 union 의 2년치 종가를 사전 적재(cron pre-warm).
 
     콜드스타트 백필 지연 완화용. seed_stocks 와 동일하게 자체 asyncpg.connect 로 동작한다 —
@@ -342,7 +394,15 @@ async def seed_daily_prices(db_url: str, *, api_key: str) -> None:
         tickers = [r["ticker_symbol"] for r in rows]
         if not tickers:
             return
-        await backfill_closes(conn, api_key, tickers, earliest, today)
+        await backfill_closes(
+            conn,
+            api_key,
+            tickers,
+            earliest,
+            today,
+            primary_provider=primary_provider,
+            gap_provider=gap_provider,
+        )
         # 2년 윈도우 유지 — 오래된 종가 정리.
         await prune_older_than(conn, earliest)
     finally:
