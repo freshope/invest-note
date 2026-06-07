@@ -10,7 +10,7 @@ CAPACITOR_ORIGINS = ["capacitor://localhost", "https://localhost"]
 
 def test_default_cors_origins_includes_capacitor(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("CORS_ORIGINS", raising=False)
-    s = Settings(supabase_url=TEST_SUPABASE_URL, _env_file=None)
+    s = Settings(supabase_url=TEST_SUPABASE_URL)
     for origin in CAPACITOR_ORIGINS:
         assert origin in s.cors_origins
 
@@ -21,7 +21,6 @@ def cors_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     settings = Settings(
         supabase_url=TEST_SUPABASE_URL,
         cors_origins=["http://localhost:3000", *CAPACITOR_ORIGINS],
-        _env_file=None,
     )
     return TestClient(create_app(settings))
 
