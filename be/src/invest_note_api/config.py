@@ -29,26 +29,38 @@ class Settings(BaseSettings):
     # 빈 값이면 data.go.kr coverage pass 를 건너뛴다(다른 소스만 적재).
     data_go_kr_api_key: str = ""
 
+    # KIS Open API(한국투자증권) 인증 정보. 빈 값이면 kis 공급자는 호출 시 토큰 발급에 실패한다.
+    kis_app_key: str = ""
+    kis_app_secret: str = ""
+
+    # KIS 환경. "real"(실전) | "mock"(모의투자) — 도메인·TR ID prefix(T↔V) 분기에 사용.
+    kis_env: str = "real"
+
     # 종목 검색(GET /stocks/search) provider. "naver" | "db".
     # "naver": Naver 자동완성 라이브 호출(external/naver_search.search_kr).
     # "db": 로컬 stocks 마스터 조회(data.go.kr seed). data.go.kr 모니터링 후 "db"로 복귀.
     stock_search_provider: str = "naver"
 
     # 시세(external/quotes.py) 공급자 우선순위 체인. 콤마 구분, 앞 항목부터 시도.
-    # 등록 공급자: "naver"(realtime→basic 내부 fallback), "yahoo"(.KS→.KQ 내부 시도).
-    # 새 공급자(예: kis)를 registry 에 등록하면 env 변경만으로 활성화 가능.
+    # 등록 공급자: "naver"(realtime→basic 내부 fallback), "yahoo"(.KS→.KQ 내부 시도),
+    # "kis"(국내주식 현재가 — KIS_APP_KEY/KIS_APP_SECRET 필요).
     quote_providers: str = ",".join(DEFAULT_QUOTE_PROVIDERS)
 
     # 종목 마스터 seed(services/stock_seed.py) 소스 체인. 콤마 구분, 순서=우선순위.
     # 첫 번째로 데이터를 반환한 소스가 authority(종목명 overwrite), 나머지는 preserve.
-    # 등록 소스: "data_go_kr", "stock_prices", "securities".
+    # 등록 소스: "data_go_kr", "stock_prices", "securities", "kis"(종목마스터 파일, 키 불필요).
     stock_seed_sources: str = ",".join(DEFAULT_STOCK_SEED_SOURCES)
 
-    # 일별 종가(services/daily_price_seed.py) primary 공급자. 등록: "data_go_kr".
+    # 일별 종가(services/daily_price_seed.py) primary 공급자. 등록: "data_go_kr", "kis".
     daily_price_provider: str = "data_go_kr"
 
-    # 일별 종가 T+1 tail-gap 보충 공급자. 등록: "naver". "none" 또는 빈 값이면 보충 비활성.
+    # 일별 종가 T+1 tail-gap 보충 공급자. 등록: "naver", "kis"(T+0 반영).
+    # "none" 또는 빈 값이면 보충 비활성.
     daily_price_gap_provider: str = "naver"
+
+    # 종목 교차검증(services/stock_seed.py crossvalidate_stocks) 공급자.
+    # 등록: "naver"(종목별 자동완성 조회), "kis"(종목마스터 파일 일괄 대조, 키 불필요).
+    crossvalidate_provider: str = "naver"
 
     # NPS 보유내역 seed(services/nps_seed.py) 공급자. 등록: "odcloud".
     nps_provider: str = "odcloud"
@@ -68,11 +80,21 @@ class Settings(BaseSettings):
         "stock_seed_sources",
         "daily_price_provider",
         "daily_price_gap_provider",
+        "crossvalidate_provider",
         "nps_provider",
     )
     @classmethod
     def _normalize_provider(cls, v: str) -> str:
         return v.strip().lower()
+
+    # kis_env 오타는 잘못된 도메인 호출로 조용히 실패하므로 Settings 생성 시 fail-fast.
+    @field_validator("kis_env")
+    @classmethod
+    def _validate_kis_env(cls, v: str) -> str:
+        v = v.strip().lower()
+        if v not in ("real", "mock"):
+            raise ValueError(f"kis_env 는 'real' 또는 'mock' 이어야 합니다 (입력: {v!r})")
+        return v
 
     @property
     def jwks_uri(self) -> str:
