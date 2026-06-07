@@ -70,7 +70,7 @@ def _patch_assets(conn: FakeConnection):
     return patch("invest_note_api.routers.assets.acquire_for_user", make_fake_acquire(conn))
 
 
-async def _no_backfill(conn, api_key, tickers, earliest, today, *, country_code="KR"):
+async def _no_backfill(conn, api_key, tickers, earliest, today, *, country_code="KR", **kw):
     return False
 
 
@@ -85,7 +85,7 @@ class TestAssetHistory:
         # responses: [0]=trades(list_trades_with_account), [1]=get_closes (backfill mock 됨).
         conn = FakeConnection([_to_record(trade)], _closes_today())
 
-        async def mock_quotes(state, keys, *, client=None):
+        async def mock_quotes(state, keys, *, client=None, **kw):
             return {"005930:KR": {"price": 77000.0, "currency": "KRW", "as_of": ""}}
 
         with _patch_assets(conn):
@@ -111,7 +111,7 @@ class TestAssetHistory:
         trade = _make_trade_row()
         conn = FakeConnection([_to_record(trade)], _closes_today())
 
-        async def mock_quotes(state, keys, *, client=None):
+        async def mock_quotes(state, keys, *, client=None, **kw):
             return {"005930:KR": {"price": 77000.0, "currency": "KRW", "as_of": ""}}
 
         with _patch_assets(conn):
@@ -191,10 +191,10 @@ class TestAssetHistory:
         trade = _make_trade_row()
         conn = FakeConnection([_to_record(trade)], _closes_today())
 
-        async def incomplete_backfill(conn, api_key, tickers, earliest, today, *, country_code="KR"):
+        async def incomplete_backfill(conn, api_key, tickers, earliest, today, *, country_code="KR", **kw):
             return True
 
-        async def mock_quotes(state, keys, *, client=None):
+        async def mock_quotes(state, keys, *, client=None, **kw):
             return {"005930:KR": {"price": 77000.0, "currency": "KRW", "as_of": ""}}
 
         with _patch_assets(conn):
@@ -210,7 +210,7 @@ class TestAssetHistory:
         trade = _make_trade_row()
         conn = FakeConnection([_to_record(trade)], _closes_today())
 
-        async def mock_quotes(state, keys, *, client=None):
+        async def mock_quotes(state, keys, *, client=None, **kw):
             # 마지막 체결 날짜가 과거 거래일 → 오늘은 휴장.
             return {"005930:KR": {"price": 77000.0, "currency": "KRW", "as_of": "", "traded_on": "2025-06-02"}}
 
@@ -230,7 +230,7 @@ class TestAssetHistory:
         conn = FakeConnection([_to_record(trade)], _closes_today())
         today_iso = datetime.now(KST).date().isoformat()
 
-        async def mock_quotes(state, keys, *, client=None):
+        async def mock_quotes(state, keys, *, client=None, **kw):
             return {"005930:KR": {"price": 77000.0, "currency": "KRW", "as_of": "", "traded_on": today_iso}}
 
         with _patch_assets(conn):
@@ -254,7 +254,7 @@ class TestAssetHistory:
         )
         conn = FakeConnection([_to_record(buy), _to_record(sell)], _closes_today())
 
-        async def mock_quotes(state, keys, *, client=None):
+        async def mock_quotes(state, keys, *, client=None, **kw):
             return {"005930:KR": {"price": 77000.0, "currency": "KRW", "as_of": ""}}
 
         with _patch_assets(conn):

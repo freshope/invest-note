@@ -10,7 +10,7 @@ from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import create_pool
 from invest_note_api.errors import APIError, ERR_LOCK_BUSY, api_error_handler, validation_error_handler
 from invest_note_api.external.http_client import create_http_client
-from invest_note_api.external.quotes import QuoteCacheState
+from invest_note_api.external.quotes import QuoteCacheState, validate_quote_providers
 from invest_note_api.routers import accounts, admin, app_config, health, me
 from invest_note_api.routers import trades, portfolio, stocks, analysis, assets
 from invest_note_api.routers.trades import TradeStagingState
@@ -26,6 +26,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # env QUOTE_PROVIDERS 오타 fail-fast — 요청 경로는 예외를 삼켜 시세가 조용히
+        # null 이 되므로 부팅 시점에 검증한다(타 도메인은 호출 시점 ValueError 로 충분).
+        validate_quote_providers(settings.quote_provider_list)
         app.state.quote_cache = QuoteCacheState()
         app.state.trade_staging = TradeStagingState()
         app.state.http_client = create_http_client()

@@ -22,7 +22,7 @@ def _use_db_provider(client) -> None:
 
 class TestStocksQuote:
     def test_quote_ok(self, trades_client):
-        async def mock_quotes(state, keys, *, client=None, force_refresh=False):
+        async def mock_quotes(state, keys, *, client=None, force_refresh=False, providers=None):
             return {"005930:KR": {"price": 75000.0, "currency": "KRW", "as_of": "2024-01-15"}}
 
         with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
@@ -34,7 +34,7 @@ class TestStocksQuote:
         assert body["005930:KR"]["price"] == 75000.0
 
     def test_quote_empty_returns_empty(self, trades_client):
-        async def mock_quotes(state, keys, *, client=None, force_refresh=False):
+        async def mock_quotes(state, keys, *, client=None, force_refresh=False, providers=None):
             return {}
 
         with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
@@ -44,7 +44,7 @@ class TestStocksQuote:
         assert resp.json() == {}
 
     def test_quote_us_returns_null_in_mvp(self, trades_client):
-        async def mock_quotes(state, keys, *, client=None, force_refresh=False):
+        async def mock_quotes(state, keys, *, client=None, force_refresh=False, providers=None):
             return {"AAPL:US": None}
 
         with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
@@ -53,8 +53,29 @@ class TestStocksQuote:
         assert resp.status_code == 200
         assert resp.json()["AAPL:US"] is None
 
+    def test_quote_forwards_env_providers(self, trades_client):
+        """QUOTE_PROVIDERS env(settings) 가 fetch_quotes_by_keys 의 providers 로 전달된다 —
+        env 토글이 죽은 설정이 되지 않음을 보장하는 통합 가드."""
+        received: dict = {}
+
+        async def mock_quotes(state, keys, *, client=None, force_refresh=False, providers=None):
+            received["providers"] = providers
+            return {}
+
+        trades_client.app.dependency_overrides[get_settings] = lambda: Settings(
+            supabase_url="https://test.supabase.co", quote_providers="yahoo"
+        )
+        try:
+            with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
+                resp = trades_client.get("/stocks/quote", params={"symbols": "005930:KR"})
+        finally:
+            trades_client.app.dependency_overrides.pop(get_settings, None)
+
+        assert resp.status_code == 200
+        assert received["providers"] == ["yahoo"]
+
     def test_quote_mixed(self, trades_client):
-        async def mock_quotes(state, keys, *, client=None, force_refresh=False):
+        async def mock_quotes(state, keys, *, client=None, force_refresh=False, providers=None):
             return {
                 "005930:KR": {"price": 75000.0, "currency": "KRW", "as_of": ""},
                 "AAPL:US": None,

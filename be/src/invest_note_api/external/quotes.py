@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TypedDict
@@ -33,6 +33,7 @@ from invest_note_api.external.constants import (
     USER_AGENT,
     YAHOO_CHART_URL,
 )
+from invest_note_api.external.provider_registry import resolve_chain
 from invest_note_api.utils.numbers import strip_comma_number
 
 logger = logging.getLogger(__name__)
@@ -121,7 +122,8 @@ async def _try_endpoint(
     return None
 
 
-async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult | None:
+async def _fetch_naver(client: httpx.AsyncClient, code: str) -> QuoteResult | None:
+    """Naver 공급자 — realtime → basic 2단계는 내부 구현 디테일."""
     result = await _try_endpoint(
         client,
         NAVER_REALTIME_URL.format(code=code),
@@ -131,18 +133,21 @@ async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult |
     )
     if result is not None:
         return result
-    result = await _try_endpoint(
+    return await _try_endpoint(
         client,
         NAVER_BASIC_URL.format(code=code),
         _parse_basic_price,
         "naver basic",
         code,
     )
-    if result is not None:
-        return result
-    # Naver 차단/장애 fallback — KOSPI(.KS) → KOSDAQ(.KQ) 순으로 Yahoo 시도.
-    # market 정보가 없어 두 suffix 모두 확인. 둘 다 200을 주더라도 잘못된 시장은
-    # result.length=0 이라 _parse_yahoo_chart_price 가 0.0 을 반환하여 자동 스킵.
+
+
+async def _fetch_yahoo(client: httpx.AsyncClient, code: str) -> QuoteResult | None:
+    """Yahoo 공급자 — KOSPI(.KS) → KOSDAQ(.KQ) 순 시도.
+
+    market 정보가 없어 두 suffix 모두 확인. 둘 다 200을 주더라도 잘못된 시장은
+    result.length=0 이라 _parse_yahoo_chart_price 가 0.0 을 반환하여 자동 스킵.
+    """
     for suffix in (".KS", ".KQ"):
         result = await _try_endpoint(
             client,
@@ -151,6 +156,37 @@ async def _fetch_kr_price(client: httpx.AsyncClient, code: str) -> QuoteResult |
             f"yahoo {suffix[1:]}",
             code,
         )
+        if result is not None:
+            return result
+    return None
+
+
+# 시세 공급자 registry — env QUOTE_PROVIDERS 의 이름이 여기 등록돼 있어야 한다.
+# 새 공급자(예: kis) 추가 시 fetch 함수 작성 후 여기 등록하면 env 로 전환 가능.
+_QUOTE_REGISTRY: dict[str, Callable] = {
+    "naver": _fetch_naver,
+    "yahoo": _fetch_yahoo,
+}
+
+_DEFAULT_QUOTE_PROVIDERS = ("naver", "yahoo")
+
+
+def validate_quote_providers(providers: Sequence[str]) -> None:
+    """env QUOTE_PROVIDERS 오타를 앱 startup 에서 fail-fast 로 검증.
+
+    요청 경로는 fetch_quotes_by_keys 의 gather(return_exceptions=True) 가 ValueError 를
+    삼켜 전 종목 시세가 조용히 null 이 되므로, lifespan 에서 미리 검증해야 한다.
+    """
+    resolve_chain(providers, _QUOTE_REGISTRY, domain="quotes")
+
+
+async def _fetch_kr_price(
+    client: httpx.AsyncClient,
+    code: str,
+    providers: Sequence[str] = _DEFAULT_QUOTE_PROVIDERS,
+) -> QuoteResult | None:
+    for fetch in resolve_chain(providers, _QUOTE_REGISTRY, domain="quotes"):
+        result = await fetch(client, code)
         if result is not None:
             return result
     return None
@@ -201,11 +237,14 @@ async def fetch_quotes_by_keys(
     *,
     client: httpx.AsyncClient,
     force_refresh: bool = False,
+    providers: Sequence[str] = _DEFAULT_QUOTE_PROVIDERS,
 ) -> dict[str, QuoteResult | None]:
     """keys 형식: "종목코드:국가" (예: "005930:KR"). KR 외 국가는 MVP에서 null.
 
     `client` 는 라우터의 `Depends(get_http_client)` 로 주입받은 lifespan-managed 공유 인스턴스.
     `force_refresh=True` (pull-to-refresh) 면 캐시를 우회해 새 시세를 받는다.
+    `providers` 는 호출측(라우터)이 settings.quote_provider_list 를 전달 — 내부에서
+    get_settings() 를 읽지 않는다(테스트 격리·암묵 의존 방지).
     """
     if not keys:
         return {}
@@ -223,7 +262,7 @@ async def fetch_quotes_by_keys(
         _get_cached(
             state,
             position_key(e["code"], DEFAULT_COUNTRY),
-            lambda code=e["code"]: _fetch_kr_price(client, code),
+            lambda code=e["code"]: _fetch_kr_price(client, code, providers),
             force_refresh=force_refresh,
         )
         for e in kr_entries

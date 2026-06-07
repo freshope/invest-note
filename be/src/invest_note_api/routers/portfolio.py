@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Query
 
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
+from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import acquire_for_user, get_pool
 from invest_note_api.db_ops.accounts_repo import list_accounts
 from invest_note_api.db_ops.trades_repo import (
@@ -75,6 +76,7 @@ async def get_portfolio_summary(
     pool: asyncpg.Pool = Depends(get_pool),
     quote_state: QuoteCacheState = Depends(get_quote_cache_state),
     http_client: httpx.AsyncClient = Depends(get_http_client),
+    settings: Settings = Depends(get_settings),
 ) -> PortfolioSummaryResponse:
     account_id_str = str(account_id) if account_id is not None else None
     async with acquire_for_user(pool, user.id) as conn:
@@ -100,7 +102,11 @@ async def get_portfolio_summary(
     if with_quotes:
         try:
             quotes = await fetch_quotes_by_keys(
-                quote_state, [p.key for p in positions0], client=http_client, force_refresh=refresh
+                quote_state,
+                [p.key for p in positions0],
+                client=http_client,
+                force_refresh=refresh,
+                providers=settings.quote_provider_list,
             )
         except Exception:
             logger.warning("fetch_quotes_by_keys 실패 user_id=%s", user.id, exc_info=True)

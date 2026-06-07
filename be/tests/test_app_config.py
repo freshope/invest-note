@@ -48,3 +48,29 @@ def test_app_config_requires_no_auth():
     # Authorization 헤더 없이 접근 가능해야 한다(로그인 전 사용자 차단 목적).
     r = client.get("/app-config")
     assert r.status_code == 200
+
+
+def test_startup_rejects_unknown_quote_provider():
+    # QUOTE_PROVIDERS 오타는 요청 경로에서 조용히 null 시세가 되므로 부팅 시 fail-fast 해야 한다.
+    import pytest
+
+    settings = Settings(supabase_url=TEST_SUPABASE_URL, quote_providers="naverr")
+    app = create_app(settings)
+    with pytest.raises(ValueError, match="quotes"):
+        with TestClient(app):  # with 블록이 lifespan(startup) 실행
+            pass
+
+
+def test_provider_list_properties_default_and_parse():
+    # 콤마 체인 env(str 필드)는 property 가 trim + 빈 항목 제거로 파싱한다.
+    s = Settings(supabase_url=TEST_SUPABASE_URL)
+    assert s.quote_provider_list == ["naver", "yahoo"]
+    assert s.stock_seed_source_list == ["data_go_kr", "stock_prices", "securities"]
+
+    s = Settings(
+        supabase_url=TEST_SUPABASE_URL,
+        quote_providers=" yahoo , naver ,",
+        stock_seed_sources="securities",
+    )
+    assert s.quote_provider_list == ["yahoo", "naver"]
+    assert s.stock_seed_source_list == ["securities"]

@@ -117,7 +117,7 @@ class TestPortfolioSummary:
             [_to_record(account)],  # account_rows
         )
 
-        async def mock_quotes(state, keys):
+        async def mock_quotes(state, keys, **kw):
             return {}
 
         with _patch_portfolio(conn):
@@ -157,7 +157,7 @@ class TestPortfolioSummary:
             [_to_record(account)],
         )
 
-        async def mock_quotes(state, keys, *, client=None, force_refresh=False):
+        async def mock_quotes(state, keys, *, client=None, force_refresh=False, **kw):
             return {"005930:KR": {"price": 75000.0, "currency": "KRW", "as_of": ""}}
 
         with _patch_portfolio(conn):
@@ -185,7 +185,7 @@ class TestPortfolioSummary:
 
         called = {"hit": False}
 
-        async def must_not_call(state, keys, *, client=None, force_refresh=False):
+        async def must_not_call(state, keys, *, client=None, force_refresh=False, **kw):
             called["hit"] = True
             return {"005930:KR": {"price": 99999.0, "currency": "KRW", "as_of": ""}}
 
@@ -224,7 +224,7 @@ class TestPortfolioSummary:
             [_to_record(account)],
         )
 
-        async def failing_quotes(state, keys):
+        async def failing_quotes(state, keys, **kw):
             raise Exception("Naver down")
 
         with _patch_portfolio(conn):
@@ -259,7 +259,7 @@ class TestPortfolioSummary:
             captured_kwargs.update(kwargs)
             return []  # 빈 trades — totals/positions/snapshots 는 비어도 무방 (kwargs 만 검증)
 
-        async def mock_quotes(state, keys, *, client=None):
+        async def mock_quotes(state, keys, *, client=None, **kw):
             return {}
 
         with _patch_portfolio(conn):
@@ -300,7 +300,7 @@ class TestPortfolioSummary:
             captured_kwargs.update(kwargs)
             return []
 
-        async def mock_quotes(state, keys, *, client=None):
+        async def mock_quotes(state, keys, *, client=None, **kw):
             return {}
 
         with _patch_portfolio(conn):
@@ -328,7 +328,7 @@ class TestPortfolioSummary:
         account = _make_account_row(id_="00000000-0000-0000-0000-000000000001")
         captured: dict = {}
 
-        async def mock_quotes(state, keys, *, client=None, force_refresh=False):
+        async def mock_quotes(state, keys, *, client=None, force_refresh=False, **kw):
             captured["force_refresh"] = force_refresh
             return {}
 
@@ -362,7 +362,7 @@ class TestPortfolioSummary:
         async def capturing_list(conn_arg, user_id, **kwargs):
             return []  # 매칭 trade 없음
 
-        async def mock_quotes(state, keys, *, client=None):
+        async def mock_quotes(state, keys, *, client=None, **kw):
             return {}
 
         with _patch_portfolio(conn):

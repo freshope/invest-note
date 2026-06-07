@@ -193,6 +193,21 @@ def test_pipeline_order_authority_then_stock_prices_then_securities():
     assert names == ["data_go_kr", "stock_prices", "securities"]
 
 
+def test_pipeline_sources_env_order_respected():
+    # env STOCK_SEED_SOURCES 로 순서를 바꾸면 파이프라인이 그 순서를 따른다 —
+    # 첫 항목이 authority 가 되는 계약(seed 의 is_authority)이 env 로 제어 가능.
+    names = [name for name, _ in stock_seed._build_pipeline("key", ["securities", "data_go_kr"])]
+    assert names == ["securities", "data_go_kr"]
+
+
+def test_pipeline_unknown_source_raises_value_error():
+    # registry 에 없는 소스명(env 오타) → ValueError fail-fast.
+    import pytest
+
+    with pytest.raises(ValueError, match="stock_seed"):
+        stock_seed._build_pipeline("key", ["fdr"])
+
+
 def test_recent_basdt_candidates_are_descending_and_bounded():
     cands = stock_seed._recent_basdt_candidates()
     assert len(cands) == stock_seed._BASDT_MAX_LOOKBACK

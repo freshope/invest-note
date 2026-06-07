@@ -209,6 +209,69 @@ def test_fetch_kr_price_traded_on_none_when_source_lacks_field():
     assert result["traded_on"] is None
 
 
+def test_fetch_kr_price_providers_yahoo_only_skips_naver():
+    """providers=["yahoo"] → Naver 엔드포인트 미호출, Yahoo 단독 시도."""
+    naver_called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal naver_called
+        url = str(request.url)
+        if "naver.com" in url:
+            naver_called = True
+            return httpx.Response(200, json={"datas": [{"closePriceRaw": "1"}]})
+        if url.startswith("https://query2.finance.yahoo.com/v8/finance/chart/005930.KS"):
+            return httpx.Response(
+                200, json={"chart": {"result": [{"meta": {"regularMarketPrice": 71000}}]}}
+            )
+        return httpx.Response(404)
+
+    async def runner():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await _fetch_kr_price(client, "005930", ["yahoo"])
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["price"] == 71000.0
+    assert naver_called is False
+
+
+def test_fetch_kr_price_providers_order_reversed():
+    """providers=["yahoo","naver"] → yahoo 성공 시 naver 미호출 (체인 순서가 env 를 따름)."""
+    naver_called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal naver_called
+        url = str(request.url)
+        if "naver.com" in url:
+            naver_called = True
+            return httpx.Response(200, json={"datas": [{"closePriceRaw": "1"}]})
+        if url.startswith("https://query2.finance.yahoo.com/v8/finance/chart/005930.KS"):
+            return httpx.Response(
+                200, json={"chart": {"result": [{"meta": {"regularMarketPrice": 70000}}]}}
+            )
+        return httpx.Response(404)
+
+    async def runner():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await _fetch_kr_price(client, "005930", ["yahoo", "naver"])
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["price"] == 70000.0
+    assert naver_called is False
+
+
+def test_fetch_kr_price_unknown_provider_raises_value_error():
+    """registry 에 없는 공급자명 → ValueError (env 오타 fail-fast)."""
+
+    async def runner():
+        async with _build_mock_client({}) as client:
+            return await _fetch_kr_price(client, "005930", ["kis"])
+
+    with pytest.raises(ValueError, match="quotes"):
+        asyncio.run(runner())
+
+
 def test_fetch_kr_price_prefers_naver_when_available():
     """Naver realtime 성공 시 Yahoo 호출되지 않아야 한다."""
     yahoo_called = False

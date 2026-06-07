@@ -25,6 +25,7 @@
 
 import asyncio
 import hashlib
+from collections.abc import Sequence
 from datetime import date, timedelta
 from typing import Any, Awaitable, Callable
 
@@ -36,6 +37,7 @@ from invest_note_api.domain.hangul import to_chosung
 from invest_note_api.domain.trade_types import DEFAULT_COUNTRY
 from invest_note_api.external.constants import USER_AGENT
 from invest_note_api.external.naver_search import search_kr
+from invest_note_api.external.provider_registry import resolve_chain
 
 _DATA_GO_KR_URL = (
     "https://apis.data.go.kr/1160100/service/GetKrxListedInfoService/getItemInfo"
@@ -651,8 +653,18 @@ _MANUAL_ALIASES = [
 ]
 
 
-def _build_pipeline(api_key: str) -> list[tuple[str, Callable[[], Awaitable[list[dict]]]]]:
-    """소스 우선순위 파이프라인. 첫 소스가 canonical authority. 실패 소스는 [] 반환."""
+# 기본 소스 체인 — env STOCK_SEED_SOURCES 미설정 시 현재 동작 유지.
+_DEFAULT_SEED_SOURCES = ("data_go_kr", "stock_prices", "securities")
+
+
+def _build_pipeline(
+    api_key: str, sources: Sequence[str] = _DEFAULT_SEED_SOURCES
+) -> list[tuple[str, Callable[[], Awaitable[list[dict]]]]]:
+    """소스 우선순위 파이프라인. 첫 소스가 canonical authority. 실패 소스는 [] 반환.
+
+    `sources` 는 env STOCK_SEED_SOURCES 에서 온 이름 체인 — registry 에 없는 이름은
+    ValueError. marcap(always-run)·Naver 교차검증은 토글 대상이 아닌 고정 단계(seed 참고).
+    """
 
     async def _dgk() -> list[dict]:
         if not api_key:
@@ -703,10 +715,15 @@ def _build_pipeline(api_key: str) -> list[tuple[str, Callable[[], Awaitable[list
             if r.get("ticker") and r.get("asset_name")
         ]
 
-    return [("data_go_kr", _dgk), ("stock_prices", _stock_prices), ("securities", _securities)]
+    registry: dict[str, Callable[[], Awaitable[list[dict]]]] = {
+        "data_go_kr": _dgk,
+        "stock_prices": _stock_prices,
+        "securities": _securities,
+    }
+    return list(zip(sources, resolve_chain(sources, registry, domain="stock_seed")))
 
 
-async def seed(db_url: str, *, api_key: str) -> None:
+async def seed(db_url: str, *, api_key: str, sources: Sequence[str] | None = None) -> None:
     conn = await asyncpg.connect(db_url, statement_cache_size=0)
     try:
         # 다중 인스턴스 동시 실행 가드 — Coolify scheduled task 는 replica 마다 cron 을 붙이므로
@@ -728,7 +745,7 @@ async def seed(db_url: str, *, api_key: str) -> None:
         upstream_changed = False  # 앞선 소스가 바뀌면 canonical 이 이동했을 수 있어 하위 변형명 재계산 필요
 
         # 1~2) 소스 순차 병합 (authority=이름 확립, 이후=신규 추가 + 변형명 별칭)
-        for name, fetch in _build_pipeline(api_key):
+        for name, fetch in _build_pipeline(api_key, sources or _DEFAULT_SEED_SOURCES):
             rows = await fetch()
             if not rows:
                 # 빈 응답(API 실패/키 미설정/일시 장애) → 이 소스의 종목이 union 에서 누락된다.
@@ -790,7 +807,9 @@ def main() -> None:
     db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
     if not db_url:
         raise SystemExit("database_url 미설정")
-    asyncio.run(seed(db_url, api_key=settings.data_go_kr_api_key))
+    asyncio.run(
+        seed(db_url, api_key=settings.data_go_kr_api_key, sources=settings.stock_seed_source_list)
+    )
 
 
 if __name__ == "__main__":
