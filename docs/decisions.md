@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-06-07 | KIS 토큰 영속화 — Redis 대신 PostgreSQL (kis_tokens + advisory xact lock)
+
+- **맥락:** KIS 토큰 1일 1회 발급 원칙(잦은 발급 시 이용 제한 제재) 대응. 기존 토큰 캐시는 per-process 메모리라 재배포·롤링 배포 중 신구 컨테이너·cron 배치마다 각자 발급. 저장소로 Redis vs DB 조사.
+- **결정:** ① 기존 PostgreSQL(Supabase)에 `kis_tokens` 테이블(`scope` pk — 'app', 추후 `user:{id}` 확장)로 영속화. Redis 미도입. ② 발급 직렬화는 `pg_advisory_xact_lock`(trades_repo 와 동일 패턴 — session lock 은 Supavisor 에서 leak) + 같은 트랜잭션에서 upsert. ③ 보안은 RLS enable + 정책 없음 — anon/authenticated(PostgREST) 차단, BE 는 owner(postgres) 접속이라 통과(전역 테이블의 "RLS 미적용" 패턴과 의도적으로 다름). 접근은 `acquire_for_user` 가 아닌 plain `pool.acquire()`. ④ 조회는 메모리 캐시 → DB → 락+발급 3단, `pool=None`(테스트/DB 미연결)이면 종전 메모리 전용.
+- **이유:** 토큰 저장은 고빈도 캐시가 아니라 저빈도(하루 1~4회 쓰기)·고내구성·프로세스 간 공유 문제 — Redis 강점(저지연)은 쓸 곳이 없고 약점(휘발성)이 급소(토큰 유실 = 재발급 = 레이트리밋 대상). DB 는 운영 비용 0(기존 인프라)·기본 영속·RLS/암호화로 사용자 토큰(트랙 2 BYOK) 확장에도 유리. 실 DB 라운드트립으로 SQL·락·owner RLS 통과 검증 완료.
+- **트레이드오프:** ① owner 가정 — 운영에서 마이그레이션 role ≠ 앱 접속 role 이 되면 `load()` 가 조용히 None → 매번 재발급 → EGW00133. 운영 배포 후 영속 동작 1회 확인 필요. ② DB 장애 시 KIS fail-closed(발급 우회 없음) — KIS 는 fallback 공급자고 DB 다운이면 앱 전체 불능이라 수용. ③ 멀티워커에서 토큰 거부 응답 시 DB 재조회(타 워커 토큰 픽업) 로직은 미구현 — replica=1 전제, backlog 기록.
+
+---
+
 ## 2026-06-07 | KIS 공급자 구현 — 레이트리밋 실측 페이싱·마스터 파일 일괄 교차검증·실측 보정
 
 - **맥락:** KIS 트랙 1(기존 데이터 공급처 확대)로 시세/일별 종가/종목마스터/교차검증에 kis 공급자를 추가. 사전 조사(deep-research) 수치 일부가 "재검증 필요"였고, 실호출 검증에서 실제와 다른 것이 다수 확인됐다.
