@@ -58,6 +58,10 @@ async def issue_lock(pool: Any) -> AsyncGenerator[Any, None]:
     """발급 직렬화 — 트랜잭션을 열고 advisory xact lock 을 잡은 conn 을 yield."""
     async with pool.acquire() as conn:
         async with conn.transaction():
+            # holder 의 정상 발급(레이트 슬롯 대기 + HTTP 5s)은 덮되, stuck holder 시
+            # 요청 경로가 무기한 블록되지 않게 상한 — 초과(55P03)는 get_access_token 의
+            # except 가 잡아 None 반환 → 공급자 체인 fallback.
+            await conn.execute("SET LOCAL lock_timeout = '10s'")
             await conn.fetchval(
                 "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", _LOCK_KEY
             )

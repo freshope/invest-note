@@ -75,7 +75,6 @@ class Settings(BaseSettings):
     # "NONE" 같은 입력이 registry 미일치로 ValueError → 라우터 500 이 되는 것을 방지.
     # os.environ 값은 pydantic-settings 가 strip 하지 않으므로 여기서 처리해야 한다.
     @field_validator(
-        "stock_search_provider",
         "quote_providers",
         "stock_seed_sources",
         "daily_price_provider",
@@ -86,6 +85,18 @@ class Settings(BaseSettings):
     @classmethod
     def _normalize_provider(cls, v: str) -> str:
         return v.strip().lower()
+
+    # stock_search_provider 오타는 라우터 if/elif 가 조용히 naver 로 fallthrough 하므로
+    # Settings 생성 시 fail-fast (kis_env 와 동일 패턴).
+    @field_validator("stock_search_provider")
+    @classmethod
+    def _validate_stock_search_provider(cls, v: str) -> str:
+        v = v.strip().lower()
+        if v not in ("naver", "db"):
+            raise ValueError(
+                f"stock_search_provider 는 'naver' 또는 'db' 여야 합니다 (입력: {v!r})"
+            )
+        return v
 
     # kis_env 오타는 잘못된 도메인 호출로 조용히 실패하므로 Settings 생성 시 fail-fast.
     @field_validator("kis_env")

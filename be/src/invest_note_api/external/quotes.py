@@ -218,7 +218,10 @@ def validate_quote_providers(providers: Sequence[str]) -> None:
 
     요청 경로는 fetch_quotes_by_keys 의 gather(return_exceptions=True) 가 ValueError 를
     삼켜 전 종목 시세가 조용히 null 이 되므로, lifespan 에서 미리 검증해야 한다.
+    빈 체인(QUOTE_PROVIDERS="")도 같은 이유로 거부 — resolve_chain([]) 은 안 던진다.
     """
+    if not providers:
+        raise ValueError("quotes: 공급자 체인이 비어 있습니다 (QUOTE_PROVIDERS 확인)")
     resolve_chain(providers, _QUOTE_REGISTRY, domain="quotes")
 
 

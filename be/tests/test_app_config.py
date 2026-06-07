@@ -61,6 +61,25 @@ def test_startup_rejects_unknown_quote_provider():
             pass
 
 
+def test_startup_rejects_empty_quote_providers():
+    # QUOTE_PROVIDERS="" 는 빈 체인 → 전 종목 시세가 조용히 null 이므로 부팅 시 fail-fast.
+    import pytest
+
+    settings = Settings(supabase_url=TEST_SUPABASE_URL, quote_providers="")
+    app = create_app(settings)
+    with pytest.raises(ValueError, match="quotes"):
+        with TestClient(app):
+            pass
+
+
+def test_stock_search_provider_rejects_unknown_value():
+    # 오타는 라우터 if/elif 가 조용히 naver 로 fallthrough 하므로 Settings 생성 시 fail-fast.
+    import pytest
+
+    with pytest.raises(ValueError, match="stock_search_provider"):
+        Settings(supabase_url=TEST_SUPABASE_URL, stock_search_provider="dbb")
+
+
 def test_provider_env_values_normalized():
     # 운영 콘솔의 공백/대소문자 입력("none ", "NONE")이 registry 미일치 ValueError 로
     # 라우터 500 을 내지 않도록 공급자류 env 는 strip+lower 정규화된다.

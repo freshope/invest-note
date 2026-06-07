@@ -261,6 +261,27 @@ def _db_state(conn: FakeConnection) -> kis.KisState:
     return kis.KisState(app_key="key", app_secret="secret", pool=make_fake_pool(conn))
 
 
+async def test_issue_lock_sets_lock_timeout():
+    """stuck holder 가 요청 경로를 무기한 블록하지 않도록 락 획득 전에 상한을 둔다."""
+    from invest_note_api.external import kis_token_store
+
+    queries: list[str] = []
+
+    class RecordingConn(FakeConnection):
+        async def execute(self, query: str, *args: Any) -> str:
+            queries.append(query)
+            return await super().execute(query, *args)
+
+        async def fetchval(self, query: str, *args: Any) -> Any:
+            queries.append(query)
+            return await super().fetchval(query, *args)
+
+    async with kis_token_store.issue_lock(make_fake_pool(RecordingConn())):
+        pass
+    lock_idx = next(i for i, q in enumerate(queries) if "pg_advisory_xact_lock" in q)
+    assert any("lock_timeout" in q for q in queries[:lock_idx])
+
+
 async def test_get_access_token_reuses_db_token_without_issuing():
     """DB 에 유효 토큰이 있으면 발급 호출 없이 재사용 (재시작 직후 시나리오)."""
     calls: list[int] = []
