@@ -9,8 +9,8 @@
   2. 다음 소스들          : 신규 ticker 는 추가, 기존 ticker 인데 이름이 다르면 그 이름을 별칭으로 등록.
   3. soft-delete         : 어떤 소스에도 없는 종목만 is_active=false (하드 삭제 안 함).
   4. 수동 약칭             : 대형주 구어체 약칭(현대차/삼전 등) 직접 등록.
-  5. 종목별 Naver 교차검증 : 미검증 종목을 코드로 Naver 조회 — 이름 변형→별칭, 시장(typeCode) 교차검증.
-                           naver_checked_at 으로 종목당 1회만(신규만 재질의). 병렬 처리(rate-limit 가드).
+  5. 종목 교차검증          : 미검증 종목을 provider(naver|kis, env CROSSVALIDATE_PROVIDER)로 대조 —
+                           이름 변형→별칭, 시장 교차검증. naver_checked_at 으로 종목당 1회만(신규만 재질의).
   6. marcap 적재          : 주식시세·증권상품시세에서 시가총액을 UPDATE — fingerprint skip 우회(always-run).
 
 효율화(변경이 드문 데이터):
@@ -25,6 +25,8 @@
 
 import asyncio
 import hashlib
+import io
+import zipfile
 from collections.abc import Sequence
 from datetime import date, timedelta
 from typing import Any, Awaitable, Callable
@@ -338,6 +340,79 @@ async def fetch_data_go_kr(api_key: str) -> list[dict]:
     return rows
 
 
+# ─────────────────────────── KIS 종목마스터 fetcher ───────────────────────────
+
+# KIS 종목마스터 파일 — 인증 불필요(공개 CDN), zip 안에 cp949 fixed-width .mst.
+# (url, 기본 market, 뒷부분 고정폭 길이) — 고정폭 길이는 실파일 실측(2026-06-07) 기준.
+# ⚠️ 공식 파싱 예제(kis_kospi/kosdaq_code_mst.py)는 228/222 로 주석돼 있으나 실파일은
+# 1 짧다(228 로 자르면 그룹코드가 한 칸 밀려 종목명 끝 글자가 새어 들어옴). 그룹코드
+# 분포가 비정상(2자 코드가 아닌 값 다수)이면 이 길이부터 의심할 것.
+_KIS_MASTER_FILES = (
+    ("https://new.real.download.dws.co.kr/common/master/kospi_code.mst.zip", "KOSPI", 227),
+    ("https://new.real.download.dws.co.kr/common/master/kosdaq_code.mst.zip", "KOSDAQ", 221),
+)
+_KIS_MASTER_TIMEOUT = 30
+# 증권그룹구분코드(뒷부분 [0:2]) 제외 목록 — ELW/신주인수권은 검색 노이즈라 적재하지 않는다.
+_KIS_EXCLUDED_GROUPS = {"EW", "SW", "SR"}
+# 그룹코드 → market 재분류. 그 외 그룹(ST/RT/IF 등)은 파일의 시장(KOSPI/KOSDAQ)을 따른다.
+_KIS_GROUP_MARKET = {"EF": "ETF", "EN": "ETN", "FE": "ETF"}  # FE=국내상장 해외ETF
+
+
+def _parse_kis_master(text: str, market: str, tail_len: int) -> list[dict]:
+    """KIS .mst 텍스트 → [{ticker, asset_name, market}].
+
+    행 구조: 앞부분 [0:9]=단축코드, [9:21]=표준코드, [21:]=한글명 + 뒷부분 tail_len 고정폭
+    (첫 2자=증권그룹구분코드). 단축코드 실측(2026-06-07) 주의점:
+      - ETN 은 'Q' 접두 7자(Q500061) — 실코드는 6자리(500061). data.go.kr 의 [-6:] 정규화와 정합.
+      - 신형 ETF 코드는 영숫자 6자(0000D0 등) — isdigit 필터 금지(isalnum).
+    """
+    rows: list[dict] = []
+    for line in text.splitlines():
+        if len(line) <= tail_len + 21:
+            continue
+        front, tail = line[:-tail_len], line[-tail_len:]
+        ticker = front[0:9].rstrip()
+        name = front[21:].strip()
+        group = tail[0:2]
+        if group in _KIS_EXCLUDED_GROUPS:
+            continue
+        if len(ticker) == 7 and ticker.startswith("Q"):
+            ticker = ticker[1:]  # ETN 'Q' 접두 제거
+        if len(ticker) != 6 or not ticker.isalnum() or not name:
+            continue
+        rows.append(
+            {"ticker": ticker, "asset_name": name, "market": _KIS_GROUP_MARKET.get(group, market)}
+        )
+    return rows
+
+
+async def fetch_kis_master(*, client: httpx.AsyncClient | None = None) -> list[dict]:
+    """KIS 종목마스터(kospi/kosdaq_code.mst.zip) — data.go.kr 게이트웨이 불안정 대비 대체 공급선.
+
+    appkey 인증 불필요(공개 CDN). KONEX 는 별도 파일이라 미포함 — KONEX coverage 는
+    data.go.kr authority 가 담당한다(authority 단독 사용 시 KONEX 누락 주의).
+    반환 item: {ticker, asset_name, market(KOSPI/KOSDAQ/ETF/ETN)}.
+    """
+    rows: list[dict] = []
+
+    async def _run(c: httpx.AsyncClient) -> None:
+        for url, market, tail_len in _KIS_MASTER_FILES:
+            res = await c.get(url)
+            res.raise_for_status()
+            with zipfile.ZipFile(io.BytesIO(res.content)) as zf:
+                text = zf.read(zf.namelist()[0]).decode("cp949")
+            rows.extend(_parse_kis_master(text, market, tail_len))
+
+    if client is None:
+        async with httpx.AsyncClient(
+            headers={"User-Agent": USER_AGENT}, timeout=_KIS_MASTER_TIMEOUT
+        ) as owned:
+            await _run(owned)
+    else:
+        await _run(client)
+    return rows
+
+
 # ─────────────────────────── 시가총액 fetcher (data.go.kr 시세) ───────────────────────────
 
 
@@ -574,20 +649,81 @@ async def update_marcap(conn: Any, api_key: str, *, country_code: str = DEFAULT_
     return len(merged)
 
 
-# ─────────────────────────── Naver enrichment(신규 miss 만) ───────────────────────────
+# ─────────────────────────── 교차검증 (provider 토글, 신규 miss 만) ───────────────────────────
 
 
-async def crossvalidate_stocks_with_naver(
-    conn: Any, *, country_code: str = DEFAULT_COUNTRY, batch: int = _NAVER_STOCK_BATCH
+async def _crossvalidate_lookup_naver(tickers: list[str]) -> tuple[dict[str, dict], set[str]]:
+    """종목별 Naver 자동완성 조회 — ({ticker: {name, market}}, 응답받은 ticker set).
+
+    빈 응답(네트워크/rate-limit 추정)은 미체크 → 다음 run 재시도. Naver 가 응답했으면
+    정확 코드 매칭이 없어도 "검증함"에 포함한다(미발견 종목 무한 재조회 방지).
+    """
+    sem = asyncio.Semaphore(_NAVER_CONCURRENCY)
+    found: dict[str, dict] = {}
+    checked: set[str] = set()
+
+    async with httpx.AsyncClient(timeout=10) as client:
+
+        async def _one(ticker: str) -> None:
+            async with sem:
+                results = await search_kr(ticker, client=client)
+            if not results:
+                return
+            checked.add(ticker)
+            match = next((r for r in results if r["code"] == ticker), None)
+            if match is not None:
+                found[ticker] = {"name": match["name"], "market": match["exchange"]}
+
+        await asyncio.gather(*(_one(t) for t in tickers))
+    return found, checked
+
+
+async def _crossvalidate_lookup_kis(tickers: list[str]) -> tuple[dict[str, dict], set[str]]:
+    """KIS 종목마스터 1회 다운로드로 일괄 대조 — 종목별 호출 없음(레이트리밋 무관).
+
+    파일에 없는 코드(KONEX 등)도 "검증함" — 파일 자체가 전체 스냅샷이라 재질의가 무의미하다.
+    ⚠️ 따라서 KONEX 종목은 이름/시장 대조 없이 검증 완료로 박제된다 — 이후 naver 로
+    되돌려도 재검증 안 됨(naver_checked_at 공유). 다운로드 실패/빈 파일은 전체 미체크.
+    """
+    try:
+        master = await fetch_kis_master()
+    except Exception as e:
+        print(f"  [crossvalidate/kis] 실패({type(e).__name__}) — skip")
+        return {}, set()
+    if not master:
+        return {}, set()
+    by_ticker = {r["ticker"]: r for r in master}
+    found = {
+        t: {"name": by_ticker[t]["asset_name"], "market": by_ticker[t]["market"]}
+        for t in tickers
+        if t in by_ticker
+    }
+    return found, set(tickers)
+
+
+# 교차검증 공급자 registry — env CROSSVALIDATE_PROVIDER 의 이름이 여기 등록돼 있어야 한다.
+_CROSSVALIDATE_REGISTRY = {
+    "naver": _crossvalidate_lookup_naver,
+    "kis": _crossvalidate_lookup_kis,
+}
+
+
+async def crossvalidate_stocks(
+    conn: Any,
+    *,
+    provider: str = "naver",
+    country_code: str = DEFAULT_COUNTRY,
+    batch: int = _NAVER_STOCK_BATCH,
 ) -> tuple[int, int, int]:
-    """종목별 Naver 교차검증 — 미검증(naver_checked_at IS NULL) 종목을 코드로 Naver 조회.
+    """종목 교차검증 — 미검증(naver_checked_at IS NULL) 종목을 provider 로 대조.
 
-    - 이름 변형: Naver 종목명이 canonical 과 다르면 별칭(source='naver') 등록.
-    - 시장 교차검증: Naver typeCode 가 stocks.market 과 다르면 불일치로 집계(자동 수정 안 함).
-    - Naver 응답에서 해당 코드를 찾은 종목만 naver_checked_at 기록(미응답/rate-limit 은 다음 run 재시도).
+    - 이름 변형: provider 종목명이 canonical 과 다르면 별칭(source=provider) 등록.
+    - 시장 교차검증: provider 시장이 stocks.market 과 다르면 불일치로 집계(자동 수정 안 함).
+    - naver_checked_at 은 provider 무관 "교차검증 완료 시각"으로 쓴다(컬럼명은 역사적 이유).
 
     반환: (별칭 적재수, 시장 불일치수, 검증 완료 종목수).
     """
+    lookup = resolve_chain([provider], _CROSSVALIDATE_REGISTRY, domain="crossvalidate")[0]
     rows = await conn.fetch(
         """
         select ticker, asset_name, market from stocks
@@ -600,34 +736,21 @@ async def crossvalidate_stocks_with_naver(
     if not rows:
         return (0, 0, 0)
 
-    sem = asyncio.Semaphore(_NAVER_CONCURRENCY)
+    found, checked_set = await lookup([r["ticker"] for r in rows])
+
     aliases: list[dict] = []
     mismatches: list[tuple[str, str, str]] = []
-    checked: list[str] = []
-
-    async with httpx.AsyncClient(timeout=10) as client:
-
-        async def _one(ticker: str, name: str, market: str) -> None:
-            async with sem:
-                results = await search_kr(ticker, client=client)
-            if not results:
-                return  # 빈 응답(네트워크/rate-limit 추정) → 미체크(다음 run 재시도)
-            # Naver 가 응답함 → 정확 코드 매칭이 없어도 "검증함"으로 기록한다.
-            # (미발견까지 재질의하면 Naver 에 없는 종목을 매 run 무한 재조회 → 수렴 안 함.)
-            checked.append(ticker)
-            match = next((r for r in results if r["code"] == ticker), None)
-            if match is None:
-                return  # 응답엔 있으나 해당 코드 없음 → 별칭/시장 보강 없이 종료
-            if match["name"] and match["name"] != name:
-                aliases.append({"ticker": ticker, "alias": match["name"], "source": "naver"})
-            if match["exchange"] and market and match["exchange"] != market:
-                mismatches.append((ticker, market, match["exchange"]))
-
-        await asyncio.gather(
-            *(_one(r["ticker"], r["asset_name"], r["market"]) for r in rows)
-        )
+    for r in rows:
+        match = found.get(r["ticker"])
+        if match is None:
+            continue  # 응답엔 있으나 해당 코드 없음 → 별칭/시장 보강 없이 종료
+        if match["name"] and match["name"] != r["asset_name"]:
+            aliases.append({"ticker": r["ticker"], "alias": match["name"], "source": provider})
+        if match["market"] and r["market"] and match["market"] != r["market"]:
+            mismatches.append((r["ticker"], r["market"], match["market"]))
 
     n = await upsert_aliases(conn, aliases, country_code=country_code)
+    checked = [r["ticker"] for r in rows if r["ticker"] in checked_set]
     if checked:
         await conn.execute(
             "update stocks set naver_checked_at = now() where country_code = $1 and ticker = any($2::text[])",
@@ -636,7 +759,7 @@ async def crossvalidate_stocks_with_naver(
         )
     if mismatches:
         sample = ", ".join(f"{t}:{m}≠{nv}" for t, m, nv in mismatches[:5])
-        print(f"  [naver/market] 불일치 {len(mismatches)}건 (예: {sample})")
+        print(f"  [{provider}/market] 불일치 {len(mismatches)}건 (예: {sample})")
     return (n, len(mismatches), len(checked))
 
 
@@ -663,7 +786,8 @@ def _build_pipeline(
     """소스 우선순위 파이프라인. 첫 소스가 canonical authority. 실패 소스는 [] 반환.
 
     `sources` 는 env STOCK_SEED_SOURCES 에서 온 이름 체인 — registry 에 없는 이름은
-    ValueError. marcap(always-run)·Naver 교차검증은 토글 대상이 아닌 고정 단계(seed 참고).
+    ValueError. marcap(always-run)은 토글 대상이 아닌 고정 단계, 교차검증은
+    CROSSVALIDATE_PROVIDER 로 별도 토글(crossvalidate_stocks 참고).
     """
 
     async def _dgk() -> list[dict]:
@@ -715,15 +839,31 @@ def _build_pipeline(
             if r.get("ticker") and r.get("asset_name")
         ]
 
+    async def _kis() -> list[dict]:
+        # KIS 종목마스터 = data.go.kr 게이트웨이 불안정(간헐 404) 대비 대체 공급선.
+        # api_key 불필요(공개 CDN). KONEX 미포함 — authority 로 단독 사용 시 KONEX 누락 주의.
+        try:
+            return await fetch_kis_master()
+        except Exception as e:
+            print(f"  [kis] 실패({type(e).__name__}) — skip")
+            return []
+
     registry: dict[str, Callable[[], Awaitable[list[dict]]]] = {
         "data_go_kr": _dgk,
         "stock_prices": _stock_prices,
         "securities": _securities,
+        "kis": _kis,
     }
     return list(zip(sources, resolve_chain(sources, registry, domain="stock_seed")))
 
 
-async def seed(db_url: str, *, api_key: str, sources: Sequence[str] | None = None) -> None:
+async def seed(
+    db_url: str,
+    *,
+    api_key: str,
+    sources: Sequence[str] | None = None,
+    crossvalidate_provider: str = "naver",
+) -> None:
     conn = await asyncpg.connect(db_url, statement_cache_size=0)
     try:
         # 다중 인스턴스 동시 실행 가드 — Coolify scheduled task 는 replica 마다 cron 을 붙이므로
@@ -789,9 +929,9 @@ async def seed(db_url: str, *, api_key: str, sources: Sequence[str] | None = Non
         # 4) 수동 약칭(멱등)
         print(f"  [alias/manual] {await upsert_aliases(conn, _MANUAL_ALIASES)}건")
 
-        # 5) 종목별 Naver 교차검증(미검증 종목만, 종목당 1회) — 이름 변형 별칭 + 시장 교차검증
-        na, mm, ck = await crossvalidate_stocks_with_naver(conn)
-        print(f"  [naver/stock] 검증 {ck}건, 이름변형 별칭 {na}건, 시장불일치 {mm}건")
+        # 5) 종목 교차검증(미검증 종목만, 종목당 1회) — 이름 변형 별칭 + 시장 교차검증
+        na, mm, ck = await crossvalidate_stocks(conn, provider=crossvalidate_provider)
+        print(f"  [{crossvalidate_provider}/stock] 검증 {ck}건, 이름변형 별칭 {na}건, 시장불일치 {mm}건")
 
         # 6) marcap 적재(always-run, fingerprint 우회) — 시총·순위 갱신
         await update_marcap(conn, api_key)
@@ -808,7 +948,12 @@ def main() -> None:
     if not db_url:
         raise SystemExit("database_url 미설정")
     asyncio.run(
-        seed(db_url, api_key=settings.data_go_kr_api_key, sources=settings.stock_seed_source_list)
+        seed(
+            db_url,
+            api_key=settings.data_go_kr_api_key,
+            sources=settings.stock_seed_source_list,
+            crossvalidate_provider=settings.crossvalidate_provider,
+        )
     )
 
 

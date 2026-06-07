@@ -29,7 +29,7 @@ MVP 이후 구현할 작업 후보 목록.
 ## 거래내역서 임포트 — 후속 과제
 
 - [ ] **종목 검색 provider db 복귀 + import/NPS stale 추적** (2026-06-03 Naver 임시 복귀, `docs/decisions.md` 참고) — data.go.kr 게이트웨이(~50% 성공률) 안정성 모니터링 후 `STOCK_SEARCH_PROVIDER=db` 로 복귀(코드 변경 없이 env 한 줄). **잔여 리스크:** 검색만 토글했으므로 seed 를 장기 중단하면 거래 import 매칭(`ticker_resolver.lookup_by_names`)·NPS(`stocks_repo.search`)·marcap 이 stale 로컬 stocks 에 의존해 조용히 낡음. 트리거: ① seed 게이트웨이 성공률 안정화 확인 시 db 복귀, 또는 ② import 매칭률 저하/NPS·시총 stale 체감 시 seed 재개 우선순위 상향.
-- [ ] 공급자 env 토글 제외 잔존 — Naver·data.go.kr 고정 의존 (2026-06-07 env registry 도입, `docs/decisions.md` 참고) — `update_marcap`(data.go.kr)·`crossvalidate_stocks_with_naver`(Naver)는 seed 의 고정 단계로 토글 대상에서 명시 제외됨. Naver 의존을 완전히 끊는 게 목표가 되면 이 두 지점이 남는다. 트리거: Naver 비공식 API 차단/변경, 또는 KIS 등 공식 소스로 교차검증·시총 대체 가능해질 때.
+- [ ] 공급자 env 토글 제외 잔존 — data.go.kr 고정 의존 (2026-06-07 env registry 도입, `docs/decisions.md` 참고) — 교차검증은 2026-06-07 KIS 트랙 1 에서 `CROSSVALIDATE_PROVIDER`(naver|kis) 토글로 **해소**. `update_marcap`(data.go.kr)만 고정 단계로 잔존 — KIS 는 bulk 시총 API 가 없어(종목별 호출 = 전종목 수천 콜) 보류. ⚠️ `CROSSVALIDATE_PROVIDER=kis` 전환 시 KONEX 종목이 대조 없이 "검증됨"으로 박제됨(마스터 파일에 KONEX 없음, `naver_checked_at` 공유 컬럼) — 전환 전 인지 필요. 트리거: data.go.kr 시총 경로 장애 장기화 시 marcap 대체 재검토.
 - [ ] 미해결 종목 수동 매칭 UI — Naver 자동매칭 실패 또는 부분일치 오매칭 케이스에 대비, PreviewStep에서 사용자가 직접 종목 검색하여 매칭하는 UI 추가 검토
 - [ ] Preview staging 멀티 워커 대응 — 현재 `TTLCache` (단일 워커 메모리). 멀티 워커 배포 전 DB 임시 테이블 또는 Redis로 교체 필요
 - [ ] 임포트 통합 테스트 — `/import/preview`, `/import/commit` HTTP 엔드포인트 단위 테스트 (DB mock 또는 테스트 DB)
@@ -54,11 +54,9 @@ MVP 이후 구현할 작업 후보 목록.
 
 2026-06-07 deep-research 사전 조사 결과를 바탕으로 2개 트랙으로 분리. **트랙 1 먼저 진행.**
 
-- [ ] **KIS 트랙 1: 기존 데이터 공급처 확대** (우선 진행) — 서비스 자체 appkey 로 기존 외부 데이터 의존(Naver·data.go.kr·Yahoo)을 KIS 공식 API 로 보강/대체.
-  - 시세 provider: 2026-06-07 env registry 도입으로 진입 경로 확정 — `external/quotes.py` 에 `_fetch_kis` + `_QUOTE_REGISTRY` 등록 → `QUOTE_PROVIDERS=kis,naver,yahoo` 전환(무배포 복귀 가능). 목표가 PUSH 알림의 시세 폴링 기반.
-  - 확장 후보: 종목 검색·시총(`update_marcap`)·교차검증(`crossvalidate_stocks_with_naver`) 의 Naver/data.go.kr 고정 의존 대체 (위 "공급자 env 토글 제외 잔존" 항목의 트리거 충족 경로).
-  - 인증: APP Key/Secret → `oauth2/tokenP`, access token 유효 ~24h(6h 내 재요청 시 기존 토큰 반환) → 서버 측 토큰 캐싱 필요. 레이트리밋 실전 ~20req/s(모의 ~5req/s, 블로그+2026-03 공지 기반이라 재검증 필요). 모의/실전 도메인·TR ID prefix(T↔V) 분기.
-  - **선행 조건:** ① 시세 재배포 약관 검토 — KIS Open API 는 본인 거래 목적용이라 받은 시세를 앱 사용자에게 재제공하는 것이 약관/KRX 시세 라이선스 위반 소지(내부 알림 판정용 vs 화면 노출의 위험도 구분), ② 키 운영 방식(법인 제휴 시 토큰 90일 vs 개인 24h) 결정, ③ 서비스용 appkey 발급.
+- [ ] **KIS 트랙 1: 활성화(env 전환)** — 구현은 2026-06-07 완료(`docs/spec-history/2026-06-07-kis-data-providers.md`): 시세(`QUOTE_PROVIDERS` 에 kis)·일별 종가(`DAILY_PRICE_PROVIDER`/`DAILY_PRICE_GAP_PROVIDER`)·종목마스터(`STOCK_SEED_SOURCES` 에 kis)·교차검증(`CROSSVALIDATE_PROVIDER`) 전부 registry 등록 + 실호출 검증 완료. **현재 env 는 전부 기존 공급자 유지(무변경) — 활성화는 별도 운영 결정.**
+  - **활성화 선행 조건:** ① 시세 화면 노출의 약관/KRX 라이선스 리스크 — KIS 공식 확인 권장(2026-06-07 사용자 인지 후 구현 포함 결정), ② **레이트리밋 실측 2건/초(개인 실전, EGW00201)** — 페이싱은 per-process 라 Coolify replica=1 확인 또는 공유 리미터(Redis 등) 필요("Preview staging 멀티 워커 대응"과 같은 계열), ③ 운영 env 에 `KIS_APP_KEY`/`KIS_APP_SECRET` 주입.
+  - 권장 활성화 순서(위험 낮은 것부터): `STOCK_SEED_SOURCES` 에 kis 추가(키 불필요, data.go.kr 대체선) → `DAILY_PRICE_GAP_PROVIDER=kis` → 시세는 한도(2건/초) 특성상 **보조 공급자**(`QUOTE_PROVIDERS=naver,kis,yahoo` 등)로 — 1차 전환은 법인 제휴(한도 상향) 후 재검토.
 - [ ] KIS 트랙 2: 사용자 개인 데이터 자동화 — 사용자 본인 appkey 입력(BYOK)으로 매매내역·예수금·잔고 자동 동기화. 파일 업로드 임포트의 "대체"가 아닌 "KIS 사용자용 자동 동기화 옵션"으로 병행. 트랙 1 과 독립된 대형 feature.
   - 조회 API(2026-06-07 조사, 국내 실전 기준): 체결내역 `inquire-daily-ccld`(TTTC8001R, **최근 3개월**, 초과분 CTSC9215R) / 보유잔고 `inquire-balance`(TTTC8434R, 예수금 포함) / 매수가능현금 `inquire-psbl-order`(TTTC8908R) / 해외잔고 `inquire-present-balance`(CTRP6504R). 해외 체결내역 TR ID·기간 제한은 미확정.
   - 과거 이력 초기 적재는 3개월 제한 때문에 구체결 API 페이징 또는 기존 파일 업로드 병행 필요.

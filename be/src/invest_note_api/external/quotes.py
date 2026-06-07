@@ -25,6 +25,7 @@ from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, MAX_CODE_LEN
 from invest_note_api.domain.trade_utils import KST, position_key
 from invest_note_api.external.constants import (
     CURRENCY_KRW,
+    KIS_INQUIRE_PRICE_PATH,
     NAVER_BASIC_URL,
     NAVER_REALTIME_URL,
     QUOTE_ATTEMPT_TIMEOUT,
@@ -34,6 +35,7 @@ from invest_note_api.external.constants import (
     USER_AGENT,
     YAHOO_CHART_URL,
 )
+from invest_note_api.external.kis import kis_get
 from invest_note_api.external.provider_registry import resolve_chain
 from invest_note_api.utils.numbers import strip_comma_number
 
@@ -162,11 +164,49 @@ async def _fetch_yahoo(client: httpx.AsyncClient, code: str) -> QuoteResult | No
     return None
 
 
+# KIS 레이트리밋(실측 2건/초) 슬롯 대기 예산 — 멀티 종목 동시 시세에서 슬롯을 못 얻은
+# 종목은 빠르게 다음 공급자(naver)로 넘어가야 전체 deadline(QUOTE_FETCH_DEADLINE) 안에 든다.
+_KIS_QUOTE_THROTTLE_BUDGET = 1.0
+
+
+async def _fetch_kis(client: httpx.AsyncClient, code: str) -> QuoteResult | None:
+    """KIS 공급자 — 국내주식 현재가(FHKST01010100). 시장구분 "J"(주식/ETF/ETN 통합).
+
+    자격증명 미설정·토큰 발급 실패·오류 응답·레이트리밋 슬롯 부족은 kis_get 이
+    None 으로 수렴시켜 다음 공급자로 fallback 한다. 응답에 체결 일시 필드가 없어
+    traded_on 은 None.
+    """
+    body = await kis_get(
+        client,
+        KIS_INQUIRE_PRICE_PATH,
+        tr_id="FHKST01010100",
+        params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code},
+        timeout=QUOTE_ATTEMPT_TIMEOUT,
+        throttle_budget=_KIS_QUOTE_THROTTLE_BUDGET,
+    )
+    if body is None:
+        return None
+    raw = (body.get("output") or {}).get("stck_prpr")
+    try:
+        price = float(raw) if raw else 0.0
+    except (TypeError, ValueError):
+        price = 0.0
+    if price <= 0:
+        return None
+    return {
+        "price": price,
+        "currency": CURRENCY_KRW,
+        "as_of": datetime.now(timezone.utc).isoformat(),
+        "traded_on": None,
+    }
+
+
 # 시세 공급자 registry — env QUOTE_PROVIDERS 의 이름이 여기 등록돼 있어야 한다.
-# 새 공급자(예: kis) 추가 시 fetch 함수 작성 후 여기 등록하면 env 로 전환 가능.
+# 새 공급자 추가 시 fetch 함수 작성 후 여기 등록하면 env 로 전환 가능.
 _QUOTE_REGISTRY: dict[str, Callable] = {
     "naver": _fetch_naver,
     "yahoo": _fetch_yahoo,
+    "kis": _fetch_kis,
 }
 
 # 기본 체인 — config.DEFAULT_QUOTE_PROVIDERS 단일 출처(Settings 기본값과 drift 방지).

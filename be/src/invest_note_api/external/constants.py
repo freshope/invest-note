@@ -16,6 +16,14 @@ QUOTE_CACHE_MAXSIZE = 512
 # 둬도 신선도 저하 없이 외부 호출 빈도를 낮출 수 있다 (탭 전환/재렌더 시 캐시 재사용).
 QUOTE_CACHE_TTL = 45
 
+# KIS Open API(한국투자증권) — 실전/모의 도메인. KIS_ENV(real|mock)로 분기.
+KIS_REAL_BASE_URL = "https://openapi.koreainvestment.com:9443"
+KIS_MOCK_BASE_URL = "https://openapivts.koreainvestment.com:29443"
+# 국내주식 현재가 조회 (tr_id FHKST01010100, 실전/모의 동일)
+KIS_INQUIRE_PRICE_PATH = "/uapi/domestic-stock/v1/quotations/inquire-price"
+# 국내주식 기간별 시세 — 일/주/월/년 캔들 (tr_id FHKST03010100, 호출당 최대 100건 역순)
+KIS_DAILY_CHART_PATH = "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice"
+
 NAVER_REALTIME_URL = "https://polling.finance.naver.com/api/realtime/domestic/stock/{code}"
 NAVER_BASIC_URL = "https://api.stock.naver.com/stock/{code}/basic"
 NAVER_SEARCH_URL = "https://ac.stock.naver.com/ac"

@@ -79,6 +79,25 @@ def test_provider_env_values_normalized():
     assert s.nps_provider == "odcloud"
 
 
+def test_kis_settings_explicit_values_and_env_normalized():
+    # 개발 머신 .env.local 에 실제 키가 있을 수 있어 기본값(env 유래)은 단정하지 않는다 —
+    # 명시 전달 값과 kis_env 정규화(공백/대소문자)만 검증.
+    s = Settings(
+        supabase_url=TEST_SUPABASE_URL, kis_app_key="", kis_app_secret="", kis_env=" MOCK "
+    )
+    assert s.kis_app_key == ""
+    assert s.kis_app_secret == ""
+    assert s.kis_env == "mock"
+
+
+def test_kis_env_rejects_unknown_value():
+    # kis_env 오타는 잘못된 도메인 호출로 조용히 실패하므로 Settings 생성 시 fail-fast.
+    import pytest
+
+    with pytest.raises(ValueError, match="kis_env"):
+        Settings(supabase_url=TEST_SUPABASE_URL, kis_env="prod")
+
+
 def test_provider_list_properties_default_and_parse():
     # 콤마 체인 env(str 필드)는 property 가 trim + 빈 항목 제거로 파싱한다.
     s = Settings(supabase_url=TEST_SUPABASE_URL)
