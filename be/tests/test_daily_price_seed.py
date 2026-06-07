@@ -494,7 +494,7 @@ async def test_backfill_unknown_provider_raises_value_error(monkeypatch):
 
     with pytest.raises(ValueError, match="daily_price"):
         await daily_price_seed.backfill_closes(
-            conn, "key", ["005930"], date(2026, 6, 1), date(2026, 6, 4), primary_provider="kis"
+            conn, "key", ["005930"], date(2026, 6, 1), date(2026, 6, 4), primary_provider="kisss"
         )
     assert track["fetched"] == []
 
@@ -570,3 +570,107 @@ async def test_fetch_daily_closes_skips_missing_clpr():
 
     assert len(rows) == 1
     assert rows[0]["close_price"] == 76100.0
+
+
+# ─────────────────────────── KIS 기간별 시세 ───────────────────────────
+
+KIS_BASE = "https://openapi.koreainvestment.com:9443"
+
+
+def _kis_state(monkeypatch):
+    from invest_note_api.external import kis
+
+    monkeypatch.setattr(kis, "_state", kis.KisState(app_key="key", app_secret="secret"))
+
+
+def _kis_handler(pages: list[list[dict]], captured: list[dict]):
+    """차트 호출마다 pages 를 순서대로 반환. tokenP 는 항상 성공."""
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/oauth2/tokenP":
+            return httpx.Response(200, json={"access_token": "tok", "expires_in": 86400})
+        captured.append(dict(req.url.params))
+        idx = len(captured) - 1
+        output2 = pages[idx] if idx < len(pages) else []
+        return httpx.Response(200, json={"rt_cd": "0", "output2": output2})
+
+    return handler
+
+
+async def test_fetch_kis_daily_closes_parses_and_sends_params(monkeypatch):
+    """output2(stck_bsop_date/stck_clpr) 파싱 + FID 파라미터 전달 검증."""
+    _kis_state(monkeypatch)
+    captured: list[dict] = []
+    pages = [
+        [
+            {"stck_bsop_date": "20260603", "stck_clpr": "71000"},
+            {"stck_bsop_date": "20260602", "stck_clpr": "70500"},
+        ]
+    ]
+
+    async with _mock_client(_kis_handler(pages, captured)) as client:
+        rows = await daily_price_seed.fetch_kis_daily_closes(
+            client, "005930", date(2026, 6, 2), date(2026, 6, 3)
+        )
+
+    assert captured[0]["FID_INPUT_ISCD"] == "005930"
+    assert captured[0]["FID_INPUT_DATE_1"] == "20260602"
+    assert captured[0]["FID_INPUT_DATE_2"] == "20260603"
+    assert captured[0]["FID_PERIOD_DIV_CODE"] == "D"
+    assert captured[0]["FID_ORG_ADJ_PRC"] == "1"
+    assert rows == [
+        {"ticker": "005930", "close_date": date(2026, 6, 3), "close_price": 71000.0},
+        {"ticker": "005930", "close_date": date(2026, 6, 2), "close_price": 70500.0},
+    ]
+
+
+async def test_fetch_kis_daily_closes_pages_with_end_cursor(monkeypatch):
+    """100건 상한 — 가장 오래된 행 직전일로 end 커서를 당겨 추가 호출."""
+    _kis_state(monkeypatch)
+    captured: list[dict] = []
+    pages = [
+        [{"stck_bsop_date": "20260603", "stck_clpr": "71000"},
+         {"stck_bsop_date": "20260602", "stck_clpr": "70500"}],
+        [{"stck_bsop_date": "20260601", "stck_clpr": "70000"}],
+    ]
+
+    async with _mock_client(_kis_handler(pages, captured)) as client:
+        rows = await daily_price_seed.fetch_kis_daily_closes(
+            client, "005930", date(2026, 6, 1), date(2026, 6, 3)
+        )
+
+    assert len(captured) == 2
+    assert captured[1]["FID_INPUT_DATE_2"] == "20260601"  # oldest(6/2) - 1일
+    assert {r["close_date"] for r in rows} == {date(2026, 6, 1), date(2026, 6, 2), date(2026, 6, 3)}
+
+
+async def test_fetch_kis_daily_closes_empty_page_stops(monkeypatch):
+    """빈 output2(휴장/상장 전) → 추가 페이징 없이 종료."""
+    _kis_state(monkeypatch)
+    captured: list[dict] = []
+
+    async with _mock_client(_kis_handler([[]], captured)) as client:
+        rows = await daily_price_seed.fetch_kis_daily_closes(
+            client, "005930", date(2026, 6, 1), date(2026, 6, 3)
+        )
+
+    assert rows == []
+    assert len(captured) == 1
+
+
+async def test_fetch_kis_daily_closes_error_raises(monkeypatch):
+    """오류 응답(rt_cd!=0) → 예외. primary 계약상 실패는 raise 해야 sync_state 미기록."""
+    import pytest
+
+    _kis_state(monkeypatch)
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/oauth2/tokenP":
+            return httpx.Response(200, json={"access_token": "tok", "expires_in": 86400})
+        return httpx.Response(200, json={"rt_cd": "1", "msg_cd": "EGW00121", "msg1": "err"})
+
+    async with _mock_client(handler) as client:
+        with pytest.raises(RuntimeError, match="KIS"):
+            await daily_price_seed.fetch_kis_daily_closes(
+                client, "005930", date(2026, 6, 1), date(2026, 6, 3)
+            )

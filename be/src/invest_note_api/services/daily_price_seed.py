@@ -16,7 +16,8 @@ import httpx
 
 from invest_note_api.db_ops import daily_prices_repo
 from invest_note_api.domain.asset_history import LOOKBACK_DAYS
-from invest_note_api.external.constants import USER_AGENT
+from invest_note_api.external.constants import KIS_DAILY_CHART_PATH, USER_AGENT
+from invest_note_api.external.kis import kis_get
 from invest_note_api.external.provider_registry import resolve_chain
 from invest_note_api.services.stock_seed import (
     _DATA_GO_KR_TIMEOUT,
@@ -178,6 +179,63 @@ async def fetch_naver_daily_closes(
     return rows
 
 
+async def fetch_kis_daily_closes(
+    client: httpx.AsyncClient, ticker: str, begin: date, end: date
+) -> list[dict]:
+    """KIS 기간별 시세(FHKST03010100)에서 [begin, end] 일별 종가 수집.
+
+    호출당 최대 100건을 최근일부터 역순 반환 → end 커서를 가장 오래된 행 직전일로
+    당기며 구간 분할 페이징. 반환 형태는 fetch_daily_closes 와 동일.
+    오류 응답/토큰 실패(kis_get None)는 예외 — primary 계약상 실패는 raise 해야
+    backfill 이 sync_state 를 기록하지 않고 다음 요청에 재시도한다.
+    """
+    norm = _normalize_ticker(ticker)
+    rows: list[dict] = []
+    end_cursor = end
+    # 2년 LOOKBACK ≈ 거래일 ~500건(100건×5호출) — 여유 상한으로 무한 루프 가드.
+    for _ in range(30):
+        if end_cursor < begin:
+            break
+        body = await kis_get(
+            client,
+            KIS_DAILY_CHART_PATH,
+            tr_id="FHKST03010100",
+            params={
+                "FID_COND_MRKT_DIV_CODE": "J",  # KRX (주식/ETF/ETN 통합)
+                "FID_INPUT_ISCD": norm,
+                "FID_INPUT_DATE_1": begin.strftime("%Y%m%d"),
+                "FID_INPUT_DATE_2": end_cursor.strftime("%Y%m%d"),
+                "FID_PERIOD_DIV_CODE": "D",
+                "FID_ORG_ADJ_PRC": "1",  # 원주가 — data.go.kr clpr(발행 당시 가격)과 일관
+            },
+        )
+        if body is None:
+            raise RuntimeError(f"KIS 일별 종가 조회 실패 ticker={norm}")
+        page: list[dict] = []
+        for it in body.get("output2") or []:
+            close_date = _basdt_to_date((it.get("stck_bsop_date") or "").strip() or None)
+            raw = it.get("stck_clpr")
+            if close_date is None or raw in (None, ""):
+                continue
+            try:
+                close_price = float(raw)
+            except (TypeError, ValueError):
+                continue
+            # 범위 밖 행 가드 — watermark 가 어제 너머로 오르는 오염 방지.
+            if begin <= close_date <= end_cursor:
+                page.append(
+                    {"ticker": norm, "close_date": close_date, "close_price": close_price}
+                )
+        if not page:
+            break  # 빈 구간(휴장/상장 전) — 더 과거로 내려갈 데이터 없음.
+        rows.extend(page)
+        oldest = min(r["close_date"] for r in page)
+        if oldest <= begin:
+            break
+        end_cursor = oldest - timedelta(days=1)
+    return rows
+
+
 async def _fetch_data_go_kr_closes(
     api_key: str,
     ticker: str,
@@ -200,9 +258,29 @@ async def _fetch_naver_gap_closes(
     return await fetch_naver_daily_closes(client, ticker, begin, end)
 
 
+async def _fetch_kis_primary_closes(
+    api_key: str,
+    ticker: str,
+    begin: date,
+    end: date,
+    *,
+    market: str | None,
+    client: httpx.AsyncClient,
+) -> list[dict]:
+    """kis primary 공급자 — api_key(data.go.kr 전용)·market("J" 통합 시장코드) 미사용."""
+    return await fetch_kis_daily_closes(client, ticker, begin, end)
+
+
+async def _fetch_kis_gap_closes(
+    client: httpx.AsyncClient, ticker: str, begin: date, end: date
+) -> list[dict]:
+    """kis gap 공급자 — KIS 일봉은 T+0 반영이라 tail-gap 보충에도 사용 가능."""
+    return await fetch_kis_daily_closes(client, ticker, begin, end)
+
+
 # 공급자 registry — 새 공급자 추가 시 여기 등록하면 env 변경만으로 전환 가능.
-_PRIMARY_REGISTRY = {"data_go_kr": _fetch_data_go_kr_closes}
-_GAP_REGISTRY = {"naver": _fetch_naver_gap_closes}
+_PRIMARY_REGISTRY = {"data_go_kr": _fetch_data_go_kr_closes, "kis": _fetch_kis_primary_closes}
+_GAP_REGISTRY = {"naver": _fetch_naver_gap_closes, "kis": _fetch_kis_gap_closes}
 
 
 async def backfill_closes(
