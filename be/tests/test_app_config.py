@@ -61,6 +61,24 @@ def test_startup_rejects_unknown_quote_provider():
             pass
 
 
+def test_provider_env_values_normalized():
+    # 운영 콘솔의 공백/대소문자 입력("none ", "NONE")이 registry 미일치 ValueError 로
+    # 라우터 500 을 내지 않도록 공급자류 env 는 strip+lower 정규화된다.
+    s = Settings(
+        supabase_url=TEST_SUPABASE_URL,
+        stock_search_provider=" DB ",
+        quote_providers=" Naver,Yahoo ",
+        daily_price_provider=" DATA_GO_KR ",
+        daily_price_gap_provider=" NONE ",
+        nps_provider=" Odcloud ",
+    )
+    assert s.stock_search_provider == "db"
+    assert s.quote_provider_list == ["naver", "yahoo"]
+    assert s.daily_price_provider == "data_go_kr"
+    assert s.daily_price_gap_provider == "none"
+    assert s.nps_provider == "odcloud"
+
+
 def test_provider_list_properties_default_and_parse():
     # 콤마 체인 env(str 필드)는 property 가 trim + 빈 항목 제거로 파싱한다.
     s = Settings(supabase_url=TEST_SUPABASE_URL)

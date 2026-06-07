@@ -20,6 +20,7 @@ import httpx
 from cachetools import TTLCache
 from fastapi import Request
 
+from invest_note_api.config import DEFAULT_QUOTE_PROVIDERS
 from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, MAX_CODE_LEN
 from invest_note_api.domain.trade_utils import KST, position_key
 from invest_note_api.external.constants import (
@@ -168,7 +169,8 @@ _QUOTE_REGISTRY: dict[str, Callable] = {
     "yahoo": _fetch_yahoo,
 }
 
-_DEFAULT_QUOTE_PROVIDERS = ("naver", "yahoo")
+# 기본 체인 — config.DEFAULT_QUOTE_PROVIDERS 단일 출처(Settings 기본값과 drift 방지).
+_DEFAULT_QUOTE_PROVIDERS = DEFAULT_QUOTE_PROVIDERS
 
 
 def validate_quote_providers(providers: Sequence[str]) -> None:
