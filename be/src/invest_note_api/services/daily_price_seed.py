@@ -283,6 +283,17 @@ _PRIMARY_REGISTRY = {"data_go_kr": _fetch_data_go_kr_closes, "kis": _fetch_kis_p
 _GAP_REGISTRY = {"naver": _fetch_naver_gap_closes, "kis": _fetch_kis_gap_closes}
 
 
+def validate_daily_price_providers(primary: str, gap: str) -> None:
+    """env DAILY_PRICE_PROVIDER/DAILY_PRICE_GAP_PROVIDER 오타를 앱 startup 에서 fail-fast.
+
+    backfill_closes 는 GET /assets/history 요청 경로에서 호출되므로, 오타를 호출 시점
+    ValueError 로 두면 사용자 대면 500 이 반복된다. gap 은 비활성 값("", "none") 허용.
+    """
+    resolve_chain([primary], _PRIMARY_REGISTRY, domain="daily_price")
+    if gap not in _GAP_DISABLED:
+        resolve_chain([gap], _GAP_REGISTRY, domain="daily_price_gap")
+
+
 async def backfill_closes(
     conn: Any,
     api_key: str,

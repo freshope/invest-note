@@ -7,9 +7,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 
 from invest_note_api.auth.admin import require_admin_token
 from invest_note_api.config import Settings, get_settings
+from invest_note_api.errors import APIError
 from invest_note_api.services.daily_price_seed import seed_daily_prices
 from invest_note_api.services.nps_seed import reconcile_nps_unmatched, seed_nps
-from invest_note_api.services.stock_seed import seed
+from invest_note_api.services.stock_seed import seed, validate_seed_sources
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,11 @@ async def trigger_seed_stocks(
     _: None = Depends(require_admin_token),
     settings: Settings = Depends(get_settings),
 ) -> dict:
+    # 소스 오타는 background 에서 로그로만 남고 202 가 나가므로 트리거 시점에 검증 → 400.
+    try:
+        validate_seed_sources(settings.stock_seed_source_list)
+    except ValueError as e:
+        raise APIError(str(e), 400)
     db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
     background_tasks.add_task(
         run_seed, db_url, settings.data_go_kr_api_key, settings.stock_seed_source_list

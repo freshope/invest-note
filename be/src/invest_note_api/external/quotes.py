@@ -209,9 +209,6 @@ _QUOTE_REGISTRY: dict[str, Callable] = {
     "kis": _fetch_kis,
 }
 
-# 기본 체인 — config.DEFAULT_QUOTE_PROVIDERS 단일 출처(Settings 기본값과 drift 방지).
-_DEFAULT_QUOTE_PROVIDERS = DEFAULT_QUOTE_PROVIDERS
-
 
 def validate_quote_providers(providers: Sequence[str]) -> None:
     """env QUOTE_PROVIDERS 오타를 앱 startup 에서 fail-fast 로 검증.
@@ -228,7 +225,7 @@ def validate_quote_providers(providers: Sequence[str]) -> None:
 async def _fetch_kr_price(
     client: httpx.AsyncClient,
     code: str,
-    providers: Sequence[str] = _DEFAULT_QUOTE_PROVIDERS,
+    providers: Sequence[str] = DEFAULT_QUOTE_PROVIDERS,
 ) -> QuoteResult | None:
     for fetch in resolve_chain(providers, _QUOTE_REGISTRY, domain="quotes"):
         result = await fetch(client, code)
@@ -282,7 +279,7 @@ async def fetch_quotes_by_keys(
     *,
     client: httpx.AsyncClient,
     force_refresh: bool = False,
-    providers: Sequence[str] = _DEFAULT_QUOTE_PROVIDERS,
+    providers: Sequence[str] = DEFAULT_QUOTE_PROVIDERS,
 ) -> dict[str, QuoteResult | None]:
     """keys 형식: "종목코드:국가" (예: "005930:KR"). KR 외 국가는 MVP에서 null.
 

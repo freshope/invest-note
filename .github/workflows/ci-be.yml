@@ -5,11 +5,13 @@ on:
     branches: [main, develop]
     paths:
       - "be/**"
+      - "supabase/**" # 마이그레이션은 BE 도메인 — 스키마 변경 커밋도 BE 테스트를 거친다.
       - ".github/workflows/ci-be.yml"
   push:
     branches: [main, develop]
     paths:
       - "be/**"
+      - "supabase/**"
       - ".github/workflows/ci-be.yml"
 
 jobs:

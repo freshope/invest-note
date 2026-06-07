@@ -396,8 +396,9 @@ async def fetch_kis_master(*, client: httpx.AsyncClient | None = None) -> list[d
     rows: list[dict] = []
 
     async def _run(c: httpx.AsyncClient) -> None:
-        for url, market, tail_len in _KIS_MASTER_FILES:
-            res = await c.get(url)
+        # 독립 CDN 파일 — 병렬 다운로드(KIS API 레이트리밋 무관).
+        responses = await asyncio.gather(*(c.get(url) for url, _, _ in _KIS_MASTER_FILES))
+        for res, (_, market, tail_len) in zip(responses, _KIS_MASTER_FILES):
             res.raise_for_status()
             with zipfile.ZipFile(io.BytesIO(res.content)) as zf:
                 text = zf.read(zf.namelist()[0]).decode("cp949")
@@ -776,12 +777,8 @@ _MANUAL_ALIASES = [
 ]
 
 
-# 기본 소스 체인 — config.DEFAULT_STOCK_SEED_SOURCES 단일 출처(Settings 기본값과 drift 방지).
-_DEFAULT_SEED_SOURCES = DEFAULT_STOCK_SEED_SOURCES
-
-
 def _build_pipeline(
-    api_key: str, sources: Sequence[str] = _DEFAULT_SEED_SOURCES
+    api_key: str, sources: Sequence[str] = DEFAULT_STOCK_SEED_SOURCES
 ) -> list[tuple[str, Callable[[], Awaitable[list[dict]]]]]:
     """소스 우선순위 파이프라인. 첫 소스가 canonical authority. 실패 소스는 [] 반환.
 
@@ -857,6 +854,15 @@ def _build_pipeline(
     return list(zip(sources, resolve_chain(sources, registry, domain="stock_seed")))
 
 
+def validate_seed_sources(sources: Sequence[str]) -> None:
+    """env STOCK_SEED_SOURCES 오타를 admin 트리거 시점에 fail-fast.
+
+    background 실행 중 ValueError 는 로그로만 남고 클라이언트는 202 를 받으므로,
+    트리거 응답에서 바로 거부한다. 빈 체인은 기본 소스 사용(seed 와 동일 규칙).
+    """
+    _build_pipeline("", sources or DEFAULT_STOCK_SEED_SOURCES)
+
+
 async def seed(
     db_url: str,
     *,
@@ -885,7 +891,7 @@ async def seed(
         upstream_changed = False  # 앞선 소스가 바뀌면 canonical 이 이동했을 수 있어 하위 변형명 재계산 필요
 
         # 1~2) 소스 순차 병합 (authority=이름 확립, 이후=신규 추가 + 변형명 별칭)
-        for name, fetch in _build_pipeline(api_key, sources or _DEFAULT_SEED_SOURCES):
+        for name, fetch in _build_pipeline(api_key, sources or DEFAULT_STOCK_SEED_SOURCES):
             rows = await fetch()
             if not rows:
                 # 빈 응답(API 실패/키 미설정/일시 장애) → 이 소스의 종목이 union 에서 누락된다.

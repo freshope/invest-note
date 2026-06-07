@@ -39,6 +39,11 @@ KIS_TOKEN_PATH = "/oauth2/tokenP"
 # 만료(expires_in, 보통 86400s) 임박 시 조기 재발급하는 여유 마진.
 _TOKEN_REFRESH_MARGIN_SECONDS = 600.0
 
+# 발급 실패 후 재시도 억제 — KIS 가 발급을 1분당 1회로 제한(EGW00133)하므로, 자격증명
+# 오설정/장애 시 들어오는 요청마다 tokenP 를 때리지 않게 한다. DB 토큰 재사용 경로는
+# 이 쿨다운과 무관하게 매 호출 동작한다(타 프로세스가 발급한 토큰은 즉시 픽업).
+_ISSUE_FAILURE_COOLDOWN_SECONDS = 60.0
+
 # 레이트리밋 페이싱 — 실측 한도 2건/초에 윈도우 여유(1.05s)를 둬 서버 측 측정 jitter 흡수.
 _RATE_MAX_CALLS = 2
 _RATE_WINDOW_SECONDS = 1.05
@@ -55,6 +60,7 @@ class KisState:
     base_url: str = KIS_REAL_BASE_URL
     token: str | None = None
     token_expires_at: float = 0.0  # epoch seconds
+    token_issue_failed_at: float = 0.0  # epoch seconds — 마지막 발급 실패 시각(쿨다운 기준)
     pool: Any | None = None  # asyncpg.Pool — None 이면 메모리 전용(영속화 생략)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     rate_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -111,25 +117,40 @@ def _safe_json(res: httpx.Response) -> dict:
 
 
 async def _issue_token(client: httpx.AsyncClient, state: KisState) -> None:
-    """토큰 발급 시도 — 성공 시 state 에 반영, 실패 시 로그만 남긴다(호출측이 None 처리)."""
+    """토큰 발급 시도 — 성공 시 state 에 반영, 실패 시 로그만 남긴다(호출측이 None 처리).
+
+    직전 실패 후 쿨다운(60s) 내에는 발급을 건너뛴다 — 발급 1분당 1회 제한(EGW00133)
+    하에서 실패 상태의 요청들이 tokenP 를 연타하는 것을 막는다.
+    """
+    if time.time() - state.token_issue_failed_at < _ISSUE_FAILURE_COOLDOWN_SECONDS:
+        return
     await _acquire_rate_slot(state, None)  # 토큰 발급도 초당 건수에 포함
-    res = await client.post(
-        state.base_url + KIS_TOKEN_PATH,
-        json={
-            "grant_type": "client_credentials",
-            "appkey": state.app_key,
-            "appsecret": state.app_secret,
-        },
-        timeout=HTTP_TIMEOUT_SECONDS,
-    )
-    data = res.json() if res.status_code == 200 else {}
+    try:
+        res = await client.post(
+            state.base_url + KIS_TOKEN_PATH,
+            json={
+                "grant_type": "client_credentials",
+                "appkey": state.app_key,
+                "appsecret": state.app_secret,
+            },
+            timeout=HTTP_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        state.token_issue_failed_at = time.time()
+        raise
+    data = _safe_json(res) if res.status_code == 200 else {}
     token = data.get("access_token")
     if not token:
-        # 발급 throttle(EGW00133) 등 — body 의 에러 코드를 남겨 원인 추적.
+        # 발급 throttle(EGW00133)·200+비JSON 응답 등 — body 를 남겨 원인 추적.
+        state.token_issue_failed_at = time.time()
         logger.warning("KIS 토큰 발급 실패 status=%s body=%s", res.status_code, res.text[:200])
         return
+    try:
+        expires_in = float(data.get("expires_in") or 86400)
+    except (TypeError, ValueError):
+        expires_in = 86400.0  # 비숫자 expires_in — 발급은 성공했으므로 표준 24h 로 간주
     state.token = token
-    state.token_expires_at = time.time() + float(data.get("expires_in") or 86400)
+    state.token_expires_at = time.time() + expires_in
 
 
 def _is_fresh(expires_at: float, now: float) -> bool:

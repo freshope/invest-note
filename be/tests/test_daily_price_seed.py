@@ -499,6 +499,19 @@ async def test_backfill_unknown_provider_raises_value_error(monkeypatch):
     assert track["fetched"] == []
 
 
+def test_validate_daily_price_providers_startup_fail_fast():
+    """env 오타가 /assets/history 요청 500 으로 미루어지지 않게 부팅 시점 검증(lifespan 호출)."""
+    import pytest
+
+    daily_price_seed.validate_daily_price_providers("data_go_kr", "naver")
+    daily_price_seed.validate_daily_price_providers("kis", "none")  # gap 비활성 값 허용
+    daily_price_seed.validate_daily_price_providers("kis", "")
+    with pytest.raises(ValueError, match="daily_price"):
+        daily_price_seed.validate_daily_price_providers("kisss", "naver")
+    with pytest.raises(ValueError, match="daily_price_gap"):
+        daily_price_seed.validate_daily_price_providers("data_go_kr", "navr")
+
+
 async def test_backfill_naver_failure_keeps_datagokr_rows_state_unrecorded(monkeypatch):
     """네이버 보충 실패 → data.go.kr 분은 upsert, sync_state 미기록 + incomplete(재시도 보장)."""
     today = date(2026, 6, 4)

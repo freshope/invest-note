@@ -107,6 +107,35 @@ async def test_get_access_token_issue_failure_returns_none():
         assert await kis.get_access_token(client, state) is None
 
 
+async def test_issue_failure_cooldown_suppresses_retry_storm():
+    """발급 실패 후 쿨다운(60s) 내 요청은 tokenP 를 재호출하지 않는다(EGW00133 연타 방지)."""
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(403, json={"error_code": "EGW00133"})
+
+    state = _state()
+    async with _client(handler) as client:
+        assert await kis.get_access_token(client, state) is None
+        assert await kis.get_access_token(client, state) is None
+        # 쿨다운 경과 시뮬레이션 — 재시도 재개.
+        state.token_issue_failed_at = time.time() - 61
+        assert await kis.get_access_token(client, state) is None
+    assert len(calls) == 2
+
+
+async def test_issue_cooldown_does_not_block_db_token_pickup():
+    """발급 쿨다운 중에도 DB 토큰 재사용 경로는 동작 — 타 프로세스 발급분을 즉시 픽업."""
+    calls: list[int] = []
+    state = _db_state(InMemoryTokenConn(_db_row()))
+    state.token_issue_failed_at = time.time()  # 직전 발급 실패 상태
+    async with _client(_token_handler(calls)) as client:
+        token = await kis.get_access_token(client, state)
+    assert token == "tok-db"
+    assert calls == []
+
+
 async def test_kis_get_success_returns_body_and_sends_headers():
     seen: dict = {}
 

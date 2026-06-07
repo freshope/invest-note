@@ -208,6 +208,16 @@ def test_pipeline_unknown_source_raises_value_error():
         stock_seed._build_pipeline("key", ["fdr"])
 
 
+def test_validate_seed_sources_trigger_time_fail_fast():
+    # admin 트리거 시점 검증 — 오타는 ValueError(라우터가 400 변환), 빈 체인은 기본 소스 허용.
+    import pytest
+
+    stock_seed.validate_seed_sources(["kis", "data_go_kr"])
+    stock_seed.validate_seed_sources([])  # 빈 체인 → 기본 소스(seed 와 동일 규칙)
+    with pytest.raises(ValueError, match="stock_seed"):
+        stock_seed.validate_seed_sources(["fdr"])
+
+
 def test_recent_basdt_candidates_are_descending_and_bounded():
     cands = stock_seed._recent_basdt_candidates()
     assert len(cands) == stock_seed._BASDT_MAX_LOOKBACK

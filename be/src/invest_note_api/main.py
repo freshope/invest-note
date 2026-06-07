@@ -15,6 +15,7 @@ from invest_note_api.external.quotes import QuoteCacheState, validate_quote_prov
 from invest_note_api.routers import accounts, admin, app_config, health, me
 from invest_note_api.routers import trades, portfolio, stocks, analysis, assets
 from invest_note_api.routers.trades import TradeStagingState
+from invest_note_api.services.daily_price_seed import validate_daily_price_providers
 
 
 async def lock_not_available_handler(request: Request, exc: LockNotAvailableError) -> JSONResponse:
@@ -27,9 +28,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # env QUOTE_PROVIDERS 오타 fail-fast — 요청 경로는 예외를 삼켜 시세가 조용히
-        # null 이 되므로 부팅 시점에 검증한다(타 도메인은 호출 시점 ValueError 로 충분).
+        # 요청 경로가 소비하는 공급자 env 오타 fail-fast — quotes 는 요청 경로가 예외를
+        # 삼켜 시세가 조용히 null, daily price 는 GET /assets/history 가 사용자 대면 500 을
+        # 반복하므로 부팅 시점에 검증한다. admin/batch 전용 도메인(seed 소스 등)은
+        # 트리거 시점 검증으로 충분(admin.py 참조).
         validate_quote_providers(settings.quote_provider_list)
+        validate_daily_price_providers(
+            settings.daily_price_provider, settings.daily_price_gap_provider
+        )
         # database_url이 비어 있으면 풀 생성 생략 (테스트 환경)
         if settings.database_url:
             app.state.pool = await create_pool(settings.database_url)
