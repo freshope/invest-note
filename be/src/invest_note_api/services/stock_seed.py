@@ -682,7 +682,8 @@ async def _crossvalidate_lookup_kis(tickers: list[str]) -> tuple[dict[str, dict]
     """KIS 종목마스터 1회 다운로드로 일괄 대조 — 종목별 호출 없음(레이트리밋 무관).
 
     파일에 없는 코드(KONEX 등)도 "검증함" — 파일 자체가 전체 스냅샷이라 재질의가 무의미하다.
-    다운로드 실패/빈 파일은 전체 미체크(다음 run 재시도).
+    ⚠️ 따라서 KONEX 종목은 이름/시장 대조 없이 검증 완료로 박제된다 — 이후 naver 로
+    되돌려도 재검증 안 됨(naver_checked_at 공유). 다운로드 실패/빈 파일은 전체 미체크.
     """
     try:
         master = await fetch_kis_master()
