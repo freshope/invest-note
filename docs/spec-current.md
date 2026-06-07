@@ -51,13 +51,18 @@
 - [x] 4. `services/daily_price_seed.py` — `fetch_kis_daily_closes` 구현 + `_PRIMARY_REGISTRY`/`_GAP_REGISTRY` 등록 + 테스트
 - [x] 5. `services/stock_seed.py` — `fetch_kis_master`(.mst zip 파싱) + seed registry 등록 + 테스트
 - [x] 6. `services/stock_seed.py` — 교차검증 provider 토글(`CROSSVALIDATE_PROVIDER`, 기본 naver) + KIS 마스터 일괄 대조 구현 + 테스트
-- [ ] 7. appkey 실호출 검증 — 시세/일별종가/마스터 파일 각 1회 점검 (검증 후 결과 기록)
-- [ ] 8. BE 전체 테스트 통과 (`cd be && poetry run pytest -q`)
+- [x] 7. appkey 실호출 검증 — 시세/일별종가/마스터 파일 각 1회 점검 (검증 후 결과 기록)
+  - 토큰 발급 OK(346자) / 현재가 005930=329,000 / 일별 종가 4거래일(Naver 값과 일치) /
+    마스터 4,295건(KOSPI 950·ETF 1,137·ETN 385·KOSDAQ 1,823) / 동시 5종목 시세 0.18s(fallback 동작)
+  - 실측 보정 2건: ① 마스터 tail 길이 227/221(공식 예제 주석 228/222 와 1 차이),
+    ETN 'Q' 접두·영숫자 ETF 코드 — isdigit 필터 제거. ② 레이트리밋 실측 **2건/초**(EGW00201)
+    → kis.py 에 전역 페이싱 추가(아래 리스크 참조)
+- [x] 8. BE 전체 테스트 통과 (`cd be && poetry run pytest -q`) — 481 passed
 
 ## 우려사항 / 리스크
 
 - **시세 화면 노출 약관 리스크**: KIS Open API 는 본인 거래 목적용 — 받은 시세의 앱 사용자 재제공은 약관/KRX 시세 라이선스 위반 소지. **사용자가 인지하고 포함 결정함(2026-06-07).** 차후 KIS 공식 확인 권장. env 전환만으로 즉시 복귀 가능(`QUOTE_PROVIDERS` 에서 kis 제거).
-- **rate limit 공유 한도**: 서비스 appkey 1개에 실전 ~20req/s(재검증 필요) — Naver/Yahoo 엔 없던 제약. 시세는 TTLCache+single-flight 가 완충하나 KIS 1차 전환 후 장중 병목 모니터링 필요. seed/batch 는 무관.
+- **rate limit 공유 한도 — 실측 2건/초(2026-06-07, 개인 실전 계정)**: 사전 조사의 ~20req/s 는 법인/과거 수치로 보임. 3번째 연속 호출부터 EGW00201. 대응: `kis.py` 전역 슬라이딩 윈도우 페이싱(2건/1.05s, 토큰 발급 포함) + EGW00201 1회 재시도. 시세 경로는 슬롯 대기 예산 1.0s — 초과 시 즉시 naver fallback(전체 deadline 보호). **함의: KIS 를 시세 1차 공급자로 두면 멀티 종목 화면에서 대부분 naver 로 흐른다** — 시세는 보조 공급자로 보거나, 한도 상향(법인 제휴) 후 1차 전환 검토.
 - **토큰 발급 1분당 1회(EGW00133)**: 캐시 미스 시 동시 요청이 발급을 중복 시도하면 throttle — lock 으로 차단하되, 프로세스 재시작 직후 1회 실패 가능성 있음(재시도 backoff 고려).
 - **멀티워커 전제**: in-process 토큰 캐시는 단일 워커 전제. 멀티워커 배포 전 공유 저장소 필요(백로그 "Preview staging 멀티 워커 대응" 과 동일 계열).
 - **.mst 파싱 취약성**: fixed-width 포맷/EUC-KR — 컬럼 오프셋 변경 시 조용히 깨질 수 있어 파싱 검증 테스트 필수.

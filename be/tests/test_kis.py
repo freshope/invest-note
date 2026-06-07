@@ -49,7 +49,10 @@ def test_configure_kis_sets_base_url_by_env():
     assert state.base_url == KIS_MOCK_BASE_URL
     # configure 는 모듈 싱글톤도 갱신한다 (lifespan 진입점).
     assert kis.is_kis_configured()
-    kis.configure_kis(Settings(supabase_url=TEST_SUPABASE_URL))  # 키 미설정으로 복원
+    # 키 미설정으로 복원 — .env.local 의 실제 키가 새어들지 않게 명시적으로 빈 값 전달.
+    kis.configure_kis(
+        Settings(supabase_url=TEST_SUPABASE_URL, kis_app_key="", kis_app_secret="")
+    )
     assert not kis.is_kis_configured()
 
 
@@ -160,3 +163,65 @@ async def test_kis_get_unconfigured_returns_none():
             await kis.kis_get(client, "/uapi/test", tr_id="X", params={}, state=kis.KisState())
             is None
         )
+
+
+# ---- 레이트리밋 페이싱 (실측 2건/초, EGW00201) ----
+
+
+async def test_acquire_rate_slot_blocks_third_call_then_releases(monkeypatch):
+    monkeypatch.setattr(kis, "_RATE_WINDOW_SECONDS", 0.15)
+    state = _state()
+    t0 = time.monotonic()
+    assert await kis._acquire_rate_slot(state, None) is True
+    assert await kis._acquire_rate_slot(state, None) is True
+    assert await kis._acquire_rate_slot(state, None) is True  # 윈도우 경과 후 획득
+    assert time.monotonic() - t0 >= 0.13  # 3번째는 윈도우만큼 대기
+
+
+async def test_acquire_rate_slot_budget_exhausted_returns_false():
+    state = _state()
+    now = time.monotonic()
+    state.recent_calls.extend([now, now])  # 윈도우 꽉 참
+    assert await kis._acquire_rate_slot(state, 0.0) is False
+
+
+async def test_kis_get_throttle_budget_gives_up_without_request():
+    """슬롯 부족 + 짧은 budget → API 호출 없이 None (시세 경로의 빠른 fallback)."""
+    api_calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        api_calls.append(1)
+        return httpx.Response(200, json={"rt_cd": "0"})
+
+    state = _state()
+    state.token = "tok"
+    state.token_expires_at = time.time() + 86400  # 토큰 캐시 hit — 발급 호출 없음
+    state.recent_calls.extend([time.monotonic(), time.monotonic()])
+
+    async with _client(handler) as client:
+        body = await kis.kis_get(
+            client, "/uapi/test", tr_id="X", params={}, state=state, throttle_budget=0.0
+        )
+    assert body is None
+    assert api_calls == []
+
+
+async def test_kis_get_retries_once_on_egw00201(monkeypatch):
+    monkeypatch.setattr(kis, "_RATE_RETRY_SLEEP_SECONDS", 0.0)
+    api_calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == kis.KIS_TOKEN_PATH:
+            return httpx.Response(200, json=TOKEN_JSON)
+        api_calls.append(1)
+        if len(api_calls) == 1:
+            return httpx.Response(500, json={"rt_cd": "1", "msg_cd": "EGW00201", "msg1": "초과"})
+        return httpx.Response(200, json={"rt_cd": "0", "output": {"stck_prpr": "71000"}})
+
+    state = _state()
+    async with _client(handler) as client:
+        body = await kis.kis_get(
+            client, "/uapi/test", tr_id="FHKST01010100", params={}, state=state
+        )
+    assert body is not None and body["output"]["stck_prpr"] == "71000"
+    assert len(api_calls) == 2

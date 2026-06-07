@@ -164,11 +164,17 @@ async def _fetch_yahoo(client: httpx.AsyncClient, code: str) -> QuoteResult | No
     return None
 
 
+# KIS 레이트리밋(실측 2건/초) 슬롯 대기 예산 — 멀티 종목 동시 시세에서 슬롯을 못 얻은
+# 종목은 빠르게 다음 공급자(naver)로 넘어가야 전체 deadline(QUOTE_FETCH_DEADLINE) 안에 든다.
+_KIS_QUOTE_THROTTLE_BUDGET = 1.0
+
+
 async def _fetch_kis(client: httpx.AsyncClient, code: str) -> QuoteResult | None:
     """KIS 공급자 — 국내주식 현재가(FHKST01010100). 시장구분 "J"(주식/ETF/ETN 통합).
 
-    자격증명 미설정·토큰 발급 실패·오류 응답은 kis_get 이 None 으로 수렴시켜
-    다음 공급자로 fallback 한다. 응답에 체결 일시 필드가 없어 traded_on 은 None.
+    자격증명 미설정·토큰 발급 실패·오류 응답·레이트리밋 슬롯 부족은 kis_get 이
+    None 으로 수렴시켜 다음 공급자로 fallback 한다. 응답에 체결 일시 필드가 없어
+    traded_on 은 None.
     """
     body = await kis_get(
         client,
@@ -176,6 +182,7 @@ async def _fetch_kis(client: httpx.AsyncClient, code: str) -> QuoteResult | None
         tr_id="FHKST01010100",
         params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code},
         timeout=QUOTE_ATTEMPT_TIMEOUT,
+        throttle_budget=_KIS_QUOTE_THROTTLE_BUDGET,
     )
     if body is None:
         return None
