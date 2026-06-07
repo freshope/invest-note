@@ -266,7 +266,7 @@ def test_fetch_kr_price_unknown_provider_raises_value_error():
 
     async def runner():
         async with _build_mock_client({}) as client:
-            return await _fetch_kr_price(client, "005930", ["kis"])
+            return await _fetch_kr_price(client, "005930", ["naverr"])
 
     with pytest.raises(ValueError, match="quotes"):
         asyncio.run(runner())
@@ -293,3 +293,88 @@ def test_fetch_kr_price_prefers_naver_when_available():
     assert result is not None
     assert result["price"] == 71500.0
     assert yahoo_called is False
+
+
+# ---- KIS 공급자 ----
+
+KIS_BASE = "https://openapi.koreainvestment.com:9443"
+
+
+@pytest.fixture
+def kis_configured(monkeypatch):
+    """KIS 자격증명이 설정된 모듈 싱글톤 — monkeypatch 로 테스트 후 자동 복원."""
+    from invest_note_api.external import kis
+
+    monkeypatch.setattr(kis, "_state", kis.KisState(app_key="key", app_secret="secret"))
+
+
+def test_fetch_kr_price_kis_success(kis_configured):
+    """providers=["kis"] — 토큰 발급 후 현재가(stck_prpr) 회수. traded_on 은 None."""
+    routes = {
+        f"{KIS_BASE}/oauth2/tokenP": httpx.Response(
+            200, json={"access_token": "tok-1", "expires_in": 86400}
+        ),
+        f"{KIS_BASE}/uapi/domestic-stock/v1/quotations/inquire-price": httpx.Response(
+            200, json={"rt_cd": "0", "output": {"stck_prpr": "71000"}}
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_kr_price(client, "005930", ["kis"])
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["price"] == 71000.0
+    assert result["currency"] == "KRW"
+    assert result["traded_on"] is None
+
+
+def test_fetch_kr_price_kis_error_falls_back_to_naver(kis_configured):
+    """KIS 오류 응답(rt_cd!=0) → 체인의 다음 공급자(naver)로 fallback."""
+    routes = {
+        f"{KIS_BASE}/oauth2/tokenP": httpx.Response(
+            200, json={"access_token": "tok-1", "expires_in": 86400}
+        ),
+        f"{KIS_BASE}/uapi/domestic-stock/v1/quotations/inquire-price": httpx.Response(
+            200, json={"rt_cd": "1", "msg_cd": "EGW00121", "msg1": "err"}
+        ),
+        "https://polling.finance.naver.com": httpx.Response(
+            200, json={"datas": [{"closePriceRaw": "71500"}]}
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_kr_price(client, "005930", ["kis", "naver"])
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["price"] == 71500.0
+
+
+def test_fetch_kr_price_kis_unconfigured_falls_back_without_network(monkeypatch):
+    """자격증명 미설정 → KIS 네트워크 호출 없이 다음 공급자로 즉시 fallback."""
+    from invest_note_api.external import kis
+
+    monkeypatch.setattr(kis, "_state", kis.KisState())
+    kis_called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal kis_called
+        url = str(request.url)
+        if url.startswith(KIS_BASE):
+            kis_called = True
+            return httpx.Response(500)
+        if url.startswith("https://polling.finance.naver.com"):
+            return httpx.Response(200, json={"datas": [{"closePriceRaw": "71500"}]})
+        return httpx.Response(404)
+
+    async def runner():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await _fetch_kr_price(client, "005930", ["kis", "naver"])
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["price"] == 71500.0
+    assert kis_called is False
