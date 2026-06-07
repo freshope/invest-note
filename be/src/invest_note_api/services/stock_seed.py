@@ -32,7 +32,7 @@ from typing import Any, Awaitable, Callable
 import asyncpg
 import httpx
 
-from invest_note_api.config import Settings
+from invest_note_api.config import DEFAULT_STOCK_SEED_SOURCES, Settings
 from invest_note_api.domain.hangul import to_chosung
 from invest_note_api.domain.trade_types import DEFAULT_COUNTRY
 from invest_note_api.external.constants import USER_AGENT
@@ -653,8 +653,8 @@ _MANUAL_ALIASES = [
 ]
 
 
-# 기본 소스 체인 — env STOCK_SEED_SOURCES 미설정 시 현재 동작 유지.
-_DEFAULT_SEED_SOURCES = ("data_go_kr", "stock_prices", "securities")
+# 기본 소스 체인 — config.DEFAULT_STOCK_SEED_SOURCES 단일 출처(Settings 기본값과 drift 방지).
+_DEFAULT_SEED_SOURCES = DEFAULT_STOCK_SEED_SOURCES
 
 
 def _build_pipeline(

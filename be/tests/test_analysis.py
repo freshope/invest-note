@@ -6,6 +6,7 @@ from unittest.mock import patch, AsyncMock
 
 import pytest
 
+from invest_note_api.config import Settings, get_settings
 from invest_note_api.domain.trade_utils import KST
 from tests.conftest import TEST_USER_ID, dt as _dt
 from tests.fake_pool import FakeConnection, make_fake_acquire
@@ -71,6 +72,28 @@ def _patched_get(client, path: str):
 
 
 class TestAnalysisDashboard:
+    def test_dashboard_forwards_env_providers(self, trades_client):
+        """QUOTE_PROVIDERS env 가 fetch_quotes_by_keys providers 로 전달 — 죽은 설정 가드."""
+        conn = FakeConnection([])
+        received: dict = {}
+
+        async def mock_quotes(state, keys, *, client=None, force_refresh=False, providers=None, **kw):
+            received["providers"] = providers
+            return {}
+
+        trades_client.app.dependency_overrides[get_settings] = lambda: Settings(
+            supabase_url="https://test.supabase.co", quote_providers="yahoo"
+        )
+        try:
+            with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
+                with patch("invest_note_api.routers.analysis.fetch_quotes_by_keys", mock_quotes):
+                    resp = trades_client.get("/analysis/dashboard")
+        finally:
+            trades_client.app.dependency_overrides.pop(get_settings, None)
+
+        assert resp.status_code == 200
+        assert received["providers"] == ["yahoo"]
+
     # --- summary 영역 ---
 
     def test_empty_trades(self, trades_client):

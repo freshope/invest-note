@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 
+from invest_note_api.config import Settings, get_settings
 from tests.conftest import TEST_USER_ID
 from tests.fake_pool import FakeConnection, make_fake_acquire
 
@@ -172,6 +173,30 @@ class TestPortfolioSummary:
         snap = body["snapshots"][0]
         assert "holdings" in snap
         assert snap["holdings"] == [{"key": "005930:KR", "quantity": 10.0}]
+
+    def test_summary_forwards_env_providers(self, trades_client):
+        """QUOTE_PROVIDERS env 가 fetch_quotes_by_keys providers 로 전달 — 죽은 설정 가드."""
+        trade = _make_trade_row()
+        account = _make_account_row()
+        conn = FakeConnection([_to_record(trade)], [_to_record(account)])
+        received: dict = {}
+
+        async def mock_quotes(state, keys, *, client=None, force_refresh=False, providers=None, **kw):
+            received["providers"] = providers
+            return {}
+
+        trades_client.app.dependency_overrides[get_settings] = lambda: Settings(
+            supabase_url="https://test.supabase.co", quote_providers="yahoo"
+        )
+        try:
+            with _patch_portfolio(conn):
+                with patch("invest_note_api.routers.portfolio.fetch_quotes_by_keys", mock_quotes):
+                    resp = trades_client.get("/portfolio/summary")
+        finally:
+            trades_client.app.dependency_overrides.pop(get_settings, None)
+
+        assert resp.status_code == 200
+        assert received["providers"] == ["yahoo"]
 
     def test_summary_with_quotes_false_skips_fetch(self, trades_client):
         """withQuotes=false → fetch_quotes_by_keys 미호출, positions 가격 null, holdings 채워짐, totals 현금 기준."""

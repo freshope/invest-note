@@ -1,6 +1,12 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# 공급자 체인 기본값 — 단일 출처. 도메인 모듈(quotes/stock_seed)의 함수 기본 인자도
+# 이 상수를 import 해 사용한다(Settings 기본 문자열과의 drift 방지).
+DEFAULT_QUOTE_PROVIDERS = ("naver", "yahoo")
+DEFAULT_STOCK_SEED_SOURCES = ("data_go_kr", "stock_prices", "securities")
 
 
 class Settings(BaseSettings):
@@ -31,12 +37,12 @@ class Settings(BaseSettings):
     # 시세(external/quotes.py) 공급자 우선순위 체인. 콤마 구분, 앞 항목부터 시도.
     # 등록 공급자: "naver"(realtime→basic 내부 fallback), "yahoo"(.KS→.KQ 내부 시도).
     # 새 공급자(예: kis)를 registry 에 등록하면 env 변경만으로 활성화 가능.
-    quote_providers: str = "naver,yahoo"
+    quote_providers: str = ",".join(DEFAULT_QUOTE_PROVIDERS)
 
     # 종목 마스터 seed(services/stock_seed.py) 소스 체인. 콤마 구분, 순서=우선순위.
     # 첫 번째로 데이터를 반환한 소스가 authority(종목명 overwrite), 나머지는 preserve.
     # 등록 소스: "data_go_kr", "stock_prices", "securities".
-    stock_seed_sources: str = "data_go_kr,stock_prices,securities"
+    stock_seed_sources: str = ",".join(DEFAULT_STOCK_SEED_SOURCES)
 
     # 일별 종가(services/daily_price_seed.py) primary 공급자. 등록: "data_go_kr".
     daily_price_provider: str = "data_go_kr"
@@ -52,6 +58,21 @@ class Settings(BaseSettings):
     admin_token: str = ""
 
     model_config = SettingsConfigDict(env_file=".env.local", extra="ignore")
+
+    # 공급자류 env 는 공백/대소문자를 정규화한다 — 운영 콘솔(Coolify)에서 "none "(후행 공백)·
+    # "NONE" 같은 입력이 registry 미일치로 ValueError → 라우터 500 이 되는 것을 방지.
+    # os.environ 값은 pydantic-settings 가 strip 하지 않으므로 여기서 처리해야 한다.
+    @field_validator(
+        "stock_search_provider",
+        "quote_providers",
+        "stock_seed_sources",
+        "daily_price_provider",
+        "daily_price_gap_provider",
+        "nps_provider",
+    )
+    @classmethod
+    def _normalize_provider(cls, v: str) -> str:
+        return v.strip().lower()
 
     @property
     def jwks_uri(self) -> str:
