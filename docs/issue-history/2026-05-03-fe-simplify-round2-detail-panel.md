@@ -57,7 +57,7 @@ backlog "FE simplify Round 2+" 의 상태/구조 리팩터 항목 중 첫 번째
   - slide-out 중 라우트 변경 시 timer leak 없음
   - 거래 삭제 → close + invalidate
   - 거래 저장 → panel 유지 + invalidate
-- [x] backlog `상태/구조 리팩터` 의 본 항목 제거 + spec-history 이동 (`/custom:spec-finish` 단계)
+- [x] backlog `상태/구조 리팩터` 의 본 항목 제거 + issue-history 이동 (`/custom:spec-finish` 단계)
 
 ## 우려사항 / 리스크
 

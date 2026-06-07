@@ -10,7 +10,7 @@
 2. **마스터 누락** — KIND 시드(`corpgeneral/corpList.do`)는 일반 상장사만 포함, ETF/ETN/우선주/리츠 제외 → "TIGER 미국S&P500" 등 미존재
 3. **변형/공백/대소문자 차이 일체 미허용** (한글 검색 정확성 의심)
 
-KIND 외 어떤 공식 데이터 소스도 약칭 매핑은 제공하지 않으며, ETF 보강을 위한 KRX OTP는 이전 spec(`docs/spec-history/2026-04-28-stocks-master-i18n.md`)에서 인증 막힘으로 KIND로 우회한 이력이 있다. 마스터 데이터를 자체 시드로 유지하는 것은 **운영 비용은 높고 매칭 품질은 낮다**.
+KIND 외 어떤 공식 데이터 소스도 약칭 매핑은 제공하지 않으며, ETF 보강을 위한 KRX OTP는 이전 spec(`docs/issue-history/2026-04-28-stocks-master-i18n.md`)에서 인증 막힘으로 KIND로 우회한 이력이 있다. 마스터 데이터를 자체 시드로 유지하는 것은 **운영 비용은 높고 매칭 품질은 낮다**.
 
 반면 이미 검색 자동완성(`routers/stocks.py:_search_kr`)에서 사용 중인 **Naver 검색 API(`ac.stock.naver.com/ac`)는 약칭/부분일치/ETF를 모두 자연스럽게 처리**하며 외부 의존성이 이미 도입되어 있다.
 
@@ -77,7 +77,7 @@ ticker_hints → Naver 검색 API (한국 종목, 정확도 가드) → None
 **보존 (역사 기록)**:
 - `supabase/migrations/014_create_kr_stocks.sql` — 보존
 - `supabase/migrations/015_rename_kr_stocks_to_stocks.sql` — 보존
-- `docs/spec-history/2026-04-28-stocks-master-i18n.md` — 보존
+- `docs/issue-history/2026-04-28-stocks-master-i18n.md` — 보존
 
 **수정**:
 - `api/src/invest_note_api/external/naver_search.py` (**신규**) — `_search_kr` 추출 + `find_first_kr_match` helper

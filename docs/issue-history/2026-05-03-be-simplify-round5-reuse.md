@@ -51,7 +51,7 @@
 
 **완료 처리 (마지막)**
 - `docs/backlog.md` — 완료된 5개 항목 제거, 잔여 항목(`is_manual_input` 폐기)만 남기고 Round 5 처리 노트 추가.
-- `docs/spec-current.md` → `docs/spec-history/2026-05-03-be-simplify-round5-reuse.md`.
+- `docs/issue-current.md` → `docs/issue-history/2026-05-03-be-simplify-round5-reuse.md`.
 
 ## 구현 체크리스트
 

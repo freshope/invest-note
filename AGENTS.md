@@ -44,15 +44,15 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - docs/roadmap.md: 전체 방향
 - docs/backlog.md: 다음 작업 후보
 - docs/decisions.md: 기술 결정 로그 — 설계 선택의 이유와 트레이드오프 기록
-- docs/spec-current.md: 현재 구현할 작업
-- docs/spec-history/: 완료된 spec 보관 (YYYY-MM-DD-기능명.md)
+- docs/issue-current.md: 현재 구현할 작업
+- docs/issue-history/: 완료된 spec 보관 (YYYY-MM-DD-기능명.md)
 
 ## 워크플로
 
-1. 플랜을 완료하면 항상 `/docs/spec-current.md`의 사양서를 작성
+1. 플랜을 완료하면 항상 `/docs/issue-current.md`의 사양서를 작성
 2. 작은 단위로 나눠 구현 (1 요청 = 1 파일)
 3. 단계별로 구현
-4. 완료 후 이름 변경하여 spec-history 폴더에 보관
+4. 완료 후 이름 변경하여 issue-history 폴더에 보관
 
 ## 컨텍스트 관리
 

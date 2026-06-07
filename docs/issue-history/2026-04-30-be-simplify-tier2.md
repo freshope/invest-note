@@ -79,7 +79,7 @@
 - [x] Step 4 — `cd api && poetry run pytest -q` 통과 + commit
 - [x] Step 5 — `external/quotes.py`에 `strip_comma_number` import 추가, 3곳(line 50/66/67) 교체. **`str(...)` 래핑 제거하고 `strip_comma_number(item.get("closePrice"))` 형태로 직접 호출** — `strip_comma_number`는 None/숫자를 그대로 통과시키므로 후속 `float(raw)` 변환과 호환되고, 기존 `str(None)` → `"None"` 잠재 버그를 자연스럽게 회피
 - [x] Step 5 — `cd api && poetry run pytest -q` 통과 (특히 `tests/test_quotes.py`) + commit
-- [x] spec-current → spec-history 이동, backlog 항목 제거
+- [x] spec-current → issue-history 이동, backlog 항목 제거
 
 ## 검증 방법
 

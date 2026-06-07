@@ -46,7 +46,7 @@
 
 **문서**
 - `docs/decisions.md` — 번들ID 변경 결정 1줄 추가 (이유: pixelwave.app 도메인 기반 통일)
-- `docs/spec-history/2026-04-23-*.md` 등 과거 문서는 히스토리이므로 수정하지 않음
+- `docs/issue-history/2026-04-23-*.md` 등 과거 문서는 히스토리이므로 수정하지 않음
 
 **Capacitor sync로 자동 갱신 (직접 수정 X)**
 - `fe/ios/App/App/capacitor.config.json`
@@ -64,7 +64,7 @@
 - [x] `pnpm -C fe exec tsc --noEmit` 통과
 - [x] `pnpm -C fe build` 통과
 - [x] `(cd fe && npx cap sync)` 실행 → sync된 두 json 파일에 신규 appId 반영 확인
-- [x] 잔존 검색: 결과가 sync 자동 갱신 항목과 히스토리 문서(`docs/spec-history/`, `docs/decisions.md` 과거 항목)에만 남음을 확인
+- [x] 잔존 검색: 결과가 sync 자동 갱신 항목과 히스토리 문서(`docs/issue-history/`, `docs/decisions.md` 과거 항목)에만 남음을 확인
 - [x] `docs/decisions.md` 변경 결정 1줄 추가
 
 ## 우려사항 / 리스크

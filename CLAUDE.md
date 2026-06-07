@@ -30,3 +30,4 @@ Key routing rules:
 | 날짜 | 변경 내용 | 대상 | 사유 |
 |------|----------|------|------|
 | 2026-05-18 | 초기 구성 (4명 팀 + 워크플로 스킬) | 전체 | - |
+| 2026-06-07 | spec-current/spec-history → issue-current/issue-history 경로 갱신 | 에이전트 4종 + 워크플로 스킬 | docs 폴더·파일 이름 변경 |

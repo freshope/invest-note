@@ -8,31 +8,31 @@
 
 | 해시 | 날짜 | 메시지 |
 |------|------|--------|
-| 23be7da | 2026-06-03 | docs: spec-current → spec-history 이동 (종목 검색 provider 토글) |
+| 23be7da | 2026-06-03 | docs: spec-current → issue-history 이동 (종목 검색 provider 토글) |
 | 70b68fb | 2026-06-03 | docs: 종목 검색 Naver 임시 복귀 결정 + backlog |
 | f8e5584 | 2026-06-03 | feat(be): 종목 검색 provider env 토글 (Naver ↔ DB) |
 | 33bc9c0 | 2026-06-03 | fix(fe): 안드로이드 상단 safe-area 미충전 수정 — 네이티브 edge-to-edge + WindowInsets 주입 |
-| dceb2d5 | 2026-06-02 | docs: spec-current → spec-history 이동 (NPS reconcile) |
+| dceb2d5 | 2026-06-02 | docs: spec-current → issue-history 이동 (NPS reconcile) |
 | fdedf62 | 2026-06-02 | docs: NPS 우선주 보강 + 미매칭 reconcile 결정·백로그 |
 | d9645f0 | 2026-06-02 | feat(be): NPS 미매칭 과거사명 reconcile — alias 보강 |
 | f28d73c | 2026-06-02 | feat(be): NPS 미매칭 해소 — 우선주 보강 + (주) 접두 정제 |
-| d4ed102 | 2026-06-02 | docs: spec-current → spec-history 이동 (NPS seed) |
+| d4ed102 | 2026-06-02 | docs: spec-current → issue-history 이동 (NPS seed) |
 | 1a42d54 | 2026-06-02 | docs: 국민연금 odcloud 자동 fetch 정정 + 라이브 검증 |
 | 617eff3 | 2026-06-02 | fix(be): stocks seed getItemInfo basDt 누락 + 게이트웨이 재시도 |
 | cfc7a4a | 2026-06-02 | feat(be): 국민연금(NPS) 보유종목 적재 odcloud API 자동화 |
 | 7942b88 | 2026-06-02 | chore(be): poetry.lock 재생성 |
 | a88eaac | 2026-06-02 | fix(be): 종목 적재 리뷰 지적 4건 수정 (오상폐·단일 item 크래시·Naver 무한질의·stale rank) |
-| 6bf2d47 | 2026-06-01 | docs: spec-current → spec-history 이동 (data.go.kr marcap) |
+| 6bf2d47 | 2026-06-01 | docs: spec-current → issue-history 이동 (data.go.kr marcap) |
 | 90db955 | 2026-06-01 | docs: 종목 적재 data.go.kr 단일화 결정 + backlog |
 | 4e84162 | 2026-06-01 | feat(be): 종목 적재 data.go.kr 단일화 + 시가총액 + 웹 라우터 |
 | 36a3b27 | 2026-05-31 | fix(be): seed_stocks 멀티 인스턴스 advisory lock 가드 |
 | 55bb63c | 2026-05-30 | fix(be): naver_search 타임아웃 트레이스백 한 줄 로그 축소 |
-| 001ecd8 | 2026-05-30 | docs: spec-current → spec-history 이동 (stock master data) |
+| 001ecd8 | 2026-05-30 | docs: spec-current → issue-history 이동 (stock master data) |
 | bffc39d | 2026-05-30 | feat(be): 종목 검색 자체 데이터 운영 (stocks 마스터 재도입) |
 | fb6384f | 2026-05-29 | fix(be): 일괄 import 거래의 exchange 빈 값 누락 수정 |
 | cfe1fc1 | 2026-05-27 | fix(be): App Store URL에 누락된 /app/ 경로 세그먼트 추가 |
 
-## 동기간 spec-history 항목
+## 동기간 issue-history 항목
 
 - 2026-05-30-stock-master-data.md — 종목 검색용 자체 stocks 마스터 데이터 재도입
 - 2026-06-01-stocks-data-go-kr-marcap.md — 종목 적재를 data.go.kr 단일 소스로 통합 + 시가총액

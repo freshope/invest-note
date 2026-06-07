@@ -4,7 +4,7 @@
 
 ## 배경 / 문제
 
-`api/external/quotes.py` 의 `_cache` / `_cache_lock` / `_inflight` 와 `routers/trades.py` 의 `_STAGING` 이 모듈-레벨 mutable global 로 남아 있다. 테스트는 autouse fixture 로 `quotes._cache.clear()` 하거나 `trades._STAGING[...] = ...` 로 직접 주입해 격리를 흉내내는 anti-pattern 을 사용 중. Round 2 (`docs/spec-history/2026-04-30-be-simplify-tier3-round2.md`) 에서 명시적으로 Round 3 로 분리됐다 (항목 H).
+`api/external/quotes.py` 의 `_cache` / `_cache_lock` / `_inflight` 와 `routers/trades.py` 의 `_STAGING` 이 모듈-레벨 mutable global 로 남아 있다. 테스트는 autouse fixture 로 `quotes._cache.clear()` 하거나 `trades._STAGING[...] = ...` 로 직접 주입해 격리를 흉내내는 anti-pattern 을 사용 중. Round 2 (`docs/issue-history/2026-04-30-be-simplify-tier3-round2.md`) 에서 명시적으로 Round 3 로 분리됐다 (항목 H).
 
 본 라운드의 목표는 **테스트 격리 + DI 청결성**. `app.state` 는 프로세스별 상태이므로 진정한 멀티 워커 정합성(특히 staging) 은 본 라운드에서 해결하지 않으며, backlog "Preview staging 멀티 워커 대응" 항목으로 분리 유지.
 

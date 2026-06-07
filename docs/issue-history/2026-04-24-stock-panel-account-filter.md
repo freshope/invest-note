@@ -37,7 +37,7 @@
 
 ## 구현 체크리스트
 
-- [x] `docs/spec-current.md` 사양서 저장
+- [x] `docs/issue-current.md` 사양서 저장
 - [x] `app/src/components/providers/AccountFilterProvider.tsx` 신설 — `AccountFilterProvider`, `useAccountFilter`, `useEnsureValidAccount` export
 - [x] `app/src/components/shared/AccountFilter.tsx` 신설 — 기존 `records/AccountFilter.tsx` 내용 이동
 - [x] `app/src/app/(app)/layout.tsx` — `AccountFilterProvider`를 `DetailPanelProvider` 바깥에 래핑

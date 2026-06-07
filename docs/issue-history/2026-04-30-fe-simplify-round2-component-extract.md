@@ -4,7 +4,7 @@
 
 ## 배경 / 문제
 
-Round 1 (`docs/spec-history/2026-04-30-fe-simplify-round1.md`)에서 안전한 헬퍼 추출/인라인 정리만 처리하고, 큰 변경/디자인 결정이 필요한 **컴포넌트 추출** 9 개 항목은 `docs/backlog.md` 의 "FE simplify Round 1 이후 deferred" 섹션으로 이관했다.
+Round 1 (`docs/issue-history/2026-04-30-fe-simplify-round1.md`)에서 안전한 헬퍼 추출/인라인 정리만 처리하고, 큰 변경/디자인 결정이 필요한 **컴포넌트 추출** 9 개 항목은 `docs/backlog.md` 의 "FE simplify Round 1 이후 deferred" 섹션으로 이관했다.
 
 이번 Round 2 는 그 중 Round 1 spec 의 후속 우선순위 1-3 번에 명시된 항목만 처리한다 — 코드 탐색으로 중복 패턴이 검증되었고 디자인 결정이 필요 없는 단순 추출이다. 9 개 전체를 한 번에 처리하지 않는 이유: blast radius 관리 + Round 1 패턴 (1 항목 = 1 커밋) 유지.
 
