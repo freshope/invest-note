@@ -50,10 +50,19 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리
 - [ ] iOS 상태바 색 동기화 — @capacitor/status-bar 도입 후 다크/라이트 전환 시 status bar style 동기화
 
-## v2 — KIS API 연동
+## v2 — KIS API 연동 (2026-06-07 사전 조사 완료, 2-트랙 분리)
 
-- [ ] **KIS-A: 시세 provider 도입** — 서비스 자체 appkey 로 REST 현재가 조회. 2026-06-07 env registry 도입으로 진입 경로 확정: `external/quotes.py` 에 `_fetch_kis` + `_QUOTE_REGISTRY` 등록 → `QUOTE_PROVIDERS=kis,naver,yahoo` 전환(무배포 복귀 가능). **선행 조건:** ① 시세 재배포 약관 검토 — KIS Open API 는 본인 거래 목적용이라 받은 시세를 앱 사용자에게 재제공하는 것이 약관/KRX 시세 라이선스 위반 소지(내부 알림 판정용 vs 화면 노출의 위험도 구분), ② 키 운영 방식(법인 vs 개인, 토큰 24h 갱신, 레이트리밋 ~20req/s) 결정. 목표가 PUSH 알림의 시세 폴링 기반.
-- [ ] KIS-B: 계좌 연동 자동 임포트 — 사용자별 appkey 발급 UX, 토큰 관리. KIS 고객만 사용 가능. KIS-A 와 독립된 대형 feature.
+2026-06-07 deep-research 사전 조사 결과를 바탕으로 2개 트랙으로 분리. **트랙 1 먼저 진행.**
+
+- [ ] **KIS 트랙 1: 기존 데이터 공급처 확대** (우선 진행) — 서비스 자체 appkey 로 기존 외부 데이터 의존(Naver·data.go.kr·Yahoo)을 KIS 공식 API 로 보강/대체.
+  - 시세 provider: 2026-06-07 env registry 도입으로 진입 경로 확정 — `external/quotes.py` 에 `_fetch_kis` + `_QUOTE_REGISTRY` 등록 → `QUOTE_PROVIDERS=kis,naver,yahoo` 전환(무배포 복귀 가능). 목표가 PUSH 알림의 시세 폴링 기반.
+  - 확장 후보: 종목 검색·시총(`update_marcap`)·교차검증(`crossvalidate_stocks_with_naver`) 의 Naver/data.go.kr 고정 의존 대체 (위 "공급자 env 토글 제외 잔존" 항목의 트리거 충족 경로).
+  - 인증: APP Key/Secret → `oauth2/tokenP`, access token 유효 ~24h(6h 내 재요청 시 기존 토큰 반환) → 서버 측 토큰 캐싱 필요. 레이트리밋 실전 ~20req/s(모의 ~5req/s, 블로그+2026-03 공지 기반이라 재검증 필요). 모의/실전 도메인·TR ID prefix(T↔V) 분기.
+  - **선행 조건:** ① 시세 재배포 약관 검토 — KIS Open API 는 본인 거래 목적용이라 받은 시세를 앱 사용자에게 재제공하는 것이 약관/KRX 시세 라이선스 위반 소지(내부 알림 판정용 vs 화면 노출의 위험도 구분), ② 키 운영 방식(법인 제휴 시 토큰 90일 vs 개인 24h) 결정, ③ 서비스용 appkey 발급.
+- [ ] KIS 트랙 2: 사용자 개인 데이터 자동화 — 사용자 본인 appkey 입력(BYOK)으로 매매내역·예수금·잔고 자동 동기화. 파일 업로드 임포트의 "대체"가 아닌 "KIS 사용자용 자동 동기화 옵션"으로 병행. 트랙 1 과 독립된 대형 feature.
+  - 조회 API(2026-06-07 조사, 국내 실전 기준): 체결내역 `inquire-daily-ccld`(TTTC8001R, **최근 3개월**, 초과분 CTSC9215R) / 보유잔고 `inquire-balance`(TTTC8434R, 예수금 포함) / 매수가능현금 `inquire-psbl-order`(TTTC8908R) / 해외잔고 `inquire-present-balance`(CTRP6504R). 해외 체결내역 TR ID·기간 제한은 미확정.
+  - 과거 이력 초기 적재는 3개월 제한 때문에 구체결 API 페이징 또는 기존 파일 업로드 병행 필요.
+  - **선행 리스크(도입 전 KIS 공식 확인 필수):** ① 제3자 서비스가 사용자 키로 대신 호출(BYOK)하는 구조가 개인 약관 범위인지 — 가장 큰 리스크, ② appkey 에 주문 권한 포함(읽기 전용 스코프 불가로 보임) → 키 유출 시 주문 실행 가능, 키 보관 위치(서버 암호화 vs 디바이스 Keychain/Keystore + 디바이스 직접 호출) 설계 결정 필요, ③ 사용자별 KIS Developers 가입·앱키 발급 UX 마찰.
 
 ## v2 — 해외 주식
 
