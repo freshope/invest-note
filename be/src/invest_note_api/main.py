@@ -30,16 +30,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # env QUOTE_PROVIDERS 오타 fail-fast — 요청 경로는 예외를 삼켜 시세가 조용히
         # null 이 되므로 부팅 시점에 검증한다(타 도메인은 호출 시점 ValueError 로 충분).
         validate_quote_providers(settings.quote_provider_list)
-        # KIS 자격증명/도메인 설정 + 토큰 캐시 리셋 (kis 공급자 미사용 시에도 무해).
-        configure_kis(settings)
-        app.state.quote_cache = QuoteCacheState()
-        app.state.trade_staging = TradeStagingState()
-        app.state.http_client = create_http_client()
         # database_url이 비어 있으면 풀 생성 생략 (테스트 환경)
         if settings.database_url:
             app.state.pool = await create_pool(settings.database_url)
         else:
             app.state.pool = None
+        # KIS 자격증명/도메인 설정 + 토큰 캐시 리셋 (kis 공급자 미사용 시에도 무해).
+        # pool 을 넘겨 토큰을 kis_tokens 테이블에 영속화 (pool=None 이면 메모리 전용).
+        configure_kis(settings, pool=app.state.pool)
+        app.state.quote_cache = QuoteCacheState()
+        app.state.trade_staging = TradeStagingState()
+        app.state.http_client = create_http_client()
         yield
         await app.state.http_client.aclose()
         if app.state.pool is not None:

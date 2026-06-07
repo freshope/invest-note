@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import httpx
 import pytest
@@ -10,6 +12,7 @@ import pytest
 from invest_note_api.config import Settings
 from invest_note_api.external import kis
 from invest_note_api.external.constants import KIS_MOCK_BASE_URL, KIS_REAL_BASE_URL
+from tests.fake_pool import FakeConnection, make_fake_pool
 
 TEST_SUPABASE_URL = "https://test.supabase.co"
 
@@ -225,3 +228,81 @@ async def test_kis_get_retries_once_on_egw00201(monkeypatch):
         )
     assert body is not None and body["output"]["stck_prpr"] == "71000"
     assert len(api_calls) == 2
+
+
+# ---- 토큰 DB 영속화 (kis_tokens, 1일 1토큰 정책) ----
+
+
+def _db_row(token: str = "tok-db", hours: float = 12) -> dict:
+    return {
+        "access_token": token,
+        "expires_at": datetime.now(timezone.utc) + timedelta(hours=hours),
+    }
+
+
+class InMemoryTokenConn(FakeConnection):
+    """kis_tokens 1행을 흉내 내는 stateful fake — upsert 가 row 에 반영된다."""
+
+    def __init__(self, row: dict | None = None) -> None:
+        super().__init__()
+        self.row = row
+
+    async def fetchrow(self, query: str, *args: Any) -> Any:
+        return self.row
+
+    async def execute(self, query: str, *args: Any) -> str:
+        if not self._is_internal(query) and "kis_tokens" in query:
+            _scope, token, expires_at = args
+            self.row = {"access_token": token, "expires_at": expires_at}
+        return "OK"
+
+
+def _db_state(conn: FakeConnection) -> kis.KisState:
+    return kis.KisState(app_key="key", app_secret="secret", pool=make_fake_pool(conn))
+
+
+async def test_get_access_token_reuses_db_token_without_issuing():
+    """DB 에 유효 토큰이 있으면 발급 호출 없이 재사용 (재시작 직후 시나리오)."""
+    calls: list[int] = []
+    state = _db_state(InMemoryTokenConn(_db_row()))
+    async with _client(_token_handler(calls)) as client:
+        token = await kis.get_access_token(client, state)
+    assert token == "tok-db"
+    assert calls == []
+
+
+async def test_get_access_token_issues_and_persists_when_db_empty():
+    """DB 미스 → 발급 1회 + upsert. 이후 새 프로세스(KisState)는 DB 토큰을 재사용."""
+    calls: list[int] = []
+    conn = InMemoryTokenConn()
+    async with _client(_token_handler(calls)) as client:
+        token = await kis.get_access_token(client, _db_state(conn))
+        assert token == "tok-1"
+        assert conn.row is not None and conn.row["access_token"] == "tok-1"
+        # 재시작 시뮬레이션 — 같은 DB, 새 메모리 상태 → 재발급 없음.
+        token2 = await kis.get_access_token(client, _db_state(conn))
+    assert token2 == "tok-1"
+    assert len(calls) == 1
+
+
+async def test_get_access_token_double_check_picks_up_peer_token():
+    """락 대기 중 타 프로세스가 발급한 경우 — load_in 재조회로 픽업, 발급 0회."""
+    calls: list[int] = []
+    # 1차 load 는 미스(None), 락 내 재조회는 hit — 순서 응답으로 시뮬레이션.
+    conn = FakeConnection(None, _db_row("tok-peer"))
+    state = _db_state(conn)
+    async with _client(_token_handler(calls)) as client:
+        token = await kis.get_access_token(client, state)
+    assert token == "tok-peer"
+    assert calls == []
+
+
+async def test_get_access_token_db_stale_token_reissued():
+    """DB 토큰이 만료 임박이면 재발급 + upsert 로 교체."""
+    calls: list[int] = []
+    conn = InMemoryTokenConn(_db_row("tok-old", hours=0.05))  # 마진(10분) 이내
+    async with _client(_token_handler(calls)) as client:
+        token = await kis.get_access_token(client, _db_state(conn))
+    assert token == "tok-1"
+    assert len(calls) == 1
+    assert conn.row["access_token"] == "tok-1"
