@@ -29,6 +29,7 @@ MVP 이후 구현할 작업 후보 목록.
 ## 거래내역서 임포트 — 후속 과제
 
 - [ ] **종목 검색 provider db 복귀 + import/NPS stale 추적** (2026-06-03 Naver 임시 복귀, `docs/decisions.md` 참고) — data.go.kr 게이트웨이(~50% 성공률) 안정성 모니터링 후 `STOCK_SEARCH_PROVIDER=db` 로 복귀(코드 변경 없이 env 한 줄). **잔여 리스크:** 검색만 토글했으므로 seed 를 장기 중단하면 거래 import 매칭(`ticker_resolver.lookup_by_names`)·NPS(`stocks_repo.search`)·marcap 이 stale 로컬 stocks 에 의존해 조용히 낡음. 트리거: ① seed 게이트웨이 성공률 안정화 확인 시 db 복귀, 또는 ② import 매칭률 저하/NPS·시총 stale 체감 시 seed 재개 우선순위 상향.
+- [ ] 공급자 env 토글 제외 잔존 — Naver·data.go.kr 고정 의존 (2026-06-07 env registry 도입, `docs/decisions.md` 참고) — `update_marcap`(data.go.kr)·`crossvalidate_stocks_with_naver`(Naver)는 seed 의 고정 단계로 토글 대상에서 명시 제외됨. Naver 의존을 완전히 끊는 게 목표가 되면 이 두 지점이 남는다. 트리거: Naver 비공식 API 차단/변경, 또는 KIS 등 공식 소스로 교차검증·시총 대체 가능해질 때.
 - [ ] 미해결 종목 수동 매칭 UI — Naver 자동매칭 실패 또는 부분일치 오매칭 케이스에 대비, PreviewStep에서 사용자가 직접 종목 검색하여 매칭하는 UI 추가 검토
 - [ ] Preview staging 멀티 워커 대응 — 현재 `TTLCache` (단일 워커 메모리). 멀티 워커 배포 전 DB 임시 테이블 또는 Redis로 교체 필요
 - [ ] 임포트 통합 테스트 — `/import/preview`, `/import/commit` HTTP 엔드포인트 단위 테스트 (DB mock 또는 테스트 DB)
@@ -51,7 +52,8 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## v2 — KIS API 연동
 
-- [ ] 한국투자증권 Open API 연동 — 거래 내역 자동 임포트, 공식 실시간 시세
+- [ ] **KIS-A: 시세 provider 도입** — 서비스 자체 appkey 로 REST 현재가 조회. 2026-06-07 env registry 도입으로 진입 경로 확정: `external/quotes.py` 에 `_fetch_kis` + `_QUOTE_REGISTRY` 등록 → `QUOTE_PROVIDERS=kis,naver,yahoo` 전환(무배포 복귀 가능). **선행 조건:** ① 시세 재배포 약관 검토 — KIS Open API 는 본인 거래 목적용이라 받은 시세를 앱 사용자에게 재제공하는 것이 약관/KRX 시세 라이선스 위반 소지(내부 알림 판정용 vs 화면 노출의 위험도 구분), ② 키 운영 방식(법인 vs 개인, 토큰 24h 갱신, 레이트리밋 ~20req/s) 결정. 목표가 PUSH 알림의 시세 폴링 기반.
+- [ ] KIS-B: 계좌 연동 자동 임포트 — 사용자별 appkey 발급 UX, 토큰 관리. KIS 고객만 사용 가능. KIS-A 와 독립된 대형 feature.
 
 ## v2 — 해외 주식
 
