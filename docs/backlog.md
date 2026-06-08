@@ -21,6 +21,8 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [ ] internal 패키지명 일관화 검토 — `fe/package.json` `"name": "invest-note"` 과 `be/pyproject.toml` `name = "invest-note-api"` 의 BE/FE 명시화 (`invest-note-fe`, `invest-note-be` 등) 검토. 폴더명과 일관성 vs 변경 비용(import 경로, 빌드 설정, 외부 참조) 비교 후 결정.
 - [ ] user-scoped 테이블 신규 추가 시 `on delete cascade` 가드 — `auth.users` 삭제 시 cascade 누락된 FK가 있으면 탈퇴가 FK 위반으로 실패. 향후 새 user_id 컬럼을 가진 테이블을 추가하는 마이그레이션은 PR 리뷰 시 cascade 옵션 확인을 체크리스트로 명시. 또는 통합 테스트로 데모 사용자 삭제→재시드 시나리오를 자동화 검토.
+- [ ] **OTA post-store 검증** — 2026-06-08 OTA v1(`docs/issue-history/2026-06-08-capacitor-ota-live-update.md`) 도입 후, 스토어 빌드 라이브 시점에 수행할 실검증. ① 실 R2 발행 1회(`node scripts/publish-ota.mjs`) 후 manifest/zip URL 200 + BE `POST /live-update/manifest` 분기 확인, ② 실기기 스큐 매트릭스 — 구네이티브+신웹(`required_native_version > version_build`) → OTA 차단되고 force-update 폴백 / 신네이티브+구웹 → OTA 적용 / 신규설치(`version_name="builtin"`) 중복 다운로드 없음, ③ 부팅 실패 번들 → `notifyAppReady()` 미달 시 자동 롤백, ④ capgo CLI checksum ↔ 플러그인 무결성 실디바이스 확인. v1 은 코드/pytest 까지라 실기기 항목이 미검증으로 남음.
+- [ ] **OTA v2 확장** — v1 에서 의도적으로 제외한 항목. ① 서명/E2E 암호화(v1 은 checksum 무결성 + TLS 만 — 출처 위변조 방지용 서명 키 도입), ② 단계 롤아웃(%)(v1 은 100% 일괄 + 자동롤백 + 빠른 재푸시 — 사용자 증가 후 매니페스트 결정 API 에 `device_id` 해시 % 게이팅 추가), ③ 델타(차등) 업데이트(현재 매 발행 풀 zip 다운로드 — `out/` 크기 커지면 검토), ④ 채택률/실패율 통계 대시보드(R2 JSON SSOT 는 이력·통계 없음 — 도입 시 Postgres SSOT 재검토, `decisions.md` 2026-06-08 OTA 결정 참고). 부수: `ota-publish` Makefile 타깃 위치 정리(현재 스크립트 직접 호출, thin wrapper 관례).
 
 ## API 라우터 prefix 마이그레이션
 

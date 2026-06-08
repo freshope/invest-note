@@ -4,6 +4,24 @@
 
 ---
 
+## 2026-06-08 | Capacitor OTA 라이브 업데이트 v1 — 자체 호스팅(`@capgo/capacitor-updater` + R2 JSON SSOT), Capgo Cloud 미사용
+
+- **맥락:** FE 는 `next.config output:"export"` 정적 SPA 를 `capacitor webDir:"out"` 로 동봉 → 웹 자산(JS/HTML/CSS) 한 줄 수정에도 스토어 재심사가 필요했다. 웹 수정 빈도가 네이티브보다 압도적으로 높아 OTA 로 재심사를 우회한다. Apple §2.5.2/§3.3.2 는 WebKit 해석 코드(웹뷰 자산)만 교체하는 OTA 를 허용(핵심 목적 불변·네이티브 코드 미변경 한정).
+- **결정(확정):**
+  - ① **플러그인 `@capgo/capacitor-updater`(오픈소스)** 채택 — 다운로드/checksum 검증/원자적 교체/부팅 실패 시 자동 롤백을 플러그인이 처리(직접 구현 대비 핵심 안전장치). **Capgo Cloud(SaaS $12+/mo) 미사용 — 자체 호스팅.**
+  - ② **매니페스트 발행상태 SSOT = R2 단일 JSON**(`manifest/latest.json`, 플랫폼 공통), 대안 Postgres 기각. 릴리즈 스크립트가 이미 가진 R2 자격증명으로 원자적 PUT flip, BE 는 자격증명 없이 HTTPS GET → **Supabase 마이그레이션/RLS 변경 회피**. 번들 zip 도 R2(CDN 전면, 무료 egress)에 두고 결정 API(작은 JSON)만 FastAPI/Coolify.
+  - ③ **결정 API** `POST /live-update/manifest`(public, force-update `/app-config` 패턴). 로직: `effective_installed = version_build if version_name=="builtin" else version_name`; `required_native_version > version_build`(스큐)면 차단; `published.version > effective_installed`면 `{version,url,checksum}`; 그 외/조회실패는 **fail-open**(앱 부팅 차단 금지).
+  - ④ **`required_native_version` 과 force-update `min_supported_version` 은 직교**(절대 합치지 않음) — 전자는 "이 웹 번들을 안전히 돌릴 최소 네이티브", 후자는 "스토어 강제 하드 플로어". 스큐 시 OTA 는 조용히 차단하고 force-update 가 독립 폴백.
+  - ⑤ **번들 버전 = `fe/package.json` 마케팅 버전(semver)**. 웹 전용 OTA 발행 = `bump-patch fe` without `bump-build`. 비교 기준은 `version_build`(=`App.getInfo().version` 마케팅 버전, ForceUpdateGate 비교값과 동일), `version_code`(정수 빌드번호) 아님.
+  - ⑥ **R2 자격증명은 릴리즈 스크립트 전용** — 루트 gitignored `.env`(또는 CI secret). fe public env(`NEXT_PUBLIC_*`/`.env.development.local`)·번들에 절대 미주입. BE 는 manifest 절대 URL(`live_update_manifest_url`)만.
+- **실측 정정(2026-06-08, 플러그인 네이티브 소스 직접 판독 — Android `CapacitorUpdaterPlugin.java`, iOS `CapacitorUpdaterPlugin.swift`):**
+  - **no-update 응답 = `200 {"kind":"up_to_date"}`** (초안의 "url 키 없는 빈 200"은 **오류**). 빈 200/`{}`/204/empty-body 는 모두 플러그인이 `failed` 로 정규화 → 매 부팅 다운로드 실패 통지. 스큐 차단도 non-failure kind(`up_to_date`/`blocked`) 필수. ← 머지블로킹 실측이 사양 추정을 뒤집은 사례(브로커 파서 fixture·KIS 레이트리밋 교훈과 동일: 추정 금지·실측 우선).
+  - 호환 zip+checksum 은 표준 `zip`/`sha256sum` 이 아니라 **`@capgo/cli bundle zip --json`** 으로만 생성(로그인 불필요·오프라인 동작 확인, 메이저 8 = 플러그인 8.49 호환). checksum 은 CLI 출력에서 파싱(직접 계산 금지).
+- **페이징:** 플러그인은 네이티브 추가라 **스토어 1회 제출이 OTA 동작 전제.** v1 = "제출 가능한 상태"(코드 완성 + `pytest`/`tsc`/`cap sync`/dry-run green, 전체 회귀 529 passed). 라이브 OTA·실기기 스큐 매트릭스·실 R2 발행은 스토어 빌드 라이브 이후 후속.
+- **트레이드오프:** R2 JSON SSOT 는 발행 이력 쿼리/트랜잭션·채택률 통계가 없다(v1 미포함, 롤백은 클라이언트 자동이라 무방) — v2 통계 도입 시 Postgres 재검토. 서명/E2E 암호화·단계 롤아웃(%)·델타 업데이트는 v2(현재는 checksum 무결성 + TLS + 100% 일괄 + 자동롤백 + 빠른 재푸시). full remote(`server.url`) 대신 OTA 를 택해 오프라인 회복력·`capacitor://localhost` 오리진(인증 영향 최소)·심사 가용성을 보존.
+
+---
+
 ## 2026-06-08 | 해외(미국) 주식 v2 방향 — 분리 + ₩/$ 토글(거래별 체결환율), 기존 "KRW 합산" 계획 대체
 
 - **맥락:** 2026-04-27 "MVP 해외 제외" 이후 v2 재개 사전조사. 기존 backlog/roadmap 의 v2 해외 계획은 "USD/KRW 환율로 해외 평가액을 **KRW 총자산·미실현손익에 합산** + 크로스-통화 HHI"였다. 그러나 ① 실시간 환율 환산이 부정확(특히 **당일 직접입력은 거래일 종가 환율 미확정**), ② 한 화면에 ₩/$ 혼재 시 인지 부하 → "분리 + USD-native + 사용자 토글"로 방향 전환. 증권사(미래에셋·KB·키움) 조사로 토글 원화 = **일별 매매기준율 환산(실시간 피드 불필요)**, 당일 거래는 **잠정→익일 재정산**(KB 10:45 재정산·미래에셋 가환전→실환전)이 업계 표준임을 확인 — 우리 backfill 설계와 동일.

@@ -12,7 +12,7 @@ from invest_note_api.errors import APIError, ERR_LOCK_BUSY, api_error_handler, v
 from invest_note_api.external.http_client import create_http_client
 from invest_note_api.external.kis import configure_kis
 from invest_note_api.external.quotes import QuoteCacheState, validate_quote_providers
-from invest_note_api.routers import accounts, admin, app_config, health, me
+from invest_note_api.routers import accounts, admin, app_config, health, live_update, me
 from invest_note_api.routers import trades, portfolio, stocks, analysis, assets
 from invest_note_api.routers.trades import TradeStagingState
 from invest_note_api.services.daily_price_seed import validate_daily_price_providers
@@ -68,6 +68,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(health.router)
     application.include_router(app_config.router)
+    # OTA 매니페스트 — public(인증 없음). app_config 처럼 legacy `/api` alias 미등록
+    # (FE 플러그인이 절대경로 `/live-update/manifest` 를 굽는다 — _workspace/03_fe_changes.md).
+    application.include_router(live_update.router)
     application.include_router(me.router)
     application.include_router(accounts.router)
     application.include_router(trades.router)
