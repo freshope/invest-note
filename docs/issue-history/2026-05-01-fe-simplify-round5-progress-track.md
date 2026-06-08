@@ -55,7 +55,7 @@
 - [x] `ReviewQualityPanel.tsx` 의 `QualityBar` 가 `ProgressTrack` + `pickRateColor` 사용하도록 리팩터
 - [x] 타입 체크 통과 (`pnpm tsc --noEmit`)
 - [x] 분석 탭 시각 회귀 확인 (분석 페이지에서 승률 바 / 분산 바 / 품질 바 정상 표시)
-- [x] `docs/backlog.md` Round 5 진행 표시 + `docs/spec-current.md` → `docs/spec-history/` 이동
+- [x] `docs/backlog.md` Round 5 진행 표시 + `docs/issue-current.md` → `docs/issue-history/` 이동
 
 ## 우려사항 / 리스크
 

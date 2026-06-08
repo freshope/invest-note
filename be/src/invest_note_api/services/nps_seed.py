@@ -36,6 +36,7 @@ from invest_note_api.config import Settings
 from invest_note_api.db_ops import stocks_repo
 from invest_note_api.domain.trade_types import DEFAULT_COUNTRY
 from invest_note_api.external.constants import USER_AGENT
+from invest_note_api.external.provider_registry import resolve_chain
 from invest_note_api.services.stock_seed import (
     get_source_fingerprint,
     set_source_fingerprint,
@@ -247,8 +248,8 @@ async def apply_snapshot(
 # ─────────────────────────── 진입점 ───────────────────────────
 
 
-async def seed_nps(db_url: str, *, api_key: str, country_code: str = DEFAULT_COUNTRY) -> dict:
-    """NPS 보유 적재 — discovery → fingerprint skip → fetch → apply. 통계 dict 반환."""
+async def _seed_nps_odcloud(db_url: str, *, api_key: str, country_code: str = DEFAULT_COUNTRY) -> dict:
+    """odcloud 공급자 — discovery → fingerprint skip → fetch → apply. 통계 dict 반환."""
     if not api_key:
         logger.warning("NPS 적재 — DATA_GO_KR_API_KEY 미설정, skip")
         return {"skipped": "no_api_key"}
@@ -289,6 +290,23 @@ async def seed_nps(db_url: str, *, api_key: str, country_code: str = DEFAULT_COU
         return stats
     finally:
         await conn.close()
+
+
+# NPS 공급자 registry — 현재 odcloud 단일(registry-of-one). 대체 공급처가 생기면 등록 후
+# env NPS_PROVIDER 변경만으로 전환 가능.
+_NPS_REGISTRY = {"odcloud": _seed_nps_odcloud}
+
+
+async def seed_nps(
+    db_url: str,
+    *,
+    api_key: str,
+    country_code: str = DEFAULT_COUNTRY,
+    provider: str = "odcloud",
+) -> dict:
+    """NPS 보유 적재 — env NPS_PROVIDER 로 선택된 공급자에 위임."""
+    fetch = resolve_chain([provider], _NPS_REGISTRY, domain="nps")[0]
+    return await fetch(db_url, api_key=api_key, country_code=country_code)
 
 
 # ─────────────────────────── reconcile (과거사명 수동 매핑) ───────────────────────────
@@ -385,7 +403,11 @@ def main() -> None:
             print(await reconcile_nps_unmatched(db_url))
         except Exception:
             logger.exception("nps_seed CLI 선행 reconcile 실패 — seed 는 계속 진행")
-        print(await seed_nps(db_url, api_key=settings.data_go_kr_api_key))
+        print(
+            await seed_nps(
+                db_url, api_key=settings.data_go_kr_api_key, provider=settings.nps_provider
+            )
+        )
 
     asyncio.run(_run())
 

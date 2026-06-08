@@ -78,7 +78,7 @@ interface BreakdownListProps<T> {
 - [x] `ReasoningBreakdown.tsx` 를 외곽 헤더+경고 유지, `BreakdownList<TagStats>` 사용하도록 리팩터
 - [x] 타입 체크 통과 (`pnpm -C app exec tsc --noEmit`)
 - [x] 분석 탭 시각 회귀 확인 (감정/전략/근거 패널의 리스트·빈 상태·경고 박스 정상)
-- [x] `docs/backlog.md` Round 6 진행 표시 + `docs/spec-current.md` → `docs/spec-history/` 이동
+- [x] `docs/backlog.md` Round 6 진행 표시 + `docs/issue-current.md` → `docs/issue-history/` 이동
 
 ## 우려사항 / 리스크
 

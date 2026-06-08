@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 
+from invest_note_api.config import Settings, get_settings
 from tests.conftest import TEST_USER_ID
 from tests.fake_pool import FakeConnection, make_fake_acquire
 
@@ -117,7 +118,7 @@ class TestPortfolioSummary:
             [_to_record(account)],  # account_rows
         )
 
-        async def mock_quotes(state, keys):
+        async def mock_quotes(state, keys, **kw):
             return {}
 
         with _patch_portfolio(conn):
@@ -157,7 +158,7 @@ class TestPortfolioSummary:
             [_to_record(account)],
         )
 
-        async def mock_quotes(state, keys, *, client=None, force_refresh=False):
+        async def mock_quotes(state, keys, *, client=None, force_refresh=False, **kw):
             return {"005930:KR": {"price": 75000.0, "currency": "KRW", "as_of": ""}}
 
         with _patch_portfolio(conn):
@@ -173,6 +174,30 @@ class TestPortfolioSummary:
         assert "holdings" in snap
         assert snap["holdings"] == [{"key": "005930:KR", "quantity": 10.0}]
 
+    def test_summary_forwards_env_providers(self, trades_client):
+        """QUOTE_PROVIDERS env 가 fetch_quotes_by_keys providers 로 전달 — 죽은 설정 가드."""
+        trade = _make_trade_row()
+        account = _make_account_row()
+        conn = FakeConnection([_to_record(trade)], [_to_record(account)])
+        received: dict = {}
+
+        async def mock_quotes(state, keys, *, client=None, force_refresh=False, providers=None, **kw):
+            received["providers"] = providers
+            return {}
+
+        trades_client.app.dependency_overrides[get_settings] = lambda: Settings(
+            supabase_url="https://test.supabase.co", quote_providers="yahoo"
+        )
+        try:
+            with _patch_portfolio(conn):
+                with patch("invest_note_api.routers.portfolio.fetch_quotes_by_keys", mock_quotes):
+                    resp = trades_client.get("/portfolio/summary")
+        finally:
+            trades_client.app.dependency_overrides.pop(get_settings, None)
+
+        assert resp.status_code == 200
+        assert received["providers"] == ["yahoo"]
+
     def test_summary_with_quotes_false_skips_fetch(self, trades_client):
         """withQuotes=false → fetch_quotes_by_keys 미호출, positions 가격 null, holdings 채워짐, totals 현금 기준."""
         trade = _make_trade_row()
@@ -185,7 +210,7 @@ class TestPortfolioSummary:
 
         called = {"hit": False}
 
-        async def must_not_call(state, keys, *, client=None, force_refresh=False):
+        async def must_not_call(state, keys, *, client=None, force_refresh=False, **kw):
             called["hit"] = True
             return {"005930:KR": {"price": 99999.0, "currency": "KRW", "as_of": ""}}
 
@@ -224,7 +249,7 @@ class TestPortfolioSummary:
             [_to_record(account)],
         )
 
-        async def failing_quotes(state, keys):
+        async def failing_quotes(state, keys, **kw):
             raise Exception("Naver down")
 
         with _patch_portfolio(conn):
@@ -259,7 +284,7 @@ class TestPortfolioSummary:
             captured_kwargs.update(kwargs)
             return []  # 빈 trades — totals/positions/snapshots 는 비어도 무방 (kwargs 만 검증)
 
-        async def mock_quotes(state, keys, *, client=None):
+        async def mock_quotes(state, keys, *, client=None, **kw):
             return {}
 
         with _patch_portfolio(conn):
@@ -300,7 +325,7 @@ class TestPortfolioSummary:
             captured_kwargs.update(kwargs)
             return []
 
-        async def mock_quotes(state, keys, *, client=None):
+        async def mock_quotes(state, keys, *, client=None, **kw):
             return {}
 
         with _patch_portfolio(conn):
@@ -328,7 +353,7 @@ class TestPortfolioSummary:
         account = _make_account_row(id_="00000000-0000-0000-0000-000000000001")
         captured: dict = {}
 
-        async def mock_quotes(state, keys, *, client=None, force_refresh=False):
+        async def mock_quotes(state, keys, *, client=None, force_refresh=False, **kw):
             captured["force_refresh"] = force_refresh
             return {}
 
@@ -362,7 +387,7 @@ class TestPortfolioSummary:
         async def capturing_list(conn_arg, user_id, **kwargs):
             return []  # 매칭 trade 없음
 
-        async def mock_quotes(state, keys, *, client=None):
+        async def mock_quotes(state, keys, *, client=None, **kw):
             return {}
 
         with _patch_portfolio(conn):

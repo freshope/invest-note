@@ -52,7 +52,7 @@
 - [x] Step 4 — `external/quotes.py` `_inflight` 맵 추가, `_get_cached` 재작성
 - [x] Step 4 — `tests/test_quotes.py` 신규 — single-flight 동시 호출 fetch 1회 검증
 - [x] Step 4 — `pytest -q` 259개 통과 + commit (5932ce7)
-- [x] spec-current → spec-history 이동, backlog 후속 항목 추가
+- [x] spec-current → issue-history 이동, backlog 후속 항목 추가
 
 ## 우려사항 / 리스크
 

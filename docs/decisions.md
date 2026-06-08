@@ -4,6 +4,37 @@
 
 ---
 
+## 2026-06-07 | KIS 토큰 영속화 — Redis 대신 PostgreSQL (kis_tokens + advisory xact lock)
+
+- **맥락:** KIS 토큰 1일 1회 발급 원칙(잦은 발급 시 이용 제한 제재) 대응. 기존 토큰 캐시는 per-process 메모리라 재배포·롤링 배포 중 신구 컨테이너·cron 배치마다 각자 발급. 저장소로 Redis vs DB 조사.
+- **결정:** ① 기존 PostgreSQL(Supabase)에 `kis_tokens` 테이블(`scope` pk — 'app', 추후 `user:{id}` 확장)로 영속화. Redis 미도입. ② 발급 직렬화는 `pg_advisory_xact_lock`(trades_repo 와 동일 패턴 — session lock 은 Supavisor 에서 leak) + 같은 트랜잭션에서 upsert. ③ 보안은 RLS enable + 정책 없음 — anon/authenticated(PostgREST) 차단, BE 는 owner(postgres) 접속이라 통과(전역 테이블의 "RLS 미적용" 패턴과 의도적으로 다름). 접근은 `acquire_for_user` 가 아닌 plain `pool.acquire()`. ④ 조회는 메모리 캐시 → DB → 락+발급 3단, `pool=None`(테스트/DB 미연결)이면 종전 메모리 전용.
+- **이유:** 토큰 저장은 고빈도 캐시가 아니라 저빈도(하루 1~4회 쓰기)·고내구성·프로세스 간 공유 문제 — Redis 강점(저지연)은 쓸 곳이 없고 약점(휘발성)이 급소(토큰 유실 = 재발급 = 레이트리밋 대상). DB 는 운영 비용 0(기존 인프라)·기본 영속·RLS/암호화로 사용자 토큰(트랙 2 BYOK) 확장에도 유리. 실 DB 라운드트립으로 SQL·락·owner RLS 통과 검증 완료.
+- **트레이드오프:** ① owner 가정 — 운영에서 마이그레이션 role ≠ 앱 접속 role 이 되면 `load()` 가 조용히 None → 매번 재발급 → EGW00133. 운영 배포 후 영속 동작 1회 확인 필요. ② DB 장애 시 KIS fail-closed(발급 우회 없음) — KIS 는 fallback 공급자고 DB 다운이면 앱 전체 불능이라 수용. ③ 멀티워커에서 토큰 거부 응답 시 DB 재조회(타 워커 토큰 픽업) 로직은 미구현 — replica=1 전제, backlog 기록.
+
+---
+
+## 2026-06-07 | KIS 공급자 구현 — 레이트리밋 실측 페이싱·마스터 파일 일괄 교차검증·실측 보정
+
+- **맥락:** KIS 트랙 1(기존 데이터 공급처 확대)로 시세/일별 종가/종목마스터/교차검증에 kis 공급자를 추가. 사전 조사(deep-research) 수치 일부가 "재검증 필요"였고, 실호출 검증에서 실제와 다른 것이 다수 확인됐다.
+- **결정/실측:**
+  - ① **레이트리밋 실측 2건/초**(개인 실전 계정, 3번째 연속 호출부터 EGW00201) — 사전 조사의 ~20req/s 는 법인/과거 수치. 대응: `external/kis.py` 에 슬라이딩 윈도우 페이싱(2건/1.05s, 토큰 발급 포함) + EGW00201 1회 재시도. **시세 경로만 슬롯 대기 예산 1.0s** — 초과 시 즉시 None 반환해 다음 공급자(naver)로 fallback(체인 전체가 `QUOTE_FETCH_DEADLINE` 5s 에 걸려 죽는 것 방지). 배치(일별 종가)는 무제한 대기.
+  - ② **교차검증 kis 는 종목별 REST 가 아니라 종목마스터 파일 1회 다운로드 일괄 대조** — 미검증 수천 종목 × 종목별 호출은 2건/초 한도에서 비현실적, 파일은 키 불필요·1회 다운로드로 전체 스냅샷.
+  - ③ **마스터 파일 실측 보정**: tail 고정폭 227/221(공식 예제 주석 228/222 와 1 차이 — 228 로 자르면 그룹코드가 한 칸 밀려 ETF/ETN 분류 전멸), ETN 단축코드는 'Q' 접두 7자(Q500061→500061), 신형 ETF 는 영숫자 코드(0000D0) — isdigit 필터 금지. 실파일 검증 4,295건(KOSPI 950·ETF 1,137·ETN 385·KOSDAQ 1,823).
+  - ④ **marcap(시총)은 보류** — data.go.kr 는 bulk 응답, KIS 는 종목별 호출(전종목 수천 콜)이라 비용 비대칭. `update_marcap` 은 data.go.kr 유지.
+- **이유:** synthetic 테스트만으로는 ①③을 못 잡았다(브로커 파서 fixture 회귀 테스트 교훈과 동일) — 실호출 검증을 구현 단계에 포함한 것이 결정적.
+- **트레이드오프:** 페이싱·토큰 캐시는 **per-process** — 2건/초는 appkey 당 서버 제한이라 멀티 replica 면 합산 초과(EGW00201 은 fallback 으로 흡수되나 KIS 활용률 저하). kis 공급자 활성화 선행조건: replica=1 확인 또는 공유 리미터(backlog 기록). 시세는 한도 특성상 1차 공급자로 부적합 — 보조 공급자 포지셔닝. `crossvalidate=kis` 는 KONEX 를 대조 없이 검증완료로 박제(마스터에 KONEX 없음, `naver_checked_at` 공유 컬럼).
+
+---
+
+## 2026-06-07 | 외부 데이터 공급자 — 도메인별 dict registry + env 토글 (entry-point threading)
+
+- **맥락:** KIS Open API 도입(시세)과 향후 공급처 추가에 대비해 모든 외부 데이터(시세/종목마스터/일별종가/NPS)의 공급처를 env 로 전환 가능하게 요구. 시세 fallback 체인·seed 파이프라인·tail-gap 보충이 코드에 하드코딩돼 있었고, 검색만 `STOCK_SEARCH_PROVIDER` 토글 전례가 있었다.
+- **결정:** ① 각 도메인 모듈 내 `dict[str, fn]` registry + 공통 `provider_registry.resolve_chain`(unknown 이름 ValueError). ② env 는 `QUOTE_PROVIDERS`(콤마 체인)·`STOCK_SEED_SOURCES`(첫 항목=authority)·`DAILY_PRICE_PROVIDER`/`DAILY_PRICE_GAP_PROVIDER`("none"=비활성)·`NPS_PROVIDER`(registry-of-one). ③ 함수 내부에서 `get_settings()` 를 읽지 않고 entry point(라우터 `Depends`/배치 `main()`)에서 인자로 threading — 체인 함수는 현재 동작과 동일한 리터럴 기본값. ④ quotes 만 lifespan startup 에서 `validate_quote_providers` 검증.
+- **이유:** ① config.py 가 도메인을 import 하면 순환 위험 — 이름 문자열만 방출하고 해석은 도메인이 담당. ③ `Settings()` 는 `supabase_url` 필수라 내부 호출 시 단위 테스트가 깨지고 암묵 의존이 생김 — 리터럴 기본값 덕에 기존 테스트가 무수정 통과해 동작 보존이 증명됨. ④ 시세 요청 경로는 `gather(return_exceptions=True)` 가 ValueError 를 삼켜 env 오타 시 전 종목이 조용히 null — 부팅 fail-fast 필요(타 도메인은 호출 시점 ValueError 로 충분: seed=CLI crash/배치 로깅, daily_price=라우터 500).
+- **트레이드오프:** 공급자 "추가"는 여전히 코드(함수+registry 등록) — env 는 선택/순서만 담당(플러그인/동적 import 같은 과추상화 배제). `update_marcap`·`crossvalidate_stocks_with_naver` 는 seed 의 고정 단계로 토글 제외 — Naver·data.go.kr 고정 의존이 알려진 예외로 남음(backlog 기록). NPS 는 대체 공급처가 없어 registry-of-one(구조 일관성 우선, 사용자 결정).
+
+---
+
 ## 2026-06-06 | 일별 손익 차트 — "손익" = 전일대비(자산 평가액 일간 변화), BE items.change 재사용
 
 - **맥락:** 자산 추이 페이지에 일별 손익 막대 차트 탭을 추가하며 "일별 손익"의 정의가 쟁점. ① 전일대비(자산 평가액 일간 변화 — 추가 매수/매도로 인한 증감도 포함, 기존 '일별 내역' 표와 동일), ② 매수/매도 현금흐름을 제외한 순수 평가손익(보유 수량 × 가격 변화) 두 해석이 가능했다.
@@ -100,7 +131,7 @@
   - **활용신청:** 두 데이터셋(국내주식 투자정보 3070507 / 대량보유주식 15106890) 모두 승인 완료(같은 serviceKey).
 - **확정된 제약(자동화로도 안 사라짐):** 응답에 **종목코드 없음**(3070507=`종목명`만, 15106890=`발행기관명`만). 안정 키가 없어 종목명→ticker 매칭이 필요하고, 실측 매칭률은 정확 93.6%→주석 정제 후 94.8%(로컬 stale DB 기준). 미매칭 잔여 원인: ① 부기 주석 `(배당)(무상)(전환)`[정제 가능] ② 약칭 vs 정식명(금호석유↔금호석유화학) ③ **시점 사명 드리프트**(NPS 스냅샷은 기준일 시점의 과거 이름, stocks 마스터는 현재 이름 → 사명 변경 종목은 미스) ④ 폐지/합병. ②③④는 자동 완전 해소 불가 → **미매칭 reconcile 경로 필수**.
 - **권고:** CSV 업로드 대신 **API fetch 자동화 채택**(인코딩/컬럼 추측 제거). 단 3070507은 연 1회 데이터라 **타이트한 cron 불필요**(수동 트리거 또는 저빈도 OAS 신규 uddi 체크로 충분). infuser OAS 는 Swagger 문서 백엔드지 보증 데이터 API 가 아니므로 discovery 는 **soft dependency**(깨지면 uddi 수동 설정 폴백).
-- **후속:** 구현은 `docs/spec-current.md`. CSV 업로드 방식은 폐기가 아니라 **백로그 보류**(`docs/backlog.md`).
+- **후속:** 구현은 `docs/issue-current.md`. CSV 업로드 방식은 폐기가 아니라 **백로그 보류**(`docs/backlog.md`).
 
 ## 2026-06-02 | stocks seed 라이브 검증 — getItemInfo basDt 버그 + data.go.kr 게이트웨이 재시도
 

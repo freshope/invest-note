@@ -10,17 +10,17 @@
 |------|------|--------|
 | 7716d75 | 2026-06-05 | chore: bump version to 1.1.17 (build 22) |
 | 9ce4b54 | 2026-06-05 | fix: code-review 발견 5건 수정 — 자산 추이 정합성·캐시 무효화 |
-| 2d1ecae | 2026-06-05 | docs: spec-current → spec-history/2026-06-05-stock-meta-badges.md 이동 |
+| 2d1ecae | 2026-06-05 | docs: spec-current → issue-history/2026-06-05-stock-meta-badges.md 이동 |
 | 9c593cf | 2026-06-05 | docs: feature 완료 후 문서 업데이트 |
 | 0b0c859 | 2026-06-05 | feat: 종목 메타 뱃지 (마켓/시총순위/국민연금) + 바텀시트 안내 |
 | 9924a87 | 2026-06-05 | docs: backlog 에 미사용 admin 라우터/ADMIN_TOKEN 인프라 제거 항목 추가 |
 | 11f45af | 2026-06-05 | fix(be): nps_seed CLI 에 reconcile 선행 추가 |
-| bf137ec | 2026-06-04 | docs: spec-current → spec-history/2026-06-04-daily-price-backfill-sync-state.md 이동 |
+| bf137ec | 2026-06-04 | docs: spec-current → issue-history/2026-06-04-daily-price-backfill-sync-state.md 이동 |
 | 8c22dd6 | 2026-06-04 | docs: feature 완료 후 문서 업데이트 |
 | 0b1a4b9 | 2026-06-04 | feat(be): 자산 추이 backfill 빈-범위 재질의 차단 + 종목 병렬화 |
-| e7941d2 | 2026-06-04 | docs: spec-current → spec-history/2026-06-04-stock-switch-bottom-sheet.md 이동 |
+| e7941d2 | 2026-06-04 | docs: spec-current → issue-history/2026-06-04-stock-switch-bottom-sheet.md 이동 |
 | 1ed5f76 | 2026-06-04 | feat(fe): 종목 헤더 바텀시트로 보유 종목 전환 |
-| 8ce7748 | 2026-06-04 | docs: spec-current → spec-history/2026-06-04-asset-history-page.md 이동 |
+| 8ce7748 | 2026-06-04 | docs: spec-current → issue-history/2026-06-04-asset-history-page.md 이동 |
 | 8c5171b | 2026-06-04 | style(fe): Select 콘텐츠 max-w 클래스를 Tailwind v4 canonical 문법으로 변경 |
 | a770da3 | 2026-06-04 | docs: 자산 추이 페이지 완료 처리 + 종가 자동적재 후속 등록 |
 | 172e6dc | 2026-06-04 | feat: 내 자산 추이 페이지 추가 (계좌별/종목별 일별 자산) |
@@ -28,7 +28,7 @@
 | f94ceba | 2026-06-04 | docs(be): data.go.kr 게이트웨이 안정성 재진단 기록 + 진단 스크립트 |
 | 0dafa8e | 2026-06-04 | feat(be): /admin/seed/nps 적재 전 reconcile 선행 실행 |
 
-## 동기간 spec-history 항목
+## 동기간 issue-history 항목
 
 - 2026-06-04-asset-history-page.md — 내 자산 추이 페이지 (계좌별/종목별 일별 자산, 차트 3개월 창 + 스와이프 팬 최대 2년, 종가 신규 테이블 + data.go.kr 백필)
 - 2026-06-04-stock-switch-bottom-sheet.md — 종목 헤더 종목명 클릭 시 바텀시트로 보유 종목 전환

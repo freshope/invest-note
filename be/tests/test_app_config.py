@@ -48,3 +48,85 @@ def test_app_config_requires_no_auth():
     # Authorization 헤더 없이 접근 가능해야 한다(로그인 전 사용자 차단 목적).
     r = client.get("/app-config")
     assert r.status_code == 200
+
+
+def test_startup_rejects_unknown_quote_provider():
+    # QUOTE_PROVIDERS 오타는 요청 경로에서 조용히 null 시세가 되므로 부팅 시 fail-fast 해야 한다.
+    import pytest
+
+    settings = Settings(supabase_url=TEST_SUPABASE_URL, quote_providers="naverr")
+    app = create_app(settings)
+    with pytest.raises(ValueError, match="quotes"):
+        with TestClient(app):  # with 블록이 lifespan(startup) 실행
+            pass
+
+
+def test_startup_rejects_empty_quote_providers():
+    # QUOTE_PROVIDERS="" 는 빈 체인 → 전 종목 시세가 조용히 null 이므로 부팅 시 fail-fast.
+    import pytest
+
+    settings = Settings(supabase_url=TEST_SUPABASE_URL, quote_providers="")
+    app = create_app(settings)
+    with pytest.raises(ValueError, match="quotes"):
+        with TestClient(app):
+            pass
+
+
+def test_stock_search_provider_rejects_unknown_value():
+    # 오타는 라우터 if/elif 가 조용히 naver 로 fallthrough 하므로 Settings 생성 시 fail-fast.
+    import pytest
+
+    with pytest.raises(ValueError, match="stock_search_provider"):
+        Settings(supabase_url=TEST_SUPABASE_URL, stock_search_provider="dbb")
+
+
+def test_provider_env_values_normalized():
+    # 운영 콘솔의 공백/대소문자 입력("none ", "NONE")이 registry 미일치 ValueError 로
+    # 라우터 500 을 내지 않도록 공급자류 env 는 strip+lower 정규화된다.
+    s = Settings(
+        supabase_url=TEST_SUPABASE_URL,
+        stock_search_provider=" DB ",
+        quote_providers=" Naver,Yahoo ",
+        daily_price_provider=" DATA_GO_KR ",
+        daily_price_gap_provider=" NONE ",
+        nps_provider=" Odcloud ",
+    )
+    assert s.stock_search_provider == "db"
+    assert s.quote_provider_list == ["naver", "yahoo"]
+    assert s.daily_price_provider == "data_go_kr"
+    assert s.daily_price_gap_provider == "none"
+    assert s.nps_provider == "odcloud"
+
+
+def test_kis_settings_explicit_values_and_env_normalized():
+    # 명시 전달 값과 kis_env 정규화(공백/대소문자) 검증.
+    # (.env.local 은 conftest 가 dotenv 소스를 꺼 테스트에 새지 않는다.)
+    s = Settings(
+        supabase_url=TEST_SUPABASE_URL, kis_app_key="", kis_app_secret="", kis_env=" MOCK "
+    )
+    assert s.kis_app_key == ""
+    assert s.kis_app_secret == ""
+    assert s.kis_env == "mock"
+
+
+def test_kis_env_rejects_unknown_value():
+    # kis_env 오타는 잘못된 도메인 호출로 조용히 실패하므로 Settings 생성 시 fail-fast.
+    import pytest
+
+    with pytest.raises(ValueError, match="kis_env"):
+        Settings(supabase_url=TEST_SUPABASE_URL, kis_env="prod")
+
+
+def test_provider_list_properties_default_and_parse():
+    # 콤마 체인 env(str 필드)는 property 가 trim + 빈 항목 제거로 파싱한다.
+    s = Settings(supabase_url=TEST_SUPABASE_URL)
+    assert s.quote_provider_list == ["naver", "yahoo"]
+    assert s.stock_seed_source_list == ["data_go_kr", "stock_prices", "securities"]
+
+    s = Settings(
+        supabase_url=TEST_SUPABASE_URL,
+        quote_providers=" yahoo , naver ,",
+        stock_seed_sources="securities",
+    )
+    assert s.quote_provider_list == ["yahoo", "naver"]
+    assert s.stock_seed_source_list == ["securities"]

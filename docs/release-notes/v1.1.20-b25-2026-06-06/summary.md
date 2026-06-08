@@ -10,7 +10,7 @@
 |------|------|--------|
 | c582ceb | 2026-06-06 | chore: bump version to 1.1.20 (build 25) |
 | 9c32c08 | 2026-06-06 | refactor(asset-chart): 차트 헬퍼 공유화 및 타입 안전성 개선 |
-| 3baa9c4 | 2026-06-06 | docs: spec-current → spec-history/2026-06-06-asset-daily-pnl-chart.md 이동 |
+| 3baa9c4 | 2026-06-06 | docs: spec-current → issue-history/2026-06-06-asset-daily-pnl-chart.md 이동 |
 | 1e11317 | 2026-06-06 | docs: feature 완료 후 문서 업데이트 |
 | 3846e90 | 2026-06-06 | fix: 자산 추이 차트 클릭 시 포커스 테두리 제거 |
 | 3bc472c | 2026-06-06 | feat: 일별 손익 포커스 화살표 색상·위치를 손익 부호에 맞춤 |
@@ -19,7 +19,7 @@
 | 324f7c8 | 2026-06-06 | feat: 일별 손익 포커스 강조를 흐림 대신 막대 폭 2배로 변경 |
 | e0d51db | 2026-06-06 | feat: 일별 손익 차트 포커스 막대 강조 |
 | ba8c51c | 2026-06-06 | feat: 자산 추이 일별 손익 막대 차트 탭 추가 |
-| 577311c | 2026-06-06 | docs: spec-current → spec-history/2026-06-06-asset-history-pnl-chart.md 이동 |
+| 577311c | 2026-06-06 | docs: spec-current → issue-history/2026-06-06-asset-history-pnl-chart.md 이동 |
 | 024179e | 2026-06-06 | docs: feature 완료 후 문서 업데이트 |
 | 4941cb3 | 2026-06-06 | feat: 자산 추이 차트 매수 금액 가이드·손익 구간 색상 |
 | aee868e | 2026-06-06 | docs: 백로그 완료·불필요 항목 정리 |
@@ -27,7 +27,7 @@
 | 637ca77 | 2026-06-06 | fix(fe): 메인에서 자산 추이 진입 시 슬라이드 애니메이션 누락 수정 |
 | 9085f92 | 2026-06-06 | docs: v1.1.19_24 출시 노트 추가 |
 
-## 동기간 spec-history 항목
+## 동기간 issue-history 항목
 
 - 2026-06-06-asset-history-pnl-chart.md — 자산 추이 차트 매수 금액 가이드 라인 + 수익 빨강/손실 파랑 구간 색상 (BE `investedAmount` 필드 추가)
 - 2026-06-06-asset-daily-pnl-chart.md — 자산 추이 일별 손익 막대 차트 탭 (FE 단독, 전일대비 값 재사용)

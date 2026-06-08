@@ -10,11 +10,11 @@
 |------|------|--------|
 | adbc1ee | 2026-05-27 | feat: 포트폴리오 요약 시세 조회를 요청 경로에서 분리 (옵션 B) |
 | dd586f3 | 2026-05-27 | docs: feature 완료 후 문서 업데이트 (시세 요청경로 분리) |
-| 724a44f | 2026-05-27 | docs: spec-current → spec-history/2026-05-27-portfolio-summary-lite-quotes.md 이동 |
+| 724a44f | 2026-05-27 | docs: spec-current → issue-history/2026-05-27-portfolio-summary-lite-quotes.md 이동 |
 
 > 작업 트리에 버전 4곳 bump(1.1.14→1.1.15, build 19→20)가 미커밋으로 존재. 모두 INTERNAL이라 본문에 영향 없음.
 
-## 동기간 spec-history 항목
+## 동기간 issue-history 항목
 
 - `2026-05-27-portfolio-summary-lite-quotes.md` — `/portfolio/summary`(홈 단일 데이터 소스)에서 외부 시세 fetch를 응답 임계 경로에서 분리. BE는 `withQuotes=false`로 시세 없이 즉시 응답하고, FE가 `/stocks/quote`를 별도·병렬 호출해 현재가·평가손익·총자산을 overlay. 구버전 앱은 `withQuotes` 기본 true로 하위호환 유지.
 
@@ -25,7 +25,7 @@
 | IMPROVE | 홈 화면이 시세 fetch를 기다리지 않고 핵심 수치(보유종목·원가·실현손익·현금) 먼저 표시, 시세는 도착하는 대로 overlay | ✓ |
 | IMPROVE | 시세 조회를 응답 임계 경로에서 분리 → 외부 시세 서버가 느려도 홈 진입 미지연 | ✓ |
 | INTERNAL | 버전 bump 4곳 (1.1.15 / build 20) | ✗ |
-| INTERNAL | docs 업데이트 + spec-history 이동 | ✗ |
+| INTERNAL | docs 업데이트 + issue-history 이동 | ✗ |
 | INTERNAL | 버전 skew 가드 `snapshot.holdings ?? []` (구 BE 응답 크래시 방지) — 미출시 코드의 사전 방어라 사용자 가시 증상 없음 | ✗ |
 
 ## 검증 결과

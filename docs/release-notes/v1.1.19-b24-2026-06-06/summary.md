@@ -13,7 +13,7 @@
 | fd2991f | 2026-06-06 | chore: bump version to 1.1.19_24 |
 | 2ff854b | 2026-06-06 | chore: 린트 오류 수정 (ruff E731, react-hooks/set-state-in-effect) |
 
-## 동기간 spec-history 항목
+## 동기간 issue-history 항목
 
 - 없음
 

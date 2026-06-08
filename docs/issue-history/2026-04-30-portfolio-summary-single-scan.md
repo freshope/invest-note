@@ -85,7 +85,7 @@ totals = build_totals(positions, accounts, trades, pnl_map)
 - [x] `tests/test_portfolio_logic.py`: 호출 시그니처 갱신 + 새 시그니처에 맞춘 케이스 추가 (lot_map 반환 검증, build_account_snapshots 가 lot_map 입력 받는 경로)
 - [x] 백엔드 테스트 통과 (`cd api && poetry run pytest tests/test_portfolio.py tests/test_portfolio_logic.py tests/test_realized_pnl.py -q`)
 - [x] 전체 백엔드 테스트 통과 (`cd api && poetry run pytest -q`) — analysis.py 영향 회귀 확인
-- [x] spec-history 보관 + backlog 항목 체크 처리
+- [x] issue-history 보관 + backlog 항목 체크 처리
 
 ## 우려사항 / 리스크
 

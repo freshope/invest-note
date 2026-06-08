@@ -4,7 +4,7 @@
 
 ## 배경 / 문제
 
-`ImportTradesPanel/AccountStep.tsx:25-28` 의 자동 단일 계좌 선택 effect 는 effect-setState 안티패턴 (외부 입력에 반응해 부모 state 를 setter 로 동기화). Round 4 fe-simplify 에서 deferred 된 후속 항목 (`docs/spec-history/2026-05-03-fe-simplify-round4-useeffect-antipatterns.md:250`).
+`ImportTradesPanel/AccountStep.tsx:25-28` 의 자동 단일 계좌 선택 effect 는 effect-setState 안티패턴 (외부 입력에 반응해 부모 state 를 setter 로 동기화). Round 4 fe-simplify 에서 deferred 된 후속 항목 (`docs/issue-history/2026-05-03-fe-simplify-round4-useeffect-antipatterns.md:250`).
 
 탐색 결과 추가로 `eligibleAccounts` useMemo (line 20-23) 도 effect 안에서만 참조되고 렌더 트리는 인라인으로 `findBrokerKeyByAccountBroker` 를 호출하므로, effect 와 함께 dead code 가 됩니다.
 

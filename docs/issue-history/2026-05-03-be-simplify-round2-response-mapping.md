@@ -4,7 +4,7 @@
 
 ## 배경 / 문제
 
-`/simplify be 전체 조사` 결과에서 도출된 BE simplify 후속 항목 중 **Round 1** (`docs/spec-history/2026-05-01-be-simplify-round1-quick-wins.md`) 에서 처리한 3 개 (`model_copy` / `dataclasses.replace` / `sort_by_traded_at`) 외에 backlog (`docs/backlog.md` "BE simplify (Round 1 이후 deferred)" 섹션) 19 개가 남아있다.
+`/simplify be 전체 조사` 결과에서 도출된 BE simplify 후속 항목 중 **Round 1** (`docs/issue-history/2026-05-01-be-simplify-round1-quick-wins.md`) 에서 처리한 3 개 (`model_copy` / `dataclasses.replace` / `sort_by_traded_at`) 외에 backlog (`docs/backlog.md` "BE simplify (Round 1 이후 deferred)" 섹션) 19 개가 남아있다.
 
 Round 2 는 backlog 의 첫 번째 카테고리 **"응답 매핑 / 라우터 청소"** 5 개 항목 중 위험도 낮은 4 개를 묶는다 — 동작 변경 없음, 코드 중복 / 손-매핑 보일러플레이트만 제거. 5번째 항목 (`_trade_with_account_dict` → `TradeWithAccountResponse` 스키마 + `response_model` 위임) 은 LOC 중립 (현재 7줄 helper vs 신규 스키마 ~30줄 + camelCase 회피용 별도 BaseModel) 으로 판단되어 **미진행** 결정 — `docs/decisions.md` 에 근거를 기록하고 backlog 에서 제거한다.
 

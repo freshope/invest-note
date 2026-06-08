@@ -7,23 +7,24 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 
 from invest_note_api.auth.admin import require_admin_token
 from invest_note_api.config import Settings, get_settings
+from invest_note_api.errors import APIError
 from invest_note_api.services.daily_price_seed import seed_daily_prices
 from invest_note_api.services.nps_seed import reconcile_nps_unmatched, seed_nps
-from invest_note_api.services.stock_seed import seed
+from invest_note_api.services.stock_seed import seed, validate_seed_sources
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-async def run_seed(db_url: str, api_key: str) -> None:
+async def run_seed(db_url: str, api_key: str, sources: list[str] | None = None) -> None:
     """백그라운드 적재 래퍼 — CLI 와 동일하게 seed()가 자체 asyncpg.connect 로 동작.
 
     풀(Depends(get_pool)) 을 쓰지 않는다 — seed 가 session advisory lock 을 수 분 보유하므로
     요청 풀을 차용하면 풀 고갈·lock leak 이 발생한다. 실패가 silent 로 묻히지 않게 로깅한다.
     """
     try:
-        await seed(db_url, api_key=api_key)
+        await seed(db_url, api_key=api_key, sources=sources)
     except Exception:
         logger.exception("admin seed/stocks 백그라운드 실행 실패")
 
@@ -34,12 +35,19 @@ async def trigger_seed_stocks(
     _: None = Depends(require_admin_token),
     settings: Settings = Depends(get_settings),
 ) -> dict:
+    # 소스 오타는 background 에서 로그로만 남고 202 가 나가므로 트리거 시점에 검증 → 400.
+    try:
+        validate_seed_sources(settings.stock_seed_source_list)
+    except ValueError as e:
+        raise APIError(str(e), 400)
     db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
-    background_tasks.add_task(run_seed, db_url, settings.data_go_kr_api_key)
+    background_tasks.add_task(
+        run_seed, db_url, settings.data_go_kr_api_key, settings.stock_seed_source_list
+    )
     return {"status": "started"}
 
 
-async def run_seed_nps(db_url: str, api_key: str) -> None:
+async def run_seed_nps(db_url: str, api_key: str, provider: str = "odcloud") -> None:
     """백그라운드 NPS 적재 래퍼 — reconcile(과거사명 매핑) 선행 후 seed_nps.
 
     reconcile 이 관리자가 채운 resolved_ticker 를 먼저 해소하며 과거사명을 stock_aliases 에
@@ -54,7 +62,7 @@ async def run_seed_nps(db_url: str, api_key: str) -> None:
     except Exception:
         logger.exception("admin seed/nps 선행 reconcile 실패 — seed 는 계속 진행")
     try:
-        await seed_nps(db_url, api_key=api_key)
+        await seed_nps(db_url, api_key=api_key, provider=provider)
     except Exception:
         logger.exception("admin seed/nps 백그라운드 실행 실패")
 
@@ -66,14 +74,26 @@ async def trigger_seed_nps(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
-    background_tasks.add_task(run_seed_nps, db_url, settings.data_go_kr_api_key)
+    background_tasks.add_task(
+        run_seed_nps, db_url, settings.data_go_kr_api_key, settings.nps_provider
+    )
     return {"status": "started"}
 
 
-async def run_seed_daily_prices(db_url: str, api_key: str) -> None:
+async def run_seed_daily_prices(
+    db_url: str,
+    api_key: str,
+    primary_provider: str = "data_go_kr",
+    gap_provider: str = "naver",
+) -> None:
     """백그라운드 일별 종가 사전 적재 래퍼 — 전체 유저 보유종목 union 2년치."""
     try:
-        await seed_daily_prices(db_url, api_key=api_key)
+        await seed_daily_prices(
+            db_url,
+            api_key=api_key,
+            primary_provider=primary_provider,
+            gap_provider=gap_provider,
+        )
     except Exception:
         logger.exception("admin seed/daily-prices 백그라운드 실행 실패")
 
@@ -86,7 +106,13 @@ async def trigger_seed_daily_prices(
 ) -> dict:
     """자산 변화 페이지 콜드스타트 완화 — 보유종목 종가 사전 적재(cron pre-warm)."""
     db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
-    background_tasks.add_task(run_seed_daily_prices, db_url, settings.data_go_kr_api_key)
+    background_tasks.add_task(
+        run_seed_daily_prices,
+        db_url,
+        settings.data_go_kr_api_key,
+        settings.daily_price_provider,
+        settings.daily_price_gap_provider,
+    )
     return {"status": "started"}
 
 

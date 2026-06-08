@@ -4,7 +4,7 @@
 
 ## 배경 / 문제
 
-Round 2 (`docs/spec-history/2026-04-30-fe-simplify-round2-component-extract.md`) 에서 `ConfirmDeleteDialog` / `TradeHeaderCard` / `ToggleChipGrid` 3 개를 처리한 뒤, `docs/backlog.md` 의 "FE simplify (Round 1 이후 deferred) — 컴포넌트 추출 (중복 제거)" 섹션에 6 개 후보가 남았다.
+Round 2 (`docs/issue-history/2026-04-30-fe-simplify-round2-component-extract.md`) 에서 `ConfirmDeleteDialog` / `TradeHeaderCard` / `ToggleChipGrid` 3 개를 처리한 뒤, `docs/backlog.md` 의 "FE simplify (Round 1 이후 deferred) — 컴포넌트 추출 (중복 제거)" 섹션에 6 개 후보가 남았다.
 
 탐색 결과 `AccountChip` (7 곳) 이 중복 빈도가 가장 높고 디자인 결정 범위가 좁아 단일 라운드로 안전하게 처리 가능하다고 판단했다. 나머지 5 개 (TradeTypeBadge / BreakdownList / ProgressTrack / EmptyCard / Card primitive) 는 backlog 에 보존한다.
 

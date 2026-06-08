@@ -193,6 +193,31 @@ def test_pipeline_order_authority_then_stock_prices_then_securities():
     assert names == ["data_go_kr", "stock_prices", "securities"]
 
 
+def test_pipeline_sources_env_order_respected():
+    # env STOCK_SEED_SOURCES 로 순서를 바꾸면 파이프라인이 그 순서를 따른다 —
+    # 첫 항목이 authority 가 되는 계약(seed 의 is_authority)이 env 로 제어 가능.
+    names = [name for name, _ in stock_seed._build_pipeline("key", ["securities", "data_go_kr"])]
+    assert names == ["securities", "data_go_kr"]
+
+
+def test_pipeline_unknown_source_raises_value_error():
+    # registry 에 없는 소스명(env 오타) → ValueError fail-fast.
+    import pytest
+
+    with pytest.raises(ValueError, match="stock_seed"):
+        stock_seed._build_pipeline("key", ["fdr"])
+
+
+def test_validate_seed_sources_trigger_time_fail_fast():
+    # admin 트리거 시점 검증 — 오타는 ValueError(라우터가 400 변환), 빈 체인은 기본 소스 허용.
+    import pytest
+
+    stock_seed.validate_seed_sources(["kis", "data_go_kr"])
+    stock_seed.validate_seed_sources([])  # 빈 체인 → 기본 소스(seed 와 동일 규칙)
+    with pytest.raises(ValueError, match="stock_seed"):
+        stock_seed.validate_seed_sources(["fdr"])
+
+
 def test_recent_basdt_candidates_are_descending_and_bounded():
     cands = stock_seed._recent_basdt_candidates()
     assert len(cands) == stock_seed._BASDT_MAX_LOOKBACK
@@ -340,3 +365,185 @@ async def test_fetch_data_go_kr_falls_back_when_first_basdt_empty(monkeypatch):
     rows = await stock_seed.fetch_data_go_kr("key")
     assert rows == [{"ticker": "000660", "asset_name": "SK하이닉스", "market": "KOSPI"}]
     assert len(set(seen)) >= 2  # 최소 2개 basDt 후보 시도
+
+
+# ─────────────────────────── KIS 종목마스터 ───────────────────────────
+
+
+def _mst_line(ticker: str, name: str, group: str, tail_len: int) -> str:
+    """KIS .mst 행 합성 — 앞부분(단축코드9+표준코드12+한글명) + 뒷부분 고정폭(그룹코드2+패딩)."""
+    return f"{ticker:<9}{'KR7' + ticker + '003':<12}{name}" + group + "0" * (tail_len - 2)
+
+
+def test_parse_kis_master_offsets_groups_and_filters():
+    text = "\n".join(
+        [
+            _mst_line("005930", "삼성전자", "ST", 227),
+            _mst_line("371460", "TIGER 차이나전기차", "EF", 227),  # ETF 재분류
+            _mst_line("530031", "삼성 레버리지 ETN", "EN", 227),  # ETN 재분류
+            _mst_line("58J297", "한국JR297호", "EW", 227),  # ELW — 제외
+            _mst_line("Q50001", "KONEX형 코드", "ST", 227)[1:],  # 깨진 행(길이 부족) — skip
+        ]
+    )
+    rows = stock_seed._parse_kis_master(text, "KOSPI", 227)
+    assert {(r["ticker"], r["market"]) for r in rows} == {
+        ("005930", "KOSPI"),
+        ("371460", "ETF"),
+        ("530031", "ETN"),
+    }
+    assert next(r for r in rows if r["ticker"] == "005930")["asset_name"] == "삼성전자"
+
+
+def test_parse_kis_master_etn_q_prefix_and_alnum_etf():
+    # 실파일 실측(2026-06-07): ETN 은 'Q' 접두 7자(Q500061→500061),
+    # 신형 ETF 는 영숫자 6자(0000D0) — isdigit 필터를 쓰면 전부 탈락한다.
+    text = "\n".join(
+        [
+            _mst_line("Q500061", "신한 인버스 ETN", "EN", 227),
+            _mst_line("0000D0", "TIGER 엔비디아", "EF", 227),
+            _mst_line("AB12", "코드 4자리", "ST", 227),  # 6자 미만 — 제외
+        ]
+    )
+    rows = stock_seed._parse_kis_master(text, "KOSPI", 227)
+    assert {(r["ticker"], r["market"]) for r in rows} == {("500061", "ETN"), ("0000D0", "ETF")}
+
+
+async def test_fetch_kis_master_downloads_zips_and_merges(monkeypatch):
+    import io
+    import zipfile
+
+    def _zip_bytes(inner_name: str, text: str) -> bytes:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr(inner_name, text.encode("cp949"))
+        return buf.getvalue()
+
+    kospi_zip = _zip_bytes("kospi_code.mst", _mst_line("005930", "삼성전자", "ST", 227))
+    kosdaq_zip = _zip_bytes("kosdaq_code.mst", _mst_line("247540", "에코프로비엠", "ST", 221))
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if "kospi_code.mst.zip" in str(req.url):
+            return httpx.Response(200, content=kospi_zip)
+        if "kosdaq_code.mst.zip" in str(req.url):
+            return httpx.Response(200, content=kosdaq_zip)
+        return httpx.Response(404)
+
+    async with _mock_client(handler) as client:
+        rows = await stock_seed.fetch_kis_master(client=client)
+
+    assert rows == [
+        {"ticker": "005930", "asset_name": "삼성전자", "market": "KOSPI"},
+        {"ticker": "247540", "asset_name": "에코프로비엠", "market": "KOSDAQ"},
+    ]
+
+
+def test_pipeline_kis_source_registered():
+    # env STOCK_SEED_SOURCES 에 kis 를 넣으면 파이프라인에 포함된다(api_key 불필요 소스).
+    names = [name for name, _ in stock_seed._build_pipeline("", ["kis", "securities"])]
+    assert names == ["kis", "securities"]
+
+
+# ─────────────────────────── 교차검증 provider 토글 ───────────────────────────
+
+
+class _CrossvalConn:
+    """crossvalidate_stocks 용 FakeConn — 미검증 종목 fetch + checked update 기록."""
+
+    def __init__(self, rows: list[dict]):
+        self.rows = rows
+        self.checked_args: list = []
+
+    async def fetch(self, q, *a):
+        return self.rows
+
+    async def execute(self, q, *a):
+        if "naver_checked_at" in q:
+            self.checked_args.append(a)
+
+
+def _patch_alias_recorder(monkeypatch) -> list[dict]:
+    recorded: list[dict] = []
+
+    async def fake_upsert_aliases(conn, aliases, **kw):
+        recorded.extend(aliases)
+        return len(aliases)
+
+    monkeypatch.setattr(stock_seed, "upsert_aliases", fake_upsert_aliases)
+    return recorded
+
+
+async def test_crossvalidate_kis_master_batch_compare(monkeypatch):
+    """kis provider — 마스터 파일 일괄 대조: 이름 변형→별칭, 시장 불일치 집계, 전원 checked."""
+
+    async def fake_master(**kw):
+        return [
+            {"ticker": "005930", "asset_name": "삼성전자", "market": "KOSPI"},
+            {"ticker": "123456", "asset_name": "새이름", "market": "KOSPI"},
+            {"ticker": "371460", "asset_name": "TIGER 차이나전기차", "market": "ETF"},
+        ]
+
+    monkeypatch.setattr(stock_seed, "fetch_kis_master", fake_master)
+    aliases = _patch_alias_recorder(monkeypatch)
+    conn = _CrossvalConn(
+        [
+            {"ticker": "005930", "asset_name": "삼성전자", "market": "KOSPI"},  # 일치
+            {"ticker": "123456", "asset_name": "옛이름", "market": "KOSPI"},  # 이름 변형
+            {"ticker": "371460", "asset_name": "TIGER 차이나전기차", "market": "KOSPI"},  # 시장 불일치
+            {"ticker": "999999", "asset_name": "코넥스종목", "market": "KONEX"},  # 파일에 없음
+        ]
+    )
+
+    n, mm, ck = await stock_seed.crossvalidate_stocks(conn, provider="kis")
+
+    assert aliases == [{"ticker": "123456", "alias": "새이름", "source": "kis"}]
+    assert (n, mm) == (1, 1)
+    assert ck == 4  # 파일에 없는 코드(KONEX 등)도 검증함 — 재질의 무의미
+    assert sorted(conn.checked_args[0][1]) == ["005930", "123456", "371460", "999999"]
+
+
+async def test_crossvalidate_kis_download_failure_keeps_unchecked(monkeypatch):
+    """마스터 다운로드 실패 → 전체 미체크(다음 run 재시도), 별칭/checked 기록 없음."""
+
+    async def failing_master(**kw):
+        raise RuntimeError("download fail")
+
+    monkeypatch.setattr(stock_seed, "fetch_kis_master", failing_master)
+    aliases = _patch_alias_recorder(monkeypatch)
+    conn = _CrossvalConn([{"ticker": "005930", "asset_name": "삼성전자", "market": "KOSPI"}])
+
+    n, mm, ck = await stock_seed.crossvalidate_stocks(conn, provider="kis")
+
+    assert (n, mm, ck) == (0, 0, 0)
+    assert aliases == []
+    assert conn.checked_args == []
+
+
+async def test_crossvalidate_naver_per_ticker_lookup(monkeypatch):
+    """naver provider — 종목별 조회: 응답 종목만 checked, 정확 코드 매칭만 별칭/시장 대조."""
+
+    async def fake_search_kr(q, *, client=None):
+        if q == "005930":
+            return [{"code": "005930", "name": "삼성전자우", "market": "KR", "exchange": "KOSPI"}]
+        return []  # rate-limit/미응답 → 미체크
+
+    monkeypatch.setattr(stock_seed, "search_kr", fake_search_kr)
+    aliases = _patch_alias_recorder(monkeypatch)
+    conn = _CrossvalConn(
+        [
+            {"ticker": "005930", "asset_name": "삼성전자", "market": "KOSPI"},
+            {"ticker": "999999", "asset_name": "미응답종목", "market": "KOSDAQ"},
+        ]
+    )
+
+    n, mm, ck = await stock_seed.crossvalidate_stocks(conn, provider="naver")
+
+    assert aliases == [{"ticker": "005930", "alias": "삼성전자우", "source": "naver"}]
+    assert (n, mm, ck) == (1, 0, 1)
+    assert conn.checked_args[0][1] == ["005930"]
+
+
+async def test_crossvalidate_unknown_provider_raises_value_error():
+    import pytest
+
+    with pytest.raises(ValueError, match="crossvalidate"):
+        await stock_seed.crossvalidate_stocks(_CrossvalConn([]), provider="kisss")

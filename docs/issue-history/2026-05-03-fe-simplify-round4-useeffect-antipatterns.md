@@ -6,7 +6,7 @@
 
 `docs/backlog.md` "FE simplify (Round 1 이후 deferred) → useEffect 안티패턴" 카테고리의 5개 항목을 한 번에 처리한다. 모두 "외부 입력에 반응해 폼/패널 state를 effect 안에서 set" 한다는 공통 안티패턴이며, React 공식 권장 패턴(이벤트 핸들러 직접 처리, 부모 key 교체, derived state)으로 치환한다.
 
-직전 Round 3 (`docs/spec-history/2026-05-03-fe-simplify-round3-state-structure.md`) 가 컴포넌트 분리/스타일 정리였다면, Round 4 는 **렌더 → effect → setState 사이클이 만드는 흐릿한 데이터 흐름**을 끊는다. effect 가 줄면 (1) 사용자 의도(수동 입력)가 자동 동기화에 덮이는 회귀를 막고, (2) 패널 reset 의 "왜 지금 이 setState 가 도는가" 추적 비용이 사라지고, (3) `eslint-disable` / `openRef` 같은 보조 장치의 존재 이유가 명확해진다.
+직전 Round 3 (`docs/issue-history/2026-05-03-fe-simplify-round3-state-structure.md`) 가 컴포넌트 분리/스타일 정리였다면, Round 4 는 **렌더 → effect → setState 사이클이 만드는 흐릿한 데이터 흐름**을 끊는다. effect 가 줄면 (1) 사용자 의도(수동 입력)가 자동 동기화에 덮이는 회귀를 막고, (2) 패널 reset 의 "왜 지금 이 setState 가 도는가" 추적 비용이 사라지고, (3) `eslint-disable` / `openRef` 같은 보조 장치의 존재 이유가 명확해진다.
 
 > **Round 1 회귀 사례 (2026-04-30)**: 한 번 단순화했다가 복원된 적 있음. 본 Round 는 항목별 부수 영향을 spec 본문에 명시하고, 수동 QA 에서 회귀 트리거 케이스(특히 rapid reopen)를 강제 체크한다.
 
@@ -302,7 +302,7 @@ export function useEffectiveAccountId(accounts: Account[]): string {
 - `STORAGE_KEYS.LAST_ACCOUNT_ID` (`app/src/lib/constants/storage.ts`) — `getInitialAccountId` 에서 그대로 사용.
 - `calcCommission` / `calcTax` (`TradeBasicForm.tsx` 내부) — `recalcFees` 에서 그대로 사용.
 - `FullScreenPanel` (`app/src/components/base/FullScreenPanel.tsx`) — 2 단계 lifecycle 구조가 부모 key bump 패턴이 동작하는 근거.
-- 직전 Round 3 spec (`docs/spec-history/2026-05-03-fe-simplify-round3-state-structure.md`) — 톤/구조 참고.
+- 직전 Round 3 spec (`docs/issue-history/2026-05-03-fe-simplify-round3-state-structure.md`) — 톤/구조 참고.
 
 ## 구현 체크리스트 (항목별 작은 커밋)
 

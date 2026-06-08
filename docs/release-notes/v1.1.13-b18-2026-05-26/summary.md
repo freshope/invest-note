@@ -13,11 +13,11 @@
 | 6b0476f | 2026-05-25 | chore(fe): regenerate app icons/splash assets and fix manifest MIME |
 | 48c1f65 | 2026-05-24 | fix(fe): React 19 react-hooks 규칙 위반 lint 오류 정리 |
 | e1f96dc | 2026-05-24 | fix: 알림 다이얼로그 버튼 크기·배치 개선 |
-| bc96f8f | 2026-05-24 | docs: spec-current → spec-history/2026-05-24-trade-swipe-delete.md 이동 |
+| bc96f8f | 2026-05-24 | docs: spec-current → issue-history/2026-05-24-trade-swipe-delete.md 이동 |
 | be8e499 | 2026-05-24 | feat: 거래 카드 스와이프-삭제 도입 |
 | 37da68d | 2026-05-24 | feat(settings): 버전 옆에 빌드 번호 표시 |
 | f9a7055 | 2026-05-23 | fix(trades): bulk-delete 엣지 케이스 처리 |
-| ac6933b | 2026-05-23 | docs: spec-current → spec-history/2026-05-23-trade-bulk-delete.md 이동 |
+| ac6933b | 2026-05-23 | docs: spec-current → issue-history/2026-05-23-trade-bulk-delete.md 이동 |
 | ddacf5d | 2026-05-23 | feat: 기록 탭 거래 일괄 삭제 기능 추가 |
 | 14f9ae7 | 2026-05-23 | docs: v1.1.12_17 출시 노트 추가 |
 | e41c7fa | 2026-05-23 | chore: ignore obsidian vault and pnpm store |
@@ -25,10 +25,10 @@
 | 3d3f1f2 | 2026-05-23 | fix(test): analysis 기간 필터 테스트를 동적 시각 기준으로 변경 |
 | dc02bfe | 2026-05-23 | feat(be): KR 시세 fetch에 Yahoo Finance fallback 추가 |
 | ea7fb44 | 2026-05-23 | fix: pull-to-refresh 시 시세 캐시 TTL 단축(60→10s) |
-| 1df8c6c | 2026-05-23 | docs: spec-current → spec-history/2026-05-23-home-account-filter.md 이동 |
+| 1df8c6c | 2026-05-23 | docs: spec-current → issue-history/2026-05-23-home-account-filter.md 이동 |
 | 3d5369a | 2026-05-23 | feat: 메인 대시보드에 계좌 필터 추가 |
 
-## 동기간 spec-history 항목
+## 동기간 issue-history 항목
 
 - `2026-05-24-trade-swipe-delete.md` — 거래 카드 좌측 스와이프 → 트레일링 삭제 버튼으로 단건 삭제 단축. 한 번에 한 카드만 열림, 선택 모드 시 비활성화.
 - `2026-05-23-trade-bulk-delete.md` — 기록 탭 다중 선택 모드 + BE 트랜잭션 일괄 삭제 API(`POST /trades/bulk-delete`). 전체 선택/해제, oversell 충돌 안내.
@@ -49,7 +49,7 @@
 | INTERNAL | React 19 react-hooks lint 정리 (48c1f65) | ✗ |
 | INTERNAL | 앱 아이콘/스플래시 재생성·webp 변환·manifest MIME·미사용 에셋 제거 (6b0476f, f950a27, f4af888) | ✗ |
 | INTERNAL | obsidian vault / pnpm store gitignore (e41c7fa) | ✗ |
-| INTERNAL | spec-history 이동·이전 출시 노트 문서 (bc96f8f, ac6933b, 1df8c6c, 14f9ae7) | ✗ |
+| INTERNAL | issue-history 이동·이전 출시 노트 문서 (bc96f8f, ac6933b, 1df8c6c, 14f9ae7) | ✗ |
 
 ## 검증 결과
 

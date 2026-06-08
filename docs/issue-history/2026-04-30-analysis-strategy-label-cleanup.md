@@ -48,7 +48,7 @@
 - [x] `app/src/components/records/TradeStrategyResultSection.tsx` "계획 전략" 라벨 수정
 - [x] `app/src/lib/constants/trading.ts` ADHERENCE_CONFIG.UNKNOWN.label 수정
 - [x] BE 주석 일관성 — `api/src/invest_note_api/domain/analysis/aggregate.py:94` 주석 "계획 전략" → "전략"
-- [x] 잔여 사용처 재검색 — `grep -rn "계획 전략\|분류 불가\|두 금액" app/ api/`로 누락 없는지 확인 (spec-history 제외)
+- [x] 잔여 사용처 재검색 — `grep -rn "계획 전략\|분류 불가\|두 금액" app/ api/`로 누락 없는지 확인 (issue-history 제외)
 - [x] 타입 체크 통과 (`pnpm tsc`)
 - [ ] 분석탭 시각 확인 — 전략 준수 분석 박스에서 "미입력 N건 … 통계에서 제외" 한 줄로 표시되는지 (테스트 데이터 또는 dev 서버에서 확인)
 

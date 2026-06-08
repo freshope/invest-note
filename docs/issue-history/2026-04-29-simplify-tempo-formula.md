@@ -56,7 +56,7 @@ tempo = _clamp(tempo_base - scalping_ratio * 10)
 - [x] `pnpm -C app test` 통과
 - [x] `pnpm tsc --noEmit` 통과
 - [x] `docs/backlog.md`에서 완료 항목 제거
-- [x] spec-history로 사양서 이관 (`/custom:spec-finish`)
+- [x] issue-history로 사양서 이관 (`/custom:spec-finish`)
 
 ## 우려사항 / 리스크
 

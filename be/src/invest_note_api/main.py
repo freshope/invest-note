@@ -10,10 +10,12 @@ from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import create_pool
 from invest_note_api.errors import APIError, ERR_LOCK_BUSY, api_error_handler, validation_error_handler
 from invest_note_api.external.http_client import create_http_client
-from invest_note_api.external.quotes import QuoteCacheState
+from invest_note_api.external.kis import configure_kis
+from invest_note_api.external.quotes import QuoteCacheState, validate_quote_providers
 from invest_note_api.routers import accounts, admin, app_config, health, me
 from invest_note_api.routers import trades, portfolio, stocks, analysis, assets
 from invest_note_api.routers.trades import TradeStagingState
+from invest_note_api.services.daily_price_seed import validate_daily_price_providers
 
 
 async def lock_not_available_handler(request: Request, exc: LockNotAvailableError) -> JSONResponse:
@@ -26,14 +28,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        app.state.quote_cache = QuoteCacheState()
-        app.state.trade_staging = TradeStagingState()
-        app.state.http_client = create_http_client()
+        # 요청 경로가 소비하는 공급자 env 오타 fail-fast — quotes 는 요청 경로가 예외를
+        # 삼켜 시세가 조용히 null, daily price 는 GET /assets/history 가 사용자 대면 500 을
+        # 반복하므로 부팅 시점에 검증한다. admin/batch 전용 도메인(seed 소스 등)은
+        # 트리거 시점 검증으로 충분(admin.py 참조).
+        validate_quote_providers(settings.quote_provider_list)
+        validate_daily_price_providers(
+            settings.daily_price_provider, settings.daily_price_gap_provider
+        )
         # database_url이 비어 있으면 풀 생성 생략 (테스트 환경)
         if settings.database_url:
             app.state.pool = await create_pool(settings.database_url)
         else:
             app.state.pool = None
+        # KIS 자격증명/도메인 설정 + 토큰 캐시 리셋 (kis 공급자 미사용 시에도 무해).
+        # pool 을 넘겨 토큰을 kis_tokens 테이블에 영속화 (pool=None 이면 메모리 전용).
+        configure_kis(settings, pool=app.state.pool)
+        app.state.quote_cache = QuoteCacheState()
+        app.state.trade_staging = TradeStagingState()
+        app.state.http_client = create_http_client()
         yield
         await app.state.http_client.aclose()
         if app.state.pool is not None:

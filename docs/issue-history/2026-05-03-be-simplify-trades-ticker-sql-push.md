@@ -4,7 +4,7 @@
 
 ## 배경 / 문제
 
-`docs/backlog.md` 의 "FE simplify"·"BE simplify" 잔여 항목 2개는 사실상 한 가지 — `/api/trades` 페이지네이션 + ticker 필터 SQL push — 이며 cleanup-trio (`docs/spec-history/2026-05-03-simplify-cleanup-trio.md`) 에서 "BE+FE 동반 큰 작업" 이라는 이유로 명시적으로 미뤄졌다.
+`docs/backlog.md` 의 "FE simplify"·"BE simplify" 잔여 항목 2개는 사실상 한 가지 — `/api/trades` 페이지네이션 + ticker 필터 SQL push — 이며 cleanup-trio (`docs/issue-history/2026-05-03-simplify-cleanup-trio.md`) 에서 "BE+FE 동반 큰 작업" 이라는 이유로 명시적으로 미뤄졌다.
 
 이 중 ticker 필터 SQL push 만은 **records 화면 변경 없이 BE 단독으로** 처리 가능하고 독립적 가치가 있다:
 

@@ -4,7 +4,7 @@
 
 ## 배경 / 문제
 
-거래 일괄 등록 기능은 2026-04 시점에 풀스택으로 구현되었으나(`docs/spec-history/2026-04-28-trade-statement-import.md` 외 2개 후속 spec), 2026-05-06 커밋 `77abcec` 에서 "스토어 등록 전까지" 라는 메모와 함께 프론트 버튼 핸들러가 toast 안내로 임시 차단됨(`fe/src/components/records/TradeList.tsx:39-42`). 백엔드 라우터·파서·테스트, 프론트 4단계 패널은 모두 살아 있는 상태.
+거래 일괄 등록 기능은 2026-04 시점에 풀스택으로 구현되었으나(`docs/issue-history/2026-04-28-trade-statement-import.md` 외 2개 후속 spec), 2026-05-06 커밋 `77abcec` 에서 "스토어 등록 전까지" 라는 메모와 함께 프론트 버튼 핸들러가 toast 안내로 임시 차단됨(`fe/src/components/records/TradeList.tsx:39-42`). 백엔드 라우터·파서·테스트, 프론트 4단계 패널은 모두 살아 있는 상태.
 
 이번 작업은 차단 해제와 동시에 사용자가 명시한 7단계 시나리오에 맞춰 미흡한 두 지점을 보강한다.
 

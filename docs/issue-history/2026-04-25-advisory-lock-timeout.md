@@ -4,7 +4,7 @@
 
 ## 배경 / 문제
 
-`feature/toctou-advisory-lock`에서 `pg_advisory_xact_lock` 기반 그룹 직렬화를 도입했지만, lock 획득 대기 시간에 상한이 없습니다. 운영에서 같은 (user, account, ticker, country) 그룹에 동시 mutation이 몰리고 한쪽 트랜잭션이 늦어지면 뒤에 도착한 요청이 무한정 대기하면서 워커가 점유됩니다. `spec-history/2026-04-24-toctou-advisory-lock.md` 우려사항 섹션에 후속 작업으로 명시된 항목의 이행입니다.
+`feature/toctou-advisory-lock`에서 `pg_advisory_xact_lock` 기반 그룹 직렬화를 도입했지만, lock 획득 대기 시간에 상한이 없습니다. 운영에서 같은 (user, account, ticker, country) 그룹에 동시 mutation이 몰리고 한쪽 트랜잭션이 늦어지면 뒤에 도착한 요청이 무한정 대기하면서 워커가 점유됩니다. `issue-history/2026-04-24-toctou-advisory-lock.md` 우려사항 섹션에 후속 작업으로 명시된 항목의 이행입니다.
 
 ## 목표
 
