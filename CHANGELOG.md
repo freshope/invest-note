@@ -13,6 +13,21 @@
 
 - App Store Connect 수출 규정 자동 응답 설정 (`ITSAppUsesNonExemptEncryption=false`)
 
+## [1.1.21] - 2026-06-08
+
+백엔드 인프라 릴리즈 (사용자 가시 변경 없음 — 모바일 스토어 제출 생략).
+
+### Added
+
+- KIS Open API 연동 인프라 — 공통 클라이언트, 시세/일별 종가/종목마스터 provider 등록 (env 토글 뒤 대기, prod 미활성)
+- KIS 토큰 DB 영속화 (`kis_tokens` 테이블 + advisory lock 발급 직렬화)
+- 외부 데이터 공급자 env 토글 구조
+
+### Changed
+
+- Makefile 을 devtools 멀티 프로젝트 구성(PROJECTS)으로 전환
+- CI 를 BE/FE 경로 필터 워크플로로 분리
+
 ## [1.1.7] - 2026-05-15
 
 ### Fixed
