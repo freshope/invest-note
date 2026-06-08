@@ -4,6 +4,42 @@
 
 ---
 
+## 2026-06-08 | Capacitor OTA 라이브 업데이트 v1 — 자체 호스팅(`@capgo/capacitor-updater` + R2 JSON SSOT), Capgo Cloud 미사용
+
+- **맥락:** FE 는 `next.config output:"export"` 정적 SPA 를 `capacitor webDir:"out"` 로 동봉 → 웹 자산(JS/HTML/CSS) 한 줄 수정에도 스토어 재심사가 필요했다. 웹 수정 빈도가 네이티브보다 압도적으로 높아 OTA 로 재심사를 우회한다. Apple §2.5.2/§3.3.2 는 WebKit 해석 코드(웹뷰 자산)만 교체하는 OTA 를 허용(핵심 목적 불변·네이티브 코드 미변경 한정).
+- **결정(확정):**
+  - ① **플러그인 `@capgo/capacitor-updater`(오픈소스)** 채택 — 다운로드/checksum 검증/원자적 교체/부팅 실패 시 자동 롤백을 플러그인이 처리(직접 구현 대비 핵심 안전장치). **Capgo Cloud(SaaS $12+/mo) 미사용 — 자체 호스팅.**
+  - ② **매니페스트 발행상태 SSOT = R2 단일 JSON**(`manifest/latest.json`, 플랫폼 공통), 대안 Postgres 기각. 릴리즈 스크립트가 이미 가진 R2 자격증명으로 원자적 PUT flip, BE 는 자격증명 없이 HTTPS GET → **Supabase 마이그레이션/RLS 변경 회피**. 번들 zip 도 R2(CDN 전면, 무료 egress)에 두고 결정 API(작은 JSON)만 FastAPI/Coolify.
+  - ③ **결정 API** `POST /live-update/manifest`(public, force-update `/app-config` 패턴). 로직: `effective_installed = version_build if version_name=="builtin" else version_name`; `required_native_version > version_build`(스큐)면 차단; `published.version > effective_installed`면 `{version,url,checksum}`; 그 외/조회실패는 **fail-open**(앱 부팅 차단 금지).
+  - ④ **`required_native_version` 과 force-update `min_supported_version` 은 직교**(절대 합치지 않음) — 전자는 "이 웹 번들을 안전히 돌릴 최소 네이티브", 후자는 "스토어 강제 하드 플로어". 스큐 시 OTA 는 조용히 차단하고 force-update 가 독립 폴백.
+  - ⑤ **번들 버전 = `fe/package.json` 마케팅 버전(semver)**. 웹 전용 OTA 발행 = `bump-patch fe` without `bump-build`. 비교 기준은 `version_build`(=`App.getInfo().version` 마케팅 버전, ForceUpdateGate 비교값과 동일), `version_code`(정수 빌드번호) 아님.
+  - ⑥ **R2 자격증명은 릴리즈 스크립트 전용** — 루트 gitignored `.env`(또는 CI secret). fe public env(`NEXT_PUBLIC_*`/`.env.development.local`)·번들에 절대 미주입. BE 는 manifest 절대 URL(`live_update_manifest_url`)만.
+- **실측 정정(2026-06-08, 플러그인 네이티브 소스 직접 판독 — Android `CapacitorUpdaterPlugin.java`, iOS `CapacitorUpdaterPlugin.swift`):**
+  - **no-update 응답 = `200 {"kind":"up_to_date"}`** (초안의 "url 키 없는 빈 200"은 **오류**). 빈 200/`{}`/204/empty-body 는 모두 플러그인이 `failed` 로 정규화 → 매 부팅 다운로드 실패 통지. 스큐 차단도 non-failure kind(`up_to_date`/`blocked`) 필수. ← 머지블로킹 실측이 사양 추정을 뒤집은 사례(브로커 파서 fixture·KIS 레이트리밋 교훈과 동일: 추정 금지·실측 우선).
+  - 호환 zip+checksum 은 표준 `zip`/`sha256sum` 이 아니라 **`@capgo/cli bundle zip --json`** 으로만 생성(로그인 불필요·오프라인 동작 확인, 메이저 8 = 플러그인 8.49 호환). checksum 은 CLI 출력에서 파싱(직접 계산 금지).
+- **페이징:** 플러그인은 네이티브 추가라 **스토어 1회 제출이 OTA 동작 전제.** v1 = "제출 가능한 상태"(코드 완성 + `pytest`/`tsc`/`cap sync`/dry-run green, 전체 회귀 529 passed). 라이브 OTA·실기기 스큐 매트릭스·실 R2 발행은 스토어 빌드 라이브 이후 후속.
+- **트레이드오프:** R2 JSON SSOT 는 발행 이력 쿼리/트랜잭션·채택률 통계가 없다(v1 미포함, 롤백은 클라이언트 자동이라 무방) — v2 통계 도입 시 Postgres 재검토. 서명/E2E 암호화·단계 롤아웃(%)·델타 업데이트는 v2(현재는 checksum 무결성 + TLS + 100% 일괄 + 자동롤백 + 빠른 재푸시). full remote(`server.url`) 대신 OTA 를 택해 오프라인 회복력·`capacitor://localhost` 오리진(인증 영향 최소)·심사 가용성을 보존.
+
+---
+
+## 2026-06-08 | 해외(미국) 주식 v2 방향 — 분리 + ₩/$ 토글(거래별 체결환율), 기존 "KRW 합산" 계획 대체
+
+- **맥락:** 2026-04-27 "MVP 해외 제외" 이후 v2 재개 사전조사. 기존 backlog/roadmap 의 v2 해외 계획은 "USD/KRW 환율로 해외 평가액을 **KRW 총자산·미실현손익에 합산** + 크로스-통화 HHI"였다. 그러나 ① 실시간 환율 환산이 부정확(특히 **당일 직접입력은 거래일 종가 환율 미확정**), ② 한 화면에 ₩/$ 혼재 시 인지 부하 → "분리 + USD-native + 사용자 토글"로 방향 전환. 증권사(미래에셋·KB·키움) 조사로 토글 원화 = **일별 매매기준율 환산(실시간 피드 불필요)**, 당일 거래는 **잠정→익일 재정산**(KB 10:45 재정산·미래에셋 가환전→실환전)이 업계 표준임을 확인 — 우리 backfill 설계와 동일.
+- **결정(확정):**
+  - ① **미국만.** 모델은 다시장 가능하게 두되 seed·UI 는 US 만(다른 시장은 추가작업 없이 확장 가능, 이번 미포함).
+  - ② **MVP = 직접 입력.** import(토스 `달러 거래내역`·삼성 USD)는 **v2.x 후속**(미국 거래 샘플 확보 후 — 없는 입력에 맞춘 파서는 speculative). 해제 지점: `trade.py:132 _mvp_foreign_buy_blocked`, `samsung_xlsx.py:96`, `toss_pdf.py` USD 섹션.
+  - ③ **국내와 분리 섹션.** 통합 뷰는 **제품 선택으로 보류**(거래별 KRW 가 생기므로 기술적 불가는 아님 — "어느 환율·시점" 컨벤션 확정 시 추가).
+  - ④ **미국 섹션 내 ₩/$ 토글(MVP 포함).** KRW = **거래별 체결환율** — 취득원가=매입 시점 환율, 평가=현재 환율 → **환차손익 반영**(증권사 평가 방식). 토글 KRW 는 "참고 평가값"(증권사도 평가환율 ≠ 결제환율).
+  - ⑤ **거래 4필드 통화중립 저장**(국내/해외 통일): `amount_native`(체결통화 금액=price×qty), `fx_rate`(native→KRW, **국내=1.0**), `amount_krw`(=round(native×fx)), `fx_provisional`(당일 잠정 여부). **write 시점 단일 경로 계산**(생성/수정 시 갱신), read 는 저장값. 그 이상 파생(비용 KRW·순액·손익)은 `fx_rate` 로 유도 — **과한 비정규화 회피**(박제 늘릴수록 stale 위험↑, BUY→SELL cascade 교훈).
+  - ⑥ **BE 손익:** `trade_walker` 에 환율 차원 추가 → 매수 로트별 `fx_rate` 를 끌고 가 KRW 실현/미실현손익 계산. 실제 계산은 BE `/portfolio/summary`(FE walker 는 dead code).
+- **선행검증(2026-06-08 실호출 완료):**
+  - **US 시세: primary=Yahoo, 보조=KIS 해외.** 실측 — Yahoo(AAPL $307.34, 무인증·근실시간·레이트리밋 무이슈) vs KIS 해외(`/uapi/overseas-price/v1/quotations/price`, TR `HHDFS00000300`, `EXCD`=NAS/NYS/AMS·`SYMB` — AAPL 309.06·KO 79.33 정상이나 **2건/초 앱키 예산이 국내와 공유**, NVDA 에서 EGW00201 재현). `decisions.md:25` "KIS 시세=보조" 결론이 해외에도 전이 확인 → **Yahoo primary, KIS 는 공식 교차검증/fallback**. US 엔 Naver fallback 없음. `_fetch_yahoo` 는 현재 `.KS/.KQ` suffix 만 붙이므로 US 는 suffix 없는 분기 추가 필요.
+  - **US 심볼 seed: Nasdaq Trader 1순위(SEC 보강).** 실측 — `nasdaqlisted.txt`(5,494) + `otherlisted.txt`(7,301, **ETF 플래그 Y 4,107·거래소코드 포함**) → 기존 seed shape(`{ticker, asset_name, market}`) 매핑 가능. SEC `company_tickers.json`(10,400사·정식회사명·CIK)은 보강용.
+  - **FX 시계열: Yahoo `USDKRW=X` 로 시작(추후 smbs 고려).** 실측 — 일별 close 무인증 정상. 시장환율이라 매매기준율과 ~0.1% 차이나나 토글 KRW='참고 평가값'이라 충분. 정밀 필요 시 서울외국환중개 매매기준율(jsp 스크래핑) 업그레이드. **적재·backfill job 은 신규 레일**(주가 `daily_price_sync_state` 와 별도 테이블·job).
+- **트레이드오프:** 거래별 환율 박제로 KRW 손익은 정확하나 walker 에 환율 차원 + FX 시계열 적재가 신규 비용. 직접입력 당일 거래는 잠정 환율→backfill 수렴(USD-only 가 아니라 토글이라 잠정값이 일시 노출될 수 있음 — `fx_provisional` 로 표시 처리). import 는 샘플 부재로 후속 분리.
+
+---
+
 ## 2026-06-07 | KIS 토큰 영속화 — Redis 대신 PostgreSQL (kis_tokens + advisory xact lock)
 
 - **맥락:** KIS 토큰 1일 1회 발급 원칙(잦은 발급 시 이용 제한 제재) 대응. 기존 토큰 캐시는 per-process 메모리라 재배포·롤링 배포 중 신구 컨테이너·cron 배치마다 각자 발급. 저장소로 Redis vs DB 조사.
@@ -131,7 +167,7 @@
   - **활용신청:** 두 데이터셋(국내주식 투자정보 3070507 / 대량보유주식 15106890) 모두 승인 완료(같은 serviceKey).
 - **확정된 제약(자동화로도 안 사라짐):** 응답에 **종목코드 없음**(3070507=`종목명`만, 15106890=`발행기관명`만). 안정 키가 없어 종목명→ticker 매칭이 필요하고, 실측 매칭률은 정확 93.6%→주석 정제 후 94.8%(로컬 stale DB 기준). 미매칭 잔여 원인: ① 부기 주석 `(배당)(무상)(전환)`[정제 가능] ② 약칭 vs 정식명(금호석유↔금호석유화학) ③ **시점 사명 드리프트**(NPS 스냅샷은 기준일 시점의 과거 이름, stocks 마스터는 현재 이름 → 사명 변경 종목은 미스) ④ 폐지/합병. ②③④는 자동 완전 해소 불가 → **미매칭 reconcile 경로 필수**.
 - **권고:** CSV 업로드 대신 **API fetch 자동화 채택**(인코딩/컬럼 추측 제거). 단 3070507은 연 1회 데이터라 **타이트한 cron 불필요**(수동 트리거 또는 저빈도 OAS 신규 uddi 체크로 충분). infuser OAS 는 Swagger 문서 백엔드지 보증 데이터 API 가 아니므로 discovery 는 **soft dependency**(깨지면 uddi 수동 설정 폴백).
-- **후속:** 구현은 `docs/issue-current.md`. CSV 업로드 방식은 폐기가 아니라 **백로그 보류**(`docs/backlog.md`).
+- **후속:** 구현은 `docs/spec-current.md`. CSV 업로드 방식은 폐기가 아니라 **백로그 보류**(`docs/backlog.md`).
 
 ## 2026-06-02 | stocks seed 라이브 검증 — getItemInfo basDt 버그 + data.go.kr 게이트웨이 재시도
 

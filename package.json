@@ -8,5 +8,8 @@
     "lint": "pnpm -C fe lint",
     "test": "pnpm -C fe test",
     "tsc": "pnpm -C fe exec tsc --noEmit"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1063.0"
   }
 }
