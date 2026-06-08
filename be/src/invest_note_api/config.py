@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     store_url_ios: str = ""
     store_url_android: str = ""
 
+    # Capacitor OTA 라이브 업데이트: R2 의 발행 매니페스트 JSON 절대 URL.
+    # 빈 값이면 /live-update/manifest 가 fail-open(no-update) 한다(앱 부팅 차단 금지).
+    live_update_manifest_url: str = ""
+
     # 종목 마스터 적재(scripts/seed_stocks.py)용 공공데이터포털 인증키. 런타임 미사용 — batch 전용.
     # 빈 값이면 data.go.kr coverage pass 를 건너뛴다(다른 소스만 적재).
     data_go_kr_api_key: str = ""
