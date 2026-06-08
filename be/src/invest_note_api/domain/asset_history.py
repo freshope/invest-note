@@ -2,7 +2,7 @@
 
 일별 자산 = Σ_종목 (그 날 보유 수량 × 그 날 종가). 계좌뷰/종목뷰 동일 알고리즘(스코프만 다름).
 
-설계(docs/issue-history/2026-06-04-asset-history-page.md):
+설계(docs/spec-history/2026-06-04-asset-history-page.md):
   1. 스코프 거래를 종목별로 묶어 `sort_for_calc → walk_trades` 로 수량 step function 산출.
      ⚠️ walk_trades 는 단일 그룹 walker라 다종목을 한 번에 walk 하면 수량이 섞인다 → 반드시
         종목(ticker+country)별로 따로 walk 후 날짜별 합산한다(G1: sort_for_calc 필수).
