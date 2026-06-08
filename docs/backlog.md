@@ -35,7 +35,7 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] Preview staging 멀티 워커 대응 — 현재 `TTLCache` (단일 워커 메모리). 멀티 워커 배포 전 DB 임시 테이블 또는 Redis로 교체 필요
 - [ ] 임포트 통합 테스트 — `/import/preview`, `/import/commit` HTTP 엔드포인트 단위 테스트 (DB mock 또는 테스트 DB)
 - [ ] import preview 그룹 검증 중복 제거 (2026-05-26 API 성능 분석 #5) — `import_preview` 가 `account_id` 를 받으면 `_validate_import_groups` 가 commit 과 동일한 그룹별 `list_trades_in_group` + oversell 검증을 한 번 더 수행한다(`routers/trades.py` 의 preview 경로). 그룹 수가 많은 파일일수록 preview 에서 N회 추가 쿼리. 작업: preview 의 dedup 용 date-range fetch 결과를 재활용하거나, 정합성(oversell) 검증을 commit 단계로 일원화하고 preview 는 참고용 카운트만 노출. 주의: preview 단계에서 사용자에게 위반을 미리 보여주는 UX 가치가 있으므로 제거 전 FE 노출 동작 확인 필요.
-- [ ] 해외 주식 임포트 지원 — 토스 PDF `달러 거래내역` 섹션 처리 (현재 MVP skip)
+- [ ] 해외 주식 임포트 지원 — 토스 PDF `달러 거래내역` 섹션 + 삼성 USD 처리 (현재 skip). **미국 거래 샘플 확보 후 착수** — 2026-06-08 해외 v2 방향(분리+₩/$ 토글) 결정에 포함, `docs/decisions.md` 및 "v2 — 해외 주식" 섹션 참고.
 - [ ] `BROKERS`(`lib/brokers.ts`) ↔ `BROKER_OPTIONS`(`ImportTradesPanel/brokers.ts`) 라벨 동기화 단위 테스트 — `findBrokerKeyByAccountBroker`가 라벨 정확 일치에 의존(예: "삼성증권"). 한쪽 표기가 변하면 매칭이 조용히 깨짐. 두 테이블 라벨 교집합을 단위 테스트로 강제
 - [ ] 일괄 등록 — 모든 계좌가 미지원 증권사일 때 별도 안내 — 계좌가 0개일 때(빈 상태)와 다른 메시지(예: "등록된 계좌의 증권사가 아직 일괄 등록을 지원하지 않습니다") 노출. 현재는 비활성 카드에 "일괄 등록 미지원" 라벨만 표시되고 전체 안내 메시지는 없음(`AccountStep.tsx`)
 - [ ] 머지 갱신 범위 확장 재검토 — 현재 머지는 `commission`/`tax`/`traded_at` 만 update, `market_type`/`country_code`/`exchange` 는 사용자 분류를 우선해 **보존**(`docs/decisions.md` 2026-05-18 참고). 다음 트리거 발생 시 재검토: ① 사용자가 거래내역서로 분류 자동 보정을 명시적으로 원함, ② 증권사 파서가 사용자 수동 분류보다 더 정확한 케이스가 다수 보고됨. 재검토 시 `update_trade_from_import` 화이트리스트와 `build_merge_patch` 비교 필드를 함께 확장
@@ -65,11 +65,17 @@ MVP 이후 구현할 작업 후보 목록.
   - 과거 이력 초기 적재는 3개월 제한 때문에 구체결 API 페이징 또는 기존 파일 업로드 병행 필요.
   - **선행 리스크(도입 전 KIS 공식 확인 필수):** ① 제3자 서비스가 사용자 키로 대신 호출(BYOK)하는 구조가 개인 약관 범위인지 — 가장 큰 리스크, ② appkey 에 주문 권한 포함(읽기 전용 스코프 불가로 보임) → 키 유출 시 주문 실행 가능, 키 보관 위치(서버 암호화 vs 디바이스 Keychain/Keystore + 디바이스 직접 호출) 설계 결정 필요, ③ 사용자별 KIS Developers 가입·앱키 발급 UX 마찰.
 
-## v2 — 해외 주식
+## v2 — 해외 주식 (2026-06-08 방향 확정, `docs/decisions.md` 참고)
 
-- [ ] 해외 주식 검색/시세 재도입 — Yahoo Finance 등 해외 종목 provider 선정 및 장애 fallback 정의
-- [ ] USD/KRW 환율 적용 — 해외 종목 평가액을 KRW 기준 총자산·미실현손익에 합산
-- [ ] HHI 크로스-통화 정합성 — 해외 포지션 평가액을 KRW로 변환 후 비중 계산
+⚠️ 기존 "USD/KRW 환율로 KRW 총자산 합산 + 크로스-통화 HHI" 계획은 **폐기** — **분리 섹션 + ₩/$ 토글(거래별 체결환율)** 로 대체.
+
+- [ ] **US 직접입력 + 분리 표시 (MVP 본체, BE+FE)** — `country='US'` 신규 매수 차단(`trade.py:132`) 해제, 미국 전용 섹션, ₩/$ 토글. 거래 4필드(`amount_native`/`fx_rate`/`amount_krw`/`fx_provisional`) 통화중립 저장(write 시점 단일 계산). 국내는 `fx_rate=1.0` 으로 흡수.
+- [ ] **trade_walker 환율 차원 (BE)** — 매수 로트별 `fx_rate` 추적 → KRW 실현/미실현손익(`/portfolio/summary`). 취득원가=매입환율, 평가=현재환율(환차손익 반영).
+- [ ] **FX 시계열 적재/backfill (신규 레일)** — **Yahoo `USDKRW=X` 일별로 시작**(무인증·실측 OK, 추후 smbs 매매기준율 고려). 당일 거래 잠정→익일 확정(`fx_provisional`). 주가 `daily_price_sync_state` backfill 과 **별도** 테이블·job.
+- [ ] **US 시세 (2026-06-08 실측 확정: Yahoo primary, KIS 보조)** — Yahoo(무인증·근실시간·레이트리밋 무이슈)를 primary, KIS 해외(`/uapi/overseas-price`, `HHDFS00000300`, EXCD=NAS/NYS/AMS — 2건/초 앱키 예산 국내와 공유)는 공식 교차검증/fallback. **US 엔 Naver fallback 없음.** `_fetch_yahoo` 에 US(suffix 없음) 분기 추가.
+- [ ] **US 심볼 seed (2026-06-08 실측 확정: Nasdaq Trader 1순위)** — `nasdaqlisted.txt`+`otherlisted.txt`(ETF 플래그·거래소코드 포함)를 `stocks` 테이블 `country='US'` 적재 → 검색은 `STOCK_SEARCH_PROVIDER=db` 흡수. SEC `company_tickers.json`(정식회사명·CIK)은 보강용.
+- [ ] **import 해외 거래 (v2.x 후속)** — 토스 `달러 거래내역`·삼성 USD. **미국 거래 샘플 확보 후** 착수(아래 "거래내역서 임포트" 섹션 해외 항목과 동일 작업). 해제 지점: `samsung_xlsx.py:96`, `toss_pdf.py` USD 섹션.
+- [ ] 통합 뷰 — **제품 선택으로 보류**(거래별 KRW 로 기술적 가능). "어느 환율·시점" 환산 컨벤션 확정 시 재검토.
 
 ## v2 — UX
 

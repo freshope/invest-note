@@ -4,6 +4,24 @@
 
 ---
 
+## 2026-06-08 | 해외(미국) 주식 v2 방향 — 분리 + ₩/$ 토글(거래별 체결환율), 기존 "KRW 합산" 계획 대체
+
+- **맥락:** 2026-04-27 "MVP 해외 제외" 이후 v2 재개 사전조사. 기존 backlog/roadmap 의 v2 해외 계획은 "USD/KRW 환율로 해외 평가액을 **KRW 총자산·미실현손익에 합산** + 크로스-통화 HHI"였다. 그러나 ① 실시간 환율 환산이 부정확(특히 **당일 직접입력은 거래일 종가 환율 미확정**), ② 한 화면에 ₩/$ 혼재 시 인지 부하 → "분리 + USD-native + 사용자 토글"로 방향 전환. 증권사(미래에셋·KB·키움) 조사로 토글 원화 = **일별 매매기준율 환산(실시간 피드 불필요)**, 당일 거래는 **잠정→익일 재정산**(KB 10:45 재정산·미래에셋 가환전→실환전)이 업계 표준임을 확인 — 우리 backfill 설계와 동일.
+- **결정(확정):**
+  - ① **미국만.** 모델은 다시장 가능하게 두되 seed·UI 는 US 만(다른 시장은 추가작업 없이 확장 가능, 이번 미포함).
+  - ② **MVP = 직접 입력.** import(토스 `달러 거래내역`·삼성 USD)는 **v2.x 후속**(미국 거래 샘플 확보 후 — 없는 입력에 맞춘 파서는 speculative). 해제 지점: `trade.py:132 _mvp_foreign_buy_blocked`, `samsung_xlsx.py:96`, `toss_pdf.py` USD 섹션.
+  - ③ **국내와 분리 섹션.** 통합 뷰는 **제품 선택으로 보류**(거래별 KRW 가 생기므로 기술적 불가는 아님 — "어느 환율·시점" 컨벤션 확정 시 추가).
+  - ④ **미국 섹션 내 ₩/$ 토글(MVP 포함).** KRW = **거래별 체결환율** — 취득원가=매입 시점 환율, 평가=현재 환율 → **환차손익 반영**(증권사 평가 방식). 토글 KRW 는 "참고 평가값"(증권사도 평가환율 ≠ 결제환율).
+  - ⑤ **거래 4필드 통화중립 저장**(국내/해외 통일): `amount_native`(체결통화 금액=price×qty), `fx_rate`(native→KRW, **국내=1.0**), `amount_krw`(=round(native×fx)), `fx_provisional`(당일 잠정 여부). **write 시점 단일 경로 계산**(생성/수정 시 갱신), read 는 저장값. 그 이상 파생(비용 KRW·순액·손익)은 `fx_rate` 로 유도 — **과한 비정규화 회피**(박제 늘릴수록 stale 위험↑, BUY→SELL cascade 교훈).
+  - ⑥ **BE 손익:** `trade_walker` 에 환율 차원 추가 → 매수 로트별 `fx_rate` 를 끌고 가 KRW 실현/미실현손익 계산. 실제 계산은 BE `/portfolio/summary`(FE walker 는 dead code).
+- **선행검증(2026-06-08 실호출 완료):**
+  - **US 시세: primary=Yahoo, 보조=KIS 해외.** 실측 — Yahoo(AAPL $307.34, 무인증·근실시간·레이트리밋 무이슈) vs KIS 해외(`/uapi/overseas-price/v1/quotations/price`, TR `HHDFS00000300`, `EXCD`=NAS/NYS/AMS·`SYMB` — AAPL 309.06·KO 79.33 정상이나 **2건/초 앱키 예산이 국내와 공유**, NVDA 에서 EGW00201 재현). `decisions.md:25` "KIS 시세=보조" 결론이 해외에도 전이 확인 → **Yahoo primary, KIS 는 공식 교차검증/fallback**. US 엔 Naver fallback 없음. `_fetch_yahoo` 는 현재 `.KS/.KQ` suffix 만 붙이므로 US 는 suffix 없는 분기 추가 필요.
+  - **US 심볼 seed: Nasdaq Trader 1순위(SEC 보강).** 실측 — `nasdaqlisted.txt`(5,494) + `otherlisted.txt`(7,301, **ETF 플래그 Y 4,107·거래소코드 포함**) → 기존 seed shape(`{ticker, asset_name, market}`) 매핑 가능. SEC `company_tickers.json`(10,400사·정식회사명·CIK)은 보강용.
+  - **FX 시계열: Yahoo `USDKRW=X` 로 시작(추후 smbs 고려).** 실측 — 일별 close 무인증 정상. 시장환율이라 매매기준율과 ~0.1% 차이나나 토글 KRW='참고 평가값'이라 충분. 정밀 필요 시 서울외국환중개 매매기준율(jsp 스크래핑) 업그레이드. **적재·backfill job 은 신규 레일**(주가 `daily_price_sync_state` 와 별도 테이블·job).
+- **트레이드오프:** 거래별 환율 박제로 KRW 손익은 정확하나 walker 에 환율 차원 + FX 시계열 적재가 신규 비용. 직접입력 당일 거래는 잠정 환율→backfill 수렴(USD-only 가 아니라 토글이라 잠정값이 일시 노출될 수 있음 — `fx_provisional` 로 표시 처리). import 는 샘플 부재로 후속 분리.
+
+---
+
 ## 2026-06-07 | KIS 토큰 영속화 — Redis 대신 PostgreSQL (kis_tokens + advisory xact lock)
 
 - **맥락:** KIS 토큰 1일 1회 발급 원칙(잦은 발급 시 이용 제한 제재) 대응. 기존 토큰 캐시는 per-process 메모리라 재배포·롤링 배포 중 신구 컨테이너·cron 배치마다 각자 발급. 저장소로 Redis vs DB 조사.
