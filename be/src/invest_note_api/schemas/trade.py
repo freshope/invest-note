@@ -7,9 +7,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..domain.trade_types import (
+    CURRENCY_KRW,
     CountryCode,
     EmotionType,
     MAX_NAME_LEN,
@@ -18,6 +19,7 @@ from ..domain.trade_types import (
     StrategyType,
     TradeResult,
     TradeType,
+    currency_for_country,
 )
 from ..domain.trade_utils import KST_OFFSET
 from ..utils.numbers import strip_comma_number
@@ -125,6 +127,14 @@ class TradeCreate(BaseModel):
     @classmethod
     def _non_negative(cls, v: object) -> float:
         return _comma_non_negative(v)
+
+    @model_validator(mode="after")
+    def _foreign_requires_exchange_rate(self) -> "TradeCreate":
+        # 비-KRW(해외) 거래는 거래 시점 환율이 필수. 기본값/누락(1.0)이면 native 금액을
+        # KRW 로 간주해 원가·손익이 조용히 어긋나므로 거부한다(KR/OTHER 는 KRW 라 무관).
+        if currency_for_country(self.country_code) != CURRENCY_KRW and self.exchange_rate == 1.0:
+            raise ValueError("해외 거래는 거래 시점 환율(exchange_rate)이 필요합니다.")
+        return self
 
 
 class TradeUpdate(BaseModel):

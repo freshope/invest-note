@@ -12,7 +12,6 @@ import { useQuotes } from "@/hooks/useQuotes";
 import { useFxRate } from "@/hooks/useFxRate";
 import { CountryBadge } from "@/components/records/trade-display";
 import { cn } from "@/lib/utils";
-import { currencyForCountry, toKRW } from "@/lib/format";
 import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import { mergeQuotes, type Position } from "@/lib/portfolio";
 
@@ -53,9 +52,10 @@ export function StockSwitchSheet({ open, onOpenChange, currentKey, onSelect }: S
 
   const positions = useMemo(() => {
     if (!data) return [];
-    const krwEval = (p: Position) =>
-      p.evaluation === null ? 0 : toKRW(p.evaluation, currencyForCountry(p.country), usdkrw) ?? 0;
-    return mergeQuotes(data.positions, quotes).sort((a, b) => krwEval(b) - krwEval(a));
+    // mergeQuotes 가 usdkrw 로 evaluation 을 KRW 환산 → 단일 통화로 정렬(US 도 환율 반영).
+    return mergeQuotes(data.positions, quotes, usdkrw).sort(
+      (a, b) => (b.evaluation ?? 0) - (a.evaluation ?? 0),
+    );
   }, [data, quotes, usdkrw]);
 
   return (

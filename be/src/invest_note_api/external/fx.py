@@ -112,11 +112,17 @@ async def get_fx_rate(
     """
     key = f"{base}/{quote}"
     async with state.lock:
-        if not force_refresh and key in state.cache:
-            return state.cache[key]
+        cached = state.cache.get(key)
+        if not force_refresh and cached is not None:
+            return cached
         result = await _fetch_yahoo_fx(client, base, quote)
-        state.cache[key] = result
-        return result
+        if result is not None:
+            state.cache[key] = result
+            return result
+        # fetch 실패: None 을 장기 TTL(FX_CACHE_TTL) 캐시에 박지 않는다 — 일시 실패 1회가
+        # 전 해외 보유 평가액을 10분간 가리는 것을 막고 다음 요청에서 재시도한다. 직전 성공값이
+        # 있으면 stale 로 유지(환율은 느리게 변해 허용 가능), 없으면 None.
+        return cached
 
 
 async def fetch_usdkrw(

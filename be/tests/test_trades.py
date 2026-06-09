@@ -269,11 +269,25 @@ class TestCreateTrade:
             "ticker_symbol": "AAPL",
             "country_code": "US",
             "exchange": "NASDAQ",
+            "exchange_rate": 1350.0,
         }
         with _patch_trades(conn):
             resp = trades_client.post("/trades", json=payload)
         assert resp.status_code == 201
         assert resp.json()["id"] == "new-us-buy"
+
+    def test_create_foreign_buy_without_rate_422(self, trades_client):
+        """해외(US) 거래는 거래 시점 환율 필수 — exchange_rate 누락(기본 1.0)이면 거부."""
+        payload = {
+            **self._buy_payload(),
+            "asset_name": "Apple",
+            "ticker_symbol": "AAPL",
+            "country_code": "US",
+            "exchange": "NASDAQ",
+        }
+        resp = trades_client.post("/trades", json=payload)
+        assert resp.status_code == 422
+        assert "환율" in resp.json()["error"]
 
     def test_create_foreign_sell_allowed_for_existing_holding(self, trades_client):
         acct_row = {"id": "a1"}
@@ -301,6 +315,7 @@ class TestCreateTrade:
             "ticker_symbol": "AAPL",
             "country_code": "US",
             "exchange": "NASDAQ",
+            "exchange_rate": 1350.0,
         }
         with _patch_trades(conn):
             resp = trades_client.post("/trades", json=payload)
