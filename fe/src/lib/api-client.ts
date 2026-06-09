@@ -58,6 +58,7 @@ const ROUTES = {
     search: "/stocks/search",
     quote: "/stocks/quote",
     meta: "/stocks/meta",
+    fx: "/stocks/fx",
   },
   analysis: {
     dashboard: "/analysis/dashboard",
@@ -155,6 +156,7 @@ export interface TradeCreateInput {
   ticker_symbol: string;
   country_code?: string;
   exchange?: string; // optional: server default("") fills absent value
+  exchange_rate?: number; // 거래 시점 USD/KRW(해외). KR 은 1. 미전송 시 서버 default(1).
   price: number;
   quantity: number;
   commission?: number;
@@ -369,6 +371,14 @@ export interface StockMeta {
 }
 export type StockMetaMap = Record<string, StockMeta>;
 
+// 환율(BE /stocks/fx 응답). rate: base 1단위 = rate × quote (USD/KRW 1350 → 1 USD = 1350 KRW).
+export interface FxRate {
+  base: string;
+  quote: string;
+  rate: number;
+  as_of: string;
+}
+
 export const stocksApi = {
   search: (q: string) =>
     apiFetch<StockSearchResult[]>(`${ROUTES.stocks.search}?q=${encodeURIComponent(q)}`),
@@ -381,6 +391,12 @@ export const stocksApi = {
 
   meta: (codes: string) =>
     apiFetch<StockMetaMap>(`${ROUTES.stocks.meta}?codes=${encodeURIComponent(codes)}`),
+
+  // 통화쌍 환율(기본 USD/KRW). KRW 환산 합산용 — 실패 시 BE 가 null 반환.
+  fx: (base = "USD", quote = "KRW") =>
+    apiFetch<FxRate | null>(
+      `${ROUTES.stocks.fx}?base=${encodeURIComponent(base)}&quote=${encodeURIComponent(quote)}`
+    ),
 };
 
 // ============================================================

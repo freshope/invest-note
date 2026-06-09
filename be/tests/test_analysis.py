@@ -30,6 +30,7 @@ def _make_trade_row(
     country_code="KR",
     total_amount=None,
     buy_reason=None,
+    exchange_rate=1.0,
 ) -> dict:
     now = _dt("2026-04-20T09:00:00+09:00")
     return {
@@ -55,6 +56,7 @@ def _make_trade_row(
         "holding_days": holding_days,
         "country_code": country_code,
         "exchange": "",
+        "exchange_rate": exchange_rate,
         "commission": 0.0,
         "tax": 0.0,
         "created_at": _dt("2024-01-01T00:00:00Z"),
@@ -142,6 +144,33 @@ class TestAnalysisDashboard:
         # PnL 약어 키는 대문자 'L' (FE 타입 호환)
         assert "sumPnL" in summary["byStrategy"][0]
         assert "sumPnL" in summary["byStrategyAdherence"][0]
+
+    def test_us_realized_pnl_is_stored_krw(self, trades_client):
+        """US SELL 실현손익은 저장값이 이미 KRW(거래시점 환율로 compute_group_pnl 이 고정).
+
+        analysis 는 저장 profit_loss(KRW)를 환산 없이 그대로 합산한다(현재 환율 무관).
+        """
+        buy = _make_trade_row(
+            id_="b1", trade_type="BUY", ticker="AAPL", asset_name="Apple",
+            price=200.0, quantity=10.0, country_code="US", exchange_rate=1500.0,
+        )
+        sell = _make_trade_row(
+            id_="s1", trade_type="SELL", ticker="AAPL", asset_name="Apple",
+            price=210.0, quantity=10.0, country_code="US", exchange_rate=1520.0,
+            traded_at=_dt("2026-04-22T09:00:00+09:00"),
+            # 저장 profit_loss = KRW: 210×10×1520 - 200×10×1500 = 192,000
+            profit_loss=192000.0, avg_buy_price=300000.0, holding_days=2,
+        )
+        conn = FakeConnection([buy, sell])
+
+        with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
+            with patch("invest_note_api.routers.analysis.fetch_quotes_by_keys", new=AsyncMock(return_value={})):
+                resp = trades_client.get("/analysis/dashboard")
+
+        assert resp.status_code == 200
+        summary = resp.json()["summary"]
+        # 저장 KRW(192,000)를 그대로 합산
+        assert summary["totalProfitLoss"] == pytest.approx(192000.0, rel=1e-6)
         # result_input_rate 는 제거됨 (자동 유도값이라 의미 없음)
         assert "resultInputRate" not in summary
 

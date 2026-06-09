@@ -9,7 +9,9 @@ import pytest
 from invest_note_api.external.quotes import (
     QuoteCacheState,
     _fetch_kr_price,
+    _fetch_yahoo_us,
     _get_cached,
+    fetch_quotes_by_keys,
 )
 
 
@@ -378,3 +380,93 @@ def test_fetch_kr_price_kis_unconfigured_falls_back_without_network(monkeypatch)
     assert result is not None
     assert result["price"] == 71500.0
     assert kis_called is False
+
+
+# ─────────────────────────── US(해외) 시세 ───────────────────────────
+
+
+def test_fetch_yahoo_us_returns_price_and_currency_from_meta():
+    """suffix 없는 티커 → Yahoo chart. price + meta.currency 사용."""
+    routes = {
+        "https://query2.finance.yahoo.com/v8/finance/chart/AAPL": httpx.Response(
+            200,
+            json={"chart": {"result": [{"meta": {"regularMarketPrice": 195.5, "currency": "USD"}}]}},
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_yahoo_us(client, "AAPL")
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["price"] == 195.5
+    assert result["currency"] == "USD"
+
+
+def test_fetch_yahoo_us_defaults_currency_to_usd_when_missing():
+    routes = {
+        "https://query2.finance.yahoo.com/v8/finance/chart/AAPL": httpx.Response(
+            200, json={"chart": {"result": [{"meta": {"regularMarketPrice": 100.0}}]}}
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_yahoo_us(client, "AAPL")
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["currency"] == "USD"
+
+
+def test_fetch_yahoo_us_returns_none_on_empty_or_failure():
+    routes = {"https://query2.finance.yahoo.com": httpx.Response(503)}
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_yahoo_us(client, "NOPE")
+
+    assert asyncio.run(runner()) is None
+
+
+def test_fetch_quotes_by_keys_routes_us_to_yahoo_and_kr_to_chain():
+    """KR→공급자 체인(naver fail→yahoo .KS), US→yahoo bare ticker. 통화 분리 유지."""
+    state = QuoteCacheState()
+    routes = {
+        "https://polling.finance.naver.com": httpx.Response(503),
+        "https://api.stock.naver.com": httpx.Response(503),
+        "https://query2.finance.yahoo.com/v8/finance/chart/005930.KS": httpx.Response(
+            200, json={"chart": {"result": [{"meta": {"regularMarketPrice": 71000, "currency": "KRW"}}]}}
+        ),
+        "https://query2.finance.yahoo.com/v8/finance/chart/AAPL": httpx.Response(
+            200, json={"chart": {"result": [{"meta": {"regularMarketPrice": 195.5, "currency": "USD"}}]}}
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await fetch_quotes_by_keys(
+                state, ["005930:KR", "AAPL:US"], client=client, providers=["naver", "yahoo"]
+            )
+
+    out = asyncio.run(runner())
+    assert out["005930:KR"]["price"] == 71000.0
+    assert out["005930:KR"]["currency"] == "KRW"
+    assert out["AAPL:US"]["price"] == 195.5
+    assert out["AAPL:US"]["currency"] == "USD"
+
+
+def test_fetch_quotes_by_keys_unsupported_country_is_null():
+    """공급자 없는 국가(OTHER) → null."""
+    state = QuoteCacheState()
+    routes = {"https://query2.finance.yahoo.com": httpx.Response(503)}
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await fetch_quotes_by_keys(
+                state, ["XYZ:OTHER"], client=client, providers=["yahoo"]
+            )
+
+    out = asyncio.run(runner())
+    assert out["XYZ:OTHER"] is None

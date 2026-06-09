@@ -36,8 +36,8 @@ import httpx
 
 from invest_note_api.config import DEFAULT_STOCK_SEED_SOURCES, Settings
 from invest_note_api.domain.hangul import to_chosung
-from invest_note_api.domain.trade_types import DEFAULT_COUNTRY
-from invest_note_api.external.constants import USER_AGENT
+from invest_note_api.domain.trade_types import COUNTRY_US, DEFAULT_COUNTRY
+from invest_note_api.external.constants import CURRENCY_USD, USER_AGENT
 from invest_note_api.external.naver_search import search_kr
 from invest_note_api.external.provider_registry import resolve_chain
 
@@ -412,6 +412,126 @@ async def fetch_kis_master(*, client: httpx.AsyncClient | None = None) -> list[d
     else:
         await _run(client)
     return rows
+
+
+# ─────────────────────────── US 종목 마스터 fetcher (nasdaqtrader) ───────────────────────────
+
+# nasdaqtrader.com 공개 심볼 디렉터리(인증 불필요, pipe-delimited).
+#   nasdaqlisted.txt : NASDAQ 상장. 컬럼 Symbol|Security Name|Market Category|Test Issue|...|ETF|...
+#   otherlisted.txt  : NYSE/AMEX/ARCA 등. 컬럼 ACT Symbol|Security Name|Exchange|...|Test Issue|...
+_NASDAQ_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt"
+_OTHER_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
+_US_MASTER_TIMEOUT = 30
+# otherlisted.txt 의 Exchange 코드 → 보드명. 미매핑 코드는 "US" 로 둔다.
+_OTHER_EXCHANGE_MAP = {
+    "A": "NYSE MKT",
+    "N": "NYSE",
+    "P": "NYSE ARCA",
+    "Z": "Cboe BZX",
+    "V": "IEX",
+}
+
+
+def _parse_nasdaqtrader(text: str, *, nasdaq_default: str | None = None) -> list[dict]:
+    """nasdaqtrader 심볼 파일 텍스트 → [{ticker, asset_name, market, exchange, currency}].
+
+    헤더로 컬럼 위치를 잡아 nasdaqlisted/otherlisted 양식을 함께 처리한다.
+      - `nasdaq_default` 지정(=nasdaqlisted) 시 보드명은 그 값(NASDAQ), 아니면 Exchange 코드 매핑.
+      - Test Issue == 'Y' 제외. 심볼은 보통주/ETF 만 남기려 알파벳 전용으로 제한
+        (warrant·preferred·unit 의 '.'/'$'/'=' 접미는 제외).
+      - 마지막 'File Creation Time' 푸터 라인은 스킵.
+    """
+    lines = text.splitlines()
+    if len(lines) < 2:
+        return []
+    cols = {name.strip(): i for i, name in enumerate(lines[0].split("|"))}
+    sym_col = "Symbol" if "Symbol" in cols else "ACT Symbol"
+    if sym_col not in cols or "Security Name" not in cols:
+        return []
+    rows: list[dict] = []
+    for line in lines[1:]:
+        if line.startswith("File Creation Time"):
+            continue
+        parts = line.split("|")
+        if len(parts) < len(cols):
+            continue
+        ticker = parts[cols[sym_col]].strip()
+        name = parts[cols["Security Name"]].strip()
+        if "Test Issue" in cols and parts[cols["Test Issue"]].strip() == "Y":
+            continue
+        if not ticker or not name or not ticker.isalpha():
+            continue
+        if nasdaq_default is not None:
+            market = nasdaq_default
+        else:
+            market = _OTHER_EXCHANGE_MAP.get(parts[cols["Exchange"]].strip(), "US") if "Exchange" in cols else "US"
+        rows.append(
+            {
+                "ticker": ticker,
+                "asset_name": name,
+                "market": market,
+                "exchange": market,
+                "currency": CURRENCY_USD,
+            }
+        )
+    return rows
+
+
+async def fetch_nasdaq_us(*, client: httpx.AsyncClient | None = None) -> list[dict]:
+    """nasdaqlisted + otherlisted 두 파일을 받아 US 종목 rows 로 병합(인증 불필요)."""
+    rows: list[dict] = []
+
+    async def _run(c: httpx.AsyncClient) -> None:
+        nasdaq_res, other_res = await asyncio.gather(
+            c.get(_NASDAQ_LISTED_URL), c.get(_OTHER_LISTED_URL)
+        )
+        nasdaq_res.raise_for_status()
+        other_res.raise_for_status()
+        rows.extend(_parse_nasdaqtrader(nasdaq_res.text, nasdaq_default="NASDAQ"))
+        rows.extend(_parse_nasdaqtrader(other_res.text))
+
+    if client is None:
+        async with httpx.AsyncClient(
+            headers={"User-Agent": USER_AGENT}, timeout=_US_MASTER_TIMEOUT
+        ) as owned:
+            await _run(owned)
+    else:
+        await _run(client)
+    return rows
+
+
+async def seed_us(db_url: str) -> None:
+    """US 종목 마스터 적재 — nasdaqtrader authority 단일 소스 UPSERT(country_code='US').
+
+    KR 파이프라인(seed())과 독립. authority overwrite 로 이름/보드를 canonical 화하고,
+    응답이 비어있지 않을 때만 soft-delete(상폐 정리)한다 — 빈 응답에 대량 오상폐 방지.
+    """
+    conn = await asyncpg.connect(db_url, statement_cache_size=0)
+    try:
+        if not await conn.fetchval("select pg_try_advisory_lock(hashtext('seed_us_stocks'))"):
+            print("다른 인스턴스가 실행 중 — skip")
+            return
+        rows = await fetch_nasdaq_us()
+        if not rows:
+            print("  [nasdaqtrader] 빈 응답 — skip")
+            return
+        n = await upsert_stocks(
+            conn, rows, overwrite_name=True, source="nasdaqtrader", country_code=COUNTRY_US
+        )
+        union = {r["ticker"] for r in rows if r.get("ticker")}
+        deleted = await soft_delete_not_in(conn, COUNTRY_US, union)
+        print(f"  [nasdaqtrader] {n}건 반영, soft-delete {deleted}건")
+        print("완료.")
+    finally:
+        await conn.close()
+
+
+def main_us() -> None:
+    settings = Settings()
+    db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+    if not db_url:
+        raise SystemExit("database_url 미설정")
+    asyncio.run(seed_us(db_url))
 
 
 # ─────────────────────────── 시가총액 fetcher (data.go.kr 시세) ───────────────────────────

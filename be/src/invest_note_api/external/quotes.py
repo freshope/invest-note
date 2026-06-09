@@ -21,10 +21,11 @@ from cachetools import TTLCache
 from fastapi import Request
 
 from invest_note_api.config import DEFAULT_QUOTE_PROVIDERS
-from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, MAX_CODE_LEN
+from invest_note_api.domain.trade_types import COUNTRY_US, DEFAULT_COUNTRY, MAX_CODE_LEN
 from invest_note_api.domain.trade_utils import KST, position_key
 from invest_note_api.external.constants import (
     CURRENCY_KRW,
+    CURRENCY_USD,
     KIS_INQUIRE_PRICE_PATH,
     NAVER_BASIC_URL,
     NAVER_REALTIME_URL,
@@ -164,6 +165,37 @@ async def _fetch_yahoo(client: httpx.AsyncClient, code: str) -> QuoteResult | No
     return None
 
 
+async def _fetch_yahoo_us(client: httpx.AsyncClient, code: str) -> QuoteResult | None:
+    """Yahoo 해외(US) 시세 — suffix 없는 티커. 통화는 응답 meta.currency 를 사용(USD fallback).
+
+    KR 경로(`_fetch_yahoo`)는 currency 를 KRW 로 고정하지만, 해외는 종목별 통화가 다를 수
+    있어 meta 의 통화를 그대로 신뢰한다.
+    """
+    try:
+        res = await client.get(
+            YAHOO_CHART_URL.format(symbol=code), headers=_HEADERS, timeout=QUOTE_ATTEMPT_TIMEOUT
+        )
+    except Exception:
+        logger.warning("yahoo us 시세 실패 code=%s", code, exc_info=True)
+        return None
+    if res.status_code != 200:
+        return None
+    data = res.json()
+    result = (data.get("chart") or {}).get("result") or []
+    if not result:
+        return None
+    meta = result[0].get("meta") or {}
+    price, traded_on = _parse_yahoo_chart_price(data)
+    if price <= 0:
+        return None
+    return {
+        "price": price,
+        "currency": meta.get("currency") or CURRENCY_USD,
+        "as_of": datetime.now(timezone.utc).isoformat(),
+        "traded_on": traded_on,
+    }
+
+
 # KIS 레이트리밋(실측 2건/초) 슬롯 대기 예산 — 멀티 종목 동시 시세에서 슬롯을 못 얻은
 # 종목은 빠르게 다음 공급자(naver)로 넘어가야 전체 deadline(QUOTE_FETCH_DEADLINE) 안에 든다.
 _KIS_QUOTE_THROTTLE_BUDGET = 1.0
@@ -234,6 +266,20 @@ async def _fetch_kr_price(
     return None
 
 
+def _entry_fetch_fn(
+    country: str,
+    code: str,
+    client: httpx.AsyncClient,
+    providers: Sequence[str],
+) -> Callable[[], object] | None:
+    """국가별 시세 fetch 콜러블. 공급자가 없는 국가는 None(→ 결과 null)."""
+    if country == DEFAULT_COUNTRY:
+        return lambda: _fetch_kr_price(client, code, providers)
+    if country == COUNTRY_US:
+        return lambda: _fetch_yahoo_us(client, code)
+    return None
+
+
 async def _get_cached(
     state: QuoteCacheState, key: str, fetch_fn, *, force_refresh: bool = False
 ) -> dict | None:
@@ -281,9 +327,10 @@ async def fetch_quotes_by_keys(
     force_refresh: bool = False,
     providers: Sequence[str] = DEFAULT_QUOTE_PROVIDERS,
 ) -> dict[str, QuoteResult | None]:
-    """keys 형식: "종목코드:국가" (예: "005930:KR"). KR 외 국가는 MVP에서 null.
+    """keys 형식: "종목코드:국가" (예: "005930:KR", "AAPL:US"). KR→공급자 체인, US→Yahoo.
 
-    `client` 는 라우터의 `Depends(get_http_client)` 로 주입받은 lifespan-managed 공유 인스턴스.
+    KR/US 외 국가(OTHER 등)는 공급자가 없어 null. `client` 는 라우터의
+    `Depends(get_http_client)` 로 주입받은 lifespan-managed 공유 인스턴스.
     `force_refresh=True` (pull-to-refresh) 면 캐시를 우회해 새 시세를 받는다.
     `providers` 는 호출측(라우터)이 settings.quote_provider_list 를 전달 — 내부에서
     get_settings() 를 읽지 않는다(테스트 격리·암묵 의존 방지).
@@ -299,24 +346,26 @@ async def fetch_quotes_by_keys(
         if code:
             entries.append({"code": code, "country": country, "key": key})
 
-    kr_entries = [e for e in entries if e["country"] == DEFAULT_COUNTRY]
-    tasks = [
-        _get_cached(
-            state,
-            position_key(e["code"], DEFAULT_COUNTRY),
-            lambda code=e["code"]: _fetch_kr_price(client, code, providers),
-            force_refresh=force_refresh,
+    task_entries = []
+    tasks = []
+    for e in entries:
+        fetch_fn = _entry_fetch_fn(e["country"], e["code"], client, providers)
+        if fetch_fn is None:
+            continue  # 공급자 없는 국가 → out 기본값 None 유지
+        task_entries.append(e)
+        tasks.append(
+            _get_cached(
+                state,
+                position_key(e["code"], e["country"]),
+                fetch_fn,
+                force_refresh=force_refresh,
+            )
         )
-        for e in kr_entries
-    ]
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     out: dict[str, QuoteResult | None] = {e["key"]: None for e in entries}
-    for e, result in zip(kr_entries, results):
-        if isinstance(result, Exception):
-            out[e["key"]] = None
-        else:
-            out[e["key"]] = result
+    for e, result in zip(task_entries, results):
+        out[e["key"]] = None if isinstance(result, Exception) else result
 
     return out

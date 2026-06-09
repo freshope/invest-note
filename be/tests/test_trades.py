@@ -253,7 +253,16 @@ class TestCreateTrade:
         with pytest.raises(ValueError, match="미래"):
             TradeCreate.model_validate(payload)
 
-    def test_create_foreign_buy_422_in_mvp(self, trades_client):
+    def test_create_foreign_buy_allowed(self, trades_client):
+        """Phase B: 해외(US) 신규 매수 허용 — 차단 validator 제거됨."""
+        acct_row = {"id": "a1"}
+        trade_row = _make_trade_row()
+        inserted = {"id": "new-us-buy", "trade_type": "BUY"}
+        conn = FakeConnection(
+            _to_record(acct_row),
+            [_to_record(trade_row)],
+            _to_record(inserted),
+        )
         payload = {
             **self._buy_payload(),
             "asset_name": "Apple",
@@ -261,9 +270,10 @@ class TestCreateTrade:
             "country_code": "US",
             "exchange": "NASDAQ",
         }
-        resp = trades_client.post("/trades", json=payload)
-        assert resp.status_code == 422
-        assert "해외 주식 신규 매수" in resp.json()["error"]
+        with _patch_trades(conn):
+            resp = trades_client.post("/trades", json=payload)
+        assert resp.status_code == 201
+        assert resp.json()["id"] == "new-us-buy"
 
     def test_create_foreign_sell_allowed_for_existing_holding(self, trades_client):
         acct_row = {"id": "a1"}

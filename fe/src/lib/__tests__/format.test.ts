@@ -2,10 +2,14 @@ import { describe, it, expect } from "vitest";
 import {
   calcChangePercent,
   calcPercent,
+  currencyForCountry,
+  currencySymbol,
   fmtNumberInput,
+  formatMoney,
   formatNumberInput,
   formatPctSigned,
   formatPnL,
+  formatPnLCurrency,
   parseNumberInput,
 } from "../format";
 
@@ -144,6 +148,53 @@ describe("formatPctSigned", () => {
     expect(formatPctSigned(1.236)).toBe("+1.24%");
     expect(formatPctSigned(1.234)).toBe("+1.23%");
     expect(formatPctSigned(-1.236)).toBe("-1.24%");
+  });
+});
+
+describe("currencyForCountry", () => {
+  it("US는 USD, 그 외는 KRW", () => {
+    expect(currencyForCountry("US")).toBe("USD");
+    expect(currencyForCountry("KR")).toBe("KRW");
+    expect(currencyForCountry("OTHER")).toBe("KRW");
+  });
+});
+
+describe("currencySymbol", () => {
+  it("등록 통화는 기호, 미등록은 코드 그대로", () => {
+    expect(currencySymbol("KRW")).toBe("₩");
+    expect(currencySymbol("USD")).toBe("$");
+    expect(currencySymbol("JPY")).toBe("JPY");
+  });
+});
+
+describe("formatMoney", () => {
+  it("KRW는 정수 + 원", () => {
+    expect(formatMoney(1234, "KRW")).toBe("1,234원");
+    expect(formatMoney(1234)).toBe("1,234원"); // 기본 KRW
+  });
+
+  it("USD는 $ 접두 + 소수 2자리", () => {
+    expect(formatMoney(12.5, "USD")).toBe("$12.50");
+    expect(formatMoney(1234, "USD")).toBe("$1,234.00");
+  });
+});
+
+describe("formatPnLCurrency", () => {
+  it("KRW 손익은 기존 formatPnL 과 동일 형식", () => {
+    expect(formatPnLCurrency(1234, "KRW")).toBe("+1,234원");
+    expect(formatPnLCurrency(-1234, "KRW")).toBe("-1,234원");
+    expect(formatPnLCurrency(0, "KRW")).toBe("0원");
+  });
+
+  it("USD 손익은 부호 + $ + 소수 2자리", () => {
+    expect(formatPnLCurrency(12.5, "USD")).toBe("+$12.50");
+    expect(formatPnLCurrency(-12.5, "USD")).toBe("-$12.50");
+    expect(formatPnLCurrency(0, "USD")).toBe("$0.00");
+  });
+
+  it("round 후 0이 되는 값은 부호 없이", () => {
+    expect(formatPnLCurrency(0.4, "KRW")).toBe("0원");
+    expect(formatPnLCurrency(-0.001, "USD")).toBe("$0.00");
   });
 });
 

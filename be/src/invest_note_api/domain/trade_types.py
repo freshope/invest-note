@@ -45,6 +45,10 @@ RESULT_BREAKEVEN: TradeResult = "BREAKEVEN"
 DEFAULT_COUNTRY: CountryCode = "KR"
 COUNTRY_US: CountryCode = "US"
 
+Currency = Literal["KRW", "USD"]
+CURRENCY_KRW: Currency = "KRW"
+CURRENCY_USD: Currency = "USD"
+
 MAX_CODE_LEN = 20
 MAX_NAME_LEN = 50
 
@@ -57,6 +61,44 @@ def trade_identifier(trade: "Trade") -> str:
 def trade_country(trade: "Trade") -> str:
     """country_code fallback to DEFAULT_COUNTRY (KR). 빈 문자열도 KR로 정규화."""
     return trade.country_code or DEFAULT_COUNTRY
+
+
+def currency_for_country(country: str) -> Currency:
+    """country_code → 거래 통화. US=USD, 그 외(KR/OTHER)=KRW."""
+    return CURRENCY_USD if country == COUNTRY_US else CURRENCY_KRW
+
+
+def to_krw(value: float, currency: str, usdkrw: float | None) -> float | None:
+    """native 통화 금액을 KRW 로 환산. KRW 는 그대로, USD 는 ×usdkrw.
+
+    환산 불가(USD 인데 환율 None, 또는 미지원 통화)면 None — 호출측이 missing 으로 처리해
+    조용한 통화 혼재 합산을 막는다(KR 은 항상 환산 성공이라 영향 없음).
+    """
+    if currency == CURRENCY_KRW:
+        return value
+    if currency == CURRENCY_USD:
+        return value * usdkrw if usdkrw is not None else None
+    return None
+
+
+def krw_normalized_trade(trade: "Trade") -> "Trade":
+    """거래의 native 금액(price/commission/tax)을 거래 시점 환율로 KRW 로 정규화한 사본.
+
+    계산 엔진(walker/realized_pnl)이 KRW 단일 통화로 동작하게 하는 전처리. 수량·시각·정렬
+    키는 불변이라 FIFO·정렬 불변식에 영향 없다. `exchange_rate=1.0` 으로 두어 이중 적용 방지.
+    KR(rate=1.0)은 그대로 반환(불필요한 copy 회피).
+    """
+    rate = trade.exchange_rate or 1.0
+    if rate == 1.0:
+        return trade
+    return trade.model_copy(
+        update={
+            "price": trade.price * rate,
+            "commission": trade.commission * rate,
+            "tax": trade.tax * rate,
+            "exchange_rate": 1.0,
+        }
+    )
 
 
 def _decimal_to_number(v: object, conv: Callable[[Decimal], float | int]) -> object:
@@ -94,6 +136,8 @@ class Trade(BaseModel):
 
     country_code: str = DEFAULT_COUNTRY
     exchange: str = ""
+    # 거래 시점 환율(native→KRW). KR=1.0. KRW 금액 = native × exchange_rate.
+    exchange_rate: float = 1.0
 
     commission: float = 0.0
     tax: float = 0.0
@@ -108,7 +152,9 @@ class Trade(BaseModel):
             return str(v)
         return v  # type: ignore[return-value]
 
-    @field_validator("price", "quantity", "total_amount", "commission", "tax", mode="before")
+    @field_validator(
+        "price", "quantity", "total_amount", "commission", "tax", "exchange_rate", mode="before"
+    )
     @classmethod
     def _decimal_to_float(cls, v: object) -> float:
         return _decimal_to_number(v, float)  # type: ignore[return-value]

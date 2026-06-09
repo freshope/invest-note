@@ -4,6 +4,7 @@ import {
   mergeQuotes,
   applyQuotesToTotals,
   applyQuotesToSnapshots,
+  buildStockAllocation,
 } from "../portfolio";
 import type {
   Position,
@@ -140,16 +141,22 @@ describe("buildPositions — 동률 traded_at BUY-우선 정렬", () => {
 // BE lite 응답(withQuotes=false)에 /stocks/quote 시세를 덮어쓰는 순수 함수 검증.
 
 function makePosition(overrides: Partial<Position> & { key: string }): Position {
+  const country = overrides.country ?? overrides.key.split(":")[1] ?? "KR";
   return {
     ticker: overrides.key.split(":")[0],
-    country: overrides.key.split(":")[1] ?? "KR",
+    country,
+    currency: country === "US" ? "USD" : "KRW",
     assetName: overrides.key,
     exchange: "",
     holdingQuantity: 10,
     avgBuyPrice: 70000,
+    avgBuyPriceNative: 70000,
     costBasis: 700000,
+    costBasisNative: 700000,
+    realizedPnL: 0,
     currentPrice: null,
     evaluation: null,
+    evaluationNative: null,
     unrealizedPnL: null,
     lastNote: null,
     lastTradedAt: "2024-01-10T09:00:00+09:00",
@@ -268,6 +275,39 @@ describe("applyQuotesToTotals", () => {
     expect(totals.totalAssets).toBe(BASE_TOTALS.totalCash);
     expect(totals.missingQuoteTickers).toEqual(["삼성전자", "NHN"]);
   });
+
+  it("(e) US evaluation(KRW)을 그대로 합산 — 환산은 merge 단계에서 끝남", () => {
+    const positions = [
+      makePosition({ key: "005930:KR", assetName: "삼성전자", evaluation: 700000, unrealizedPnL: 0, currentPrice: 70000 }),
+      // US 는 mergeQuotes 가 이미 KRW 로 채운 상태(1,500,000)로 가정.
+      makePosition({ key: "AAPL:US", country: "US", assetName: "Apple", evaluation: 1_500_000, unrealizedPnL: 300_000, currentPrice: 100 }),
+    ];
+    const totals = applyQuotesToTotals(BASE_TOTALS, positions);
+    expect(totals.totalEvaluation).toBe(2_200_000); // 700,000 + 1,500,000
+    expect(totals.totalUnrealizedPnL).toBe(300_000);
+    expect(totals.missingQuoteTickers).toEqual([]);
+  });
+
+  it("(f) US evaluation null(환율 미상) → 제외 + missing 노출", () => {
+    const positions = [
+      makePosition({ key: "005930:KR", assetName: "삼성전자", evaluation: 700000, unrealizedPnL: 0, currentPrice: 70000 }),
+      makePosition({ key: "AAPL:US", country: "US", assetName: "Apple", evaluation: null, currentPrice: 100 }),
+    ];
+    const totals = applyQuotesToTotals(BASE_TOTALS, positions);
+    expect(totals.totalEvaluation).toBe(700_000);
+    expect(totals.missingQuoteTickers).toEqual(["Apple"]);
+  });
+
+  it("(g) mergeQuotes — US 는 현재 환율로 evaluation KRW + native 산출", () => {
+    const positions = [
+      makePosition({ key: "AAPL:US", country: "US", holdingQuantity: 10, costBasis: 3_000_000, currentPrice: null }),
+    ];
+    const quotes: QuoteMap = { "AAPL:US": { price: 220, currency: "USD", as_of: "" } };
+    const [pos] = mergeQuotes(positions, quotes, 1530);
+    expect(pos.evaluation).toBe(3_366_000);     // 220×10×1530
+    expect(pos.evaluationNative).toBe(2200);     // 220×10 (USD)
+    expect(pos.unrealizedPnL).toBe(366_000);     // 3,366,000 - 3,000,000(KRW 원가)
+  });
 });
 
 describe("applyQuotesToSnapshots", () => {
@@ -309,6 +349,20 @@ describe("applyQuotesToSnapshots", () => {
     expect(s1.totalValue).toBe(1_000_000);
   });
 
+  it("(e) Phase B — KR+US 혼재 계좌, US 는 usdkrw 로 KRW 환산", () => {
+    const a1 = makeAccount("a1", 0);
+    const snapshots = [
+      makeSnapshot(a1, [
+        { key: "005930:KR", quantity: 10 },
+        { key: "AAPL:US", quantity: 10 },
+      ]),
+    ];
+    const quotes: QuoteMap = { "005930:KR": quote(70000), "AAPL:US": quote(100) };
+    const [s1] = applyQuotesToSnapshots(snapshots, quotes, 1500);
+    // KR 70,000×10 + US 100×10×1,500 = 700,000 + 1,500,000 = 2,200,000
+    expect(s1.stockEvaluation).toBe(2_200_000);
+  });
+
   it("account/cashBalance/holdings 는 그대로 유지", () => {
     const a1 = makeAccount("a1", 1_000_000);
     const holdings = [{ key: "005930:KR", quantity: 10 }];
@@ -335,5 +389,33 @@ describe("applyQuotesToSnapshots", () => {
     const [s1] = applyQuotesToSnapshots([legacySnapshot], {});
     expect(s1.stockEvaluation).toBe(0);
     expect(s1.totalValue).toBe(1_000_000);
+  });
+});
+
+describe("buildStockAllocation (종목별 배분 — evaluation 은 이미 KRW)", () => {
+  it("evaluation(KRW) 기준 비중·정렬 — US 가 환율 반영돼 올바른 순위", () => {
+    const positions = [
+      makePosition({ key: "005930:KR", assetName: "삼성전자", evaluation: 700000, currentPrice: 70000 }),
+      // US 는 mergeQuotes 가 이미 KRW 환산(1,500,000).
+      makePosition({ key: "AAPL:US", country: "US", assetName: "Apple", evaluation: 1_500_000, currentPrice: 100 }),
+    ];
+    const data = buildStockAllocation(positions, []);
+    expect(data[0]).toEqual({ name: "Apple", value: 1_500_000 });
+    expect(data[1]).toEqual({ name: "삼성전자", value: 700_000 });
+  });
+
+  it("evaluation null(환율/시세 미상) 포지션은 제외", () => {
+    const positions = [
+      makePosition({ key: "005930:KR", assetName: "삼성전자", evaluation: 700000, currentPrice: 70000 }),
+      makePosition({ key: "AAPL:US", country: "US", assetName: "Apple", evaluation: null, currentPrice: 100 }),
+    ];
+    const data = buildStockAllocation(positions, []);
+    expect(data.map((d) => d.name)).toEqual(["삼성전자"]);
+  });
+
+  it("현금은 예수금 엔트리로 추가", () => {
+    const a1 = makeAccount("a1", 500000);
+    const data = buildStockAllocation([], [makeSnapshot(a1, [])]);
+    expect(data).toEqual([{ name: "예수금", value: 500000, color: "var(--muted-foreground)" }]);
   });
 });

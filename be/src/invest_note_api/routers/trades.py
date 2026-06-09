@@ -327,6 +327,7 @@ async def create_trade(
             "tax": data.tax,
             "country_code": data.country_code or DEFAULT_COUNTRY,
             "exchange": data.exchange or "",
+            "exchange_rate": data.exchange_rate,
         })
 
         fresh_trades = [*group_trades, new_trade.model_copy(update={"id": row["id"]})]

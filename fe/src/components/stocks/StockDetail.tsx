@@ -7,7 +7,6 @@ import { signColor } from "@/lib/format";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import { TradeCard } from "@/components/records/TradeCard";
 import { ChevronLeftIcon, ChevronDownIcon, ChartSplineIcon } from "lucide-react";
-import { CountryBadge } from "@/components/records/trade-display";
 import { StockMetaBadges } from "@/components/stocks/StockMetaBadges";
 import { useStockMeta, isKrStockCode } from "@/hooks/useStockMeta";
 import { Button } from "@/components/base/Button";
@@ -107,14 +106,14 @@ export function StockDetail({ assetName, ticker, country, trades, stats, account
       <div className="px-5 pb-8 space-y-5">
         {/* 종목 기본 정보 */}
         <div className="rounded-2xl bg-muted/60 p-4">
-          <div className="flex items-baseline gap-2 min-w-0">
-            <span className="text-[22px] font-bold text-foreground truncate">{assetName}</span>
-            <span className="shrink-0 text-[13px] font-mono text-muted-foreground">{ticker}</span>
-          </div>
+          <p className="min-w-0 break-words text-[22px] font-bold text-foreground">
+            {assetName}{" "}
+            <span className="text-[13px] font-mono font-normal text-muted-foreground">{ticker}</span>
+          </p>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            <CountryBadge countryCode={country} />
             <StockMetaBadges
-              market={stockMeta?.market}
+              countryCode={country}
+              market={trades.find((t) => t.exchange)?.exchange || stockMeta?.market}
               rank={stockMeta?.marcap_rank}
               nps={stockMeta?.nps_holding}
               npsAsOf={stockMeta?.nps_as_of}

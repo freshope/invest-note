@@ -11,6 +11,7 @@ from invest_note_api.db import create_pool
 from invest_note_api.errors import APIError, ERR_LOCK_BUSY, api_error_handler, validation_error_handler
 from invest_note_api.external.http_client import create_http_client
 from invest_note_api.external.kis import configure_kis
+from invest_note_api.external.fx import FxCacheState
 from invest_note_api.external.quotes import QuoteCacheState, validate_quote_providers
 from invest_note_api.routers import accounts, admin, app_config, health, me
 from invest_note_api.routers import trades, portfolio, stocks, analysis, assets
@@ -45,6 +46,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # pool 을 넘겨 토큰을 kis_tokens 테이블에 영속화 (pool=None 이면 메모리 전용).
         configure_kis(settings, pool=app.state.pool)
         app.state.quote_cache = QuoteCacheState()
+        app.state.fx_cache = FxCacheState()
         app.state.trade_staging = TradeStagingState()
         app.state.http_client = create_http_client()
         yield

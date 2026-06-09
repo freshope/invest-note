@@ -547,3 +547,60 @@ async def test_crossvalidate_unknown_provider_raises_value_error():
 
     with pytest.raises(ValueError, match="crossvalidate"):
         await stock_seed.crossvalidate_stocks(_CrossvalConn([]), provider="kisss")
+
+
+# ─────────────────────────── US nasdaqtrader 파서/fetch ───────────────────────────
+
+_NASDAQ_LISTED = (
+    "Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares\n"
+    "AAPL|Apple Inc. - Common Stock|Q|N|N|100|N|N\n"
+    "QQQ|Invesco QQQ Trust|Q|N|N|100|Y|N\n"
+    "TEST|NASDAQ TEST STOCK|Q|Y|N|100|N|N\n"
+    "ZVZZT|NASDAQ TEST|Q|N|N|100|N|N\n"
+    "File Creation Time: 0608202618:00|||||||\n"
+)
+
+_OTHER_LISTED = (
+    "ACT Symbol|Security Name|Exchange|CQS Symbol|ETF|Round Lot Size|Test Issue|NASDAQ Symbol\n"
+    "IBM|International Business Machines|N|IBM|N|100|N|IBM\n"
+    "SPY|SPDR S&P 500 ETF Trust|P|SPY|Y|100|N|SPY\n"
+    "BRK.A|Berkshire Hathaway Class A|N|BRK A|N|10|N|BRK.A\n"
+    "File Creation Time: 0608202618:00|||||||\n"
+)
+
+
+def test_parse_nasdaqtrader_nasdaq_listed():
+    rows = stock_seed._parse_nasdaqtrader(_NASDAQ_LISTED, nasdaq_default="NASDAQ")
+    by_ticker = {r["ticker"]: r for r in rows}
+    # Test Issue=Y(TEST) 제외, 보드는 NASDAQ, 통화 USD
+    assert "TEST" not in by_ticker
+    assert by_ticker["AAPL"]["market"] == "NASDAQ"
+    assert by_ticker["AAPL"]["currency"] == "USD"
+    assert by_ticker["QQQ"]["asset_name"].startswith("Invesco QQQ")
+
+
+def test_parse_nasdaqtrader_other_listed_maps_exchange_and_drops_dotted():
+    rows = stock_seed._parse_nasdaqtrader(_OTHER_LISTED)
+    by_ticker = {r["ticker"]: r for r in rows}
+    assert by_ticker["IBM"]["market"] == "NYSE"     # N → NYSE
+    assert by_ticker["SPY"]["market"] == "NYSE ARCA"  # P → NYSE ARCA
+    assert "BRK.A" not in by_ticker  # '.' 포함 → 알파벳 전용 필터로 제외
+
+
+def test_parse_nasdaqtrader_skips_footer_and_empty():
+    assert stock_seed._parse_nasdaqtrader("") == []
+    assert stock_seed._parse_nasdaqtrader("Symbol|Security Name|Test Issue\n") == []
+
+
+async def test_fetch_nasdaq_us_merges_both_files():
+    def handler(req: httpx.Request) -> httpx.Response:
+        if "nasdaqlisted" in str(req.url):
+            return httpx.Response(200, text=_NASDAQ_LISTED)
+        return httpx.Response(200, text=_OTHER_LISTED)
+
+    async with _mock_client(handler) as client:
+        rows = await stock_seed.fetch_nasdaq_us(client=client)
+
+    tickers = {r["ticker"] for r in rows}
+    assert {"AAPL", "QQQ", "IBM", "SPY"} <= tickers
+    assert all(r["currency"] == "USD" for r in rows)

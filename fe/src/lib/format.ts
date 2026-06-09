@@ -21,6 +21,55 @@ export function formatPnL(value: number): string {
   return `${sign}${fmt(rounded)}원`;
 }
 
+// ─────────────────────────── 통화 인지 포맷 (해외주식 Phase A — 준비) ───────────────────────────
+// 기존 formatPnL/fmt 는 KRW("원") 고정으로 유지(호출부 무변경). 통화 분기가 필요한 화면은
+// 아래 통화 인지 유틸을 쓴다. 실제 와이어링은 통화 인지 합산이 들어오는 Phase B 에서.
+
+export const CURRENCY_SYMBOL: Record<string, string> = { KRW: "₩", USD: "$" };
+
+/** country_code → 거래 통화. KR=KRW, US=USD, 그 외는 KRW fallback. */
+export function currencyForCountry(country: string): "KRW" | "USD" {
+  return country === "US" ? "USD" : "KRW";
+}
+
+/** 통화 기호. 미등록 통화는 통화 코드 그대로 반환. */
+export function currencySymbol(currency: string): string {
+  return CURRENCY_SYMBOL[currency] ?? currency;
+}
+
+/**
+ * native 통화 금액을 KRW 로 환산. KRW 는 그대로, USD 는 ×usdkrw.
+ * 환산 불가(USD 인데 환율 null, 또는 미지원 통화)면 null — 호출측이 missing 처리해
+ * 조용한 통화 혼재 합산을 막는다(BE domain.to_krw 와 동일 규칙).
+ */
+export function toKRW(value: number, currency: string, usdkrw: number | null): number | null {
+  if (currency === "KRW") return value;
+  if (currency === "USD") return usdkrw != null ? value * usdkrw : null;
+  return null;
+}
+
+/**
+ * 통화별 금액 포맷. KRW 는 정수 + "원"(한국 관행), 그 외는 기호 접두 + 소수 2자리.
+ * 예: formatMoney(1234,"KRW")="1,234원", formatMoney(12.5,"USD")="$12.50".
+ */
+export function formatMoney(value: number, currency: string = "KRW"): string {
+  const decimals = currency === "KRW" ? 0 : 2;
+  const n = value.toLocaleString("ko-KR", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+  return currency === "KRW" ? `${n}원` : `${currencySymbol(currency)}${n}`;
+}
+
+/** 통화별 손익 포맷(부호 포함). 0은 부호 없이. 음수는 기호 앞에 '-'. */
+export function formatPnLCurrency(value: number, currency: string = "KRW"): string {
+  const decimals = currency === "KRW" ? 0 : 2;
+  const rounded = currency === "KRW" ? Math.round(value) : Number(value.toFixed(decimals));
+  if (rounded === 0) return formatMoney(0, currency);
+  const sign = rounded > 0 ? "+" : "-";
+  return `${sign}${formatMoney(Math.abs(rounded), currency)}`;
+}
+
 /** 부호 + 소수점 + % 표시. 0은 부호 없이, -0 케이스는 0으로 정규화. */
 export function formatPctSigned(n: number, decimals: number = 2): string {
   const rounded = Number(n.toFixed(decimals));

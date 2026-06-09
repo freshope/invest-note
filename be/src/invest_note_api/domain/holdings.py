@@ -8,6 +8,7 @@ from invest_note_api.domain.realized_pnl import (
     is_same_group,
     sort_for_calc,
 )
+from invest_note_api.domain.trade_types import krw_normalized_trade
 from invest_note_api.domain.trade_walker import WalkerState, walk_trades
 
 if TYPE_CHECKING:
@@ -55,17 +56,20 @@ def compute_holding_summary(trades: list["Trade"], key: TradeGroupKey) -> Holdin
 
 
 def compute_flexible_breakdown(sell: "Trade") -> SellBreakdown:
-    avg_cost_price = sell.avg_buy_price or 0.0
-    quantity = sell.quantity
-    sell_amount = sell.price * quantity
+    # KRW 정규화(price/commission/tax ×거래시점 환율) — avg_buy_price/profit_loss 는 이미 KRW.
+    # 매도금액(KRW)과 매수원가(KRW)를 같은 통화로 맞춰 breakdown 일관성 유지.
+    s = krw_normalized_trade(sell)
+    avg_cost_price = s.avg_buy_price or 0.0
+    quantity = s.quantity
+    sell_amount = s.price * quantity
     cost_basis = avg_cost_price * quantity
     return SellBreakdown(
-        sell_price=sell.price,
+        sell_price=s.price,
         quantity=quantity,
         avg_cost_price=avg_cost_price,
         sell_amount=sell_amount,
         cost_basis=cost_basis,
-        commission=sell.commission,
-        tax=sell.tax,
-        pnl=sell.profit_loss or 0.0,
+        commission=s.commission,
+        tax=s.tax,
+        pnl=s.profit_loss or 0.0,
     )

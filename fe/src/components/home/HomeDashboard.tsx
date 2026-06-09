@@ -19,8 +19,10 @@ import {
 import { useDetailPanel } from "@/components/panels/DetailPanelProvider";
 import { usePortfolioSummary } from "@/hooks/usePortfolioSummary";
 import { useQuotes } from "@/hooks/useQuotes";
+import { useFxRate } from "@/hooks/useFxRate";
 import { accountsApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
+import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import {
   mergeQuotes,
   applyQuotesToTotals,
@@ -80,19 +82,24 @@ export function HomeDashboard() {
 
   const { quotes, refetch: refetchQuotes } = useQuotes(quoteKeys);
 
+  // 해외(비-KR) 보유가 있을 때만 환율 조회 — KRW 환산 합산용. 없으면 비활성(usdkrw=null).
+  const hasForeign = (positions ?? []).some((p) => p.country !== DEFAULT_COUNTRY_CODE);
+  const { usdkrw } = useFxRate(hasForeign);
+
   // summary(lite) + quotes 결합: 시세 도착 전엔 base(시세 null), 도착하면 overlay 값으로 교체.
-  // HoldingCard 가 null→"—" 처리하므로 깜빡임 없이 점진 렌더.
+  // HoldingCard 가 null→"—" 처리하므로 깜빡임 없이 점진 렌더. 해외 보유는 usdkrw 로 KRW 환산.
   const view = useMemo(() => {
     if (!data) return null;
-    const mergedPositions = mergeQuotes(data.positions, quotes);
+    // mergeQuotes 가 현재 환율(usdkrw)로 evaluation 을 KRW(+native) 환산 → 이후 합산은 그대로.
+    const mergedPositions = mergeQuotes(data.positions, quotes, usdkrw);
     return {
       totals: applyQuotesToTotals(data.totals, mergedPositions),
       positions: mergedPositions,
-      snapshots: applyQuotesToSnapshots(data.snapshots, quotes),
+      snapshots: applyQuotesToSnapshots(data.snapshots, quotes, usdkrw),
       hasAccounts: data.hasAccounts,
       hasTrades: data.hasTrades,
     };
-  }, [data, quotes]);
+  }, [data, quotes, usdkrw]);
 
   // pull-to-refresh: 요약(거래/계좌 변경 반영) + 시세(refresh=1) 둘 다 갱신.
   const handleRefresh = () => Promise.all([refetch(), refetchQuotes()]);

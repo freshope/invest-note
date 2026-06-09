@@ -26,7 +26,9 @@ from invest_note_api.domain.portfolio import (
     merge_quotes,
 )
 from invest_note_api.domain.realized_pnl import TradeGroupKey, build_pnl_map
+from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, trade_country
 from invest_note_api.errors import APIError
+from invest_note_api.external.fx import FxCacheState, fetch_usdkrw, get_fx_cache_state
 from invest_note_api.external.http_client import get_http_client
 from invest_note_api.external.quotes import (
     QuoteCacheState,
@@ -75,6 +77,7 @@ async def get_portfolio_summary(
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
     quote_state: QuoteCacheState = Depends(get_quote_cache_state),
+    fx_state: FxCacheState = Depends(get_fx_cache_state),
     http_client: httpx.AsyncClient = Depends(get_http_client),
     settings: Settings = Depends(get_settings),
 ) -> PortfolioSummaryResponse:
@@ -92,6 +95,12 @@ async def get_portfolio_summary(
     ]
 
     positions0, lot_map = build_positions(trades)
+
+    # 원가·실현손익은 거래 시점 환율로 KRW 고정(저장값) — 환산 불필요.
+    # 현재 평가액(미실현)만 live 환율이 필요하므로, 해외 보유가 있을 때 USD/KRW 1회 조회.
+    usdkrw = None
+    if any(trade_country(t) != DEFAULT_COUNTRY for t in trades):
+        usdkrw = await fetch_usdkrw(fx_state, http_client, force_refresh=refresh)
     pnl_map = build_pnl_map(trades)
 
     # with_quotes=False (신규 FE): 시세 fetch 를 임계 경로에서 떼어내고 빈 quotes 로
@@ -111,8 +120,8 @@ async def get_portfolio_summary(
         except Exception:
             logger.warning("fetch_quotes_by_keys 실패 user_id=%s", user.id, exc_info=True)
 
-    positions = merge_quotes(positions0, quotes)
-    snapshots = build_account_snapshots(accounts, lot_map, quotes)
+    positions = merge_quotes(positions0, quotes, usdkrw)
+    snapshots = build_account_snapshots(accounts, lot_map, quotes, usdkrw)
     totals = build_totals(positions, accounts, trades, pnl_map)
 
     return PortfolioSummaryResponse.model_validate({

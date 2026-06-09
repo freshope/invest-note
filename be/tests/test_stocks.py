@@ -43,15 +43,16 @@ class TestStocksQuote:
         assert resp.status_code == 200
         assert resp.json() == {}
 
-    def test_quote_us_returns_null_in_mvp(self, trades_client):
+    def test_quote_us_passthrough(self, trades_client):
+        """라우터는 fetch 결과를 그대로 통과 — US 는 USD quote 를 반환(Phase A 부터)."""
         async def mock_quotes(state, keys, *, client=None, force_refresh=False, providers=None):
-            return {"AAPL:US": None}
+            return {"AAPL:US": {"price": 195.5, "currency": "USD", "as_of": ""}}
 
         with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
             resp = trades_client.get("/stocks/quote", params={"symbols": "AAPL:US"})
 
         assert resp.status_code == 200
-        assert resp.json()["AAPL:US"] is None
+        assert resp.json()["AAPL:US"]["currency"] == "USD"
 
     def test_quote_forwards_env_providers(self, trades_client):
         """QUOTE_PROVIDERS env(settings) 가 fetch_quotes_by_keys 의 providers 로 전달된다 —
@@ -94,6 +95,56 @@ class TestStocksQuote:
         assert resp.status_code == 401
 
 
+class TestStocksFx:
+    def test_fx_ok(self, trades_client):
+        async def mock_fx(state, *, client=None, base="USD", quote="KRW", force_refresh=False):
+            return {"base": base, "quote": quote, "rate": 1350.0, "as_of": "2026-06-08"}
+
+        with patch("invest_note_api.routers.stocks.get_fx_rate", mock_fx):
+            resp = trades_client.get("/stocks/fx", params={"base": "USD", "quote": "KRW"})
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["rate"] == 1350.0
+        assert body["base"] == "USD"
+        assert body["quote"] == "KRW"
+
+    def test_fx_defaults_to_usd_krw(self, trades_client):
+        captured: dict = {}
+
+        async def mock_fx(state, *, client=None, base="USD", quote="KRW", force_refresh=False):
+            captured["base"], captured["quote"] = base, quote
+            return {"base": base, "quote": quote, "rate": 1300.0, "as_of": ""}
+
+        with patch("invest_note_api.routers.stocks.get_fx_rate", mock_fx):
+            resp = trades_client.get("/stocks/fx")
+
+        assert resp.status_code == 200
+        assert captured == {"base": "USD", "quote": "KRW"}
+
+    def test_fx_returns_null_on_failure(self, trades_client):
+        async def mock_fx(state, *, client=None, base="USD", quote="KRW", force_refresh=False):
+            return None
+
+        with patch("invest_note_api.routers.stocks.get_fx_rate", mock_fx):
+            resp = trades_client.get("/stocks/fx")
+
+        assert resp.status_code == 200
+        assert resp.json() is None
+
+    def test_fx_rejects_unsupported_pair(self, trades_client):
+        resp = trades_client.get("/stocks/fx", params={"base": "USD", "quote": "USD"})
+        assert resp.status_code == 400
+
+    def test_fx_rejects_unknown_currency(self, trades_client):
+        resp = trades_client.get("/stocks/fx", params={"base": "JPY", "quote": "KRW"})
+        assert resp.status_code == 400
+
+    def test_fx_401(self, auth_client):
+        resp = auth_client.get("/stocks/fx")
+        assert resp.status_code == 401
+
+
 class TestStocksMeta:
     def test_meta_ok(self, trades_client):
         async def mock_meta(conn, codes, **kw):
@@ -132,7 +183,7 @@ class TestStocksSearchDb:
 
         _use_db_provider(trades_client)
         _use_fake_pool(trades_client)
-        with patch("invest_note_api.db_ops.stocks_repo.search", mock_search):
+        with patch("invest_note_api.db_ops.stocks_repo.search_multi", mock_search):
             resp = trades_client.get("/stocks/search", params={"q": "삼성"})
 
         assert resp.status_code == 200
@@ -145,11 +196,28 @@ class TestStocksSearchDb:
 
         _use_db_provider(trades_client)
         _use_fake_pool(trades_client)
-        with patch("invest_note_api.db_ops.stocks_repo.search", mock_search):
+        with patch("invest_note_api.db_ops.stocks_repo.search_multi", mock_search):
             resp = trades_client.get("/stocks/search", params={"q": "005930"})
 
         assert resp.status_code == 200
         assert resp.json()[0]["market"] == "KR"
+
+    def test_search_includes_us_results(self, trades_client):
+        """db provider 는 KR + US 를 함께 반환(market 으로 국가 구분)."""
+        async def mock_search(conn, q, **kw):
+            return [
+                {"code": "005930", "name": "삼성전자", "market": "KR", "exchange": "KOSPI"},
+                {"code": "AAPL", "name": "Apple Inc.", "market": "US", "exchange": "NASDAQ"},
+            ]
+
+        _use_db_provider(trades_client)
+        _use_fake_pool(trades_client)
+        with patch("invest_note_api.db_ops.stocks_repo.search_multi", mock_search):
+            resp = trades_client.get("/stocks/search", params={"q": "a"})
+
+        assert resp.status_code == 200
+        markets = [r["market"] for r in resp.json()]
+        assert "US" in markets and "KR" in markets
 
     def test_search_no_match_returns_empty(self, trades_client):
         async def mock_search(conn, q, **kw):
@@ -157,7 +225,7 @@ class TestStocksSearchDb:
 
         _use_db_provider(trades_client)
         _use_fake_pool(trades_client)
-        with patch("invest_note_api.db_ops.stocks_repo.search", mock_search):
+        with patch("invest_note_api.db_ops.stocks_repo.search_multi", mock_search):
             resp = trades_client.get("/stocks/search", params={"q": "apple"})
         assert resp.status_code == 200
         assert resp.json() == []

@@ -16,6 +16,10 @@ QUOTE_CACHE_MAXSIZE = 512
 # 둬도 신선도 저하 없이 외부 호출 빈도를 낮출 수 있다 (탭 전환/재렌더 시 캐시 재사용).
 QUOTE_CACHE_TTL = 45
 
+# 환율(FX)은 시세보다 변동이 느려 TTL 을 길게(10분) 둔다. 통화쌍 수가 적어 maxsize 도 작다.
+FX_CACHE_MAXSIZE = 16
+FX_CACHE_TTL = 600
+
 # KIS Open API(한국투자증권) — 실전/모의 도메인. KIS_ENV(real|mock)로 분기.
 KIS_REAL_BASE_URL = "https://openapi.koreainvestment.com:9443"
 KIS_MOCK_BASE_URL = "https://openapivts.koreainvestment.com:29443"

@@ -7,17 +7,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 from ..domain.trade_types import (
     CountryCode,
-    DEFAULT_COUNTRY,
     EmotionType,
     MAX_NAME_LEN,
     MarketType,
     ReasoningTag,
     StrategyType,
-    TRADE_TYPE_BUY,
     TradeResult,
     TradeType,
 )
@@ -71,6 +69,7 @@ class TradeCreate(BaseModel):
     ticker_symbol: str
     country_code: CountryCode = "KR"
     exchange: str = ""
+    exchange_rate: float = 1.0
     traded_at: datetime
     price: float
     quantity: float
@@ -117,7 +116,7 @@ class TradeCreate(BaseModel):
     def _parse_traded_at(cls, v: object) -> datetime:
         return _traded_at_transform(v)
 
-    @field_validator("price", "quantity", mode="before")
+    @field_validator("price", "quantity", "exchange_rate", mode="before")
     @classmethod
     def _positive(cls, v: object) -> float:
         return _comma_positive(v)
@@ -127,17 +126,12 @@ class TradeCreate(BaseModel):
     def _non_negative(cls, v: object) -> float:
         return _comma_non_negative(v)
 
-    @model_validator(mode="after")
-    def _mvp_foreign_buy_blocked(self) -> "TradeCreate":
-        if self.trade_type == TRADE_TYPE_BUY and self.country_code != DEFAULT_COUNTRY:
-            raise ValueError("MVP에서는 해외 주식 신규 매수를 등록할 수 없습니다.")
-        return self
-
 
 class TradeUpdate(BaseModel):
     market_type: MarketType | None = None
     price: float | None = None
     quantity: float | None = None
+    exchange_rate: float | None = None
     commission: float | None = None
     tax: float | None = None
     strategy_type: StrategyType | None = None
@@ -154,7 +148,7 @@ class TradeUpdate(BaseModel):
             raise ValueError(f"자유 텍스트는 {TRADE_FREE_TEXT_MAX_LEN}자 이내여야 합니다.")
         return v
 
-    @field_validator("price", "quantity", mode="before")
+    @field_validator("price", "quantity", "exchange_rate", mode="before")
     @classmethod
     def _positive(cls, v: object) -> float | None:
         if v is None:
