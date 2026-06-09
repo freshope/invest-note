@@ -15,18 +15,19 @@ from pydantic import BaseModel, ConfigDict
 class ManifestRequest(BaseModel):
     """플러그인이 앱 오픈마다 POST 하는 AppInfos body.
 
-    결정 로직에 쓰는 필드만 명시하고 나머지(device_id/app_id/version_code/
-    defaultChannel 등)는 `extra="ignore"` 로 흡수한다.
+    결정 로직에 쓰는 두 필드만 명시하고 나머지(platform/device_id/app_id/
+    version_code/defaultChannel 등)는 `extra="ignore"` 로 흡수한다. 미사용 필드를
+    선언하지 않고 사용 필드에 기본값을 둬, 필드 누락·리네임 시 422 검증 표면을 없앤다
+    (핸들러의 fail-open 으로 흡수 — 부팅 차단 금지).
     """
 
     model_config = ConfigDict(extra="ignore")
 
-    platform: str
     # ★ 마케팅 버전(= App.getInfo().version). 스큐 게이트·builtin 대체의 기준값.
     #   version_code(정수 빌드번호)가 아니라 이 필드를 비교에 쓴다.
-    version_build: str
+    version_build: str = ""
     # 현재 설치된 OTA 번들 버전 또는 "builtin"(적용된 OTA 없음 = 신규 스토어 설치).
-    version_name: str
+    version_name: str = ""
 
 
 class ManifestUpdate(BaseModel):
