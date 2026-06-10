@@ -12,14 +12,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 import httpx
 from cachetools import TTLCache
 from fastapi import Request
 
+from invest_note_api.domain.trade_types import currency_for_country, trade_country
 from invest_note_api.external.constants import (
     CURRENCY_KRW,
     CURRENCY_USD,
@@ -29,6 +31,9 @@ from invest_note_api.external.constants import (
     USER_AGENT,
     YAHOO_CHART_URL,
 )
+
+if TYPE_CHECKING:
+    from invest_note_api.domain.trade_types import Trade
 
 logger = logging.getLogger(__name__)
 
@@ -108,9 +113,16 @@ async def get_fx_rate(
     """통화쌍 환율 조회(캐시 경유). 실패 시 None.
 
     `client` 는 라우터의 `Depends(get_http_client)` 로 주입받은 공유 인스턴스.
-    lock 으로 fetch 를 직렬화 — 통화쌍이 적어 직렬화 비용이 무시할 만하고 stampede 를 막는다.
+    캐시 hit 은 lock 없이 즉시 반환(fast-path) — lock 이 fetch(최대 QUOTE_ATTEMPT_TIMEOUT)
+    전체를 감싸므로, 한 호출자가 fetch 중일 때 순수 캐시 읽기까지 직렬화되는 것을 막는다.
+    단일 이벤트루프라 await 없는 TTLCache 접근은 안전. miss/refresh 만 lock 으로 직렬화해
+    stampede 를 막는다(진입 후 재확인 — 대기 중 다른 호출자가 채웠으면 fetch 생략).
     """
     key = f"{base}/{quote}"
+    if not force_refresh:
+        cached = state.cache.get(key)
+        if cached is not None:
+            return cached
     async with state.lock:
         cached = state.cache.get(key)
         if not force_refresh and cached is not None:
@@ -131,3 +143,20 @@ async def fetch_usdkrw(
     """USD/KRW 환율 숫자만 반환(못 받으면 None) — 라우터 집계의 KRW 환산용 단축."""
     fx = await get_fx_rate(state, client=client, force_refresh=force_refresh)
     return fx["rate"] if fx else None
+
+
+async def usdkrw_if_foreign(
+    trades: Iterable["Trade"],
+    state: FxCacheState,
+    client: httpx.AsyncClient,
+    *,
+    force_refresh: bool = False,
+) -> float | None:
+    """비-KRW(해외) 거래가 하나라도 있으면 USD/KRW 환율을 fetch, 없으면 None.
+
+    portfolio/analysis 라우터에 중복되던 "해외 보유 게이트 + fetch_usdkrw" 묶음을 캡슐화한다.
+    호출 위치/동시성 구조(lite 분기·create_task)는 각 라우터가 유지한다.
+    """
+    if not any(currency_for_country(trade_country(t)) != CURRENCY_KRW for t in trades):
+        return None
+    return await fetch_usdkrw(state, client, force_refresh=force_refresh)

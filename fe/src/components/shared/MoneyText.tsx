@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { formatMoney, formatPnLCurrency } from "@/lib/format";
+import { formatMoney } from "@/lib/format";
 
 interface MoneyTextProps {
   /** KRW 값(primary). null 이면 "-". */
@@ -8,8 +8,6 @@ interface MoneyTextProps {
   native?: number | null;
   /** 거래 통화(KRW|USD). KRW 면 보조 표시 없음. */
   currency?: string;
-  /** true 면 부호 + 손익 색상 적용. */
-  pnl?: boolean;
   className?: string;
   /** 보조(달러) 표시 스타일. */
   nativeClassName?: string;
@@ -23,12 +21,11 @@ export function MoneyText({
   krw,
   native,
   currency = "KRW",
-  pnl = false,
   className,
   nativeClassName,
 }: MoneyTextProps) {
   if (krw === null) return <span className={className}>-</span>;
-  const primary = pnl ? formatPnLCurrency(krw, "KRW") : formatMoney(krw, "KRW");
+  const primary = formatMoney(krw, "KRW");
   const showNative = currency !== "KRW" && native != null;
   return (
     <span className={className}>

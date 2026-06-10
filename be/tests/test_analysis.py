@@ -165,7 +165,9 @@ class TestAnalysisDashboard:
 
         with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
             with patch("invest_note_api.routers.analysis.fetch_quotes_by_keys", new=AsyncMock(return_value={})):
-                resp = trades_client.get("/analysis/dashboard")
+                # US 거래 존재 → 라우터가 usdkrw_if_foreign 으로 환율을 받으므로 실 네트워크를 차단한다.
+                with patch("invest_note_api.routers.analysis.usdkrw_if_foreign", new=AsyncMock(return_value=1490.0)):
+                    resp = trades_client.get("/analysis/dashboard")
 
         assert resp.status_code == 200
         summary = resp.json()["summary"]
@@ -173,6 +175,30 @@ class TestAnalysisDashboard:
         assert summary["totalProfitLoss"] == pytest.approx(192000.0, rel=1e-6)
         # result_input_rate 는 제거됨 (자동 유도값이라 의미 없음)
         assert "resultInputRate" not in summary
+
+    def test_missing_quote_uses_evaluation_criterion(self, trades_client):
+        """US 보유 + 시세 있음 + 현재 환율 None → evaluation None → missingQuoteTickers 노출.
+
+        portfolio.build_totals·FE 와 동일 기준(evaluation). current_price 기준이면 시세가
+        있어 누락됐다 — 양 화면 배지 일관성 회귀.
+        """
+        buy = _make_trade_row(
+            id_="b1", trade_type="BUY", ticker="AAPL", asset_name="Apple",
+            price=200.0, quantity=10.0, country_code="US", exchange_rate=1300.0,
+        )
+        conn = FakeConnection([buy])
+
+        async def quote_with_price(state, keys, **kw):
+            return {"AAPL:US": {"price": 220.0, "currency": "USD", "as_of": ""}}
+
+        with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
+            with patch("invest_note_api.routers.analysis.fetch_quotes_by_keys", quote_with_price):
+                # 현재 환율 미수신(None) → US 평가액 KRW 미상.
+                with patch("invest_note_api.routers.analysis.usdkrw_if_foreign", new=AsyncMock(return_value=None)):
+                    resp = trades_client.get("/analysis/dashboard")
+
+        assert resp.status_code == 200
+        assert "Apple" in resp.json()["missingQuoteTickers"]
 
     def test_input_rates_shape(self, trades_client):
         # BUY 2건: 1건은 buy_reason 채움, 1건은 None → buyReason = 50.0
@@ -265,7 +291,7 @@ class TestAnalysisDashboard:
         )
         conn = FakeConnection([buy])
         with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
-            with patch("invest_note_api.routers.analysis.fetch_usdkrw", new=AsyncMock(return_value=1490.0)):
+            with patch("invest_note_api.routers.analysis.usdkrw_if_foreign", new=AsyncMock(return_value=1490.0)):
                 resp = _patched_get(trades_client, "/analysis/dashboard?period=all")
         assert resp.status_code == 200
         behavior = resp.json()["behavior"]

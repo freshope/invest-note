@@ -430,6 +430,42 @@ def test_fetch_yahoo_us_returns_none_on_empty_or_failure():
     assert asyncio.run(runner()) is None
 
 
+def test_fetch_yahoo_us_accepts_whitelisted_tickers():
+    """허용 티커(영숫자/`.`/`-`)는 통과 — 화이트리스트 가드가 정상 시세를 막지 않는다."""
+    for code in ("AAPL", "BRK.B", "BRK-B", "RDS.A"):
+        routes = {
+            f"https://query2.finance.yahoo.com/v8/finance/chart/{code}": httpx.Response(
+                200,
+                json={"chart": {"result": [{"meta": {"regularMarketPrice": 10.0, "currency": "USD"}}]}},
+            ),
+        }
+
+        async def runner():
+            async with _build_mock_client(routes) as client:
+                return await _fetch_yahoo_us(client, code)
+
+        result = asyncio.run(runner())
+        assert result is not None, code
+        assert result["price"] == 10.0
+
+
+def test_fetch_yahoo_us_rejects_path_manipulating_tickers():
+    """`/`·`?`·`#`·공백 등 화이트리스트 위반 심볼은 HTTP 전송 없이 None(graceful)."""
+    called = {"hit": False}
+
+    def handler(_req: httpx.Request) -> httpx.Response:
+        called["hit"] = True
+        return httpx.Response(200, json={})
+
+    async def runner(code: str):
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await _fetch_yahoo_us(client, code)
+
+    for bad in ("AAPL/../foo", "AAPL?x=1", "AAPL#frag", "AAPL BBB", "", "A" * 21):
+        assert asyncio.run(runner(bad)) is None, bad
+    assert called["hit"] is False, "위반 심볼인데 HTTP 요청이 전송됨"
+
+
 def test_fetch_quotes_by_keys_routes_us_to_yahoo_and_kr_to_chain():
     """KR→공급자 체인(naver fail→yahoo .KS), US→yahoo bare ticker. 통화 분리 유지."""
     state = QuoteCacheState()

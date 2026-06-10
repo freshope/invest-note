@@ -26,9 +26,12 @@ from invest_note_api.domain.portfolio import (
     merge_quotes,
 )
 from invest_note_api.domain.realized_pnl import TradeGroupKey, build_pnl_map
-from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, trade_country
 from invest_note_api.errors import APIError
-from invest_note_api.external.fx import FxCacheState, fetch_usdkrw, get_fx_cache_state
+from invest_note_api.external.fx import (
+    FxCacheState,
+    get_fx_cache_state,
+    usdkrw_if_foreign,
+)
 from invest_note_api.external.http_client import get_http_client
 from invest_note_api.external.quotes import (
     QuoteCacheState,
@@ -96,19 +99,22 @@ async def get_portfolio_summary(
 
     positions0, lot_map = build_positions(trades)
 
-    # 원가·실현손익은 거래 시점 환율로 KRW 고정(저장값) — 환산 불필요.
-    # 현재 평가액(미실현)만 live 환율이 필요하므로, 해외 보유가 있을 때 USD/KRW 1회 조회.
-    usdkrw = None
-    if any(trade_country(t) != DEFAULT_COUNTRY for t in trades):
-        usdkrw = await fetch_usdkrw(fx_state, http_client, force_refresh=refresh)
     pnl_map = build_pnl_map(trades)
 
     # with_quotes=False (신규 FE): 시세 fetch 를 임계 경로에서 떼어내고 빈 quotes 로
     # 진행한다. 이후 merge_quotes / build_account_snapshots / build_totals 는 빈 quotes 를
     # graceful 하게 처리(가격/평가=null, 평가합=0)하며, FE 가 /stocks/quote overlay 로 채운다.
     # 파라미터 미전송(default True)인 구버전 앱은 기존 동작(시세 포함) 유지.
+    #
+    # 원가·실현손익은 거래 시점 환율로 KRW 고정(저장값)이라 환산 불필요. 현재 평가액(미실현)만
+    # live 환율이 필요한데, lite 모드(with_quotes=False)는 quotes={} 라 usdkrw 가 전혀 소비되지
+    # 않으므로(FE 가 useFxRate 로 자체 환산) fetch_usdkrw 를 with_quotes 블록 안으로 옮긴다.
+    usdkrw = None
     quotes = {}
     if with_quotes:
+        usdkrw = await usdkrw_if_foreign(
+            trades, fx_state, http_client, force_refresh=refresh
+        )
         try:
             quotes = await fetch_quotes_by_keys(
                 quote_state,

@@ -14,11 +14,16 @@
 - **유지(2026-06-08 에서 계승):** 거래별 체결환율 박제(취득원가=매입환율, 평가=현재환율 → 환차손익 반영), US 시세 Yahoo primary·KIS 보조, Nasdaq Trader 심볼 seed, FX 시계열 Yahoo `USDKRW=X` 별도 레일, import(토스·삼성 USD)는 v2.x 후속.
 - **트레이드오프:** ₩/$ 혼재 화면을 피하는 대신 통합 합산이라 환율 변동이 전체 평가액에 섞인다(거래별 박제 환율로 취득원가는 고정돼 손익 정확도는 유지). 입력 모델을 "환율 직접입력"이 아닌 "원화 직접입력→환율 역산"으로 한 것은 사용자가 정산서의 KRW 금액을 그대로 옮길 수 있게 하기 위함.
 - **Phase D 구현 결정(2026-06-09, 잔여 정합/기능/UX — Phase C 임포트 제외):**
-  - **D1 US 일별종가:** Yahoo chart v8 range 엔드포인트(`YAHOO_CHART_RANGE_URL`, 기존 시세용 URL 은 `range=1d` 고정이라 부적합)로 US daily closes backfill → 자산추이/종목 미니차트 US 활성화. **빈 응답은 실패로 취급**(sync_state 미advance, raise 승격)해 Yahoo 장애가 "빈 거래 범위"로 보여 재시도가 막히는 것 방지(KR primary 의 raise 의미와 동치). KR 경로 무변경.
+  - **D1 US 일별종가:** Yahoo chart v8 range 엔드포인트(`YAHOO_CHART_RANGE_URL`, 기존 시세용 URL 은 `range=1d` 고정이라 부적합)로 US daily closes backfill → 자산추이/종목 미니차트 US 활성화. **실패/빈 범위 구분(2026-06-10 코드리뷰로 정정):** 전송 실패·비200·malformed 만 raise(sync_state 미advance → 재시도 보장)하고, 정상 200 의 빈 범위(주말/휴장)는 synced 처리 — 초기 "빈 응답=실패 승격" 정책은 주말마다 US 종목 수만큼 매 요청 Yahoo 재질의 + incomplete 배너 상시 노출을 유발해 폐기(KR data.go.kr 의 빈 응답 synced 처리와 대칭). **장중 캔들 가드:** Yahoo 일봉 마지막 캔들은 진행 중 세션(close=현재가)이라, 캔들 날짜 D 는 `now_kst >= D+1일 07:00 KST`(미장 마감 05/06:00 + 버퍼) 일 때만 확정으로 보고 그 전엔 제외·sync_state 도 cutoff 로 클램프 — 새벽(미장 진행 중) 조회 시 장중가가 D 종가로 영구 박제되는 것 방지. KR 경로 무변경.
   - **D2 시세/FX graceful:** 시세·환율 fetch 실패(None)를 캐시에 박지 않고 **직전 성공값을 stale 로 유지** → 단일 공급자(Yahoo) 일시 장애가 해외 평가액을 통째로 가리는 것 방지. "원래 시세 없는 종목"은 직전값도 None 이라 영향 없음(실패/데이터없음을 캐시 존재 여부로 구분). KR 도 공통 함수라 동반 개선.
   - **D3 거래 수정 통화 인지:** 등록폼과 동일하게 해외 거래 수정도 체결원화→환율 역산. 단 재제안 anchor 는 현재 시세가 아닌 **거래 시점 환율(`trade.exchange_rate`)** — 단순 오타 정정 시 기록 환율이 silent 하게 오염되는 것을 막기 위함(현재 시세는 정보성 표시 전용).
   - **D4 환율 검증 대칭:** 해외(비-KRW) 거래에 `exchange_rate=1.0`(기본/누락) 거부를 create(POST 422)·update(PATCH 400) 양쪽에 적용, 메시지 공유. PATCH 는 country_code 가 body 에 없어 **existing 거래 기준** 라우터 가드로 검증.
   - **D5 분석 정밀도/투명성:** size 분포(매수 원금 버킷)는 **거래 시점 환율로 KRW 환산**(현재환율 아님 — 원금 분포라 고정환율이 원가 모델과 일관). 평가액 환산에 쓰인 환율·기준시각(`FxRate.as_of`)을 해외 보유 시 대시보드에 노출.
+- **코드리뷰 보류건 처리(2026-06-11):** 1차 리뷰 후 보류했던 항목들을 사용자 판단으로 진행. 트레이드오프 있는 선택만 기록:
+  - **자산추이 원화 통일(US):** US 종목 자산추이도 원화 primary + 달러 보조로 통일. **일자별 환율이 아닌 현재 환율로 전체 시계열 환산** + "현재 환율 적용" 안내 문구 — historical FX 인프라 없이 통화 일관성 확보(정밀도 대신 단순성·일관성 택함). 환율 미상 시 차트/헤더 비표시로 조용한 USD-as-KRW 차단. BE `/assets/history` 무변경, FE overlay(Phase B 철학 일관).
+  - **`missing_quote_tickers` 기준 통일:** analysis 가 `current_price is None` → `evaluation is None`(portfolio·FE 와 일치). **사용자 가시 동작 변경** — US 종목이 시세는 받았으나 환율 미수신 시 analysis 대시보드에도 "시세 없음" 노출(기존엔 누락). 두 화면 배지 일관성 확보.
+  - **클래스 주식 seed 허용:** nasdaqtrader 필터를 `isalpha or [A-Z]+\.[ABC]` 로 — BRK.B·BF.B 등 A/B/C 클래스주 포함, 유닛(`.U`)·워런트(`.W`)·우선주(`$`/`=`)는 계속 제외. 경계를 `[ABC]` 로 좁힌 트레이드오프: `.U`/`.W` 오허용을 막는 대신 드문 클래스(`.K` 등)는 누락 — 실사용 대부분이 A/B/C 라 채택.
+  - **`exchange_rate` DB CHECK 제약:** 029 에 `CHECK (exchange_rate > 0)` 추가(029 미적용 상태라 동일 파일). API `_comma_positive` 양수 강제에 더해 DB 레벨 방어 + `exchange_rate or 1.0` 의 0→1.0 silent 치환 차단.
 
 ---
 

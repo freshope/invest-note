@@ -15,7 +15,14 @@ const FX_STALE_TIME_MS = 600_000;
 export function useFxRate(enabled: boolean, base = "USD", quote = "KRW") {
   const { data } = useQuery({
     queryKey: queryKeys.fxRate(base, quote),
-    queryFn: () => stocksApi.fx(base, quote),
+    // BE 는 환율 실패 시 200+null 을 반환한다(의도적 음수캐싱 제거). 이를 그대로 성공 캐시하면
+    // staleTime 10분간 null 이 신선한 성공으로 고정돼 해외 평가액이 공백이 된다. null 이면 throw 해
+    // React Query 기본 retry/backoff + refetchOnWindowFocus 로 회복시킨다.
+    queryFn: async () => {
+      const fx = await stocksApi.fx(base, quote);
+      if (fx == null) throw new Error("fx unavailable");
+      return fx;
+    },
     enabled,
     staleTime: FX_STALE_TIME_MS,
   });

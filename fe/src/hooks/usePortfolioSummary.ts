@@ -2,9 +2,34 @@
 
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import { portfolioApi } from "@/lib/api-client";
+import { portfolioApi, type PortfolioSummaryResponse } from "@/lib/api-client";
+import { currencyForCountry } from "@/lib/format";
+import type { Position } from "@/lib/portfolio";
 import { queryKeys } from "@/lib/query-keys";
 import { QUERY_PORTFOLIO_STALE_TIME_MS } from "@/lib/constants/query";
+
+/**
+ * 버전 스큐(신 FE + 구 BE) 정규화 — 구 BE 의 /portfolio/summary positions 에는 이번에 추가된
+ * currency/avgBuyPriceNative/costBasisNative/evaluationNative 가 없다. 소비 지점마다 ?? 가드를
+ * 뿌리는 대신 경계에서 1회 정규화해 타입상 non-optional 필드를 채운다. 신 BE 응답은 무변경.
+ * (입력 타입은 신규 필드가 없을 수 있으므로 Partial 로 다룬다.)
+ */
+function normalizePosition(p: Partial<Position> & { country: string }): Position {
+  return {
+    ...(p as Position),
+    currency: p.currency ?? currencyForCountry(p.country),
+    avgBuyPriceNative: p.avgBuyPriceNative ?? p.avgBuyPrice ?? 0,
+    costBasisNative: p.costBasisNative ?? p.costBasis ?? 0,
+    evaluationNative: p.evaluationNative ?? p.evaluation ?? null,
+  };
+}
+
+export function normalizePortfolioSummary(data: PortfolioSummaryResponse): PortfolioSummaryResponse {
+  return {
+    ...data,
+    positions: (data.positions ?? []).map((p) => normalizePosition(p)),
+  };
+}
 
 export function usePortfolioSummary(accountId: string | null = null) {
   const queryClient = useQueryClient();
@@ -16,6 +41,7 @@ export function usePortfolioSummary(accountId: string | null = null) {
   const { data, isPending, isError, isPlaceholderData } = useQuery({
     queryKey: queryKeys.portfolioSummary(accountId),
     queryFn: () => portfolioApi.summary(accountId, false, false),
+    select: normalizePortfolioSummary,
     staleTime: QUERY_PORTFOLIO_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });

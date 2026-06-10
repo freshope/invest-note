@@ -289,6 +289,17 @@ class TestCreateTrade:
         assert resp.status_code == 422
         assert "환율" in resp.json()["error"]
 
+    def test_create_kr_trade_with_exchange_rate_422(self, trades_client):
+        """원화(KR) 거래에 1.0 이 아닌 환율 지정은 거부 — 역방향 미러 가드.
+
+        krw_normalized_trade 가 rate != 1.0 이면 무조건 ×rate 라 원가·손익이 조용히 부풀므로
+        스키마에서 차단한다(해외 가드의 대칭).
+        """
+        payload = {**self._buy_payload(), "exchange_rate": 1350.0}
+        resp = trades_client.post("/trades", json=payload)
+        assert resp.status_code == 422
+        assert "환율" in resp.json()["error"]
+
     def test_create_foreign_sell_allowed_for_existing_holding(self, trades_client):
         acct_row = {"id": "a1"}
         buy_row = _make_trade_row(
@@ -789,6 +800,46 @@ class TestImportCommit:
         assert body["error_count"] == 1
         assert "SK하이닉스" in body["errors"][0]["reason"]
 
+    def test_kr_import_commit_passes_foreign_guard(self, trades_client):
+        """KR 거래 import commit 은 해외 환율 방어 가드를 발동하지 않고 정상 INSERT.
+
+        가드(currency != KRW)는 KR 하드코딩 전제를 못박는 방어선 — 현 KR 경로 무회귀 확인.
+        """
+        staging_id = self._stage(trades_client, [self._merge_row(trade_type="BUY")])
+        conn = FakeConnection(
+            "a1",
+            [],  # list_trades_in_group: 기존 없음
+            [_to_record(_make_trade_row(
+                id_="new-1", ticker="005930", asset_name="삼성전자", trade_type="BUY",
+                traded_at=_dt("2024-01-10T09:00:00+09:00"),
+            ))],  # insert RETURNING
+        )
+        with _patch_trades(conn):
+            resp = trades_client.post(
+                "/trades/import/commit",
+                json={"staging_id": staging_id, "account_id": "a1"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["inserted_count"] == 1
+
+    def test_foreign_import_commit_blocked_by_guard(self, trades_client):
+        """비-KRW(US) staging row 가 commit 에 들어오면 환율 가드가 명시적 에러로 막는다.
+
+        현재 staging 은 KR 하드코딩이라 이 경로는 미존재하나, Phase C(해외 import) 추가 시
+        exchange_rate 누락이 조용히 통과(1.0)하는 것을 가드가 차단한다 — 방어선 동작 검증.
+        """
+        us_row = {**self._merge_row(ticker="AAPL", asset_name="Apple", trade_type="BUY"),
+                  "country_code": "US"}
+        staging_id = self._stage(trades_client, [us_row])
+        conn = FakeConnection("a1", [])  # list_trades_in_group
+        with _patch_trades(conn):
+            resp = trades_client.post(
+                "/trades/import/commit",
+                json={"staging_id": staging_id, "account_id": "a1"},
+            )
+        assert resp.status_code == 400
+        assert "환율" in resp.json()["error"]
+
 
 class TestImportPreviewValidation:
     """import_preview 의 _validate_import_groups 흐름 단위 테스트."""
@@ -1161,6 +1212,16 @@ class TestPatchTrade:
         with _patch_trades(conn):
             resp = trades_client.patch("/trades/t1", json={"exchange_rate": 1.0})
         assert resp.status_code == 204
+
+    def test_patch_kr_trade_nondefault_exchange_rate_rejected(self, trades_client):
+        """원화(KR) 거래에 1.0 이 아닌 환율 패치는 거부 — create 역방향 가드와 대칭."""
+        row = _make_trade_row(country_code="KR")
+        row["exchange_rate"] = 1.0
+        conn = FakeConnection(_to_record(row))  # fetchrow만 — 가드에서 거부
+        with _patch_trades(conn):
+            resp = trades_client.patch("/trades/t1", json={"exchange_rate": 1350.0})
+        assert resp.status_code == 400
+        assert "환율" in resp.json()["error"]
 
     def test_patch_us_trade_without_exchange_rate_ok(self, trades_client):
         """exchange_rate 미포함 패치(다른 필드만)는 US 거래여도 성공 — 가드 미발동."""

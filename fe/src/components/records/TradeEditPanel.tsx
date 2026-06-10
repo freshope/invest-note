@@ -13,7 +13,6 @@ import {
   FullScreenPanelFooter,
 } from "@/components/base/FullScreenPanel";
 import { Button } from "@/components/base/Button";
-import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
 import { tradesApi } from "@/lib/api-client";
 import { VALIDATION_LIMITS, TRADE_FREE_TEXT_ERROR } from "@/lib/constants/validation";
@@ -30,10 +29,12 @@ import {
 } from "@/lib/constants/trading";
 import { AutoBuyReasonField, AutoEmotionField, AutoReasoningTagsField } from "./AutoMetaField";
 import { TradeHeaderCard } from "./TradeHeaderCard";
+import { NumericInput } from "./NumericInput";
 import { CompactRow } from "./trade-display";
 import { ToggleChipGrid } from "@/components/shared/ToggleChipGrid";
 import { AccountChip } from "@/components/shared/AccountChip";
-import { currencyForCountry, fmt, fmtNumberInput, parseNumberInput } from "@/lib/format";
+import { currencyForCountry } from "@/lib/format";
+import { impliedExchangeRate, fxHintText } from "./fx-input";
 import { useFxRate } from "@/hooks/useFxRate";
 import { getFirstFormError } from "@/lib/utils";
 import type { Trade, Account, ReasoningTag, StrategyType, EmotionType } from "@/types/database";
@@ -159,11 +160,9 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
     try {
       // 해외(US) 거래는 체결 원화 / native(가격×수량)로 거래 시점 환율을 역산해 전송한다(1.0 금지 — BE 가드).
       // KR 거래는 exchange_rate 를 patch 에서 제외(미포함 시 기존값 유지).
-      const totalNative = (values.price || 0) * (values.quantity || 0);
+      const implied = impliedExchangeRate(values.amount_krw, values.price, values.quantity);
       const exchangeRatePatch =
-        isForeign && totalNative > 0
-          ? { exchange_rate: values.amount_krw / totalNative }
-          : {};
+        isForeign && implied != null ? { exchange_rate: implied } : {};
       await tradesApi.update(trade.id, {
         trade_type: trade.trade_type,
         market_type: trade.market_type,
@@ -210,6 +209,13 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                 price={livePrice}
                 quantity={liveQty}
               />
+              {/* 헤더 원화 총액은 기존(저장 전) 환율로 환산된 값이라 아래 '체결 원화' 입력에 즉시 반응하지 않는다.
+                  저장하면 역산 환율이 반영되므로, 사용자 혼동을 막기 위해 기준을 명시한다. */}
+              {isForeign && (
+                <p className="text-[11px] text-muted-foreground -mt-3">
+                  원화 총액은 저장 전(기존 환율 기준) 추정치예요. 저장하면 입력한 체결 원화로 반영돼요.
+                </p>
+              )}
 
               {/* 기본 거래 정보 */}
               <div className="rounded-2xl bg-muted/60 p-4">
@@ -225,14 +231,16 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
 
               {/* 가격 */}
               <div className="space-y-1.5">
-                <Label>가격 ({isForeign ? "USD" : "원"}) <span className="text-destructive">*</span></Label>
+                <Label htmlFor="edit_price">가격 ({isForeign ? "USD" : "원"}) <span className="text-destructive">*</span></Label>
                 <Controller
                   control={control}
                   name="price"
                   render={({ field }) => (
-                    <Input type="text" inputMode={isForeign ? "decimal" : "numeric"} placeholder="0"
-                      value={fmtNumberInput(field.value)}
-                      onChange={(e) => field.onChange(parseNumberInput(e.target.value))}
+                    <NumericInput
+                      id="edit_price"
+                      inputMode={isForeign ? "decimal" : "numeric"}
+                      value={field.value}
+                      onValueChange={field.onChange}
                     />
                   )}
                 />
@@ -240,14 +248,16 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
 
               {/* 수량 */}
               <div className="space-y-1.5">
-                <Label>수량 <span className="text-destructive">*</span></Label>
+                <Label htmlFor="edit_quantity">수량 <span className="text-destructive">*</span></Label>
                 <Controller
                   control={control}
                   name="quantity"
                   render={({ field }) => (
-                    <Input type="text" inputMode="decimal" placeholder="0"
-                      value={fmtNumberInput(field.value)}
-                      onChange={(e) => field.onChange(parseNumberInput(e.target.value))}
+                    <NumericInput
+                      id="edit_quantity"
+                      inputMode="decimal"
+                      value={field.value}
+                      onValueChange={field.onChange}
                     />
                   )}
                 />
@@ -261,35 +271,32 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                     control={control}
                     name="amount_krw"
                     render={({ field }) => (
-                      <Input id="edit_amount_krw" type="text" inputMode="numeric" placeholder="0"
-                        value={fmtNumberInput(field.value)}
-                        onChange={(e) => field.onChange(parseNumberInput(e.target.value))}
+                      <NumericInput
+                        id="edit_amount_krw"
+                        inputMode="numeric"
+                        value={field.value}
+                        onValueChange={field.onChange}
                       />
                     )}
                   />
                   <p className="text-[12px] text-muted-foreground">
-                    {(() => {
-                      const totalNative = (livePrice || 0) * (liveQty || 0);
-                      const impliedRate = totalNative > 0 && (liveAmountKrw || 0) > 0 ? liveAmountKrw / totalNative : null;
-                      return impliedRate != null
-                        ? `역산 환율 ≈ ${fmt(Math.round(impliedRate * 100) / 100)}`
-                        : "가격·수량 입력 시 역산 환율 표시";
-                    })()}
-                    {usdkrw != null && ` · 현재 시세 ${fmt(Math.round(usdkrw * 100) / 100)}`}
+                    {fxHintText(liveAmountKrw, livePrice, liveQty, usdkrw)}
                   </p>
                 </div>
               )}
 
               {/* 수수료 */}
               <div className="space-y-1.5">
-                <Label>수수료 ({isForeign ? "USD" : "원"})</Label>
+                <Label htmlFor="edit_commission">수수료 ({isForeign ? "USD" : "원"})</Label>
                 <Controller
                   control={control}
                   name="commission"
                   render={({ field }) => (
-                    <Input type="text" inputMode={isForeign ? "decimal" : "numeric"} placeholder="0"
-                      value={fmtNumberInput(field.value)}
-                      onChange={(e) => field.onChange(parseNumberInput(e.target.value))}
+                    <NumericInput
+                      id="edit_commission"
+                      inputMode={isForeign ? "decimal" : "numeric"}
+                      value={field.value}
+                      onValueChange={field.onChange}
                     />
                   )}
                 />
@@ -298,14 +305,16 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
               {/* 제세금 (매도) */}
               {isSell && (
                 <div className="space-y-1.5">
-                  <Label>제세금 ({isForeign ? "USD" : "원"})</Label>
+                  <Label htmlFor="edit_tax">제세금 ({isForeign ? "USD" : "원"})</Label>
                   <Controller
                     control={control}
                     name="tax"
                     render={({ field }) => (
-                      <Input type="text" inputMode={isForeign ? "decimal" : "numeric"} placeholder="0"
-                        value={fmtNumberInput(field.value)}
-                        onChange={(e) => field.onChange(parseNumberInput(e.target.value))}
+                      <NumericInput
+                        id="edit_tax"
+                        inputMode={isForeign ? "decimal" : "numeric"}
+                        value={field.value}
+                        onValueChange={field.onChange}
                       />
                     )}
                   />

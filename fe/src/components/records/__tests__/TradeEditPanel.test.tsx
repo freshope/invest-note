@@ -11,6 +11,12 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
   return {
     ...actual,
     tradesApi: { ...actual.tradesApi, update: vi.fn().mockResolvedValue(undefined) },
+    // useFxRate(enabled) 가 US 거래 테스트마다 실 fetch + supabase getSession 을 시도하지 않도록
+    // 성공값으로 mock(수정 3 의 null→throw 정책과 충돌 방지).
+    stocksApi: {
+      ...actual.stocksApi,
+      fx: vi.fn().mockResolvedValue({ base: "USD", quote: "KRW", rate: 1350, as_of: "2026-06-09T00:00:00Z" }),
+    },
   };
 });
 
@@ -128,6 +134,31 @@ describe("TradeEditPanel — 해외(US) 환율 인지", () => {
     await waitFor(() => expect(tradesApi.update).toHaveBeenCalled());
     const [, patch] = (tradesApi.update as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(patch.exchange_rate).toBeCloseTo(1350, 6);
+  });
+
+  it("US 가격에 소수점 입력(716.07)이 보존되어 제출값(역산 환율)에 반영된다", async () => {
+    // 가격 100→716.07, 수량 10. 체결 원화는 anchor(1350) 재제안: round(716.07×10×1350)=9,666,945
+    // 역산 환율 = 9,666,945 / (716.07×10) = 1350 (round 오차 미세). 핵심은 소수점이 매 키마다 지워지지 않는 것.
+    renderPanel(makeTrade({ country_code: "US", exchange_rate: 1350, price: 100, quantity: 10 }));
+
+    const amountInputEl = screen.getByLabelText(/체결 원화/) as HTMLInputElement;
+    const priceInput = (screen.getAllByRole("textbox") as HTMLInputElement[]).find(
+      (el) => el !== amountInputEl && el.value === "100",
+    )!;
+    fireEvent.change(priceInput, { target: { value: "716.07" } });
+    // 소수점 입력이 제어 왕복에 의해 제거되지 않고 그대로 보존된다.
+    expect(priceInput.value).toBe("716.07");
+
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(tradesApi.update).toHaveBeenCalled());
+    const [, patch] = (tradesApi.update as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(patch.price).toBeCloseTo(716.07, 6);
+    expect(patch.exchange_rate).toBeCloseTo(1350, 0);
+  });
+
+  it("US 거래는 현재 시세 환율 힌트를 렌더한다", async () => {
+    renderPanel(makeTrade({ country_code: "US", exchange_rate: 1350 }));
+    await waitFor(() => expect(screen.getByText(/현재 시세/)).toBeDefined());
   });
 
   it("KR 거래는 체결 원화 입력칸이 없고 exchange_rate 를 patch 에서 제외한다", async () => {

@@ -8,6 +8,7 @@ fetch 유틸(`_get_with_retry`/`_extract_items`/`_basdt_to_date`)은 stock_seed.
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
@@ -47,6 +48,9 @@ _ETN_PRICE_URL = f"{_SECURITIES_PRODUCT_BASE}/getETNPriceInfo"
 # 주식/ETF 동일 경로(KR 전용). item 키: localDate(YYYYMMDD), closePrice(float).
 _NAVER_DAILY_CHART_URL = "https://api.stock.naver.com/chart/domestic/item/{code}/day"
 _PAGE_SIZE = 1000
+# US 티커가 Yahoo chart URL 경로에 그대로 들어가므로 `/`·`?`·`#` 조작(trust-boundary)을 막는
+# 화이트리스트(quotes._US_TICKER_PATTERN 과 동일 규칙). 불일치는 fetch 실패 계약대로 raise.
+_US_TICKER_PATTERN = re.compile(r"[A-Za-z0-9.\-]{1,20}")
 # data.go.kr 동시 호출 상한(게이트웨이 429 가드). stock_seed._NAVER_CONCURRENCY 선례.
 _BACKFILL_CONCURRENCY = 8
 # 어제까지 조회 완료(빈 응답 포함)한 종목의 재probe 쿨다운. 짧으면 늦은 발행(T+1 ~14:00 KST)을
@@ -241,16 +245,34 @@ async def fetch_kis_daily_closes(
     return rows
 
 
-def _parse_yahoo_us_chart(data: dict, ticker: str, begin: date, end: date) -> list[dict]:
+def _us_final_close_cutoff(now_kst: datetime) -> date:
+    """now_kst 기준 "종가가 확정된 마지막 US 거래일(KST date)".
+
+    Yahoo chart v8 일봉의 마지막 캔들은 진행 중 세션(close=현재가)이고, 그 timestamp(개장
+    09:30 ET)의 KST 날짜는 같은 날 D 다. 한국 사용자가 D+1 새벽(미장 진행 중)에 열면 장중가가
+    D 종가로 박제되고 watermark 가 전진해 영구히 재수집되지 않는다.
+
+    US 정규장 마감(16:00 ET)은 KST 익일 05:00(서머타임)/06:00(겨울). 버퍼 포함해 "캔들 날짜
+    D 는 now_kst >= D+1일 07:00 KST 일 때만 확정"으로 보수적으로 둔다 →
+    `(now_kst - 7h).date() - 1일`. 예: now=D+1 02:00 → (D+1 02:00 - 7h).date() = D-1 → cutoff
+    = D-1(=D 미확정), now=D+1 08:00 → (D+1 08:00 - 7h).date() = D+1 → cutoff = D(=D 확정).
+    """
+    return (now_kst - timedelta(hours=7)).date() - timedelta(days=1)
+
+
+def _parse_yahoo_us_chart(
+    data: dict, ticker: str, begin: date, end: date, *, cutoff: date
+) -> list[dict]:
     """Yahoo chart v8 result → [{ticker, close_date, close_price}] (US 일별 종가).
 
     quote 파서(_parse_yahoo_chart_price)는 meta.regularMarketPrice 1점만 읽지만, 일별은
     result[0].timestamp[] + indicators.quote[0].close[] 시계열을 zip 한다.
     - epoch(UTC sec) → KST 기준 close_date(date) 정규화(기존 KR 경로와 동일 date 형식).
     - null close 는 skip(휴장/미체결 캔들).
-    - 범위 밖 행 가드: begin~end 밖(경계일 라이브 캔들 등)은 제외.
+    - 범위 밖 행 가드: begin~min(end, cutoff) 밖(경계일 라이브/미확정 캔들 등)은 제외.
     - US 티커는 bare(suffix 없음) — KR srtnCd 정규화(_normalize_ticker)를 거치지 않는다.
     """
+    upper = min(end, cutoff)
     result = (data.get("chart") or {}).get("result") or []
     if not result:
         return []
@@ -269,7 +291,7 @@ def _parse_yahoo_us_chart(data: dict, ticker: str, begin: date, end: date) -> li
             close_price = float(raw)
         except (TypeError, ValueError):
             continue
-        if begin <= close_date <= end:
+        if begin <= close_date <= upper:
             rows.append(
                 {"ticker": ticker, "close_date": close_date, "close_price": close_price}
             )
@@ -283,9 +305,19 @@ async def _fetch_yahoo_us_closes(
 
     bare 티커 사용(KR 의 .KS/.KQ suffix 와 다름). period1/period2(UTC epoch sec)로 구간
     지정 — period2 는 end 다음날 자정으로 둬 end 당일 캔들을 포함시킨다(경계 inclusive).
+    cutoff(=장 마감 확정일) 초과 캔들은 _parse_yahoo_us_chart 가 제외해 장중 라이브가가 박제되지
+    않게 한다(now_kst 는 테스트 patch 가능하도록 모듈 전역 datetime.now 경유).
     반환 형태는 fetch_daily_closes/fetch_kis_daily_closes 와 동일: [{ticker, close_date, close_price}].
-    빈/실패 응답(result 없음, quote 없음, 비200)은 빈 리스트.
+
+    실패와 진짜 빈 범위를 구분한다:
+    - 전송 실패(예외)·비200(raise_for_status)은 **raise 전파** → backfill 이 sync_state 미기록.
+    - 정상 200 + 범위 내 확정 캔들 없음(주말/휴장, cutoff 필터로 전부 제외)은 `[]` 반환.
+
+    ticker 가 화이트리스트(_US_TICKER_PATTERN)에 불일치하면 URL 경로 조작 방지를 위해 raise —
+    fetch 실패 계약과 일관(backfill 이 sync_state 미기록 → 다음 요청 재시도).
     """
+    if not _US_TICKER_PATTERN.fullmatch(ticker):
+        raise ValueError(f"US ticker 형식 위반: {ticker!r}")
     # period1=begin 00:00 UTC, period2=end+1일 00:00 UTC(end 당일 캔들 포함).
     period1 = int(datetime(begin.year, begin.month, begin.day, tzinfo=timezone.utc).timestamp())
     period2 = int(
@@ -293,15 +325,13 @@ async def _fetch_yahoo_us_closes(
             datetime(end.year, end.month, end.day, tzinfo=timezone.utc) + timedelta(days=1)
         ).timestamp()
     )
-    try:
-        res = await client.get(
-            YAHOO_CHART_RANGE_URL.format(symbol=ticker),
-            params={"interval": "1d", "period1": period1, "period2": period2},
-        )
-        res.raise_for_status()
-    except Exception:
-        return []  # 실패는 빈 리스트(D1-2 가 US primary 의 raise-vs-[] 정책을 결정).
-    return _parse_yahoo_us_chart(res.json(), ticker, begin, end)
+    cutoff = _us_final_close_cutoff(datetime.now(KST))
+    res = await client.get(
+        YAHOO_CHART_RANGE_URL.format(symbol=ticker),
+        params={"interval": "1d", "period1": period1, "period2": period2},
+    )
+    res.raise_for_status()  # 비200 → raise 전파(전송 실패도 await 에서 raise).
+    return _parse_yahoo_us_chart(res.json(), ticker, begin, end, cutoff=cutoff)
 
 
 async def _fetch_yahoo_us_primary(
@@ -315,14 +345,12 @@ async def _fetch_yahoo_us_primary(
 ) -> list[dict]:
     """US primary 공급자 — api_key(data.go.kr 전용)·market 미사용. bare 티커 그대로.
 
-    `_fetch_yahoo_us_closes` 는 실패 시 [] 를 돌려주지만, primary 계약은 실패 시 raise 여야
-    backfill 이 sync_state 를 기록하지 않고 다음 요청에 재시도한다(KR fetch_kis_daily_closes 와 동치).
-    Yahoo 장애와 진짜 빈 범위를 구분하기 어려우므로 빈 결과는 보수적으로 실패로 승격한다.
+    `_fetch_yahoo_us_closes` 는 전송 실패/비200 을 raise 로 전파(→ backfill 이 sync_state 미기록
+    → 다음 요청 재시도)하고, 정상 200 의 빈 범위(주말/휴장, cutoff 로 전부 제외)는 [] 를 돌려준다.
+    빈 결과를 실패로 승격하면 주말마다 US 종목 수만큼 Yahoo 재호출이 폭주하므로 rows 를 그대로
+    반환한다 — KR data.go.kr 가 빈 응답도 synced 처리하는 것과 대칭.
     """
-    rows = await _fetch_yahoo_us_closes(client, ticker, begin, end)
-    if not rows:
-        raise RuntimeError(f"Yahoo US 일별 종가 빈 응답/조회 실패 ticker={ticker}")
-    return rows
+    return await _fetch_yahoo_us_closes(client, ticker, begin, end)
 
 
 async def _fetch_data_go_kr_closes(
@@ -447,6 +475,14 @@ async def backfill_closes(
     if earliest > yesterday:
         return False  # 적재 대상 과거 구간 없음(오늘만 관심).
 
+    # US 는 새벽 시간대에 yesterday 가 아직 미확정(장 마감 전)이라 cutoff 로 클램프한다 —
+    # checked_through 를 yesterday 로 박으면 cooldown 동안 확정 종가 적재가 늦어진다.
+    # KR 은 무변경(checked_through = yesterday).
+    if country_code == "US":
+        checked_through = min(yesterday, _us_final_close_cutoff(datetime.now(KST)))
+    else:
+        checked_through = yesterday
+
     # 1) DB 순차 — 상태 일괄 조회.
     watermarks = await daily_prices_repo.get_watermarks(
         conn, tickers, country_code=country_code
@@ -532,7 +568,7 @@ async def backfill_closes(
             continue
         all_rows.extend(rows)
         if synced:
-            state_rows.append({"ticker": ticker, "checked_through_date": yesterday})
+            state_rows.append({"ticker": ticker, "checked_through_date": checked_through})
         else:
             incomplete = True  # 네이버 보충 실패 — 어제 점 결측 가능.
     if all_rows:

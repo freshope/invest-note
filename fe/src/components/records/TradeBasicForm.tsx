@@ -8,7 +8,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/base/Button";
 import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
 import { AccountChip } from "@/components/shared/AccountChip";
-import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/base/Tabs";
 import {
@@ -29,8 +28,10 @@ import { STORAGE_KEYS } from "@/lib/constants/storage";
 import { COUNTRY_CODES, DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
 import { HoldingSelectInput } from "./HoldingSelectInput";
+import { NumericInput } from "./NumericInput";
 import { CountryBadge } from "./trade-display";
-import { currencyForCountry, fmt, fmtNumberInput, formatNumberInput, parseNumberInput } from "@/lib/format";
+import { currencyForCountry, fmt, formatMoney } from "@/lib/format";
+import { impliedExchangeRate, fxHintText } from "./fx-input";
 import { useFxRate } from "@/hooks/useFxRate";
 import { cn, getFirstFormError } from "@/lib/utils";
 import type { Account, TradeType } from "@/types/database";
@@ -74,41 +75,6 @@ function getInitialAccountId(accounts: Account[]): string {
   if (typeof window === "undefined") return "";
   const stored = window.localStorage.getItem(STORAGE_KEYS.LAST_ACCOUNT_ID);
   return stored && accounts.some((a) => a.id === stored) ? stored : "";
-}
-
-interface NumericInputProps {
-  value: number;
-  onValueChange: (n: number) => void;
-  id?: string;
-  inputMode?: "numeric" | "decimal";
-  placeholder?: string;
-  inputRef?: React.Ref<HTMLInputElement>;
-}
-
-// 숫자 입력 — 타이핑 중 원시 문자열을 보존해 소수점 입력을 지원한다.
-// 콤마 포맷은 유지하되, value(number)로 매 입력마다 되돌리면 "307." 의 소수점이 사라지므로
-// 로컬 문자열 상태를 source 로 둔다. 외부에서 value 가 바뀌면(수수료 자동계산·전량 버튼) 동기화.
-function NumericInput({ value, onValueChange, id, inputMode = "numeric", placeholder = "0", inputRef }: NumericInputProps) {
-  const [text, setText] = useState(() => fmtNumberInput(value));
-  useEffect(() => {
-    // 타이핑 중인 값과 숫자상 동일하면 덮어쓰지 않는다(소수점/후행 0 입력 보존).
-    setText((prev) => (parseNumberInput(prev) === value ? prev : fmtNumberInput(value)));
-  }, [value]);
-  return (
-    <Input
-      ref={inputRef}
-      id={id}
-      type="text"
-      inputMode={inputMode}
-      placeholder={placeholder}
-      value={text}
-      onChange={(e) => {
-        const formatted = formatNumberInput(e.target.value);
-        setText(formatted);
-        onValueChange(parseNumberInput(formatted));
-      }}
-    />
-  );
 }
 
 interface TradeBasicFormProps {
@@ -225,7 +191,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
   }, [getFieldState, setValue, isForeign]);
 
   const total = (price || 0) * (quantity || 0);
-  const totalDisplay = total > 0 ? fmt(total) : "-";
+  const totalDisplay = total > 0 ? formatMoney(total, isForeign ? "USD" : "KRW") : "-";
 
   const firstError = getFirstFormError(errors);
 
@@ -241,10 +207,10 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
       }
 
       // 환율은 체결 원화 / 체결 달러(가격×수량)로 역산. 국내(KRW)는 1.0.
-      const totalNative = (values.price || 0) * (values.quantity || 0);
+      const implied = impliedExchangeRate(values.amount_krw, values.price, values.quantity);
       const exchangeRate =
-        currencyForCountry(values.country_code) === "USD" && totalNative > 0
-          ? values.amount_krw / totalNative
+        currencyForCountry(values.country_code) === "USD" && implied != null
+          ? implied
           : 1;
 
       const result = await tradesApi.create({
@@ -474,14 +440,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
               )}
             />
             <p className="text-[12px] text-muted-foreground">
-              {(() => {
-                const totalNative = (price || 0) * (quantity || 0);
-                const impliedRate = totalNative > 0 && (amountKrw || 0) > 0 ? amountKrw / totalNative : null;
-                return impliedRate != null
-                  ? `역산 환율 ≈ ${fmt(Math.round(impliedRate * 100) / 100)}`
-                  : "가격·수량 입력 시 역산 환율 표시";
-              })()}
-              {usdkrw != null && ` · 현재 시세 ${fmt(Math.round(usdkrw * 100) / 100)}`}
+              {fxHintText(amountKrw, price, quantity, usdkrw)}
             </p>
           </div>
         )}
@@ -509,7 +468,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
             render={({ field }) => (
               <NumericInput
                 id="quantity"
-                inputMode={isForeign ? "decimal" : "numeric"}
+                inputMode="decimal"
                 value={field.value}
                 onValueChange={(next) => {
                   field.onChange(next);
@@ -536,7 +495,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         <div className="space-y-1.5">
           <Label>총액 (자동계산)</Label>
           <div className="flex h-12 items-center rounded-xl bg-muted px-4 text-[15px] font-semibold text-foreground">
-            {totalDisplay !== "-" ? `${totalDisplay} ${isForeign ? "USD" : "원"}` : "-"}
+            {totalDisplay}
           </div>
         </div>
 

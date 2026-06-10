@@ -1,6 +1,7 @@
 """analysis 라우터 — dashboard 단일 엔드포인트."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import Counter
 from dataclasses import asdict
@@ -22,8 +23,12 @@ from invest_note_api.domain.analysis.rules import evaluate_rules
 from invest_note_api.domain.analysis.strategy_adherence import build_strategy_evaluations
 from invest_note_api.domain.portfolio import build_positions, merge_quotes
 from invest_note_api.domain.realized_pnl import build_pnl_map
-from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, TRADE_TYPE_BUY, trade_country
-from invest_note_api.external.fx import FxCacheState, fetch_usdkrw, get_fx_cache_state
+from invest_note_api.domain.trade_types import TRADE_TYPE_BUY
+from invest_note_api.external.fx import (
+    FxCacheState,
+    get_fx_cache_state,
+    usdkrw_if_foreign,
+)
 from invest_note_api.external.http_client import get_http_client
 from invest_note_api.external.quotes import (
     QuoteCacheState,
@@ -97,16 +102,20 @@ async def get_analysis_dashboard(
     trades = filter_by_period(all_trades, period_val)
 
     # 실현손익은 거래 시점 환율로 KRW 고정(저장값) — 환산 불필요. 집중도의 평가액(현재 시세)만
-    # live 환율이 필요하므로 해외 보유가 있을 때 USD/KRW 1회 조회.
-    usdkrw = None
-    if any(trade_country(t) != DEFAULT_COUNTRY for t in all_trades):
-        usdkrw = await fetch_usdkrw(fx_state, http_client, force_refresh=refresh)
+    # live 환율이 필요하므로 비-KRW(해외) 보유가 있을 때 USD/KRW 1회 조회.
+    # quotes fetch 와 직렬 대기하지 않고 create_task 로 동시 실행 — fetch_usdkrw 는 내부에서
+    # 예외를 삼키고 None 을 반환하므로 task 예외 누수가 없다.
+    fx_task = asyncio.create_task(
+        usdkrw_if_foreign(all_trades, fx_state, http_client, force_refresh=refresh)
+    )
 
     pnl_map = build_pnl_map(trades)
     holding_days_map = compute_holding_days_map(trades)
     positions0, _ = build_positions(all_trades)
 
     positions = positions0
+    quote_error = None
+    quotes = {}
     try:
         quotes = await fetch_quotes_by_keys(
             quote_state,
@@ -115,9 +124,14 @@ async def get_analysis_dashboard(
             force_refresh=refresh,
             providers=settings.quote_provider_list,
         )
-        positions = merge_quotes(positions0, quotes, usdkrw)
     except Exception as e:
-        logger.warning("시세 fetch 실패, cost_basis fallback: %s", e)
+        quote_error = e
+
+    usdkrw = await fx_task
+    if quote_error is not None:
+        logger.warning("시세 fetch 실패, cost_basis fallback: %s", quote_error)
+    else:
+        positions = merge_quotes(positions0, quotes, usdkrw)
 
     concentration = compute_concentration(positions, all_trades)
     summary = compute_summary(trades, pnl_map, holding_days_map)
@@ -148,7 +162,9 @@ async def get_analysis_dashboard(
         if b in size_dist
     ]
 
-    missing_quote_tickers = [p.asset_name for p in positions if p.current_price is None]
+    # evaluation 기준으로 통일 — portfolio.build_totals·FE 와 동일. US 종목이 시세는 받았으나
+    # 현재 환율 미수신 시 evaluation(KRW)=None 이라 양 화면 배지가 일관되게 노출된다.
+    missing_quote_tickers = [p.asset_name for p in positions if p.evaluation is None]
 
     return AnalysisDashboardResponse.model_validate({
         "period": period_val,

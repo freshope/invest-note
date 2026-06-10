@@ -26,6 +26,7 @@
 import asyncio
 import hashlib
 import io
+import re
 import zipfile
 from collections.abc import Sequence
 from datetime import date, timedelta
@@ -432,13 +433,18 @@ _OTHER_EXCHANGE_MAP = {
 }
 
 
+# 클래스주(BRK.B·BF.B 등) 허용 패턴 — `종목.클래스문자(A/B/C)`. 워런트(.WS)·유닛(.U)·
+# 우선주(.W/.R 등 2자 이상 또는 비-ABC) 는 매칭되지 않아 계속 제외된다.
+_CLASS_SHARE_PATTERN = re.compile(r"[A-Z]+\.[ABC]")
+
+
 def _parse_nasdaqtrader(text: str, *, nasdaq_default: str | None = None) -> list[dict]:
     """nasdaqtrader 심볼 파일 텍스트 → [{ticker, asset_name, market, exchange, currency}].
 
     헤더로 컬럼 위치를 잡아 nasdaqlisted/otherlisted 양식을 함께 처리한다.
       - `nasdaq_default` 지정(=nasdaqlisted) 시 보드명은 그 값(NASDAQ), 아니면 Exchange 코드 매핑.
-      - Test Issue == 'Y' 제외. 심볼은 보통주/ETF 만 남기려 알파벳 전용으로 제한
-        (warrant·preferred·unit 의 '.'/'$'/'=' 접미는 제외).
+      - Test Issue == 'Y' 제외. 심볼은 보통주/ETF(알파벳 전용) + 클래스주(BRK.B 등 `종목.[ABC]`)만
+        남긴다 — warrant(.WS)·unit(.U)·preferred 등 '$'/'='/그 외 '.' 접미는 제외.
       - 마지막 'File Creation Time' 푸터 라인은 스킵.
     """
     lines = text.splitlines()
@@ -459,7 +465,9 @@ def _parse_nasdaqtrader(text: str, *, nasdaq_default: str | None = None) -> list
         name = parts[cols["Security Name"]].strip()
         if "Test Issue" in cols and parts[cols["Test Issue"]].strip() == "Y":
             continue
-        if not ticker or not name or not ticker.isalpha():
+        if not ticker or not name:
+            continue
+        if not (ticker.isalpha() or _CLASS_SHARE_PATTERN.fullmatch(ticker)):
             continue
         if nasdaq_default is not None:
             market = nasdaq_default

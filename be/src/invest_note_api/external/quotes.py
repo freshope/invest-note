@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Sequence
+import re
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TypedDict
@@ -43,6 +44,10 @@ from invest_note_api.utils.numbers import strip_comma_number
 logger = logging.getLogger(__name__)
 
 _HEADERS = {"User-Agent": USER_AGENT}
+
+# US 티커가 Yahoo chart URL 경로에 그대로 들어가므로 `/`·`?`·`#` 조작(trust-boundary)을 막는
+# 화이트리스트. 영숫자/`.`(클래스주)/`-`(BRK-B 표기) 1~20자만 허용.
+_US_TICKER_PATTERN = re.compile(r"[A-Za-z0-9.\-]{1,20}")
 
 
 @dataclass
@@ -170,7 +175,12 @@ async def _fetch_yahoo_us(client: httpx.AsyncClient, code: str) -> QuoteResult |
 
     KR 경로(`_fetch_yahoo`)는 currency 를 KRW 로 고정하지만, 해외는 종목별 통화가 다를 수
     있어 meta 의 통화를 그대로 신뢰한다.
+
+    사용자 입력 심볼이 URL 경로에 그대로 들어가므로, 화이트리스트(_US_TICKER_PATTERN)에
+    불일치하는 code 는 graceful null(기존 fetch 실패 == None 계약과 일관)로 거른다.
     """
+    if not _US_TICKER_PATTERN.fullmatch(code):
+        return None
     try:
         res = await client.get(
             YAHOO_CHART_URL.format(symbol=code), headers=_HEADERS, timeout=QUOTE_ATTEMPT_TIMEOUT
@@ -271,7 +281,7 @@ def _entry_fetch_fn(
     code: str,
     client: httpx.AsyncClient,
     providers: Sequence[str],
-) -> Callable[[], object] | None:
+) -> Callable[[], Awaitable[QuoteResult | None]] | None:
     """국가별 시세 fetch 콜러블. 공급자가 없는 국가는 None(→ 결과 null)."""
     if country == DEFAULT_COUNTRY:
         return lambda: _fetch_kr_price(client, code, providers)
@@ -316,7 +326,7 @@ async def _get_cached(
         # 해외 평가액을 통째로 가리는 것을 막는다. 직전 성공값(non-None)이 있으면 stale 로
         # 유지·반환(현재·후속 호출자 모두), 없으면 None 그대로 다음 요청에서 재시도.
         # "원래 시세 없는 종목"은 직전값도 None 이라 여전히 None — 영향 없음.
-        # (fx.py:114-125 와 동일 사상. stale 무한 유지는 TTLCache 자연 만료로 차단.)
+        # (fx.get_fx_rate 의 실패-시-stale-유지와 동일 사상. stale 무한 유지는 TTLCache 자연 만료로 차단.)
         prior = state.cache.get(key)
         if result is None and prior is not None:
             result = prior

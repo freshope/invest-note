@@ -1,8 +1,10 @@
 """외부 HTTP 통신 공통 상수."""
 
+# 통화 상수는 domain.trade_types(typed Currency Literal)를 단일 출처로 두고 re-export 한다 —
+# 두 곳 정의로 인한 drift 방지. 방향: external→domain 단방향(domain 은 external 미참조, 사이클 없음).
+from invest_note_api.domain.trade_types import CURRENCY_KRW, CURRENCY_USD  # noqa: F401
+
 USER_AGENT = "Mozilla/5.0"
-CURRENCY_KRW = "KRW"
-CURRENCY_USD = "USD"
 HTTP_TIMEOUT_SECONDS = 5.0
 
 # 시세 fallback 체인(naver realtime → basic → yahoo .KS/.KQ)의 worst-case latency 가드.
