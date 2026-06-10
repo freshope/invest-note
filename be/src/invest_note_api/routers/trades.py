@@ -59,14 +59,21 @@ from invest_note_api.domain.trade_import import (
     trade_to_signature,
 )
 from invest_note_api.domain.trade_types import (
+    CURRENCY_KRW,
     DEFAULT_COUNTRY,
     MARKET_TYPE_STOCK,
     TRADE_TYPE_BUY,
     TRADE_TYPE_SELL,
     Trade,
+    currency_for_country,
 )
 from invest_note_api.errors import ERR_TRADE_NOT_FOUND, APIError
-from invest_note_api.schemas.trade import TradeBulkDeleteRequest, TradeCreate, TradeUpdate
+from invest_note_api.schemas.trade import (
+    FOREIGN_EXCHANGE_RATE_REQUIRED_MSG,
+    TradeBulkDeleteRequest,
+    TradeCreate,
+    TradeUpdate,
+)
 from invest_note_api.schemas.trade_import import (
     ImportCommitRequest,
     ImportCommitResponse,
@@ -421,6 +428,16 @@ async def update_trade(
         patch, fields = strip_sell_auto_derived(patch, fields, existing.trade_type)
         if not patch:
             return Response(status_code=204)
+
+        # TradeUpdate 에는 country_code 가 없어 스키마 validator 로 검증 불가.
+        # existing.country_code 기준으로 create 와 대칭 가드: 해외(비-KRW) 거래를
+        # exchange_rate=1.0 으로 패치하면 native 금액이 KRW 로 오인 집계되므로 거부.
+        # patch 에 exchange_rate 미포함이면 .get→None 이라 자동 skip(기존 환율 유지).
+        if (
+            patch.get("exchange_rate") == 1.0
+            and currency_for_country(existing.country_code) != CURRENCY_KRW
+        ):
+            raise APIError(FOREIGN_EXCHANGE_RATE_REQUIRED_MSG, 400)
 
         if fields & PNL_AFFECTING_FIELDS:
             key = trade_to_group_key(existing)

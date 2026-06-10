@@ -135,8 +135,12 @@ async def get_analysis_dashboard(
         if b in holding_dist
     ]
 
+    # 버킷 임계는 KRW 기준. total_amount 는 native(price×quantity)이므로 거래 시점
+    # 환율로 KRW 원금으로 환산해 비교한다(원가·실현손익 KRW 고정 모델과 일관). KR=1.0.
     size_dist = Counter(
-        _size_bucket(t.total_amount) for t in trades if t.trade_type == TRADE_TYPE_BUY
+        _size_bucket(t.total_amount * (t.exchange_rate or 1.0))
+        for t in trades
+        if t.trade_type == TRADE_TYPE_BUY
     )
     position_size_dist = [
         {"bucket": b, "count": size_dist[b]}

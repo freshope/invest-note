@@ -1126,6 +1126,54 @@ class TestPatchTrade:
             for q in sql_calls
         )
 
+    def test_patch_us_trade_exchange_rate_1_rejected(self, trades_client):
+        """해외(US) 거래를 exchange_rate=1.0 으로 패치하면 거부 — create 와 대칭 가드."""
+        row = _make_trade_row(country_code="US")
+        row["exchange_rate"] = 1350.0
+        conn = FakeConnection(_to_record(row))  # fetchrow만 — 가드에서 거부
+        with _patch_trades(conn):
+            resp = trades_client.patch("/trades/t1", json={"exchange_rate": 1.0})
+        assert resp.status_code == 400
+        assert "환율" in resp.json()["error"]
+
+    def test_patch_us_trade_valid_exchange_rate_ok(self, trades_client):
+        """해외(US) 거래를 유효 환율(1350)로 패치하면 성공."""
+        row = _make_trade_row(country_code="US")
+        row["exchange_rate"] = 1350.0
+        conn = FakeConnection(
+            _to_record(row),    # existing fetchrow
+            [_to_record(row)],  # list_trades (PNL 분기 — exchange_rate 는 pnl_affecting)
+            "UPDATE 1",         # patch_trade
+        )
+        with _patch_trades(conn):
+            resp = trades_client.patch("/trades/t1", json={"exchange_rate": 1350.0})
+        assert resp.status_code == 204
+
+    def test_patch_kr_trade_exchange_rate_1_ok(self, trades_client):
+        """KR 거래는 exchange_rate=1.0 패치가 정상(가드 무관)."""
+        row = _make_trade_row(country_code="KR")
+        row["exchange_rate"] = 1.0
+        conn = FakeConnection(
+            _to_record(row),    # existing fetchrow
+            [_to_record(row)],  # list_trades
+            "UPDATE 1",         # patch_trade
+        )
+        with _patch_trades(conn):
+            resp = trades_client.patch("/trades/t1", json={"exchange_rate": 1.0})
+        assert resp.status_code == 204
+
+    def test_patch_us_trade_without_exchange_rate_ok(self, trades_client):
+        """exchange_rate 미포함 패치(다른 필드만)는 US 거래여도 성공 — 가드 미발동."""
+        row = _make_trade_row(country_code="US")
+        row["exchange_rate"] = 1350.0
+        conn = FakeConnection(
+            _to_record(row),  # fetchrow — buy_reason 은 비-PNL 필드라 list_trades 없음
+            "UPDATE 1",       # patch_trade
+        )
+        with _patch_trades(conn):
+            resp = trades_client.patch("/trades/t1", json={"buy_reason": "메모"})
+        assert resp.status_code == 204
+
 
 class TestDeleteTrade:
     def test_delete_404(self, trades_client):

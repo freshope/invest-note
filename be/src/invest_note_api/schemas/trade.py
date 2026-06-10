@@ -26,6 +26,10 @@ from ..utils.numbers import strip_comma_number
 
 TRADE_FREE_TEXT_MAX_LEN = 5000
 
+# 해외(비-KRW) 거래에 거래 시점 환율이 누락(1.0)됐을 때의 에러 메시지.
+# TradeCreate(model_validator)와 PATCH 라우터 가드가 공유 — 계약상 동일 문구 유지.
+FOREIGN_EXCHANGE_RATE_REQUIRED_MSG = "해외 거래는 거래 시점 환율(exchange_rate)이 필요합니다."
+
 
 def _comma_positive(v: object) -> float:
     """쉼표 포함 문자열/숫자 → 양수 float."""
@@ -133,7 +137,7 @@ class TradeCreate(BaseModel):
         # 비-KRW(해외) 거래는 거래 시점 환율이 필수. 기본값/누락(1.0)이면 native 금액을
         # KRW 로 간주해 원가·손익이 조용히 어긋나므로 거부한다(KR/OTHER 는 KRW 라 무관).
         if currency_for_country(self.country_code) != CURRENCY_KRW and self.exchange_rate == 1.0:
-            raise ValueError("해외 거래는 거래 시점 환율(exchange_rate)이 필요합니다.")
+            raise ValueError(FOREIGN_EXCHANGE_RATE_REQUIRED_MSG)
         return self
 
 

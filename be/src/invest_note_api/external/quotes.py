@@ -312,7 +312,16 @@ async def _get_cached(
         raise
 
     async with state.lock:
-        state.cache[key] = result
+        # fetch 실패/빈결과(None)는 캐시에 박지 않는다 — 일시 장애 1회가 TTL(45s) 동안
+        # 해외 평가액을 통째로 가리는 것을 막는다. 직전 성공값(non-None)이 있으면 stale 로
+        # 유지·반환(현재·후속 호출자 모두), 없으면 None 그대로 다음 요청에서 재시도.
+        # "원래 시세 없는 종목"은 직전값도 None 이라 여전히 None — 영향 없음.
+        # (fx.py:114-125 와 동일 사상. stale 무한 유지는 TTLCache 자연 만료로 차단.)
+        prior = state.cache.get(key)
+        if result is None and prior is not None:
+            result = prior
+        elif result is not None:
+            state.cache[key] = result
         state.inflight.pop(key, None)
     if not future.done():
         future.set_result(result)

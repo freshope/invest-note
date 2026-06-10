@@ -32,4 +32,7 @@ NAVER_REALTIME_URL = "https://polling.finance.naver.com/api/realtime/domestic/st
 NAVER_BASIC_URL = "https://api.stock.naver.com/stock/{code}/basic"
 NAVER_SEARCH_URL = "https://ac.stock.naver.com/ac"
 YAHOO_CHART_URL = "https://query2.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=1d"
+# 일별 시계열용 — interval/range 또는 period1/period2 를 params 로 받는다(쿼리스트링 미포함).
+# YAHOO_CHART_URL 은 ?interval=1d&range=1d 가 박혀 있어 historical 구간 조회에 부적합.
+YAHOO_CHART_RANGE_URL = "https://query2.finance.yahoo.com/v8/finance/chart/{symbol}"
 YAHOO_SEARCH_URL = "https://query2.finance.yahoo.com/v1/finance/search"

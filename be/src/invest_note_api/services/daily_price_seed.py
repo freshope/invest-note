@@ -16,7 +16,12 @@ import httpx
 
 from invest_note_api.db_ops import daily_prices_repo
 from invest_note_api.domain.asset_history import LOOKBACK_DAYS
-from invest_note_api.external.constants import KIS_DAILY_CHART_PATH, USER_AGENT
+from invest_note_api.domain.trade_utils import KST
+from invest_note_api.external.constants import (
+    KIS_DAILY_CHART_PATH,
+    USER_AGENT,
+    YAHOO_CHART_RANGE_URL,
+)
 from invest_note_api.external.kis import kis_get
 from invest_note_api.external.provider_registry import resolve_chain
 from invest_note_api.services.stock_seed import (
@@ -236,6 +241,90 @@ async def fetch_kis_daily_closes(
     return rows
 
 
+def _parse_yahoo_us_chart(data: dict, ticker: str, begin: date, end: date) -> list[dict]:
+    """Yahoo chart v8 result → [{ticker, close_date, close_price}] (US 일별 종가).
+
+    quote 파서(_parse_yahoo_chart_price)는 meta.regularMarketPrice 1점만 읽지만, 일별은
+    result[0].timestamp[] + indicators.quote[0].close[] 시계열을 zip 한다.
+    - epoch(UTC sec) → KST 기준 close_date(date) 정규화(기존 KR 경로와 동일 date 형식).
+    - null close 는 skip(휴장/미체결 캔들).
+    - 범위 밖 행 가드: begin~end 밖(경계일 라이브 캔들 등)은 제외.
+    - US 티커는 bare(suffix 없음) — KR srtnCd 정규화(_normalize_ticker)를 거치지 않는다.
+    """
+    result = (data.get("chart") or {}).get("result") or []
+    if not result:
+        return []
+    res0 = result[0] or {}
+    timestamps = res0.get("timestamp") or []
+    quote = ((res0.get("indicators") or {}).get("quote") or [])
+    if not timestamps or not quote:
+        return []
+    closes = quote[0].get("close") or []
+    rows: list[dict] = []
+    for ts, raw in zip(timestamps, closes):
+        if raw is None or not isinstance(ts, (int, float)):
+            continue
+        close_date = datetime.fromtimestamp(ts, KST).date()
+        try:
+            close_price = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if begin <= close_date <= end:
+            rows.append(
+                {"ticker": ticker, "close_date": close_date, "close_price": close_price}
+            )
+    return rows
+
+
+async def _fetch_yahoo_us_closes(
+    client: httpx.AsyncClient, ticker: str, begin: date, end: date
+) -> list[dict]:
+    """Yahoo chart v8 에서 US 종목 [begin, end] 일별 종가 수집.
+
+    bare 티커 사용(KR 의 .KS/.KQ suffix 와 다름). period1/period2(UTC epoch sec)로 구간
+    지정 — period2 는 end 다음날 자정으로 둬 end 당일 캔들을 포함시킨다(경계 inclusive).
+    반환 형태는 fetch_daily_closes/fetch_kis_daily_closes 와 동일: [{ticker, close_date, close_price}].
+    빈/실패 응답(result 없음, quote 없음, 비200)은 빈 리스트.
+    """
+    # period1=begin 00:00 UTC, period2=end+1일 00:00 UTC(end 당일 캔들 포함).
+    period1 = int(datetime(begin.year, begin.month, begin.day, tzinfo=timezone.utc).timestamp())
+    period2 = int(
+        (
+            datetime(end.year, end.month, end.day, tzinfo=timezone.utc) + timedelta(days=1)
+        ).timestamp()
+    )
+    try:
+        res = await client.get(
+            YAHOO_CHART_RANGE_URL.format(symbol=ticker),
+            params={"interval": "1d", "period1": period1, "period2": period2},
+        )
+        res.raise_for_status()
+    except Exception:
+        return []  # 실패는 빈 리스트(D1-2 가 US primary 의 raise-vs-[] 정책을 결정).
+    return _parse_yahoo_us_chart(res.json(), ticker, begin, end)
+
+
+async def _fetch_yahoo_us_primary(
+    api_key: str,
+    ticker: str,
+    begin: date,
+    end: date,
+    *,
+    market: str | None,
+    client: httpx.AsyncClient,
+) -> list[dict]:
+    """US primary 공급자 — api_key(data.go.kr 전용)·market 미사용. bare 티커 그대로.
+
+    `_fetch_yahoo_us_closes` 는 실패 시 [] 를 돌려주지만, primary 계약은 실패 시 raise 여야
+    backfill 이 sync_state 를 기록하지 않고 다음 요청에 재시도한다(KR fetch_kis_daily_closes 와 동치).
+    Yahoo 장애와 진짜 빈 범위를 구분하기 어려우므로 빈 결과는 보수적으로 실패로 승격한다.
+    """
+    rows = await _fetch_yahoo_us_closes(client, ticker, begin, end)
+    if not rows:
+        raise RuntimeError(f"Yahoo US 일별 종가 빈 응답/조회 실패 ticker={ticker}")
+    return rows
+
+
 async def _fetch_data_go_kr_closes(
     api_key: str,
     ticker: str,
@@ -333,16 +422,26 @@ async def backfill_closes(
 
     반환: incomplete (하나라도 fetch 실패해 결측 가능 시 True).
     """
-    if not tickers or not api_key:
-        return bool(tickers) and not api_key  # 키 없으면 적재 불가 → 종목 있으면 incomplete
+    if not tickers:
+        return False
+    # US 는 data.go.kr api_key 불필요(Yahoo primary) → 키 가드를 KR 에만 적용.
+    if country_code != "US" and not api_key:
+        return True  # 키 없으면 적재 불가 → 종목 있으면 incomplete
 
-    # 공급자 해석 — unknown 이름은 ValueError(fail-fast). gap 은 비활성 값 허용.
-    primary_fetch = resolve_chain([primary_provider], _PRIMARY_REGISTRY, domain="daily_price")[0]
-    gap_fetch = (
-        None
-        if gap_provider in _GAP_DISABLED
-        else resolve_chain([gap_provider], _GAP_REGISTRY, domain="daily_price_gap")[0]
-    )
+    # 공급자 해석 — US 는 env primary/gap 을 우회하고 Yahoo 를 primary 로, gap 없음.
+    # KR 등은 unknown 이름이면 ValueError(fail-fast). gap 은 비활성 값 허용.
+    if country_code == "US":
+        primary_fetch = _fetch_yahoo_us_primary
+        gap_fetch = None
+    else:
+        primary_fetch = resolve_chain(
+            [primary_provider], _PRIMARY_REGISTRY, domain="daily_price"
+        )[0]
+        gap_fetch = (
+            None
+            if gap_provider in _GAP_DISABLED
+            else resolve_chain([gap_provider], _GAP_REGISTRY, domain="daily_price_gap")[0]
+        )
 
     yesterday = today - timedelta(days=1)
     if earliest > yesterday:

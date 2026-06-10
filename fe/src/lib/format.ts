@@ -61,6 +61,29 @@ export function formatMoney(value: number, currency: string = "KRW"): string {
   return currency === "KRW" ? `${n}원` : `${currencySymbol(currency)}${n}`;
 }
 
+/** 환율 표시 포맷. ₩ 접두 + 소수 2자리. 예: formatFxRate(1350)="₩1,350.00". */
+export function formatFxRate(rate: number): string {
+  return `₩${rate.toLocaleString("ko-KR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+/**
+ * ISO 시각 → 한국시각(KST) "HH:mm". timeZone 고정으로 디바이스/CI TZ 무관하게 KST 기준 표시.
+ * 잘못된 입력이면 null.
+ */
+export function formatTimeKST(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString("ko-KR", {
+    timeZone: "Asia/Seoul",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 /** 통화별 손익 포맷(부호 포함). 0은 부호 없이. 음수는 기호 앞에 '-'. */
 export function formatPnLCurrency(value: number, currency: string = "KRW"): string {
   const decimals = currency === "KRW" ? 0 : 2;

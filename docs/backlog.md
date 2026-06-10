@@ -29,9 +29,8 @@ MVP 이후 구현할 작업 후보 목록.
   - historical-FX 정밀화 backlog 항목은 이로써 **해소**(거래 시점 환율 저장).
 - [x] **historical-FX 정밀화** — 2026-06-09 위 "통화 표시/입력 재설계"로 해소. 거래 시점 환율을
   `trades.exchange_rate` 에 저장해 원가·실현손익이 거래 시점 원화로 고정됨(평가액만 현재 환율).
-- [ ] **분석 size 분포 통화 정밀도** — `compute_summary` 의 `position_size_dist`(BUY total_amount
-  버킷)은 KRW 임계라 USD 거래 버킷이 어긋날 수 있음. money 합계(손익/평가)와 달리 분포 통계라
-  v1 허용. 필요 시 total_amount 도 KRW 환산.
+- [x] **분석 size 분포 통화 정밀도** ✅ (D5-1, 2026-06-09) — `position_size_dist` 버킷 입력을
+  `total_amount × 거래시점 exchange_rate` 로 KRW 환산하여 USD 거래 버킷 정합 해소. KR=1.0 무변경.
 
 ## 분석 탭 성능 / 유지보수
 

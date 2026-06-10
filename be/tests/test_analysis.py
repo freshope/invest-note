@@ -252,6 +252,27 @@ class TestAnalysisDashboard:
         assert len(behavior["positionSizeDist"]) == 1
         assert behavior["positionSizeDist"][0]["bucket"] == "50만 미만"
 
+    def test_position_size_dist_us_bucketed_in_krw(self, trades_client):
+        # $200 × 10 = native total_amount 2,000(USD). 거래 시점 환율 1500 → KRW 원금
+        # 3,000,000 → "100~500만" 버킷(native 2,000 으로 잘못 버킷팅하면 "50만 미만").
+        buy = _make_trade_row(
+            id_="b1",
+            price=200.0,
+            quantity=10.0,
+            total_amount=2000.0,
+            country_code="US",
+            exchange_rate=1500.0,
+        )
+        conn = FakeConnection([buy])
+        with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
+            with patch("invest_note_api.routers.analysis.fetch_usdkrw", new=AsyncMock(return_value=1490.0)):
+                resp = _patched_get(trades_client, "/analysis/dashboard?period=all")
+        assert resp.status_code == 200
+        behavior = resp.json()["behavior"]
+        assert len(behavior["positionSizeDist"]) == 1
+        # 현재 환율(1490)이 아닌 거래 시점 환율(1500)로 환산되어야 함.
+        assert behavior["positionSizeDist"][0]["bucket"] == "100~500만"
+
     # --- suggestions 영역 ---
 
     def test_suggestions_schema(self, trades_client):

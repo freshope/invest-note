@@ -23,6 +23,7 @@ import { useFxRate } from "@/hooks/useFxRate";
 import { accountsApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
+import { formatFxRate, formatTimeKST } from "@/lib/format";
 import {
   mergeQuotes,
   applyQuotesToTotals,
@@ -84,7 +85,7 @@ export function HomeDashboard() {
 
   // 해외(비-KR) 보유가 있을 때만 환율 조회 — KRW 환산 합산용. 없으면 비활성(usdkrw=null).
   const hasForeign = (positions ?? []).some((p) => p.country !== DEFAULT_COUNTRY_CODE);
-  const { usdkrw } = useFxRate(hasForeign);
+  const { usdkrw, asOf } = useFxRate(hasForeign);
 
   // summary(lite) + quotes 결합: 시세 도착 전엔 base(시세 null), 도착하면 overlay 값으로 교체.
   // HoldingCard 가 null→"—" 처리하므로 깜빡임 없이 점진 렌더. 해외 보유는 usdkrw 로 KRW 환산.
@@ -137,9 +138,18 @@ export function HomeDashboard() {
       );
     }
 
+    // 해외 보유 평가액이 어느 환율로 KRW 환산됐는지 노출(투명성). 환율/기준시각 둘 다 있을 때만.
+    const fxTime = hasForeign && asOf ? formatTimeKST(asOf) : null;
+    const showFxBasis = hasForeign && usdkrw != null && fxTime != null;
+
     return (
       <div className="pt-2 pb-6 space-y-5">
         <DashboardBody totals={totals} />
+        {showFxBasis && (
+          <p className="px-5 -mt-3 text-[12px] text-muted-foreground tabular-nums">
+            환율 {formatFxRate(usdkrw)} 기준 · {fxTime}
+          </p>
+        )}
         <AllocationTabs positions={positions} snapshots={snapshots} />
         {positions.length > 0 && (
           <div className="space-y-2">

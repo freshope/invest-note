@@ -555,6 +555,11 @@ async def test_backfill_naver_not_called_for_non_kr(monkeypatch):
     """KR 외 country 는 네이버 domestic 경로 미지원 → 보충 skip."""
     today = date(2026, 6, 4)
     track = _patch_repo(monkeypatch, watermarks={}, sync_state={})
+
+    async def yahoo_rows(client, ticker, begin, end):
+        return [{"ticker": ticker, "close_date": date(2026, 6, 3), "close_price": 190.0}]
+
+    monkeypatch.setattr(daily_price_seed, "_fetch_yahoo_us_closes", yahoo_rows)
     conn = _fake_conn({"AAPL": "STOCK"})
 
     await daily_price_seed.backfill_closes(
@@ -562,6 +567,63 @@ async def test_backfill_naver_not_called_for_non_kr(monkeypatch):
     )
 
     assert track["naver_fetched"] == []
+
+
+# ─────────────────────────── US backfill 라우팅 (D1-2) ───────────────────────────
+
+
+async def test_backfill_us_routes_to_yahoo_and_records_state(monkeypatch):
+    """country_code=US 는 env primary 우회 → _fetch_yahoo_us_closes 로 upsert + sync_state 기록.
+
+    api_key="" 로 호출해 키 가드 우회와 Yahoo 라우팅을 한 테스트로 검증.
+    """
+    today = date(2026, 6, 4)
+    yesterday = date(2026, 6, 3)
+    track = _patch_repo(monkeypatch, watermarks={}, sync_state={})
+
+    called: list[tuple] = []
+
+    async def yahoo_rows(client, ticker, begin, end):
+        called.append((ticker, begin, end))
+        return [{"ticker": ticker, "close_date": yesterday, "close_price": 190.5}]
+
+    monkeypatch.setattr(daily_price_seed, "_fetch_yahoo_us_closes", yahoo_rows)
+    conn = _fake_conn({"AAPL": "STOCK"})
+
+    incomplete = await daily_price_seed.backfill_closes(
+        conn, "", ["AAPL"], date(2026, 6, 1), today, country_code="US"
+    )
+
+    assert [tk for tk, *_ in called] == ["AAPL"]  # data.go.kr 경로 미사용
+    assert track["fetched"] == []  # fetch_daily_closes(KR primary) 미호출
+    assert track["upserted_closes"] == [
+        {"ticker": "AAPL", "close_date": yesterday, "close_price": 190.5}
+    ]
+    assert track["sync_rows"] == [{"ticker": "AAPL", "checked_through_date": yesterday}]
+    assert incomplete is False
+
+
+async def test_backfill_us_empty_response_keeps_state_unrecorded(monkeypatch):
+    """Yahoo 빈 응답(장애 가능)은 sync_state 미advance + incomplete — 다음 요청 재시도 보장.
+
+    KR primary raise→미기록 과 동치(빈 결과를 보수적으로 실패로 승격).
+    """
+    today = date(2026, 6, 4)
+    track = _patch_repo(monkeypatch, watermarks={}, sync_state={})
+
+    async def yahoo_empty(client, ticker, begin, end):
+        return []
+
+    monkeypatch.setattr(daily_price_seed, "_fetch_yahoo_us_closes", yahoo_empty)
+    conn = _fake_conn({"AAPL": "STOCK"})
+
+    incomplete = await daily_price_seed.backfill_closes(
+        conn, "", ["AAPL"], date(2026, 6, 1), today, country_code="US"
+    )
+
+    assert track["upserted_closes"] == []
+    assert track["sync_rows"] == []  # sync_state 미기록 → 쿨다운 advance 안 함
+    assert incomplete is True
 
 
 async def test_fetch_daily_closes_skips_missing_clpr():
@@ -687,3 +749,158 @@ async def test_fetch_kis_daily_closes_error_raises(monkeypatch):
             await daily_price_seed.fetch_kis_daily_closes(
                 client, "005930", date(2026, 6, 1), date(2026, 6, 3)
             )
+
+
+# ─────────────────────────── Yahoo US 일별 종가(D1-1) ───────────────────────────
+# US 종목은 bare 티커 + Yahoo chart v8 timestamp[]+close[] 시계열. epoch(UTC)→KST date.
+# 미국장 개장 13:30 UTC 를 사용해 UTC→KST .date() 변환을 실제로 행사한다(자정이면 trivial).
+
+def _yahoo_us_body(ticker: str, points: list[tuple[int, float | None]]) -> dict:
+    """points: [(epoch_sec, close|None)] → Yahoo chart v8 result shape."""
+    return {
+        "chart": {
+            "result": [
+                {
+                    "meta": {"symbol": ticker, "currency": "USD"},
+                    "timestamp": [ts for ts, _ in points],
+                    "indicators": {"quote": [{"close": [c for _, c in points]}]},
+                }
+            ],
+            "error": None,
+        }
+    }
+
+
+def _us_epoch(d: date) -> int:
+    """해당 날짜 미국장 개장(13:30 UTC) epoch — KST 로 변환해도 같은 날짜."""
+    return int(datetime(d.year, d.month, d.day, 13, 30, tzinfo=timezone.utc).timestamp())
+
+
+async def test_fetch_yahoo_us_closes_parses_timestamp_close():
+    """timestamp[]+close[] → [{ticker, close_date, close_price}], bare 티커 유지(정규화 안 함)."""
+    points = [
+        (_us_epoch(date(2026, 6, 1)), 201.5),
+        (_us_epoch(date(2026, 6, 2)), 203.0),
+        (_us_epoch(date(2026, 6, 3)), 205.25),
+    ]
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_yahoo_us_body("AAPL", points))
+
+    async with _mock_client(handler) as client:
+        rows = await daily_price_seed._fetch_yahoo_us_closes(
+            client, "AAPL", date(2026, 6, 1), date(2026, 6, 3)
+        )
+
+    assert rows == [
+        {"ticker": "AAPL", "close_date": date(2026, 6, 1), "close_price": 201.5},
+        {"ticker": "AAPL", "close_date": date(2026, 6, 2), "close_price": 203.0},
+        {"ticker": "AAPL", "close_date": date(2026, 6, 3), "close_price": 205.25},
+    ]
+    # bare 티커 유지 — _normalize_ticker('AAPL') 의 garbage('PL') 가 아님.
+    assert {r["ticker"] for r in rows} == {"AAPL"}
+
+
+async def test_fetch_yahoo_us_closes_skips_null_close():
+    """null close(휴장/미체결 캔들)는 스킵, 나머지는 채택."""
+    points = [
+        (_us_epoch(date(2026, 6, 1)), 201.5),
+        (_us_epoch(date(2026, 6, 2)), None),
+        (_us_epoch(date(2026, 6, 3)), 205.25),
+    ]
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_yahoo_us_body("AAPL", points))
+
+    async with _mock_client(handler) as client:
+        rows = await daily_price_seed._fetch_yahoo_us_closes(
+            client, "AAPL", date(2026, 6, 1), date(2026, 6, 3)
+        )
+
+    assert [r["close_date"] for r in rows] == [date(2026, 6, 1), date(2026, 6, 3)]
+
+
+async def test_fetch_yahoo_us_closes_drops_out_of_range_rows():
+    """범위 밖(경계일 라이브 캔들 등)은 begin~end 가드로 제외."""
+    points = [
+        (_us_epoch(date(2026, 5, 30)), 199.0),  # begin 이전
+        (_us_epoch(date(2026, 6, 1)), 201.5),
+        (_us_epoch(date(2026, 6, 4)), 210.0),  # end 이후
+    ]
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_yahoo_us_body("AAPL", points))
+
+    async with _mock_client(handler) as client:
+        rows = await daily_price_seed._fetch_yahoo_us_closes(
+            client, "AAPL", date(2026, 6, 1), date(2026, 6, 3)
+        )
+
+    assert rows == [
+        {"ticker": "AAPL", "close_date": date(2026, 6, 1), "close_price": 201.5},
+    ]
+
+
+async def test_fetch_yahoo_us_closes_sends_period_params_and_bare_symbol():
+    """period1/period2(UTC epoch sec) params 전달 + period2 가 end 다음날 자정(end 포함)."""
+    captured: dict = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        captured["url"] = str(req.url)
+        captured["params"] = dict(req.url.params)
+        return httpx.Response(200, json=_yahoo_us_body("AAPL", []))
+
+    begin, end = date(2026, 6, 1), date(2026, 6, 3)
+    async with _mock_client(handler) as client:
+        await daily_price_seed._fetch_yahoo_us_closes(client, "AAPL", begin, end)
+
+    # bare 티커 — suffix(.KS/.KQ) 없음.
+    assert "/chart/AAPL" in captured["url"]
+    expect_p1 = int(datetime(2026, 6, 1, tzinfo=timezone.utc).timestamp())
+    expect_p2 = int(datetime(2026, 6, 4, tzinfo=timezone.utc).timestamp())  # end+1일
+    assert int(captured["params"]["period1"]) == expect_p1
+    assert int(captured["params"]["period2"]) == expect_p2
+    assert captured["params"]["interval"] == "1d"
+
+
+async def test_fetch_yahoo_us_closes_includes_end_day_candle():
+    """end 당일 캔들이 결과에 포함되는지(period2 inclusive 회귀)."""
+    points = [(_us_epoch(date(2026, 6, 3)), 205.25)]
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_yahoo_us_body("AAPL", points))
+
+    async with _mock_client(handler) as client:
+        rows = await daily_price_seed._fetch_yahoo_us_closes(
+            client, "AAPL", date(2026, 6, 1), date(2026, 6, 3)
+        )
+
+    assert rows == [
+        {"ticker": "AAPL", "close_date": date(2026, 6, 3), "close_price": 205.25},
+    ]
+
+
+async def test_fetch_yahoo_us_closes_empty_result_returns_empty():
+    """result 없음(빈 chart) → 빈 리스트."""
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"chart": {"result": [], "error": None}})
+
+    async with _mock_client(handler) as client:
+        rows = await daily_price_seed._fetch_yahoo_us_closes(
+            client, "AAPL", date(2026, 6, 1), date(2026, 6, 3)
+        )
+
+    assert rows == []
+
+
+async def test_fetch_yahoo_us_closes_failure_returns_empty():
+    """비200(404 등) 실패 → 빈 리스트(예외 흡수)."""
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"chart": {"result": None, "error": {"code": "Not Found"}}})
+
+    async with _mock_client(handler) as client:
+        rows = await daily_price_seed._fetch_yahoo_us_closes(
+            client, "AAPL", date(2026, 6, 1), date(2026, 6, 3)
+        )
+
+    assert rows == []

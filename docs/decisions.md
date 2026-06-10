@@ -13,6 +13,12 @@
   - ③ **거래 등록 시 달러·원화 모두 직접 입력.** 해외 거래는 **가격(USD) + 체결 원화(KRW)** 를 사용자가 직접 입력하고, `exchange_rate = 체결원화 / (price×quantity)` 로 **역산 저장**(증권사 정산서 = USD 체결액 + KRW 정산액과 동형). 체결 원화는 **원금(가격×수량)만** — 수수료·제세금은 USD 로 입력하고 역산 환율로 KRW 환산. 체결 원화 기본값은 현재 시세 환율 기준 제안값(수정 가능). DB 는 기존대로 native 금액 + `trades.exchange_rate`(`029_add_exchange_rate.sql`) 저장, KRW = native × rate.
 - **유지(2026-06-08 에서 계승):** 거래별 체결환율 박제(취득원가=매입환율, 평가=현재환율 → 환차손익 반영), US 시세 Yahoo primary·KIS 보조, Nasdaq Trader 심볼 seed, FX 시계열 Yahoo `USDKRW=X` 별도 레일, import(토스·삼성 USD)는 v2.x 후속.
 - **트레이드오프:** ₩/$ 혼재 화면을 피하는 대신 통합 합산이라 환율 변동이 전체 평가액에 섞인다(거래별 박제 환율로 취득원가는 고정돼 손익 정확도는 유지). 입력 모델을 "환율 직접입력"이 아닌 "원화 직접입력→환율 역산"으로 한 것은 사용자가 정산서의 KRW 금액을 그대로 옮길 수 있게 하기 위함.
+- **Phase D 구현 결정(2026-06-09, 잔여 정합/기능/UX — Phase C 임포트 제외):**
+  - **D1 US 일별종가:** Yahoo chart v8 range 엔드포인트(`YAHOO_CHART_RANGE_URL`, 기존 시세용 URL 은 `range=1d` 고정이라 부적합)로 US daily closes backfill → 자산추이/종목 미니차트 US 활성화. **빈 응답은 실패로 취급**(sync_state 미advance, raise 승격)해 Yahoo 장애가 "빈 거래 범위"로 보여 재시도가 막히는 것 방지(KR primary 의 raise 의미와 동치). KR 경로 무변경.
+  - **D2 시세/FX graceful:** 시세·환율 fetch 실패(None)를 캐시에 박지 않고 **직전 성공값을 stale 로 유지** → 단일 공급자(Yahoo) 일시 장애가 해외 평가액을 통째로 가리는 것 방지. "원래 시세 없는 종목"은 직전값도 None 이라 영향 없음(실패/데이터없음을 캐시 존재 여부로 구분). KR 도 공통 함수라 동반 개선.
+  - **D3 거래 수정 통화 인지:** 등록폼과 동일하게 해외 거래 수정도 체결원화→환율 역산. 단 재제안 anchor 는 현재 시세가 아닌 **거래 시점 환율(`trade.exchange_rate`)** — 단순 오타 정정 시 기록 환율이 silent 하게 오염되는 것을 막기 위함(현재 시세는 정보성 표시 전용).
+  - **D4 환율 검증 대칭:** 해외(비-KRW) 거래에 `exchange_rate=1.0`(기본/누락) 거부를 create(POST 422)·update(PATCH 400) 양쪽에 적용, 메시지 공유. PATCH 는 country_code 가 body 에 없어 **existing 거래 기준** 라우터 가드로 검증.
+  - **D5 분석 정밀도/투명성:** size 분포(매수 원금 버킷)는 **거래 시점 환율로 KRW 환산**(현재환율 아님 — 원금 분포라 고정환율이 원가 모델과 일관). 평가액 환산에 쓰인 환율·기준시각(`FxRate.as_of`)을 해외 보유 시 대시보드에 노출.
 
 ---
 

@@ -470,3 +470,78 @@ def test_fetch_quotes_by_keys_unsupported_country_is_null():
 
     out = asyncio.run(runner())
     assert out["XYZ:OTHER"] is None
+
+
+# ──────────────── stale-유지 (D2-1: 시세 SPOF 완화) ────────────────
+
+
+def test_get_cached_serves_stale_when_refetch_fails(quote_state: QuoteCacheState):
+    """① 1차 성공→캐시. 직전값 유지하며 실패 fetch → 직전 성공값을 stale 로 반환.
+
+    캐시 엔트리가 살아 있는 동안(force_refresh 로 fetch_fn 재실행) 실패하면 None 으로
+    덮지 않고 직전 성공값을 유지한다 — 현재·후속 호출자 모두 stale 을 받는다.
+    """
+
+    async def ok_fetch():
+        return {"price": 195.5, "currency": "USD", "as_of": "t0"}
+
+    async def fail_fetch():
+        return None
+
+    async def runner():
+        first = await _get_cached(quote_state, "AAPL:US", ok_fetch)
+        # force_refresh 로 fetch_fn 재실행 → 실패. 직전값 stale 유지.
+        staled = await _get_cached(quote_state, "AAPL:US", fail_fetch, force_refresh=True)
+        return first, staled
+
+    first, staled = asyncio.run(runner())
+    assert first == {"price": 195.5, "currency": "USD", "as_of": "t0"}
+    assert staled == first  # None 으로 덮이지 않고 직전 성공값 유지
+
+
+def test_get_cached_failure_with_no_prior_stays_none(quote_state: QuoteCacheState):
+    """② 직전 성공값이 없는(원래 시세 없는) 종목은 실패해도 계속 None — 영향 없음.
+
+    또한 None 을 캐시에 박지 않아 다음 호출이 재시도(45s 갇힘 없음)된다.
+    """
+    call_count = 0
+
+    async def fail_fetch():
+        nonlocal call_count
+        call_count += 1
+        return None
+
+    async def runner():
+        first = await _get_cached(quote_state, "NOPE:US", fail_fetch)
+        second = await _get_cached(quote_state, "NOPE:US", fail_fetch)  # 캐시 hit 아님 → 재시도
+        return first, second
+
+    first, second = asyncio.run(runner())
+    assert first is None
+    assert second is None
+    assert call_count == 2  # None 미캐싱 → 매 호출 재시도
+
+
+def test_get_cached_force_refresh_failure_keeps_prior(quote_state: QuoteCacheState):
+    """③ force_refresh(pull-to-refresh) 로 재요청했는데 실패 → 직전 성공값 유지.
+
+    동시 후속 호출자도 같은 stale 값을 공유(single-flight)한다.
+    """
+
+    async def ok_fetch():
+        return {"price": 100.0, "currency": "USD", "as_of": "t0"}
+
+    async def fail_fetch():
+        await asyncio.sleep(0.01)
+        return None
+
+    async def runner():
+        await _get_cached(quote_state, "MSFT:US", ok_fetch)
+        # force_refresh 5건 동시 — single-flight 로 fail_fetch 1회만, 모두 stale 공유.
+        return await asyncio.gather(*[
+            _get_cached(quote_state, "MSFT:US", fail_fetch, force_refresh=True)
+            for _ in range(5)
+        ])
+
+    results = asyncio.run(runner())
+    assert all(r == {"price": 100.0, "currency": "USD", "as_of": "t0"} for r in results)

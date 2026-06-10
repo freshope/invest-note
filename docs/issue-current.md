@@ -142,3 +142,170 @@ historical-FX 정밀화, 분석 size 분포 통화 정밀도, 해외 SELL UX.
 ## Phase C (비범위)
 
 - **Phase C — import + 엣지:** Samsung/Toss USD 파서 활성화, 해외 세율/수수료 규칙, 엣지케이스.
+
+## Phase D — 해외주식 잔여 작업 (정합/기능/UX)
+
+> Phase A/B 로 거래 활성화 + 통화 인지 KRW 환산 합산이 완료됐고, 2026-06-09 입력모델
+> 재설계로 등록폼이 통화 인지가 됐다. Phase D 는 그 위에 남은 **공백(일별종가 US 미지원),
+> SPOF(US 시세 단일 공급자), 비대칭(수정 폼·TradeUpdate 통화 미인지), 정밀도(분석 size 분포
+> native 혼입)** 를 메운다. Phase C(브로커 USD import)는 별도 진행 — 본 섹션 비범위.
+
+### 배경 / 문제 (코드 사실 기반)
+
+- **D1 일별종가 공백:** `services/daily_price_seed.py::backfill_closes` 는 KR 전용이다.
+  primary 는 env `DAILY_PRICE_PROVIDER`(=data_go_kr) 로 국가 무관 고정 주입되고
+  (`routers/assets.py:86-95`), tail-gap 보충은 `if gap_fetch is not None and country_code == "KR"`
+  (`daily_price_seed.py:405`) 로 KR 에서만 돈다. 게다가 early-return 가드가
+  `if not tickers or not api_key`(`:336`) 로 **data.go.kr api_key 부재 시 incomplete** 처리 →
+  US 는 데이터 0건 + `incomplete=True`. 결과: `/assets/history`(country 스코프, default KR,
+  `assets.py:96-98`)에서 US 는 빈 series.
+  - **FE 현실(원 지침 정정):** 작업 지침은 "미니차트가 `isKrStockCode` 게이팅"이라 했으나
+    **코드는 다르다.** `StockDetail.tsx:46` 의 `metaCodes = isKrStockCode(...) ? [ticker] : []`
+    는 `useStockMeta(metaCodes)`(:49) → **시총/연금 뱃지 메타 쿼리 전용**(`StockMetaBadges`,
+    :114)이지 차트가 아니다. StockDetail 에는 미니차트 자체가 없다(차트 import 없음).
+    자산추이는 "자산 추이" 버튼(`onAssetHistoryPress`, :88-99, **country 게이팅 없음**) →
+    `openAssetHistory` → `AssetHistoryView`(`components/assets/AssetHistoryView.tsx`)가
+    `useAssetHistory({country})`(`hooks/useAssetHistory.ts`, country 를 BE 에 그대로 전달,
+    게이팅 없음)로 그린다. **즉 FE 는 US 를 막지 않는다** — BE(D1-2)가 US series 를 채우면
+    자산추이는 **FE 코드 변경 없이** 작동한다. 따라서 D1-3 은 신규 게이팅 해제가 아니라
+    **검증/배너 확인 단위**로 축소.
+
+- **D2 US 시세 SPOF:** US quote 는 `external/quotes.py::_fetch_yahoo_us` 단일 공급자
+  (`_entry_fetch_fn:278-279`, US→`_fetch_yahoo_us` 만). Yahoo 실패 시 `_get_cached`(`:283`)가
+  `result=None` 을 **무조건 캐시에 기록**(`:315 state.cache[key] = result`)해 US 평가액이
+  TTL(`QUOTE_CACHE_TTL`) 동안 통째로 missing. 반면 FX 는 방금 stale-유지로 고침
+  (`external/fx.py:114-125`: fetch 실패 시 None 을 박지 않고 직전 성공값 `cached` 반환).
+  quote 도 동일 의도 적용 대상.
+
+- **D3 수정 폼 통화 비인지:** `components/records/TradeEditPanel.tsx` 는 가격·수량을 **실제
+  편집**한다(`:187-214`, Controller name="price"/"quantity"). 라벨은 "가격 (원)" 하드코딩
+  (`:188`)이고 `onSubmit`(`:126-142`)은 `exchange_rate`/체결원화를 patch 에 **미포함**.
+  → US 거래를 수정하면 price(USD)는 바뀌는데 환율은 기존값 고정이라, 등록폼(B11)이 박제한
+  체결환율과 어긋나며 KRW 원가·실현손익이 조용히 틀어진다. (주: `TradeMetaBuyForm.tsx`/
+  `TradeMetaSellForm.tsx` 는 전략·감정·태그·메모만 다루고 가격·환율 미편집 → D3 표면 아님.)
+
+- **D4 TradeUpdate 비대칭:** `schemas/trade.py::TradeCreate` 에는 `_foreign_requires_exchange_rate`
+  validator(`:131-137`)가 있으나 `TradeUpdate`(`:140-173`)는 없다. `exchange_rate` 는
+  `pnl_affecting=True`(`db_ops/trades_repo.py:276`)라 patch 시 `validate_mutation` 경로
+  (`routers/trades.py:425-431`)를 타지만, 그 함수는 oversell 만 본다. patch body 에 country_code
+  가 없으므로(스키마 자체 검증 불가), 라우터가 이미 읽는 `existing`(`trades.py:417`, country_code 보유)
+  으로 가드해야 한다.
+
+- **D5 분석 size 분포 native 혼입 + as_of 미노출:** `routers/analysis.py:138-139`
+  `_size_bucket(t.total_amount)` — `total_amount` 는 native(USD 거래는 달러 그대로,
+  `trade_types.py:121` + exchange_rate 별도)라 USD BUY 가 KRW 버킷에 native 로 들어가 어긋난다
+  (backlog `분석 size 분포 통화 정밀도` 항목). KRW 환산 필요(`to_krw(value, currency, usdkrw)`
+  헬퍼 존재, `trade_types.py:71`). 별개로, 평가액이 어느 환율로 환산됐는지 투명성을 위해
+  `FxRate.as_of` 노출 — 단 FE 는 이미 B7 `useFxRate` 가 `as_of` 를 가지므로 **FE-only 표시**로
+  닫을 수 있다(BE 응답 shape 무변경).
+
+### 설계 결정 (불변 제약)
+
+- 거래 시점 환율 박제 → 원가·실현손익 = KRW 고정, 평가액 = 현재환율. native(USD) 보조 필드.
+- FE 는 원화 primary + 달러 괄호(`MoneyText`).
+- **기존 KR 경로 무변경** — D1/D2 는 country 분기로 US 만 새 경로, KR 은 한 줄도 안 건드린다.
+- shape drift 가드: BE 응답 shape 변경은 D5 에서만(그조차 FE-only 로 회피 가능). 나머지는 무변경.
+
+### 구현 체크리스트 (의존 순서 · 1 단위 ≈ 1~2 파일)
+
+#### D1 [P1] US 일별종가 공급자 (가장 큰 공백)
+
+- [ ] **D1-1 [BE] Yahoo daily-closes fetch + 파서** `services/daily_price_seed.py`
+  - Yahoo chart v8 로 US daily closes backfill. **주의:** `YAHOO_CHART_URL`(constants.py:34)은
+    이미 `?interval=1d&range=1d` 가 박혀 있어 historical 엔 부적합 → `range`(예 `2y`)/`interval=1d`
+    를 받는 **새 URL 상수/빌더** 추가. 응답 파싱도 quote 와 다르다 — `_parse_yahoo_chart_price`
+    는 `meta.regularMarketPrice`(현재가 1점)만 읽으므로, daily 는 `timestamp[]` +
+    `indicators.quote[0].close[]`(epoch→KST date, null close skip)를 파싱하는 **새 함수** 필요.
+    반환 형태는 기존 `fetch_*_daily_closes` 와 동일(`[{ticker, close_date, close_price}]`).
+  - `_fetch_yahoo_us_closes(client, ticker, begin, end)` 추가 → registry 등록 불필요(국가 분기로 호출).
+  - verify: `cd be && poetry run pytest tests/test_daily_price_seed.py -q` (네트워크 격리 파서 단위 테스트 + 범위 밖 행 가드)
+  - 의존: 없음
+- [ ] **D1-2 [BE] backfill_closes US 라우팅** `services/daily_price_seed.py`
+  - `country_code == "US"` 일 때: env primary/gap 을 **우회**하고 `_fetch_yahoo_us_closes` 를
+    primary 로, gap 없음. early-return 가드(`:336 not api_key`)가 US 를 막지 않도록 분기
+    (US 는 data.go.kr api_key 불필요). KR 분기(`gap`, market 라우팅)는 무변경.
+  - verify: `cd be && poetry run pytest tests/test_daily_price_seed.py -q` (US 라우팅이 yahoo 호출·KR 은 기존 경로 유지 회귀)
+  - 의존: D1-1
+- [ ] **D1-3 [FE/QA] US 자산추이 동작 확인 + incomplete 배너 점검** (게이팅 해제 불필요)
+  - FE 는 이미 country-agnostic(위 배경 참조) → **코드 변경 없을 가능성 큼.** 실제 확인 사항:
+    (a) US 종목 상세 "자산 추이" 진입 → D1-2 후 series 가 그려지는지, (b) 콜드스타트 시 일시
+    `incomplete` 배너(`AssetHistoryView.tsx:212`) 문구가 US 맥락에 어색하지 않은지,
+    (c) `isKrStockCode` 메타 쿼리(:46)는 **건드리지 말 것**(US ticker 를 `/stocks/meta` 로
+    보내면 docstring 경고대로 가비지 → KR 6자리 전용 유지). 손볼 게 없으면 QA 체크로 닫고
+    summary 에 "FE 무변경" 기록.
+  - verify: `pnpm -C fe exec tsc --noEmit`(변경 시) + 동작 시나리오(US 자산추이 series 렌더)
+  - 의존: D1-2
+
+#### D2 [P1] US 시세 graceful fallback (SPOF 완화)
+
+- [ ] **D2-1 [BE] quote stale-유지** `external/quotes.py`
+  - `_get_cached`(`:283`)에서 fetch 결과가 `None`(실패)일 때, 기존 non-None 캐시 엔트리를
+    **덮지 않고**, **현재 호출자와 후속 호출자 모두** 직전 성공값을 TTL 내 받는다
+    (fx.py:114-125 의 `return cached` 시맨틱과 동일 — 현재 요청도 missing 으로 두지 말 것).
+    **단 구분 필요:** "None = 정상(해당 심볼 데이터 없음)" vs "None = fetch 실패".
+    `_fetch_yahoo_us` 는 실패와 데이터없음을 모두 None 으로 반환하므로, 실패 시그널을 명시
+    (예: 예외 전파 또는 sentinel)하도록 fetch_fn 계약 조정 후 stale 유지. KR 경로(naver/kis
+    fallback 으로 이미 다중 공급자)는 동작 변화 최소화.
+  - verify: `cd be && poetry run pytest tests/test_quotes.py -q` (**동시 요청 + 연속 호출** 테스트: 1차 성공→캐시, 2차 실패→직전값 유지, single-flight inflight 경합 확인. 단일 호출 테스트만으론 부족)
+  - 의존: 없음 (D1 과 병렬 가능)
+
+#### D4 [P2] TradeUpdate foreign 환율 검증 (D3 의 BE 선행)
+
+- [ ] **D4-1 [BE] PATCH 해외 환율 가드** `routers/trades.py` (권장) 또는 `schemas/trade.py`
+  - patch 에 `exchange_rate` 가 있고 `existing.country_code` 가 해외(non-KRW)인데 값이 1.0 이면
+    400. `existing` 은 이미 `:417` 에서 읽으므로 라우터 가드가 자연스럽다(`validate_mutation`
+    은 oversell 전용 유지 — 책임 분리). create 의 `_foreign_requires_exchange_rate` 와 대칭.
+  - verify: `cd be && poetry run pytest tests/test_trades_api.py -q` (US 거래 patch exchange_rate=1.0 → 400, 정상 환율 → 200, KR patch 무영향 회귀)
+  - 의존: 없음
+- [ ] **D4-2 [BE] price/qty 정정 시 환율 일관 검증(선택)** — D3-FE 가 체결원화 역산으로
+    exchange_rate 를 항상 동봉하면 D4-1 가드로 충분. 별도 단위 불필요 시 생략, summary 에 기록.
+
+#### D3 [P2] 거래 수정 UI 통화 인지 — 방향 ① (등록폼 B11 미러)
+
+> **방향 결정:** ① 통화 인지 편집(체결 원화 재입력→환율 역산). 근거: TradeEditPanel 이 이미
+> 가격·수량을 편집(`:187-214`)하므로 ②(차단) 는 "수정은 되는데 US 만 막힘"의 비일관을 낳는다.
+> 등록폼 B11 이 동일 역산(`체결원화 / (price×quantity) = exchange_rate`)을 확립했으니 재사용.
+
+- [ ] **D3-1 [FE] TradeEditPanel 통화 인지** `components/records/TradeEditPanel.tsx`
+  - US 거래일 때: 가격 라벨을 "가격 ($)" 로, 추가로 "체결 원화(KRW)" 입력칸 노출(B11 패턴).
+    제출 시 `exchange_rate = 체결원화 / (price×quantity)` 역산해 patch 에 동봉. KR 거래는
+    현행 "가격 (원)" 무변경. 체결원화 미입력 US 는 zod superRefine 거부(B11 과 동일).
+    수수료·제세금은 native 유지. (trade.country_code / exchange_rate 가 prop 으로 들어오는지
+    확인해 기본 제안값 = price×quantity×기존환율 채움.)
+  - verify: `pnpm -C fe exec tsc --noEmit` + `pnpm -C fe test`(역산 단위 + US/KR 분기 렌더) + 동작 시나리오(US 거래 가격 수정→체결원화 재입력→저장→KRW 원가 일관)
+  - 의존: D4-1 (PATCH 가 역산된 exchange_rate 를 수용·검증해야 함)
+
+#### D5 [P3] 분석 size 분포 KRW 환산 + FX as_of 노출
+
+- [ ] **D5-1 [BE] size_dist KRW 환산** `routers/analysis.py:138-139`
+  - `_size_bucket(t.total_amount)` → `_size_bucket(to_krw(t.total_amount, currency_for_country(t.country_code), usdkrw))`.
+    `usdkrw` 는 이미 `:100-103` 에서 조회됨(해외 보유 시). 환산 불가(usdkrw None) USD 거래는
+    버킷에서 제외(None skip) — 조용한 혼입 방지. KR 거래는 to_krw 가 그대로 통과(영향 없음).
+  - verify: `cd be && poetry run pytest tests/test_analysis_api.py -q` (USD BUY 가 KRW 환산 버킷에 들어가고, usdkrw 없으면 제외되는 회귀)
+  - 의존: 없음
+- [ ] **D5-2 [FE] FX as_of 표시** (FE-only — BE shape 무변경)
+  - 평가액/환산 영역에 환율 기준 시각 노출. B7 `useFxRate` 의 `FxRate.as_of` 를 그대로 표시
+    (해외 보유 시만). 어느 컴포넌트(HomeDashboard 환산 합계 근처)인지 구현 시 확정.
+  - verify: `pnpm -C fe exec tsc --noEmit` + 동작 시나리오(해외 보유 시 "환율 기준: HH:MM" 류 표기)
+  - 의존: 없음
+
+### 의존 그래프
+
+```
+D1-1(BE) → D1-2(BE) → D1-3(FE)        # US 일별종가: fetch/파서 → 라우팅 → FE 게이팅 해제
+D2-1(BE)                               # US 시세 stale (독립, D1 과 병렬)
+D4-1(BE) → D3-1(FE)                    # PATCH 환율 가드 먼저, 그 위에 수정 폼 역산
+D5-1(BE)                               # size_dist 환산 (독립)
+D5-2(FE)                               # FX as_of 표시 (독립, BE shape 무변경)
+```
+
+병렬 가능 진입점: D1-1 / D2-1 / D4-1 / D5-1 / D5-2.
+
+### 완료 조건
+
+- [ ] D1~D5 모든 단위 verify 통과
+- [ ] BE 전체 회귀 `cd be && poetry run pytest -q` 무회귀 / FE `pnpm -C fe exec tsc --noEmit` + `pnpm -C fe test`
+- [ ] 기존 KR 경로 동작 무변경(D1/D2 country 분기, D5 to_krw KR 통과 회귀로 확인)
+- [ ] `docs/backlog.md` `분석 size 분포 통화 정밀도` 항목 D5 완료로 체크
+- [ ] `docs/decisions.md` 갱신 — D2 quote stale-유지(SPOF 완화) 및 D3 수정폼 방향①(차단 대신 통화 인지) 결정 기록(트레이드오프 있는 선택)
+- [ ] Phase D 완료 후 spec → `docs/issue-history/` 이동 준비

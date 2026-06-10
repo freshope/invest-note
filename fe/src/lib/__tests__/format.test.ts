@@ -5,11 +5,13 @@ import {
   currencyForCountry,
   currencySymbol,
   fmtNumberInput,
+  formatFxRate,
   formatMoney,
   formatNumberInput,
   formatPctSigned,
   formatPnL,
   formatPnLCurrency,
+  formatTimeKST,
   parseNumberInput,
 } from "../format";
 
@@ -34,6 +36,30 @@ describe("fmtNumberInput", () => {
 
   it("소수를 처리한다", () => {
     expect(fmtNumberInput(1.5)).toBe("1.5");
+  });
+});
+
+describe("formatFxRate", () => {
+  it("₩ 접두 + 소수 2자리로 포맷한다", () => {
+    expect(formatFxRate(1350)).toBe("₩1,350.00");
+    expect(formatFxRate(1234.5)).toBe("₩1,234.50");
+  });
+});
+
+describe("formatTimeKST", () => {
+  it("UTC ISO 시각을 KST HH:mm 으로 변환한다(디바이스 TZ 무관)", () => {
+    // 07:30 UTC = 16:30 KST
+    expect(formatTimeKST("2026-06-09T07:30:00+00:00")).toBe("16:30");
+  });
+
+  it("자정 경계(KST)를 올바르게 처리한다", () => {
+    // 15:00 UTC = 00:00 KST(익일)
+    expect(formatTimeKST("2026-06-09T15:00:00+00:00")).toBe("00:00");
+  });
+
+  it("잘못된 입력은 null 을 반환한다", () => {
+    expect(formatTimeKST("")).toBeNull();
+    expect(formatTimeKST("not-a-date")).toBeNull();
   });
 });
 
