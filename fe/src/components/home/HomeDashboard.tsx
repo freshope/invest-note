@@ -144,12 +144,10 @@ export function HomeDashboard() {
 
     return (
       <div className="pt-2 pb-6 space-y-5">
-        <DashboardBody totals={totals} />
-        {showFxBasis && (
-          <p className="px-5 -mt-3 text-[12px] text-muted-foreground tabular-nums">
-            환율 {formatFxRate(usdkrw)} 기준 · {fxTime}
-          </p>
-        )}
+        <DashboardBody
+          totals={totals}
+          fxBasis={showFxBasis ? `환율 ${formatFxRate(usdkrw)} 기준 · ${fxTime}` : null}
+        />
         <AllocationTabs positions={positions} snapshots={snapshots} />
         {positions.length > 0 && (
           <div className="space-y-2">
