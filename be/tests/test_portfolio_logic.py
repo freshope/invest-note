@@ -14,7 +14,41 @@ from invest_note_api.domain.portfolio import (
     build_account_snapshots,
     build_totals,
 )
-from invest_note_api.domain.realized_pnl import build_pnl_map
+from invest_note_api.domain.realized_pnl import (
+    build_pnl_map,
+    compute_group_pnl,
+    trade_to_group_key,
+)
+from invest_note_api.domain.analysis.concentration import compute_concentration
+
+
+def make_position(**over) -> Position:
+    """Position 팩토리 — 새 통화 필드 포함, KR 기본. over 로 개별 필드 덮어쓰기."""
+    country = over.pop("country", "KR")
+    defaults = dict(
+        key=over.get("key", "005930:KR"),
+        ticker="005930",
+        country=country,
+        currency="USD" if country == "US" else "KRW",
+        asset_name="삼성전자",
+        exchange="",
+        holding_quantity=10.0,
+        avg_buy_price=70000.0,
+        avg_buy_price_native=70000.0,
+        cost_basis=700000.0,
+        cost_basis_native=700000.0,
+        realized_pnl=0.0,
+        current_price=None,
+        evaluation=None,
+        evaluation_native=None,
+        unrealized_pnl=None,
+        last_note_type=None,
+        last_note=None,
+        last_traded_at="2024-01-01T00:00:00+00:00",
+        account_ids=["a1"],
+    )
+    defaults.update(over)
+    return Position(**defaults)
 
 
 def _dt(s: str) -> datetime:
@@ -149,22 +183,8 @@ class TestBuildPositions:
 
 class TestMergeQuotes:
     def test_quote_updates_position(self):
-        pos = Position(
-            key="005930:KR",
-            ticker="005930",
-            country="KR",
-            asset_name="삼성전자",
-            exchange="",
-            holding_quantity=10.0,
-            avg_buy_price=70000.0,
-            cost_basis=700000.0,
-            realized_pnl=0.0,
-            current_price=None,
-            evaluation=None,
-            unrealized_pnl=None,
-            last_note_type=None,
-            last_note=None,
-            last_traded_at="2024-01-01T00:00:00+00:00",
+        pos = make_position(
+            key="005930:KR", holding_quantity=10.0, avg_buy_price=70000.0, cost_basis=700000.0
         )
         quotes: QuoteMap = {"005930:KR": {"price": 75000.0, "currency": "KRW", "as_of": "2024-01-15"}}
         updated = merge_quotes([pos], quotes)
@@ -173,22 +193,9 @@ class TestMergeQuotes:
         assert pytest.approx(updated[0].unrealized_pnl) == 50000.0
 
     def test_missing_quote_leaves_none(self):
-        pos = Position(
-            key="AAPL:US",
-            ticker="AAPL",
-            country="US",
-            asset_name="Apple",
-            exchange="NASDAQ",
-            holding_quantity=5.0,
-            avg_buy_price=150.0,
-            cost_basis=750.0,
-            realized_pnl=0.0,
-            current_price=None,
-            evaluation=None,
-            unrealized_pnl=None,
-            last_note_type=None,
-            last_note=None,
-            last_traded_at="2024-01-01T00:00:00+00:00",
+        pos = make_position(
+            key="AAPL:US", country="US", ticker="AAPL", asset_name="Apple", exchange="NASDAQ",
+            holding_quantity=5.0, avg_buy_price=750.0, cost_basis=750.0,
         )
         updated = merge_quotes([pos], {})
         assert updated[0].current_price is None
@@ -271,23 +278,7 @@ class TestBuildAccountSnapshots:
 
 class TestBuildTotals:
     def test_basic_totals(self):
-        pos = Position(
-            key="005930:KR",
-            ticker="005930",
-            country="KR",
-            asset_name="삼성전자",
-            exchange="",
-            holding_quantity=10.0,
-            avg_buy_price=70000.0,
-            cost_basis=700000.0,
-            realized_pnl=0.0,
-            current_price=75000.0,
-            evaluation=750000.0,
-            unrealized_pnl=50000.0,
-            last_note_type=None,
-            last_note=None,
-            last_traded_at="2024-01-01T00:00:00+00:00",
-        )
+        pos = make_position(current_price=75000.0, evaluation=750000.0, unrealized_pnl=50000.0)
         account = make_account(cash_balance=500000.0)
         sell = make_trade(id="s1", trade_type="SELL", profit_loss=100000.0)
         pnl_map = build_pnl_map([sell])
@@ -299,23 +290,100 @@ class TestBuildTotals:
         assert totals.total_realized_pnl == 100000.0
 
     def test_missing_quote_listed(self):
-        pos = Position(
-            key="AAPL:US",
-            ticker="AAPL",
-            country="US",
-            asset_name="Apple",
-            exchange="NASDAQ",
-            holding_quantity=5.0,
-            avg_buy_price=150.0,
-            cost_basis=750.0,
-            realized_pnl=0.0,
-            current_price=None,
-            evaluation=None,
-            unrealized_pnl=None,
-            last_note_type=None,
-            last_note=None,
-            last_traded_at="2024-01-01T00:00:00+00:00",
+        pos = make_position(
+            key="AAPL:US", country="US", ticker="AAPL", asset_name="Apple", exchange="NASDAQ",
+            holding_quantity=5.0, current_price=None, evaluation=None,
         )
         account = make_account()
         totals = build_totals([pos], [account], [], {})
         assert "Apple" in totals.missing_quote_tickers
+
+
+class TestCurrencyRedesign:
+    """거래 시점 환율 저장 + KRW 정규화 — 원가·실현손익 KRW 고정, 평가액만 현재 환율."""
+
+    def test_cost_fixed_krw_via_exchange_rate(self):
+        # US BUY $200×10 @1500 → 원가 3,000,000 KRW 고정(저장 환율) + native(USD) 보조.
+        buy = make_trade(
+            id="b-us", trade_type="BUY", ticker_symbol="AAPL", asset_name="Apple",
+            country_code="US", quantity=10.0, price=200.0, exchange_rate=1500.0,
+        )
+        positions, _ = build_positions([buy])
+        p = positions[0]
+        assert p.currency == "USD"
+        assert p.cost_basis == 3_000_000.0        # KRW 고정
+        assert p.cost_basis_native == 2000.0      # USD ($200×10)
+        assert p.avg_buy_price == 300000.0        # KRW/주
+        assert p.avg_buy_price_native == 200.0    # USD/주
+
+    def test_eval_current_rate_cost_invariant(self):
+        # 시금석: 현재 환율이 변해도 원가는 불변, 평가액만 변동.
+        buy = make_trade(
+            id="b-us", trade_type="BUY", ticker_symbol="AAPL", asset_name="Apple",
+            country_code="US", quantity=10.0, price=200.0, exchange_rate=1500.0,
+        )
+        positions, _ = build_positions([buy])
+        quotes: QuoteMap = {"AAPL:US": {"price": 220.0, "currency": "USD", "as_of": ""}}
+        merged = merge_quotes(positions, quotes, usdkrw=1530.0)
+        p = merged[0]
+        assert p.evaluation == 3_366_000.0        # 220×10×1530
+        assert p.evaluation_native == 2200.0      # 220×10 (USD)
+        assert p.cost_basis == 3_000_000.0        # 현재 환율과 무관하게 불변
+        assert p.unrealized_pnl == 366_000.0
+        # 환율 1600 으로 바뀌어도 원가 불변, 평가액만 변동
+        merged2 = merge_quotes(positions, quotes, usdkrw=1600.0)
+        assert merged2[0].cost_basis == 3_000_000.0
+        assert merged2[0].evaluation == 220.0 * 10 * 1600
+
+    def test_realized_pnl_krw_fixed(self):
+        # BUY $200×10 @1500, SELL $210×10 @1520 → 실현손익 KRW.
+        buy = make_trade(
+            id="b", trade_type="BUY", ticker_symbol="AAPL", asset_name="Apple",
+            country_code="US", quantity=10.0, price=200.0, exchange_rate=1500.0,
+            traded_at=_dt("2024-01-01T09:00:00+09:00"),
+        )
+        sell = make_trade(
+            id="s", trade_type="SELL", ticker_symbol="AAPL", asset_name="Apple",
+            country_code="US", quantity=10.0, price=210.0, exchange_rate=1520.0,
+            traded_at=_dt("2024-02-01T09:00:00+09:00"),
+        )
+        pnl = compute_group_pnl([buy, sell], trade_to_group_key(buy))
+        # KRW: 210×10×1520 - 200×10×1500 = 3,192,000 - 3,000,000 = 192,000
+        assert pnl["s"].profit_loss == pytest.approx(192_000.0)
+        assert pnl["s"].avg_buy_price == pytest.approx(300000.0)  # KRW 평단
+
+    def test_merge_quotes_us_no_fx_eval_none_cost_kept(self):
+        buy = make_trade(
+            id="b-us", trade_type="BUY", ticker_symbol="AAPL", asset_name="Apple",
+            country_code="US", quantity=10.0, price=200.0, exchange_rate=1500.0,
+        )
+        positions, _ = build_positions([buy])
+        quotes: QuoteMap = {"AAPL:US": {"price": 220.0, "currency": "USD", "as_of": ""}}
+        merged = merge_quotes(positions, quotes, usdkrw=None)  # 환율 미수신
+        assert merged[0].evaluation is None       # KRW 평가 미상
+        assert merged[0].cost_basis == 3_000_000.0  # 원가는 유지
+
+    def test_build_account_snapshots_us_current_rate(self):
+        buy_kr = make_trade(id="b-kr", account_id="a1", ticker_symbol="005930",
+                            country_code="KR", quantity=10.0, price=70000.0)
+        buy_us = make_trade(id="b-us", account_id="a1", ticker_symbol="AAPL", asset_name="Apple",
+                            country_code="US", quantity=10.0, price=200.0, exchange_rate=1500.0)
+        _, lot_map = build_positions([buy_kr, buy_us])
+        quotes: QuoteMap = {
+            "005930:KR": {"price": 70000.0, "currency": "KRW", "as_of": ""},
+            "AAPL:US": {"price": 220.0, "currency": "USD", "as_of": ""},
+        }
+        account = make_account(id="a1", cash_balance=0.0)
+        snaps = build_account_snapshots([account], lot_map, quotes, usdkrw=1530.0)
+        # KR 70,000×10 + US 220×10×1,530(현재환율) = 700,000 + 3,366,000 = 4,066,000
+        assert snaps[0].stock_evaluation == 4_066_000.0
+
+    def test_concentration_krw_weights(self):
+        # cost_basis 가 이미 KRW → US 원가 3,000,000 이 KR 700,000 보다 큼 → US top.
+        kr = make_position(evaluation=700000.0, cost_basis=700000.0)
+        us = make_position(
+            key="AAPL:US", country="US", ticker="AAPL", asset_name="Apple",
+            evaluation=1_500_000.0, cost_basis=3_000_000.0,
+        )
+        conc = compute_concentration([kr, us], [])
+        assert conc.top3[0]["asset"] == "Apple"

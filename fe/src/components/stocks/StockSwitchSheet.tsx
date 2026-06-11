@@ -9,8 +9,10 @@ import { queryKeys } from "@/lib/query-keys";
 import { useEffectiveAccountId } from "@/components/providers/AccountFilterProvider";
 import { usePortfolioSummary } from "@/hooks/usePortfolioSummary";
 import { useQuotes } from "@/hooks/useQuotes";
+import { useFxRate } from "@/hooks/useFxRate";
 import { CountryBadge } from "@/components/records/trade-display";
 import { cn } from "@/lib/utils";
+import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import { mergeQuotes, type Position } from "@/lib/portfolio";
 
 interface StockSwitchSheetProps {
@@ -44,13 +46,17 @@ export function StockSwitchSheet({ open, onOpenChange, currentKey, onSelect }: S
     [quoteKeysSig],
   );
   const { quotes } = useQuotes(quoteKeys);
+  // 해외 보유가 있으면 환율로 KRW 환산해 정렬(native 정렬은 US 가 항상 바닥).
+  const hasForeign = (basePositions ?? []).some((p) => p.country !== DEFAULT_COUNTRY_CODE);
+  const { usdkrw } = useFxRate(hasForeign);
 
   const positions = useMemo(() => {
     if (!data) return [];
-    return mergeQuotes(data.positions, quotes).sort(
+    // mergeQuotes 가 usdkrw 로 evaluation 을 KRW 환산 → 단일 통화로 정렬(US 도 환율 반영).
+    return mergeQuotes(data.positions, quotes, usdkrw).sort(
       (a, b) => (b.evaluation ?? 0) - (a.evaluation ?? 0),
     );
-  }, [data, quotes]);
+  }, [data, quotes, usdkrw]);
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>

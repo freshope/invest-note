@@ -4,6 +4,49 @@
 
 ---
 
+## 2026-06-11 | 자산추이 해외(US) KRW 환산을 BE 로 일원화 + spot 일괄
+
+- **맥락:** `/assets/history` 가 `country` 기본값 `'KR'` 로 single-country 스코프라 전체/계좌뷰(ticker=None)가 US 보유를 통째로 제외 — 같은 화면 대시보드 합계(`merge_quotes(usdkrw)` + FE overlay)는 US 포함이라 **두 수치가 어긋남**(code-review finding A). 종목뷰만 FE(`asset-history-convert.ts`+`useFxRate`)가 현재 환율로 부분 환산하던 비대칭 구조.
+- **결정:**
+  - ① **환산 책임을 FE → BE 로 이관.** `compute_asset_history` 가 `usdkrw` 인자를 받아 종목별 `to_krw` 로 KRW 합산(직접 곱 금지 — USD+usdkrw=None 은 None 전파로 기여 제외+incomplete, silent USD-as-KRW 합산 구조적 차단). 종목 식별 키를 `position_key(ticker, country)` 로 일관화(steps/closes/live_quotes 3축 동기, US/KR ticker 충돌 방지). `assets.py` 는 전체/계좌뷰에서 country 필터를 제거하고 country 별 파이프라인(backfill/get_closes/quotes)을 분리·합산, `usdkrw` 는 해외 보유 시 1회 조회. 응답에 `usdkrw`/`has_foreign` 노출. FE 는 `asset-history-convert.ts` 삭제하고 BE KRW 값을 그대로 사용.
+  - ② **환율 정책: 현재 환율(spot) 일괄 적용**(일자별 historical FX 아님). 모든 과거 일자 US 평가액에 '오늘 usdkrw' 하나를 곱한다. FE 에 '현재 환율 기준(일자별 아님)' 고지 유지.
+- **트레이드오프:** spot 일괄이라 과거 곡선 모양이 오늘 환율로 왜곡됨(USD 가격 변동만 반영) — 정확한 일자별 환산은 USD/KRW 일별 시계열 적재라는 별도 대형 작업이 필요해 **보류**. 오늘 점 총액은 자산추이(BE `fetch_quotes_by_keys`)와 대시보드(FE overlay)의 시세 소스가 갈려 미세 불일치 가능(포함범위·usdkrw 소스는 일치 — backlog 후속).
+
+---
+
+## 2026-06-11 | 해외 공급처 env 구조 통일 + 환율(FX) 폴백 추가 (open.er-api.com)
+
+- **맥락:** 해외(US)는 시세·일별종가·종목마스터·환율을 모두 단일 공급처(Yahoo / nasdaqtrader)에 의존. 국내(KR)는 시세 naver→yahoo→kis, 종가 data.go.kr+naver/kis, 마스터 data.go.kr+kis 처럼 registry/env 로 공급처를 토글·폴백할 수 있는데 US 는 코드에 하드코딩(`backfill_closes` 가 country=US 시 env 우회·Yahoo 강제, `_entry_fetch_fn` US 가 `_fetch_yahoo_us` 직접 호출)돼 있어 비대칭. 또한 환율은 Yahoo `USDKRW=X` 단일점 — 죽으면 전 해외 평가액의 KRW 환산이 통째로 "환율미상".
+- **결정:**
+  - ① **US 도 KR 과 동일한 registry + `resolve_chain` + env 구조로 통일.** 시세 `US_QUOTE_PROVIDERS`(`_US_QUOTE_REGISTRY`), 일별종가 `US_DAILY_PRICE_PROVIDER`(`_US_PRIMARY_REGISTRY`), 종목마스터 `US_STOCK_SEED_SOURCES`(`_US_STOCK_SEED_REGISTRY`). 기본값은 현행과 동일한 단일 출처(`yahoo`/`nasdaqtrader`) — **구조만 통일**(공급처 추가/교체 시 함수+registry 등록+env 변경으로 끝). lifespan `validate_*` 가 KR/US 양쪽 오타·빈 체인을 부팅 시점 fail-fast.
+  - ② **환율 공급자 체인화 + 폴백 1개 추가.** `FX_PROVIDERS`(기본 `yahoo,er_api`). `get_fx_rate` 가 체인을 앞에서부터 시도해 첫 성공값 캐시·반환. 폴백은 **open.er-api.com**(무인증·무료, `/v6/latest/USD`→`rates.KRW`) — 기존 Yahoo/Naver/nasdaqtrader 전부 무인증인 컨벤션과 일관, 키 관리 부담 없음. 한국은행 ECOS(권위 높으나 키 필요)·frankfurter(ECB, 영업일 1회 갱신·지연) 대비 무인증+일 1회 갱신 균형으로 선택.
+- **트레이드오프:** US 단일 출처 자체는 유지(MVP 비중 작음)하되 *스왑 가능성*만 확보. 환율 폴백은 단일 통화쌍이라 추가 비용이 가장 작고 영향 반경(전역 "환율미상")이 가장 커 우선 보강. er-api 는 일 1회 갱신이라 Yahoo 대비 실시간성 낮음 — 어디까지나 2순위 폴백(Yahoo 정상 시 미사용). stale-유지(D2)는 **전체 체인 실패 후**에만 적용해 Yahoo 한 번 실패에 폴백을 건너뛰지 않게 함. cache key 는 통화쌍(`base/quote`)만 — Yahoo 실패→er_api 성공분을 같은 키에 공유.
+
+---
+
+## 2026-06-09 | 해외(미국) 주식 — 원화기준 통합표시 + 달러 보조 + 거래등록 달러·원화 직접입력 (2026-06-08 "분리+토글" 대체)
+
+- **맥락:** 2026-06-08 "분리 섹션 + ₩/$ 토글" 방향으로 Phase A/B 구현을 진행하던 중 기본 정책을 재변경. 분리/토글 UI 대신 **단일 통화 기준(원화)으로 통일**하되 해외는 달러를 보조로 노출하는 쪽이 인지 부하가 더 낮다고 판단.
+- **결정(확정):**
+  - ① **모든 통화 원화 기준 표시.** 대시보드 총액·보유 리스트·손익 전부 KRW 단일 합산(국내·US 한 리스트). 분리 섹션·₩/$ 토글은 폐기.
+  - ② **해외는 달러 보조 표시.** `MoneyText` 가 원화 primary + 달러 괄호 병기("1,095,500원 ($716.07)"). 거래 입력 폼·상세도 동일.
+  - ③ **거래 등록 시 달러·원화 모두 직접 입력.** 해외 거래는 **가격(USD) + 체결 원화(KRW)** 를 사용자가 직접 입력하고, `exchange_rate = 체결원화 / (price×quantity)` 로 **역산 저장**(증권사 정산서 = USD 체결액 + KRW 정산액과 동형). 체결 원화는 **원금(가격×수량)만** — 수수료·제세금은 USD 로 입력하고 역산 환율로 KRW 환산. 체결 원화 기본값은 현재 시세 환율 기준 제안값(수정 가능). DB 는 기존대로 native 금액 + `trades.exchange_rate`(`029_add_exchange_rate.sql`) 저장, KRW = native × rate.
+- **유지(2026-06-08 에서 계승):** 거래별 체결환율 박제(취득원가=매입환율, 평가=현재환율 → 환차손익 반영), US 시세 Yahoo primary·KIS 보조, Nasdaq Trader 심볼 seed, FX 시계열 Yahoo `USDKRW=X` 별도 레일, import(토스·삼성 USD)는 v2.x 후속.
+- **트레이드오프:** ₩/$ 혼재 화면을 피하는 대신 통합 합산이라 환율 변동이 전체 평가액에 섞인다(거래별 박제 환율로 취득원가는 고정돼 손익 정확도는 유지). 입력 모델을 "환율 직접입력"이 아닌 "원화 직접입력→환율 역산"으로 한 것은 사용자가 정산서의 KRW 금액을 그대로 옮길 수 있게 하기 위함.
+- **Phase D 구현 결정(2026-06-09, 잔여 정합/기능/UX — Phase C 임포트 제외):**
+  - **D1 US 일별종가:** Yahoo chart v8 range 엔드포인트(`YAHOO_CHART_RANGE_URL`, 기존 시세용 URL 은 `range=1d` 고정이라 부적합)로 US daily closes backfill → 자산추이/종목 미니차트 US 활성화. **실패/빈 범위 구분(2026-06-10 코드리뷰로 정정):** 전송 실패·비200·malformed 만 raise(sync_state 미advance → 재시도 보장)하고, 정상 200 의 빈 범위(주말/휴장)는 synced 처리 — 초기 "빈 응답=실패 승격" 정책은 주말마다 US 종목 수만큼 매 요청 Yahoo 재질의 + incomplete 배너 상시 노출을 유발해 폐기(KR data.go.kr 의 빈 응답 synced 처리와 대칭). **장중 캔들 가드:** Yahoo 일봉 마지막 캔들은 진행 중 세션(close=현재가)이라, 캔들 날짜 D 는 `now_kst >= D+1일 07:00 KST`(미장 마감 05/06:00 + 버퍼) 일 때만 확정으로 보고 그 전엔 제외·sync_state 도 cutoff 로 클램프 — 새벽(미장 진행 중) 조회 시 장중가가 D 종가로 영구 박제되는 것 방지. KR 경로 무변경.
+  - **D2 시세/FX graceful:** 시세·환율 fetch 실패(None)를 캐시에 박지 않고 **직전 성공값을 stale 로 유지** → 단일 공급자(Yahoo) 일시 장애가 해외 평가액을 통째로 가리는 것 방지. "원래 시세 없는 종목"은 직전값도 None 이라 영향 없음(실패/데이터없음을 캐시 존재 여부로 구분). KR 도 공통 함수라 동반 개선.
+  - **D3 거래 수정 통화 인지:** 등록폼과 동일하게 해외 거래 수정도 체결원화→환율 역산. 단 재제안 anchor 는 현재 시세가 아닌 **거래 시점 환율(`trade.exchange_rate`)** — 단순 오타 정정 시 기록 환율이 silent 하게 오염되는 것을 막기 위함(현재 시세는 정보성 표시 전용).
+  - **D4 환율 검증 대칭:** 해외(비-KRW) 거래에 `exchange_rate=1.0`(기본/누락) 거부를 create(POST 422)·update(PATCH 400) 양쪽에 적용, 메시지 공유. PATCH 는 country_code 가 body 에 없어 **existing 거래 기준** 라우터 가드로 검증.
+  - **D5 분석 정밀도/투명성:** size 분포(매수 원금 버킷)는 **거래 시점 환율로 KRW 환산**(현재환율 아님 — 원금 분포라 고정환율이 원가 모델과 일관). 평가액 환산에 쓰인 환율·기준시각(`FxRate.as_of`)을 해외 보유 시 대시보드에 노출.
+- **코드리뷰 보류건 처리(2026-06-11):** 1차 리뷰 후 보류했던 항목들을 사용자 판단으로 진행. 트레이드오프 있는 선택만 기록:
+  - **자산추이 원화 통일(US):** US 종목 자산추이도 원화 primary + 달러 보조로 통일. **일자별 환율이 아닌 현재 환율로 전체 시계열 환산** + "현재 환율 적용" 안내 문구 — historical FX 인프라 없이 통화 일관성 확보(정밀도 대신 단순성·일관성 택함). 환율 미상 시 차트/헤더 비표시로 조용한 USD-as-KRW 차단. BE `/assets/history` 무변경, FE overlay(Phase B 철학 일관).
+  - **`missing_quote_tickers` 기준 통일:** analysis 가 `current_price is None` → `evaluation is None`(portfolio·FE 와 일치). **사용자 가시 동작 변경** — US 종목이 시세는 받았으나 환율 미수신 시 analysis 대시보드에도 "시세 없음" 노출(기존엔 누락). 두 화면 배지 일관성 확보.
+  - **클래스주·우선주 seed 허용 + Yahoo 심볼 변환:** nasdaqtrader 필터를 `isalpha or [A-Z]+\.[ABC](클래스주) or [A-Z]+\$[A-Z](우선주)` 로 확대 — BRK.B·BF.B(클래스주), BAC$B(우선주, 한국 우선주와 가장 유사) 포함. 워런트(`.W`/`.WS`)·유닛(`.U`)·rights(`.R`)는 계속 제외(사용자가 클래스주+우선주만 선택). **핵심: nasdaqtrader↔Yahoo 표기 불일치로 시세가 안 나오던 버그 동반 수정** — seed 는 `BRK.B`/`BAC$B`(nasdaqtrader) 형식인데 Yahoo 는 `BRK-B`/`BAC-PB` 를 요구(실측: 점 형식·`BAC-B`·`BACpB` 모두 Not Found). `_to_yahoo_us_symbol`(`$`→`-P`, `.`→`-`)을 시세·일별종가 fetch 양쪽에 적용. 변환 없이는 검색·등록만 되고 평가액 영구 missing. 보통주(AAPL)·KR 경로는 no-op. 클래스 경계 `[ABC]`·우선주 단일 시리즈 문자로 좁힌 트레이드오프: 드문 클래스(`.K` 등)·복수문자 시리즈는 누락하나 실사용 대다수 커버.
+  - **`exchange_rate` DB CHECK 제약:** 029 에 `CHECK (exchange_rate > 0)` 추가(029 미적용 상태라 동일 파일). API `_comma_positive` 양수 강제에 더해 DB 레벨 방어 + `exchange_rate or 1.0` 의 0→1.0 silent 치환 차단.
+
+---
+
 ## 2026-06-08 | Capacitor OTA 라이브 업데이트 v1 — 자체 호스팅(`@capgo/capacitor-updater` + R2 JSON SSOT), Capgo Cloud 미사용
 
 - **맥락:** FE 는 `next.config output:"export"` 정적 SPA 를 `capacitor webDir:"out"` 로 동봉 → 웹 자산(JS/HTML/CSS) 한 줄 수정에도 스토어 재심사가 필요했다. 웹 수정 빈도가 네이티브보다 압도적으로 높아 OTA 로 재심사를 우회한다. Apple §2.5.2/§3.3.2 는 WebKit 해석 코드(웹뷰 자산)만 교체하는 OTA 를 허용(핵심 목적 불변·네이티브 코드 미변경 한정).
@@ -23,6 +66,9 @@
 ---
 
 ## 2026-06-08 | 해외(미국) 주식 v2 방향 — 분리 + ₩/$ 토글(거래별 체결환율), 기존 "KRW 합산" 계획 대체
+
+> ⚠️ **2026-06-09 대체됨** — 위 항목 참조. 분리 섹션·₩/$ 토글은 폐기, 원화기준 통합표시로 재전환.
+
 
 - **맥락:** 2026-04-27 "MVP 해외 제외" 이후 v2 재개 사전조사. 기존 backlog/roadmap 의 v2 해외 계획은 "USD/KRW 환율로 해외 평가액을 **KRW 총자산·미실현손익에 합산** + 크로스-통화 HHI"였다. 그러나 ① 실시간 환율 환산이 부정확(특히 **당일 직접입력은 거래일 종가 환율 미확정**), ② 한 화면에 ₩/$ 혼재 시 인지 부하 → "분리 + USD-native + 사용자 토글"로 방향 전환. 증권사(미래에셋·KB·키움) 조사로 토글 원화 = **일별 매매기준율 환산(실시간 피드 불필요)**, 당일 거래는 **잠정→익일 재정산**(KB 10:45 재정산·미래에셋 가환전→실환전)이 업계 표준임을 확인 — 우리 backfill 설계와 동일.
 - **결정(확정):**

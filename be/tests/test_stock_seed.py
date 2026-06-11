@@ -218,6 +218,16 @@ def test_validate_seed_sources_trigger_time_fail_fast():
         stock_seed.validate_seed_sources(["fdr"])
 
 
+def test_validate_us_seed_sources_fail_fast():
+    # US 종목 마스터 소스도 KR 과 동일 registry/env 구조 — 오타는 ValueError, 빈 체인은 기본 소스.
+    import pytest
+
+    stock_seed.validate_us_seed_sources(["nasdaqtrader"])
+    stock_seed.validate_us_seed_sources([])  # 빈 체인 → 기본 소스
+    with pytest.raises(ValueError, match="us_stock_seed"):
+        stock_seed.validate_us_seed_sources(["nyse"])
+
+
 def test_recent_basdt_candidates_are_descending_and_bounded():
     cands = stock_seed._recent_basdt_candidates()
     assert len(cands) == stock_seed._BASDT_MAX_LOOKBACK
@@ -547,3 +557,181 @@ async def test_crossvalidate_unknown_provider_raises_value_error():
 
     with pytest.raises(ValueError, match="crossvalidate"):
         await stock_seed.crossvalidate_stocks(_CrossvalConn([]), provider="kisss")
+
+
+# ─────────────────────────── US nasdaqtrader 파서/fetch ───────────────────────────
+
+_NASDAQ_LISTED = (
+    "Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares\n"
+    "AAPL|Apple Inc. - Common Stock|Q|N|N|100|N|N\n"
+    "QQQ|Invesco QQQ Trust|Q|N|N|100|Y|N\n"
+    "TEST|NASDAQ TEST STOCK|Q|Y|N|100|N|N\n"
+    "ZVZZT|NASDAQ TEST|Q|N|N|100|N|N\n"
+    "File Creation Time: 0608202618:00|||||||\n"
+)
+
+_OTHER_LISTED = (
+    "ACT Symbol|Security Name|Exchange|CQS Symbol|ETF|Round Lot Size|Test Issue|NASDAQ Symbol\n"
+    "IBM|International Business Machines|N|IBM|N|100|N|IBM\n"
+    "SPY|SPDR S&P 500 ETF Trust|P|SPY|Y|100|N|SPY\n"
+    "BRK.A|Berkshire Hathaway Class A|N|BRK A|N|10|N|BRK.A\n"
+    "File Creation Time: 0608202618:00|||||||\n"
+)
+
+
+def test_parse_nasdaqtrader_nasdaq_listed():
+    rows = stock_seed._parse_nasdaqtrader(_NASDAQ_LISTED, nasdaq_default="NASDAQ")
+    by_ticker = {r["ticker"]: r for r in rows}
+    # Test Issue=Y(TEST) 제외, 보드는 NASDAQ, 통화 USD
+    assert "TEST" not in by_ticker
+    assert by_ticker["AAPL"]["market"] == "NASDAQ"
+    assert by_ticker["AAPL"]["currency"] == "USD"
+    assert by_ticker["QQQ"]["asset_name"].startswith("Invesco QQQ")
+
+
+def test_parse_nasdaqtrader_other_listed_maps_exchange_and_accepts_class_share():
+    rows = stock_seed._parse_nasdaqtrader(_OTHER_LISTED)
+    by_ticker = {r["ticker"]: r for r in rows}
+    assert by_ticker["IBM"]["market"] == "NYSE"     # N → NYSE
+    assert by_ticker["SPY"]["market"] == "NYSE ARCA"  # P → NYSE ARCA
+    assert "BRK.A" in by_ticker  # 클래스주(.A) 허용
+
+
+def test_parse_nasdaqtrader_class_share_filter_matrix():
+    """클래스주(.A/.B/.C) 채택, 워런트/유닛/우선주/특수기호 제외 회귀."""
+    text = (
+        "Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares\n"
+        "AAPL|Apple Inc. - Common Stock|Q|N|N|100|N|N\n"
+        "BRK.B|Berkshire Hathaway Class B|Q|N|N|100|N|N\n"
+        "BF.B|Brown-Forman Class B|Q|N|N|100|N|N\n"
+        "ABC.WS|Warrant|Q|N|N|100|N|N\n"
+        "XYZ.U|Unit|Q|N|N|100|N|N\n"
+        "FOO$|Preferred|Q|N|N|100|N|N\n"
+        "BAR=|When Issued|Q|N|N|100|N|N\n"
+        "TST.A|Test Issue Class A|Q|Y|N|100|N|N\n"
+    )
+    tickers = {r["ticker"] for r in stock_seed._parse_nasdaqtrader(text, nasdaq_default="NASDAQ")}
+    assert tickers == {"AAPL", "BRK.B", "BF.B"}  # 클래스주+보통주만, Test Issue=Y(TST.A) 제외
+
+
+def test_parse_nasdaqtrader_preferred_and_rights_filter_matrix():
+    """클래스주(BRK.B/BF.B)+우선주(BAC$B) 채택, 워런트/유닛/rights 제외, 보통주(AAPL) 회귀.
+
+    otherlisted 양식(ACT Symbol 첫 컬럼) — 우선주는 `$`+단일 시리즈 문자만 채택.
+    """
+    text = (
+        "ACT Symbol|Security Name|Exchange|CQS Symbol|ETF|Round Lot Size|Test Issue|NASDAQ Symbol\n"
+        "AAPL|Apple Inc.|Q|AAPL|N|100|N|AAPL\n"
+        "BRK.B|Berkshire Hathaway Class B|N|BRK B|N|100|N|N\n"
+        "BF.B|Brown-Forman Class B|N|BF B|N|100|N|N\n"
+        "BAC$B|Bank of America Pref B|N|BAC PRB|N|100|N|N\n"
+        "ABC.WS|Warrant|N|ABC WS|N|100|N|N\n"
+        "XYZ.U|Unit|N|XYZ U|N|100|N|N\n"
+        "AIIA.R|Rights|N|AIIA R|N|100|N|N\n"
+    )
+    tickers = {r["ticker"] for r in stock_seed._parse_nasdaqtrader(text)}
+    assert tickers == {"AAPL", "BRK.B", "BF.B", "BAC$B"}
+
+
+def test_parse_nasdaqtrader_skips_footer_and_empty():
+    assert stock_seed._parse_nasdaqtrader("") == []
+    assert stock_seed._parse_nasdaqtrader("Symbol|Security Name|Test Issue\n") == []
+
+
+async def test_fetch_nasdaq_us_merges_both_files():
+    def handler(req: httpx.Request) -> httpx.Response:
+        if "nasdaqlisted" in str(req.url):
+            return httpx.Response(200, text=_NASDAQ_LISTED)
+        return httpx.Response(200, text=_OTHER_LISTED)
+
+    async with _mock_client(handler) as client:
+        rows = await stock_seed.fetch_nasdaq_us(client=client)
+
+    tickers = {r["ticker"] for r in rows}
+    assert {"AAPL", "QQQ", "IBM", "SPY"} <= tickers
+    assert all(r["currency"] == "USD" for r in rows)
+
+
+# ─────────────────────────── seed_us advisory-lock / 빈응답 가드 ───────────────────────────
+
+
+class _SeedUsConn:
+    """seed_us 의 전 DB 메서드를 spy — advisory-lock skip / 빈응답 soft_delete 미호출 검증용."""
+
+    def __init__(self, lock_acquired: bool):
+        self._lock_acquired = lock_acquired
+        self.fetchval_calls: list[str] = []
+        self.execute_calls: list[str] = []
+        self.executemany_calls: list[str] = []
+        self.fetch_calls: list[str] = []
+        self.closed = False
+
+    async def fetchval(self, sql, *args):
+        self.fetchval_calls.append(sql)
+        if "pg_try_advisory_lock" in sql:
+            return self._lock_acquired
+        return None
+
+    async def execute(self, sql, *args):
+        self.execute_calls.append(sql)
+        return "DELETE 0"
+
+    async def executemany(self, sql, args):
+        self.executemany_calls.append(sql)
+
+    async def fetch(self, sql, *args):
+        self.fetch_calls.append(sql)
+        return []
+
+    async def close(self):
+        self.closed = True
+
+
+def _patch_seed_us(monkeypatch, conn, rows):
+    async def fake_connect(*a, **kw):
+        return conn
+
+    async def fake_fetch_nasdaq_us(*, client=None):
+        return rows
+
+    monkeypatch.setattr(stock_seed.asyncpg, "connect", fake_connect)
+    monkeypatch.setattr(stock_seed, "fetch_nasdaq_us", fake_fetch_nasdaq_us)
+
+
+async def test_seed_us_skips_when_advisory_lock_not_acquired(monkeypatch):
+    """다른 인스턴스가 lock 보유(pg_try_advisory_lock=false) → fetch/upsert/soft_delete 미수행."""
+    conn = _SeedUsConn(lock_acquired=False)
+    fetched = {"hit": False}
+
+    async def must_not_fetch(*, client=None):
+        fetched["hit"] = True
+        return [{"ticker": "AAPL", "asset_name": "Apple", "market": "NASDAQ",
+                 "exchange": "NASDAQ", "currency": "USD"}]
+
+    monkeypatch.setattr(stock_seed.asyncpg, "connect", lambda *a, **kw: _async_return(conn))
+    monkeypatch.setattr(stock_seed, "fetch_nasdaq_us", must_not_fetch)
+
+    await stock_seed.seed_us("postgresql://x")
+
+    assert fetched["hit"] is False, "lock 미획득인데 nasdaqtrader fetch 가 실행됨"
+    assert conn.executemany_calls == []  # upsert 없음
+    assert conn.execute_calls == []      # soft_delete 없음
+    assert conn.closed is True
+
+
+async def test_seed_us_empty_response_skips_soft_delete(monkeypatch):
+    """빈 응답(rows=[]) → soft_delete 미호출(대량 오상폐 방지) + upsert 미호출."""
+    conn = _SeedUsConn(lock_acquired=True)
+    _patch_seed_us(monkeypatch, conn, [])
+
+    await stock_seed.seed_us("postgresql://x")
+
+    assert conn.executemany_calls == []  # upsert 없음
+    assert conn.execute_calls == []      # soft_delete 없음(빈응답 가드)
+    assert conn.closed is True
+
+
+def _async_return(value):
+    async def _coro():
+        return value
+    return _coro()

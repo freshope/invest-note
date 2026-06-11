@@ -62,6 +62,10 @@ export interface Trade {
   // 거래소 (KOSPI / KOSDAQ / NYSE / NASDAQ 등, 미상은 빈 문자열)
   exchange: string;
 
+  // 거래 시점 환율(native→KRW). KR=1. KRW 금액 = native × exchange_rate.
+  // optional: 구버전 응답/테스트 fixture 호환 — 소비처는 `?? 1` 로 폴백.
+  exchange_rate?: number;
+
   // 수수료 / 제세금
   commission: number;
   tax: number;

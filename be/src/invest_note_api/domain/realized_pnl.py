@@ -16,6 +16,7 @@ from invest_note_api.domain.trade_types import (
     StrategyType,
     Trade,
     TradeResult,
+    krw_normalized_trade,
     trade_country,
     trade_identifier,
 )
@@ -132,11 +133,15 @@ def _holding_days_from_consumed(
 
 
 def compute_group_pnl(trades: list[Trade], key: TradeGroupKey) -> dict[str, GroupPnLEntry]:
-    """그룹 내 SELL 거래별 WAC PnL 계산."""
+    """그룹 내 SELL 거래별 WAC PnL 계산(KRW 기준).
+
+    거래를 KRW 정규화(native×거래시점 환율)한 뒤 walk 하므로, 저장되는 profit_loss·
+    avg_buy_price 는 모두 KRW(거래 시점 환율 고정). KR(rate=1)은 무변경.
+    """
     result: dict[str, GroupPnLEntry] = {}
 
     for ev in walk_trades(
-        trades,
+        [krw_normalized_trade(t) for t in trades],
         group_filter=lambda t: is_same_group(t, key),
         sort_fn=sort_for_calc,
     ):
@@ -211,5 +216,8 @@ def validate_mutation(
 
 
 def build_pnl_map(trades: list[Trade]) -> dict[str, float]:
-    """저장된 profit_loss 값으로 SELL id → PnL 맵 구성."""
+    """저장된 profit_loss 값으로 SELL id → PnL 맵 구성.
+
+    profit_loss 는 compute_group_pnl 이 KRW 정규화하여 저장하므로 이미 KRW 다(환산 불필요).
+    """
     return {t.id: float(t.profit_loss or 0) for t in trades if t.trade_type == TRADE_TYPE_SELL}

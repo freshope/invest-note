@@ -5,10 +5,11 @@ matchability(약칭/부분일치/초성)는 stock_aliases + name_chosung + pg_tr
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, TypedDict
 
 from invest_note_api.domain.hangul import is_chosung_query
-from invest_note_api.domain.trade_types import DEFAULT_COUNTRY, MAX_NAME_LEN
+from invest_note_api.domain.trade_types import COUNTRY_US, DEFAULT_COUNTRY, MAX_NAME_LEN
 
 _MIN_QUERY_LEN = 2
 _DEFAULT_LIMIT = 10
@@ -50,7 +51,7 @@ def _escape_like(term: str) -> str:
 _SEARCH_SQL = """
 with m as (
     select ticker, 1 as rank from stocks
-        where country_code = $2 and is_active and (ticker = $1 or asset_name = $1)
+        where country_code = $2 and is_active and (upper(ticker) = upper($1) or asset_name = $1)
     union all
     select ticker, 2 from stocks
         where country_code = $2 and is_active and asset_name ilike $5 || '%'
@@ -104,6 +105,34 @@ async def search(
         _escape_like(q),
     )
     return [_row_to_result(row) for row in rows]
+
+
+# 검색 라우터가 노출하는 국가 — KR 우선, US 후순위. 영문/한글 쿼리는 사실상 한 국가에만
+# 매칭되므로 KR 결과를 먼저 채우고 남는 자리에 US 를 붙여도 실사용에서 누락이 없다.
+SEARCH_COUNTRIES = (DEFAULT_COUNTRY, COUNTRY_US)
+
+
+async def search_multi(
+    conn: Any,
+    q: str,
+    *,
+    countries: Sequence[str] = SEARCH_COUNTRIES,
+    limit: int = _DEFAULT_LIMIT,
+    min_len: int = 1,
+) -> list[StockSearchResult]:
+    """여러 국가에 걸쳐 종목 검색. 국가 순서대로 이어붙이고 총 `limit` 건으로 캡.
+
+    각 결과의 `market` 필드가 country_code 라 호출측이 국가를 구분할 수 있다(ticker 가
+    국가 간 충돌해도 별개 항목으로 유지).
+    """
+    results: list[StockSearchResult] = []
+    for cc in countries:
+        if len(results) >= limit:
+            break
+        results.extend(
+            await search(conn, q, country_code=cc, limit=limit, min_len=min_len)
+        )
+    return results[:limit]
 
 
 async def lookup_by_names(

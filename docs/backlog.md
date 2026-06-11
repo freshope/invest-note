@@ -4,6 +4,34 @@ MVP 이후 구현할 작업 후보 목록.
 
 ---
 
+## 해외주식(US) 지원 — Phase C + 후속 (Phase A·B 완료)
+
+로드맵 v2 "해외 주식 지원". **Phase A(기반 plumbing)·B(정합성 슬라이스) 모두 2026-06-08 완료.**
+- Phase A: US 시세(`_fetch_yahoo_us`), USD/KRW 환율(`external/fx.py`+`GET /stocks/fx`), 검색
+  KR+US 병합(`search_multi`), US seed(`seed_us`), FE 통화 포맷 유틸.
+- Phase B: 해외 BUY 차단 해제, `domain/trade_types.to_krw`/`currency_for_country`,
+  KRW 환산 합산(`build_totals`/`build_account_snapshots`/`build_pnl_map_krw`/`concentration`,
+  라우터 `fetch_usdkrw` 주입), FE live overlay(`applyQuotesToTotals`/`applyQuotesToSnapshots` +
+  `useFxRate`), `StockSearchInput` 필터 해제, HoldingCard native 통화 표시. 표시 전략: **KRW 환산 단일 총액**.
+
+- [ ] **Phase C — import + 엣지.** Samsung/Toss 브로커 파서의 USD 거래 skip 해제
+  (`broker_import/samsung_xlsx.py`·`toss_pdf.py`), 해외 거래세/수수료 규칙, 엣지케이스.
+- [ ] **해외 SELL latent 경로 정리** — 해외 BUY 가 이제 허용되므로 정상 경로(BUY→SELL)가 열렸다.
+  선행 BUY 없는 해외 SELL 단독 입력의 처리 규칙은 KR 과 동일(walker `running_qty>0` 가드)이라
+  포지션은 안 생기나, 수동 입력 시 사용자 안내 UX 검토.
+- [x] **통화 표시/입력 전면 재설계** — 2026-06-09 완료(앞선 "폼 통화 라벨"을 대체·확장). 방향:
+  기본 표시 원화 통일 + 해외 달러 보조 + 거래 등록 시 USD 단가+환율 입력. **거래 시점 환율을
+  저장**(마이그레이션 `029_add_exchange_rate`, `trades.exchange_rate`)하고 계산 엔진을
+  `price×rate`=KRW 로 정규화(`domain/trade_types.krw_normalized_trade`) → 원가·실현손익 KRW 고정,
+  평가액만 현재 환율. Phase B 의 "현재 환율 환산" BE 모델을 대체(`build_pnl_map_krw` 삭제,
+  cost 쪽 usdkrw 제거, live-fx 는 평가액 전용). Position 에 native(USD) 보조 필드 추가, FE
+  `MoneyText`(원화+달러 보조)·입력폼 환율칸·US 자동수수료 OFF. BE 530 / FE 173 그린.
+  - historical-FX 정밀화 backlog 항목은 이로써 **해소**(거래 시점 환율 저장).
+- [x] **historical-FX 정밀화** — 2026-06-09 위 "통화 표시/입력 재설계"로 해소. 거래 시점 환율을
+  `trades.exchange_rate` 에 저장해 원가·실현손익이 거래 시점 원화로 고정됨(평가액만 현재 환율).
+- [x] **분석 size 분포 통화 정밀도** ✅ (D5-1, 2026-06-09) — `position_size_dist` 버킷 입력을
+  `total_amount × 거래시점 exchange_rate` 로 KRW 환산하여 USD 거래 버킷 정합 해소. KR=1.0 무변경.
+
 ## 분석 탭 성능 / 유지보수
 
 - [ ] 분석 대시보드 시세 분리 (옵션 B 동일 패턴) — `/analysis/dashboard` 도 요청 안에서 시세를 동기 fetch(concentration 계산용, `fetch_quotes_by_keys`)한다. 2026-05-27 `/portfolio/summary` 분리(`docs/decisions.md` 참고)와 동일하게 `withQuotes` opt-in + FE overlay 적용 검토. 단 concentration(HHI/top3/비중)은 시세 없으면 `cost_basis` fallback 이라 FE 로 옮기려면 concentration 계산까지 FE 중복이 필요 → 표면적이 summary 보다 큼. 트리거: summary 분리 효과 확인 후, 또는 분석 탭 응답 지연 체감 시.
@@ -47,8 +75,7 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [ ] **일별 종가 자동 적재 + 2년 prune 운영** — 현재 종가 백필은 페이지 진입 시 동기 실행(종목별 watermark 증분), 전체 사전적재는 `POST /admin/seed/daily-prices`(수동/cron). 콜드스타트 지연 완화·stale 방지를 위해 Coolify scheduled task 로 주기 실행 + `prune_older_than`(2년 윈도우) 운영 연결 검토. (`seed_daily_prices` 가 prune 까지 수행하므로 cron 만 걸면 됨.)
   - **2026-06-04 갱신:** 진입 backfill 에 `daily_price_sync_state` 마커 + 종목 병렬화 적용(`docs/decisions.md` 참고). 휴장/발행지연 무한 재질의 제거·data.go.kr 호출수 상한 고정·신규 종목 자동 처리로 **cron 우선순위 하향**. cron 은 콜드스타트 첫-오픈 지연을 더 줄이고 싶을 때의 옵션으로 남음.
-
-## 모바일앱 (v2.5) 잔여
+- [ ] **오늘 점 시세 소스 정합 (자산추이 ↔ 대시보드)** — 2026-06-11 자산추이 KRW 환산 BE 이관 후 잔여. 자산추이 오늘 점 총액은 BE `fetch_quotes_by_keys` 로, 대시보드 합계는 `/portfolio/summary` + FE overlay 시세로 계산돼 **오늘 점 총액이 미세하게 어긋날 수 있다**(포함범위·usdkrw 소스는 일치, finding A 해소됨). 같은 시세 소스로 통일하거나 허용 오차를 명시. 트리거: 사용자가 두 화면 오늘 값 차이를 체감하거나 시세 변동성 큰 종목에서 괴리 보고 시.
 
 - [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리
 - [ ] iOS 상태바 색 동기화 — @capacitor/status-bar 도입 후 다크/라이트 전환 시 status bar style 동기화
@@ -67,9 +94,9 @@ MVP 이후 구현할 작업 후보 목록.
   - 과거 이력 초기 적재는 3개월 제한 때문에 구체결 API 페이징 또는 기존 파일 업로드 병행 필요.
   - **선행 리스크(도입 전 KIS 공식 확인 필수):** ① 제3자 서비스가 사용자 키로 대신 호출(BYOK)하는 구조가 개인 약관 범위인지 — 가장 큰 리스크, ② appkey 에 주문 권한 포함(읽기 전용 스코프 불가로 보임) → 키 유출 시 주문 실행 가능, 키 보관 위치(서버 암호화 vs 디바이스 Keychain/Keystore + 디바이스 직접 호출) 설계 결정 필요, ③ 사용자별 KIS Developers 가입·앱키 발급 UX 마찰.
 
-## v2 — 해외 주식 (2026-06-08 방향 확정, `docs/decisions.md` 참고)
+## v2 — 해외 주식 (2026-06-09 방향 재확정, `docs/decisions.md` 참고)
 
-⚠️ 기존 "USD/KRW 환율로 KRW 총자산 합산 + 크로스-통화 HHI" 계획은 **폐기** — **분리 섹션 + ₩/$ 토글(거래별 체결환율)** 로 대체.
+⚠️ 2026-06-08 "분리 섹션 + ₩/$ 토글" 은 **2026-06-09 재변경**으로 폐기 — **원화기준 통합표시 + 달러 보조 + 거래등록 달러·원화 직접입력(환율 역산)** 으로 대체. (거래별 체결환율 박제·Yahoo 시세·Nasdaq seed·FX 시계열 레일은 계승.)
 
 - [ ] **US 직접입력 + 분리 표시 (MVP 본체, BE+FE)** — `country='US'` 신규 매수 차단(`trade.py:132`) 해제, 미국 전용 섹션, ₩/$ 토글. 거래 4필드(`amount_native`/`fx_rate`/`amount_krw`/`fx_provisional`) 통화중립 저장(write 시점 단일 계산). 국내는 `fx_rate=1.0` 으로 흡수.
 - [ ] **trade_walker 환율 차원 (BE)** — 매수 로트별 `fx_rate` 추적 → KRW 실현/미실현손익(`/portfolio/summary`). 취득원가=매입환율, 평가=현재환율(환차손익 반영).

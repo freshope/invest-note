@@ -44,8 +44,13 @@ def make_trade(**kwargs) -> Trade:
     return Trade(**defaults)
 
 
-def _close(ticker: str, d: str, price: float) -> dict:
-    return {"ticker": ticker, "close_date": date.fromisoformat(d), "close_price": price}
+def _close(ticker: str, d: str, price: float, country: str = "KR") -> dict:
+    return {
+        "ticker": ticker,
+        "close_date": date.fromisoformat(d),
+        "close_price": price,
+        "country": country,
+    }
 
 
 # ─────────────────────────── 종목뷰(단일 종목) ───────────────────────────
@@ -62,7 +67,7 @@ def test_single_stock_qty_times_close():
     ]
     today = date(2025, 6, 3)
     res = compute_asset_history(
-        trades, closes, live_quotes={"005930": 77000.0}, today=today, is_stock_view=True
+        trades, closes, live_quotes={"005930:KR": 77000.0}, today=today, is_stock_view=True
     )
 
     # series: 2개 거래일(6/2 종가, 6/3=오늘 라이브).
@@ -89,7 +94,7 @@ def test_carry_forward_missing_close():
     ]
     today = date(2025, 6, 4)
     res = compute_asset_history(
-        trades, closes, live_quotes={"005930": 130.0}, today=today, is_stock_view=True
+        trades, closes, live_quotes={"005930:KR": 130.0}, today=today, is_stock_view=True
     )
     dates = [p["date"] for p in res.series]
     assert dates == ["2025-06-02", "2025-06-04"]
@@ -120,7 +125,7 @@ def test_zero_price_treated_as_missing():
     ]
     today = date(2025, 6, 4)
     res = compute_asset_history(
-        trades, closes, live_quotes={"005930": 0.0}, today=today, is_stock_view=True
+        trades, closes, live_quotes={"005930:KR": 0.0}, today=today, is_stock_view=True
     )
     # 6/3: 0 종가 → 결측 취급(기여 제외). 오늘: 0 라이브 → fallback 도 0(6/3 carry) → 결측.
     by_date = {p["date"]: p["value"] for p in res.series}
@@ -147,7 +152,7 @@ def test_account_view_two_tickers_summed_per_ticker():
     ]
     today = date(2025, 6, 3)
     res = compute_asset_history(
-        trades, closes, live_quotes={"005930": 72000.0, "000660": 210000.0},
+        trades, closes, live_quotes={"005930:KR": 72000.0, "000660:KR": 210000.0},
         today=today, is_stock_view=False,
     )
     by_date = {p["date"]: p["value"] for p in res.series}
@@ -179,7 +184,7 @@ def test_past_day_missing_close_excluded_and_incomplete():
     ]
     today = date(2025, 6, 3)
     res = compute_asset_history(
-        trades, closes, live_quotes={"005930": 110.0, "000660": 500.0},
+        trades, closes, live_quotes={"005930:KR": 110.0, "000660:KR": 500.0},
         today=today, is_stock_view=False,
     )
     by_date = {p["date"]: p["value"] for p in res.series}
@@ -200,7 +205,7 @@ def test_sell_reduces_qty():
     ]
     today = date(2025, 6, 4)
     res = compute_asset_history(
-        trades, closes, live_quotes={"005930": 100.0}, today=today, is_stock_view=True
+        trades, closes, live_quotes={"005930:KR": 100.0}, today=today, is_stock_view=True
     )
     by_date = {p["date"]: p["value"] for p in res.series}
     assert by_date["2025-06-02"] == 10 * 100.0
@@ -211,6 +216,134 @@ def test_empty_trades():
     res = compute_asset_history([], [], {}, today=date(2025, 6, 4), is_stock_view=False)
     assert res.series == []
     assert res.items == []
+    assert res.incomplete is False
+
+
+# ─────────────────────────── 통화-aware KRW 환산 ───────────────────────────
+
+
+def test_kr_only_no_usdkrw_unchanged():
+    """KR-only 스코프는 usdkrw 없이도(KRW=KRW) 종전과 동일 합산(회귀 가드)."""
+    trades = [make_trade(id="b1", quantity=10, traded_at=_dt("2025-06-02T09:00:00+09:00"))]
+    closes = [_close("005930", "2025-06-02", 75000)]
+    today = date(2025, 6, 2)
+    res = compute_asset_history(
+        trades, closes, live_quotes={"005930:KR": 77000.0}, today=today,
+        is_stock_view=False, usdkrw=None,
+    )
+    assert res.series[-1]["value"] == 10 * 77000
+    assert res.incomplete is False
+
+
+def test_us_only_krw_converted_with_usdkrw():
+    """US-only 종목뷰: value 는 native USD × usdkrw 로 KRW, close 는 native USD 유지."""
+    trades = [
+        make_trade(id="ub", ticker_symbol="AAPL", asset_name="Apple", country_code="US",
+                   quantity=2, price=150.0, traded_at=_dt("2025-06-02T09:00:00+09:00")),
+    ]
+    closes = [_close("AAPL", "2025-06-02", 200.0, country="US")]
+    today = date(2025, 6, 2)
+    res = compute_asset_history(
+        trades, closes, live_quotes={"AAPL:US": 210.0}, today=today,
+        is_stock_view=True, usdkrw=1300.0,
+    )
+    # value = 2 × 210(USD) × 1300 = KRW.
+    assert res.series[-1]["value"] == 2 * 210.0 * 1300.0
+    # close 는 native USD 유지(환산 안 함).
+    assert res.items[0]["close"] == 210.0
+    assert res.items[0]["qty"] == 2.0
+    assert res.incomplete is False
+
+
+def test_mixed_kr_us_summed_in_krw():
+    """KR+US 혼재: 일자별 KRW 합산 = KR native + US native×usdkrw."""
+    trades = [
+        make_trade(id="kb", ticker_symbol="005930", asset_name="삼성", country_code="KR",
+                   quantity=10, traded_at=_dt("2025-06-02T09:00:00+09:00")),
+        make_trade(id="ub", ticker_symbol="AAPL", asset_name="Apple", country_code="US",
+                   quantity=2, price=150.0, traded_at=_dt("2025-06-02T09:00:00+09:00")),
+    ]
+    closes = [
+        _close("005930", "2025-06-02", 70000, country="KR"),
+        _close("AAPL", "2025-06-02", 200.0, country="US"),
+    ]
+    today = date(2025, 6, 2)
+    res = compute_asset_history(
+        trades, closes, live_quotes={"005930:KR": 72000.0, "AAPL:US": 210.0},
+        today=today, is_stock_view=False, usdkrw=1300.0,
+    )
+    # KRW: 삼성 10×72000 + Apple 2×210×1300.
+    assert res.series[-1]["value"] == 10 * 72000 + 2 * 210.0 * 1300.0
+    assert res.incomplete is False
+
+
+def test_us_excluded_when_usdkrw_none_incomplete():
+    """usdkrw=None + US 보유: US 기여 제외(to_krw None) + incomplete=True. KR 만 합산."""
+    trades = [
+        make_trade(id="kb", ticker_symbol="005930", asset_name="삼성", country_code="KR",
+                   quantity=10, traded_at=_dt("2025-06-02T09:00:00+09:00")),
+        make_trade(id="ub", ticker_symbol="AAPL", asset_name="Apple", country_code="US",
+                   quantity=2, traded_at=_dt("2025-06-02T09:00:00+09:00")),
+    ]
+    closes = [
+        _close("005930", "2025-06-02", 70000, country="KR"),
+        _close("AAPL", "2025-06-02", 200.0, country="US"),
+    ]
+    today = date(2025, 6, 2)
+    res = compute_asset_history(
+        trades, closes, live_quotes={"005930:KR": 72000.0, "AAPL:US": 210.0},
+        today=today, is_stock_view=False, usdkrw=None,
+    )
+    # US 제외 → KR 만(10×72000). incomplete=True.
+    assert res.series[-1]["value"] == 10 * 72000
+    assert res.incomplete is True
+
+
+def test_us_only_stock_view_usdkrw_none_flat_zero():
+    """D4: US-only 종목뷰 + usdkrw=None → series value 전부 0 + incomplete(FE 가 has_foreign 으로 안내).
+
+    BE 가 0 일직선을 내는 것 자체는 정상(US 기여 제외) — FE 가 (has_foreign && usdkrw==null) 로
+    0 차트 대신 '환율 불가' 안내를 띄우는 계약. 그 조합을 BE 가 실제로 내는지 가드.
+    """
+    trades = [
+        make_trade(id="ub", ticker_symbol="AAPL", asset_name="Apple", country_code="US",
+                   quantity=2, traded_at=_dt("2025-06-02T09:00:00+09:00")),
+    ]
+    closes = [_close("AAPL", "2025-06-02", 200.0, country="US")]
+    today = date(2025, 6, 2)
+    res = compute_asset_history(
+        trades, closes, live_quotes={"AAPL:US": 210.0}, today=today,
+        is_stock_view=True, usdkrw=None,
+    )
+    assert all(p["value"] == 0.0 for p in res.series)
+    assert res.incomplete is True
+    # close 는 native USD 유지(FE 안내 시 가격 표시용).
+    assert res.items[0]["close"] == 210.0
+
+
+def test_same_ticker_different_country_separated():
+    """같은 ticker 문자열이 KR/US 동시 보유면 (ticker,country) 키로 분리 합산(키 충돌 가드).
+
+    가상의 ticker 'X' 가 KR(종가 100 KRW)·US(종가 5 USD) 양쪽에 존재 — 키가 ticker 만이면
+    종가/수량이 섞이지만, position_key(ticker,country)로 분리되어 각각 환산된다.
+    """
+    trades = [
+        make_trade(id="kx", ticker_symbol="X", asset_name="X-KR", country_code="KR",
+                   quantity=10, traded_at=_dt("2025-06-02T09:00:00+09:00")),
+        make_trade(id="ux", ticker_symbol="X", asset_name="X-US", country_code="US",
+                   quantity=4, traded_at=_dt("2025-06-02T09:00:00+09:00")),
+    ]
+    closes = [
+        _close("X", "2025-06-02", 100.0, country="KR"),
+        _close("X", "2025-06-02", 5.0, country="US"),
+    ]
+    today = date(2025, 6, 2)
+    res = compute_asset_history(
+        trades, closes, live_quotes={"X:KR": 100.0, "X:US": 5.0},
+        today=today, is_stock_view=False, usdkrw=1300.0,
+    )
+    # KR: 10×100 KRW + US: 4×5×1300 KRW — 섞이지 않고 각 통화로 분리 환산.
+    assert res.series[-1]["value"] == 10 * 100.0 + 4 * 5.0 * 1300.0
     assert res.incomplete is False
 
 
@@ -228,7 +361,7 @@ def test_holiday_excludes_today_point():
     ]
     today = date(2025, 6, 7)  # 토요일(휴장).
     res = compute_asset_history(
-        trades, closes, live_quotes={"005930": 77000.0},
+        trades, closes, live_quotes={"005930:KR": 77000.0},
         today=today, is_stock_view=True, include_today=False,
     )
 

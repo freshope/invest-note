@@ -30,6 +30,7 @@ def _make_trade_row(
     country_code="KR",
     total_amount=None,
     buy_reason=None,
+    exchange_rate=1.0,
 ) -> dict:
     now = _dt("2026-04-20T09:00:00+09:00")
     return {
@@ -55,6 +56,7 @@ def _make_trade_row(
         "holding_days": holding_days,
         "country_code": country_code,
         "exchange": "",
+        "exchange_rate": exchange_rate,
         "commission": 0.0,
         "tax": 0.0,
         "created_at": _dt("2024-01-01T00:00:00Z"),
@@ -142,8 +144,61 @@ class TestAnalysisDashboard:
         # PnL 약어 키는 대문자 'L' (FE 타입 호환)
         assert "sumPnL" in summary["byStrategy"][0]
         assert "sumPnL" in summary["byStrategyAdherence"][0]
+
+    def test_us_realized_pnl_is_stored_krw(self, trades_client):
+        """US SELL 실현손익은 저장값이 이미 KRW(거래시점 환율로 compute_group_pnl 이 고정).
+
+        analysis 는 저장 profit_loss(KRW)를 환산 없이 그대로 합산한다(현재 환율 무관).
+        """
+        buy = _make_trade_row(
+            id_="b1", trade_type="BUY", ticker="AAPL", asset_name="Apple",
+            price=200.0, quantity=10.0, country_code="US", exchange_rate=1500.0,
+        )
+        sell = _make_trade_row(
+            id_="s1", trade_type="SELL", ticker="AAPL", asset_name="Apple",
+            price=210.0, quantity=10.0, country_code="US", exchange_rate=1520.0,
+            traded_at=_dt("2026-04-22T09:00:00+09:00"),
+            # 저장 profit_loss = KRW: 210×10×1520 - 200×10×1500 = 192,000
+            profit_loss=192000.0, avg_buy_price=300000.0, holding_days=2,
+        )
+        conn = FakeConnection([buy, sell])
+
+        with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
+            with patch("invest_note_api.routers.analysis.fetch_quotes_by_keys", new=AsyncMock(return_value={})):
+                # US 거래 존재 → 라우터가 usdkrw_if_foreign 으로 환율을 받으므로 실 네트워크를 차단한다.
+                with patch("invest_note_api.routers.analysis.usdkrw_if_foreign", new=AsyncMock(return_value=1490.0)):
+                    resp = trades_client.get("/analysis/dashboard")
+
+        assert resp.status_code == 200
+        summary = resp.json()["summary"]
+        # 저장 KRW(192,000)를 그대로 합산
+        assert summary["totalProfitLoss"] == pytest.approx(192000.0, rel=1e-6)
         # result_input_rate 는 제거됨 (자동 유도값이라 의미 없음)
         assert "resultInputRate" not in summary
+
+    def test_missing_quote_uses_evaluation_criterion(self, trades_client):
+        """US 보유 + 시세 있음 + 현재 환율 None → evaluation None → missingQuoteTickers 노출.
+
+        portfolio.build_totals·FE 와 동일 기준(evaluation). current_price 기준이면 시세가
+        있어 누락됐다 — 양 화면 배지 일관성 회귀.
+        """
+        buy = _make_trade_row(
+            id_="b1", trade_type="BUY", ticker="AAPL", asset_name="Apple",
+            price=200.0, quantity=10.0, country_code="US", exchange_rate=1300.0,
+        )
+        conn = FakeConnection([buy])
+
+        async def quote_with_price(state, keys, **kw):
+            return {"AAPL:US": {"price": 220.0, "currency": "USD", "as_of": ""}}
+
+        with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
+            with patch("invest_note_api.routers.analysis.fetch_quotes_by_keys", quote_with_price):
+                # 현재 환율 미수신(None) → US 평가액 KRW 미상.
+                with patch("invest_note_api.routers.analysis.usdkrw_if_foreign", new=AsyncMock(return_value=None)):
+                    resp = trades_client.get("/analysis/dashboard")
+
+        assert resp.status_code == 200
+        assert "Apple" in resp.json()["missingQuoteTickers"]
 
     def test_input_rates_shape(self, trades_client):
         # BUY 2건: 1건은 buy_reason 채움, 1건은 None → buyReason = 50.0
@@ -222,6 +277,27 @@ class TestAnalysisDashboard:
         behavior = resp.json()["behavior"]
         assert len(behavior["positionSizeDist"]) == 1
         assert behavior["positionSizeDist"][0]["bucket"] == "50만 미만"
+
+    def test_position_size_dist_us_bucketed_in_krw(self, trades_client):
+        # $200 × 10 = native total_amount 2,000(USD). 거래 시점 환율 1500 → KRW 원금
+        # 3,000,000 → "100~500만" 버킷(native 2,000 으로 잘못 버킷팅하면 "50만 미만").
+        buy = _make_trade_row(
+            id_="b1",
+            price=200.0,
+            quantity=10.0,
+            total_amount=2000.0,
+            country_code="US",
+            exchange_rate=1500.0,
+        )
+        conn = FakeConnection([buy])
+        with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
+            with patch("invest_note_api.routers.analysis.usdkrw_if_foreign", new=AsyncMock(return_value=1490.0)):
+                resp = _patched_get(trades_client, "/analysis/dashboard?period=all")
+        assert resp.status_code == 200
+        behavior = resp.json()["behavior"]
+        assert len(behavior["positionSizeDist"]) == 1
+        # 현재 환율(1490)이 아닌 거래 시점 환율(1500)로 환산되어야 함.
+        assert behavior["positionSizeDist"][0]["bucket"] == "100~500만"
 
     # --- suggestions 영역 ---
 

@@ -95,6 +95,44 @@ async def test_fetch_meta_maps_rows_by_ticker():
 
 
 @pytest.mark.asyncio
+async def test_search_multi_merges_kr_and_us():
+    """KR + US 결과를 국가 순서대로 이어붙이고 market 으로 구분 가능."""
+    conn = AsyncMock()
+    conn.fetch.side_effect = [
+        [{"ticker": "005930", "asset_name": "삼성전자", "country_code": "KR", "market": "KOSPI"}],
+        [{"ticker": "AAPL", "asset_name": "Apple Inc.", "country_code": "US", "market": "NASDAQ"}],
+    ]
+    res = await stocks_repo.search_multi(conn, "a", countries=("KR", "US"))
+    assert [r["market"] for r in res] == ["KR", "US"]
+    assert res[1]["code"] == "AAPL"
+
+
+@pytest.mark.asyncio
+async def test_search_multi_caps_at_limit_and_skips_later_countries():
+    """앞 국가가 limit 을 채우면 뒤 국가는 조회하지 않는다."""
+    conn = AsyncMock()
+    conn.fetch.side_effect = [
+        [{"ticker": "005930", "asset_name": "삼성전자", "country_code": "KR", "market": "KOSPI"}],
+    ]
+    res = await stocks_repo.search_multi(conn, "a", countries=("KR", "US"), limit=1)
+    assert len(res) == 1
+    conn.fetch.assert_called_once()  # US 미조회
+
+
+@pytest.mark.asyncio
+async def test_search_multi_us_only_when_kr_empty():
+    """한글/영문 쿼리는 사실상 한 국가에만 매칭 — KR 빈 결과면 US 가 채운다."""
+    conn = AsyncMock()
+    conn.fetch.side_effect = [
+        [],
+        [{"ticker": "TSLA", "asset_name": "Tesla Inc.", "country_code": "US", "market": "NASDAQ"}],
+    ]
+    res = await stocks_repo.search_multi(conn, "tsla", countries=("KR", "US"))
+    assert [r["code"] for r in res] == ["TSLA"]
+    assert res[0]["market"] == "US"
+
+
+@pytest.mark.asyncio
 async def test_lookup_by_names_collects_top_match():
     conn = AsyncMock()
     # search 는 이름마다 1건씩 fetch — 첫 이름 매칭, 둘째 이름 미매칭(빈 결과)

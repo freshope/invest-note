@@ -9,7 +9,12 @@ import pytest
 from invest_note_api.external.quotes import (
     QuoteCacheState,
     _fetch_kr_price,
+    _fetch_us_price,
+    _fetch_yahoo_us,
     _get_cached,
+    _to_yahoo_us_symbol,
+    fetch_quotes_by_keys,
+    validate_quote_providers,
 )
 
 
@@ -378,3 +383,296 @@ def test_fetch_kr_price_kis_unconfigured_falls_back_without_network(monkeypatch)
     assert result is not None
     assert result["price"] == 71500.0
     assert kis_called is False
+
+
+# ─────────────────────────── US(해외) 시세 ───────────────────────────
+
+
+def test_fetch_yahoo_us_returns_price_and_currency_from_meta():
+    """suffix 없는 티커 → Yahoo chart. price + meta.currency 사용."""
+    routes = {
+        "https://query2.finance.yahoo.com/v8/finance/chart/AAPL": httpx.Response(
+            200,
+            json={"chart": {"result": [{"meta": {"regularMarketPrice": 195.5, "currency": "USD"}}]}},
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_yahoo_us(client, "AAPL")
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["price"] == 195.5
+    assert result["currency"] == "USD"
+
+
+def test_fetch_yahoo_us_defaults_currency_to_usd_when_missing():
+    routes = {
+        "https://query2.finance.yahoo.com/v8/finance/chart/AAPL": httpx.Response(
+            200, json={"chart": {"result": [{"meta": {"regularMarketPrice": 100.0}}]}}
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_yahoo_us(client, "AAPL")
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["currency"] == "USD"
+
+
+def test_fetch_yahoo_us_returns_none_on_empty_or_failure():
+    routes = {"https://query2.finance.yahoo.com": httpx.Response(503)}
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_yahoo_us(client, "NOPE")
+
+    assert asyncio.run(runner()) is None
+
+
+def test_to_yahoo_us_symbol_converts_class_and_preferred():
+    """보통주 no-op, 클래스주 `.`→`-`, 우선주 `$`→`-P` ($ 먼저, . 나중)."""
+    assert _to_yahoo_us_symbol("AAPL") == "AAPL"
+    assert _to_yahoo_us_symbol("BRK.B") == "BRK-B"
+    assert _to_yahoo_us_symbol("BAC$B") == "BAC-PB"
+
+
+def test_fetch_yahoo_us_accepts_whitelisted_tickers():
+    """허용 티커(영숫자/`.`/`$`/`-`)는 통과 — 화이트리스트 가드가 정상 시세를 막지 않는다.
+
+    seed 표기(`.`/`$`)는 Yahoo 표기로 변환돼 요청되므로 route key 도 변환형을 쓴다.
+    """
+    for code in ("AAPL", "BRK.B", "BRK-B", "RDS.A", "BAC$B"):
+        routes = {
+            f"https://query2.finance.yahoo.com/v8/finance/chart/{_to_yahoo_us_symbol(code)}": httpx.Response(
+                200,
+                json={"chart": {"result": [{"meta": {"regularMarketPrice": 10.0, "currency": "USD"}}]}},
+            ),
+        }
+
+        async def runner():
+            async with _build_mock_client(routes) as client:
+                return await _fetch_yahoo_us(client, code)
+
+        result = asyncio.run(runner())
+        assert result is not None, code
+        assert result["price"] == 10.0
+
+
+def test_fetch_yahoo_us_converts_seed_symbol_in_request_url():
+    """seed 표기 BRK.B 입력 → Yahoo URL 은 변환된 BRK-B(원본 BRK.B 미전송)."""
+    captured: dict = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        captured["url"] = str(req.url)
+        return httpx.Response(
+            200, json={"chart": {"result": [{"meta": {"regularMarketPrice": 10.0}}]}}
+        )
+
+    async def runner():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await _fetch_yahoo_us(client, "BRK.B")
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert "/chart/BRK-B" in captured["url"]
+    assert "BRK.B" not in captured["url"]
+
+
+def test_fetch_yahoo_us_rejects_path_manipulating_tickers():
+    """`/`·`?`·`#`·공백 등 화이트리스트 위반 심볼은 HTTP 전송 없이 None(graceful)."""
+    called = {"hit": False}
+
+    def handler(_req: httpx.Request) -> httpx.Response:
+        called["hit"] = True
+        return httpx.Response(200, json={})
+
+    async def runner(code: str):
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await _fetch_yahoo_us(client, code)
+
+    for bad in ("AAPL/../foo", "AAPL?x=1", "AAPL#frag", "AAPL BBB", "", "A" * 21):
+        assert asyncio.run(runner(bad)) is None, bad
+    assert called["hit"] is False, "위반 심볼인데 HTTP 요청이 전송됨"
+
+
+def test_fetch_quotes_by_keys_routes_us_to_yahoo_and_kr_to_chain():
+    """KR→공급자 체인(naver fail→yahoo .KS), US→yahoo bare ticker. 통화 분리 유지."""
+    state = QuoteCacheState()
+    routes = {
+        "https://polling.finance.naver.com": httpx.Response(503),
+        "https://api.stock.naver.com": httpx.Response(503),
+        "https://query2.finance.yahoo.com/v8/finance/chart/005930.KS": httpx.Response(
+            200, json={"chart": {"result": [{"meta": {"regularMarketPrice": 71000, "currency": "KRW"}}]}}
+        ),
+        "https://query2.finance.yahoo.com/v8/finance/chart/AAPL": httpx.Response(
+            200, json={"chart": {"result": [{"meta": {"regularMarketPrice": 195.5, "currency": "USD"}}]}}
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await fetch_quotes_by_keys(
+                state, ["005930:KR", "AAPL:US"], client=client, providers=["naver", "yahoo"]
+            )
+
+    out = asyncio.run(runner())
+    assert out["005930:KR"]["price"] == 71000.0
+    assert out["005930:KR"]["currency"] == "KRW"
+    assert out["AAPL:US"]["price"] == 195.5
+    assert out["AAPL:US"]["currency"] == "USD"
+
+
+def test_fetch_us_price_env_driven_chain_resolves_via_registry():
+    """US 시세도 KR 과 동일하게 providers 체인을 registry 로 해석한다 (env 전환 구조)."""
+    routes = {
+        "https://query2.finance.yahoo.com/v8/finance/chart/AAPL": httpx.Response(
+            200, json={"chart": {"result": [{"meta": {"regularMarketPrice": 195.5, "currency": "USD"}}]}}
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_us_price(client, "AAPL", ["yahoo"])
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["price"] == 195.5
+    assert result["currency"] == "USD"
+
+
+def test_fetch_us_price_unknown_provider_raises_value_error():
+    """US registry 에 없는 공급자명 → ValueError (US_QUOTE_PROVIDERS 오타 fail-fast)."""
+
+    async def runner():
+        async with _build_mock_client({}) as client:
+            return await _fetch_us_price(client, "AAPL", ["bogus"])
+
+    with pytest.raises(ValueError, match="us_quotes"):
+        asyncio.run(runner())
+
+
+def test_validate_quote_providers_validates_both_kr_and_us():
+    """startup 검증이 KR/US 체인의 오타·빈 값을 모두 fail-fast 한다."""
+    validate_quote_providers(["naver", "yahoo"], ["yahoo"])  # 정상 — 예외 없음
+    with pytest.raises(ValueError, match="us_quotes"):
+        validate_quote_providers(["naver"], ["bogus"])
+    with pytest.raises(ValueError, match="US 공급자 체인이 비어"):
+        validate_quote_providers(["naver"], [])
+
+
+def test_fetch_quotes_by_keys_us_providers_override_routes_us():
+    """fetch_quotes_by_keys 가 us_providers 를 US 키에 적용한다 (라우터 env 전달 경로)."""
+    state = QuoteCacheState()
+    routes = {
+        "https://query2.finance.yahoo.com/v8/finance/chart/AAPL": httpx.Response(
+            200, json={"chart": {"result": [{"meta": {"regularMarketPrice": 200.0, "currency": "USD"}}]}}
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await fetch_quotes_by_keys(
+                state,
+                ["AAPL:US"],
+                client=client,
+                providers=["naver"],
+                us_providers=["yahoo"],
+            )
+
+    out = asyncio.run(runner())
+    assert out["AAPL:US"]["price"] == 200.0
+    assert out["AAPL:US"]["currency"] == "USD"
+
+
+def test_fetch_quotes_by_keys_unsupported_country_is_null():
+    """공급자 없는 국가(OTHER) → null."""
+    state = QuoteCacheState()
+    routes = {"https://query2.finance.yahoo.com": httpx.Response(503)}
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await fetch_quotes_by_keys(
+                state, ["XYZ:OTHER"], client=client, providers=["yahoo"]
+            )
+
+    out = asyncio.run(runner())
+    assert out["XYZ:OTHER"] is None
+
+
+# ──────────────── stale-유지 (D2-1: 시세 SPOF 완화) ────────────────
+
+
+def test_get_cached_serves_stale_when_refetch_fails(quote_state: QuoteCacheState):
+    """① 1차 성공→캐시. 직전값 유지하며 실패 fetch → 직전 성공값을 stale 로 반환.
+
+    캐시 엔트리가 살아 있는 동안(force_refresh 로 fetch_fn 재실행) 실패하면 None 으로
+    덮지 않고 직전 성공값을 유지한다 — 현재·후속 호출자 모두 stale 을 받는다.
+    """
+
+    async def ok_fetch():
+        return {"price": 195.5, "currency": "USD", "as_of": "t0"}
+
+    async def fail_fetch():
+        return None
+
+    async def runner():
+        first = await _get_cached(quote_state, "AAPL:US", ok_fetch)
+        # force_refresh 로 fetch_fn 재실행 → 실패. 직전값 stale 유지.
+        staled = await _get_cached(quote_state, "AAPL:US", fail_fetch, force_refresh=True)
+        return first, staled
+
+    first, staled = asyncio.run(runner())
+    assert first == {"price": 195.5, "currency": "USD", "as_of": "t0"}
+    assert staled == first  # None 으로 덮이지 않고 직전 성공값 유지
+
+
+def test_get_cached_failure_with_no_prior_stays_none(quote_state: QuoteCacheState):
+    """② 직전 성공값이 없는(원래 시세 없는) 종목은 실패해도 계속 None — 영향 없음.
+
+    또한 None 을 캐시에 박지 않아 다음 호출이 재시도(45s 갇힘 없음)된다.
+    """
+    call_count = 0
+
+    async def fail_fetch():
+        nonlocal call_count
+        call_count += 1
+        return None
+
+    async def runner():
+        first = await _get_cached(quote_state, "NOPE:US", fail_fetch)
+        second = await _get_cached(quote_state, "NOPE:US", fail_fetch)  # 캐시 hit 아님 → 재시도
+        return first, second
+
+    first, second = asyncio.run(runner())
+    assert first is None
+    assert second is None
+    assert call_count == 2  # None 미캐싱 → 매 호출 재시도
+
+
+def test_get_cached_force_refresh_failure_keeps_prior(quote_state: QuoteCacheState):
+    """③ force_refresh(pull-to-refresh) 로 재요청했는데 실패 → 직전 성공값 유지.
+
+    동시 후속 호출자도 같은 stale 값을 공유(single-flight)한다.
+    """
+
+    async def ok_fetch():
+        return {"price": 100.0, "currency": "USD", "as_of": "t0"}
+
+    async def fail_fetch():
+        await asyncio.sleep(0.01)
+        return None
+
+    async def runner():
+        await _get_cached(quote_state, "MSFT:US", ok_fetch)
+        # force_refresh 5건 동시 — single-flight 로 fail_fetch 1회만, 모두 stale 공유.
+        return await asyncio.gather(*[
+            _get_cached(quote_state, "MSFT:US", fail_fetch, force_refresh=True)
+            for _ in range(5)
+        ])
+
+    results = asyncio.run(runner())
+    assert all(r == {"price": 100.0, "currency": "USD", "as_of": "t0"} for r in results)

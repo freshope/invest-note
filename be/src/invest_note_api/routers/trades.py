@@ -59,14 +59,21 @@ from invest_note_api.domain.trade_import import (
     trade_to_signature,
 )
 from invest_note_api.domain.trade_types import (
+    CURRENCY_KRW,
     DEFAULT_COUNTRY,
     MARKET_TYPE_STOCK,
     TRADE_TYPE_BUY,
     TRADE_TYPE_SELL,
     Trade,
+    currency_for_country,
 )
 from invest_note_api.errors import ERR_TRADE_NOT_FOUND, APIError
-from invest_note_api.schemas.trade import TradeBulkDeleteRequest, TradeCreate, TradeUpdate
+from invest_note_api.schemas.trade import (
+    TradeBulkDeleteRequest,
+    TradeCreate,
+    TradeUpdate,
+    exchange_rate_error,
+)
 from invest_note_api.schemas.trade_import import (
     ImportCommitRequest,
     ImportCommitResponse,
@@ -327,6 +334,7 @@ async def create_trade(
             "tax": data.tax,
             "country_code": data.country_code or DEFAULT_COUNTRY,
             "exchange": data.exchange or "",
+            "exchange_rate": data.exchange_rate,
         })
 
         fresh_trades = [*group_trades, new_trade.model_copy(update={"id": row["id"]})]
@@ -420,6 +428,15 @@ async def update_trade(
         patch, fields = strip_sell_auto_derived(patch, fields, existing.trade_type)
         if not patch:
             return Response(status_code=204)
+
+        # TradeUpdate 에는 country_code 가 없어 스키마 validator 로 검증 불가.
+        # existing.country_code 기준으로 create 와 대칭 가드(exchange_rate_error 공유).
+        # patch 에 exchange_rate 미포함이면 .get→None 이라 자동 skip(기존 환율 유지).
+        patch_rate = patch.get("exchange_rate")
+        if patch_rate is not None:
+            rate_err = exchange_rate_error(existing.country_code, patch_rate)
+            if rate_err:
+                raise APIError(rate_err, 400)
 
         if fields & PNL_AFFECTING_FIELDS:
             key = trade_to_group_key(existing)
@@ -841,6 +858,16 @@ async def import_commit(
                     skipped_count += 1
                     continue
 
+                # 방어 가드: import 경로는 create 의 _foreign_requires_exchange_rate validator 를
+                # 우회한다. 현재 staging 은 country_code=KR 하드코딩이라 가드가 발동하지 않지만,
+                # Phase C(해외 import) 추가 시 exchange_rate(미설정→DB default 1.0) 누락이 조용히
+                # 통과해 해외 원가가 왜곡되는 것을 막는다. 해외 import 도입 시 이 가드가 강제로
+                # exchange_rate 처리를 재검토하게 한다. KR 하드코딩 전제를 코드로 못박는다.
+                if currency_for_country(row["country_code"]) != CURRENCY_KRW:
+                    raise APIError(
+                        "해외(비-KRW) 거래 import 는 거래 시점 환율(exchange_rate)이 필요합니다.",
+                        400,
+                    )
                 insert_row = {
                     "account_id": str(body.account_id),
                     "asset_name": row["asset_name"],

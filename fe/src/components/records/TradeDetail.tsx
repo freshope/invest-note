@@ -18,7 +18,7 @@ import { ChevronLeftIcon } from "lucide-react";
 import { CompactRow } from "./trade-display";
 import { STRATEGY_LABELS, EMOTION_LABELS, REASONING_TAG_LABELS, TRADE_TYPE } from "@/lib/constants/trading";
 import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
-import { fmt } from "@/lib/format";
+import { currencyForCountry, formatMoney } from "@/lib/format";
 import { TradeStrategyResultSection } from "./TradeStrategyResultSection";
 import { SellResultSection } from "./SellResultSection";
 
@@ -75,11 +75,12 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
     : null;
 
   const tradedDate = formatTradedAtLabel(trade.traded_at);
+  const tradeCurrency = currencyForCountry(trade.country_code ?? DEFAULT_COUNTRY_CODE);
   const priceNum = Number(trade.price);
   const quantity = Number(trade.quantity);
   const totalAmountNum = Number(trade.total_amount);
-  const commission = fmt(Number(trade.commission));
-  const tax = fmt(Number(trade.tax));
+  const commission = formatMoney(Number(trade.commission), tradeCurrency);
+  const tax = formatMoney(Number(trade.tax), tradeCurrency);
 
   return (
     <div className="h-[100dvh] flex flex-col overflow-hidden">
@@ -121,8 +122,8 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
             <CompactRow label="계좌">
               {trade.account ? <AccountChip account={trade.account} size="md" /> : "-"}
             </CompactRow>
-            <CompactRow label="수수료">{commission}원</CompactRow>
-            {!isBuy && <CompactRow label="제세금">{tax}원</CompactRow>}
+            <CompactRow label="수수료">{commission}</CompactRow>
+            {!isBuy && <CompactRow label="제세금">{tax}</CompactRow>}
           </div>
         </div>
 

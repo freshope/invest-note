@@ -1,11 +1,18 @@
 import { memo, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { calcChangePercent, fmt, formatPctSigned, formatPnL, signColor } from "@/lib/format";
+import {
+  calcChangePercent,
+  fmt,
+  formatMoney,
+  formatPctSigned,
+  formatPnLCurrency,
+  signColor,
+} from "@/lib/format";
 import type { Position } from "@/lib/portfolio";
 import type { StockMeta } from "@/lib/api-client";
-import { CountryBadge } from "@/components/records/trade-display";
 import { StockMetaBadges } from "@/components/stocks/StockMetaBadges";
+import { MoneyText } from "@/components/shared/MoneyText";
 
 interface HoldingCardProps {
   position: Position;
@@ -22,10 +29,14 @@ export const HoldingCard = memo(function HoldingCard({ position, meta, onPress }
     assetName,
     ticker,
     country,
+    exchange,
+    currency,
     holdingQuantity,
     avgBuyPrice,
+    avgBuyPriceNative,
     currentPrice,
     evaluation,
+    evaluationNative,
     unrealizedPnL,
     lastNote,
   } = position;
@@ -33,8 +44,13 @@ export const HoldingCard = memo(function HoldingCard({ position, meta, onPress }
   const hasMultipleLines = lastNote?.includes("\n") ?? false;
   const firstLine = lastNote?.split("\n")[0] ?? "";
 
+  const isForeign = currency !== "KRW";
+
+  // 등락률은 native 시세(currentPrice) vs native 평단(avgBuyPriceNative) — 환율 영향 배제.
   const priceChangePct =
-    currentPrice !== null && avgBuyPrice > 0 ? calcChangePercent(currentPrice, avgBuyPrice) : null;
+    currentPrice !== null && avgBuyPriceNative > 0
+      ? calcChangePercent(currentPrice, avgBuyPriceNative)
+      : null;
 
   return (
     <div
@@ -58,14 +74,14 @@ export const HoldingCard = memo(function HoldingCard({ position, meta, onPress }
       {/* 헤더 */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="flex items-baseline gap-1.5 min-w-0">
-            <span className="text-[16px] font-bold text-foreground truncate">{assetName}</span>
-            <span className="shrink-0 text-[12px] font-mono text-muted-foreground">{ticker}</span>
-          </div>
+          <p className="min-w-0 break-words text-[16px] font-bold text-foreground">
+            {assetName}{" "}
+            <span className="text-[12px] font-mono font-normal text-muted-foreground">{ticker}</span>
+          </p>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            <CountryBadge countryCode={country} />
             <StockMetaBadges
-              market={meta?.market}
+              countryCode={country}
+              market={exchange || meta?.market}
               rank={meta?.marcap_rank}
               nps={meta?.nps_holding}
               npsAsOf={meta?.nps_as_of}
@@ -73,10 +89,19 @@ export const HoldingCard = memo(function HoldingCard({ position, meta, onPress }
           </div>
         </div>
 
-        {/* 평가금액 */}
+        {/* 평가금액 — 원화 primary, 해외는 달러 보조 병기 */}
         <div className="text-right shrink-0">
           <p className="text-[16px] font-bold tabular-nums text-foreground">
-            {evaluation !== null ? `${fmt(evaluation)}원` : "-"}
+            {evaluation !== null ? (
+              <MoneyText
+                krw={evaluation}
+                native={evaluationNative}
+                currency={currency}
+                nativeClassName="text-[12px]"
+              />
+            ) : (
+              "-"
+            )}
           </p>
           {unrealizedPnL !== null && (
             <p
@@ -85,13 +110,13 @@ export const HoldingCard = memo(function HoldingCard({ position, meta, onPress }
                 signColor(unrealizedPnL, "muted"),
               )}
             >
-              {formatPnL(unrealizedPnL)}
+              {formatPnLCurrency(unrealizedPnL, "KRW")}
             </p>
           )}
         </div>
       </div>
 
-      {/* 수치 행 */}
+      {/* 수치 행 — 현재가/매수단가는 native 통화(비교 가능). 평가/손익은 위 KRW. */}
       <div className="grid grid-cols-3 gap-2 text-center">
         <div>
           <p className="text-[10px] text-muted-foreground mb-0.5">현재가</p>
@@ -101,7 +126,11 @@ export const HoldingCard = memo(function HoldingCard({ position, meta, onPress }
               priceChangePct !== null && signColor(priceChangePct, "none"),
             )}
           >
-            {currentPrice !== null ? `${fmt(currentPrice)}` : "-"}
+            {currentPrice !== null
+              ? isForeign
+                ? formatMoney(currentPrice, currency)
+                : fmt(currentPrice)
+              : "-"}
           </p>
           {priceChangePct !== null && (
             <p
@@ -117,7 +146,7 @@ export const HoldingCard = memo(function HoldingCard({ position, meta, onPress }
         <div>
           <p className="text-[10px] text-muted-foreground mb-0.5">매수단가</p>
           <p className="text-[13px] font-semibold tabular-nums text-foreground">
-            {fmt(Math.round(avgBuyPrice))}
+            {isForeign ? formatMoney(avgBuyPriceNative, currency) : fmt(Math.round(avgBuyPrice))}
           </p>
         </div>
         <div>

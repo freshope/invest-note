@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import dynamic from "next/dynamic";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/base/Tabs";
 import { calcPercent, fmtCompact } from "@/lib/format";
+import { buildStockAllocation } from "@/lib/portfolio";
 import type { Position, AccountSnapshot } from "@/lib/portfolio";
 import type { DonutEntry } from "./AllocationPieChart";
 
@@ -75,22 +76,11 @@ interface AllocationTabsProps {
 }
 
 export function AllocationTabs({ positions, snapshots }: AllocationTabsProps) {
-  const posData = useMemo<DonutEntry[]>(() => {
-    const withEval = positions.filter((p) => (p.evaluation ?? 0) > 0);
-    const cashTotal = snapshots.reduce((s, x) => s + x.cashBalance, 0);
-    if (withEval.length === 0 && cashTotal === 0) return [];
-    const sorted = [...withEval].sort((a, b) => (b.evaluation ?? 0) - (a.evaluation ?? 0));
-    const top = sorted.slice(0, 7);
-    const rest = sorted.slice(7);
-    const out: DonutEntry[] = top.map((p) => ({ name: p.assetName, value: p.evaluation ?? 0 }));
-    if (rest.length > 0) {
-      out.push({ name: "기타", value: rest.reduce((s, p) => s + (p.evaluation ?? 0), 0) });
-    }
-    if (cashTotal > 0) {
-      out.push({ name: "예수금", value: cashTotal, color: "var(--muted-foreground)" });
-    }
-    return out;
-  }, [positions, snapshots]);
+  // evaluation 은 이미 KRW(merge 단계 환산)이므로 그대로 비중 계산.
+  const posData = useMemo<DonutEntry[]>(
+    () => buildStockAllocation(positions, snapshots),
+    [positions, snapshots],
+  );
 
   const posTotal = useMemo(() => posData.reduce((s, d) => s + d.value, 0), [posData]);
 

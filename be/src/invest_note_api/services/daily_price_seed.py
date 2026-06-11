@@ -8,6 +8,7 @@ fetch 유틸(`_get_with_retry`/`_extract_items`/`_basdt_to_date`)은 stock_seed.
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
@@ -16,9 +17,15 @@ import httpx
 
 from invest_note_api.db_ops import daily_prices_repo
 from invest_note_api.domain.asset_history import LOOKBACK_DAYS
-from invest_note_api.external.constants import KIS_DAILY_CHART_PATH, USER_AGENT
+from invest_note_api.domain.trade_utils import KST
+from invest_note_api.external.constants import (
+    KIS_DAILY_CHART_PATH,
+    USER_AGENT,
+    YAHOO_CHART_RANGE_URL,
+)
 from invest_note_api.external.kis import kis_get
 from invest_note_api.external.provider_registry import resolve_chain
+from invest_note_api.external.quotes import _to_yahoo_us_symbol
 from invest_note_api.services.stock_seed import (
     _DATA_GO_KR_TIMEOUT,
     _basdt_to_date,
@@ -42,6 +49,10 @@ _ETN_PRICE_URL = f"{_SECURITIES_PRODUCT_BASE}/getETNPriceInfo"
 # 주식/ETF 동일 경로(KR 전용). item 키: localDate(YYYYMMDD), closePrice(float).
 _NAVER_DAILY_CHART_URL = "https://api.stock.naver.com/chart/domestic/item/{code}/day"
 _PAGE_SIZE = 1000
+# US 티커가 Yahoo chart URL 경로에 그대로 들어가므로 `/`·`?`·`#` 조작(trust-boundary)을 막는
+# 화이트리스트(quotes._US_TICKER_PATTERN 과 동일 규칙, `$`=우선주 포함). 불일치는 fetch 실패
+# 계약대로 raise. 검증은 변환 전 원본 ticker 에 적용한다.
+_US_TICKER_PATTERN = re.compile(r"[A-Za-z0-9.$\-]{1,20}")
 # data.go.kr 동시 호출 상한(게이트웨이 429 가드). stock_seed._NAVER_CONCURRENCY 선례.
 _BACKFILL_CONCURRENCY = 8
 # 어제까지 조회 완료(빈 응답 포함)한 종목의 재probe 쿨다운. 짧으면 늦은 발행(T+1 ~14:00 KST)을
@@ -236,6 +247,114 @@ async def fetch_kis_daily_closes(
     return rows
 
 
+def _us_final_close_cutoff(now_kst: datetime) -> date:
+    """now_kst 기준 "종가가 확정된 마지막 US 거래일(KST date)".
+
+    Yahoo chart v8 일봉의 마지막 캔들은 진행 중 세션(close=현재가)이고, 그 timestamp(개장
+    09:30 ET)의 KST 날짜는 같은 날 D 다. 한국 사용자가 D+1 새벽(미장 진행 중)에 열면 장중가가
+    D 종가로 박제되고 watermark 가 전진해 영구히 재수집되지 않는다.
+
+    US 정규장 마감(16:00 ET)은 KST 익일 05:00(서머타임)/06:00(겨울). 버퍼 포함해 "캔들 날짜
+    D 는 now_kst >= D+1일 07:00 KST 일 때만 확정"으로 보수적으로 둔다 →
+    `(now_kst - 7h).date() - 1일`. 예: now=D+1 02:00 → (D+1 02:00 - 7h).date() = D-1 → cutoff
+    = D-1(=D 미확정), now=D+1 08:00 → (D+1 08:00 - 7h).date() = D+1 → cutoff = D(=D 확정).
+    """
+    return (now_kst - timedelta(hours=7)).date() - timedelta(days=1)
+
+
+def _parse_yahoo_us_chart(
+    data: dict, ticker: str, begin: date, end: date, *, cutoff: date
+) -> list[dict]:
+    """Yahoo chart v8 result → [{ticker, close_date, close_price}] (US 일별 종가).
+
+    quote 파서(_parse_yahoo_chart_price)는 meta.regularMarketPrice 1점만 읽지만, 일별은
+    result[0].timestamp[] + indicators.quote[0].close[] 시계열을 zip 한다.
+    - epoch(UTC sec) → KST 기준 close_date(date) 정규화(기존 KR 경로와 동일 date 형식).
+    - null close 는 skip(휴장/미체결 캔들).
+    - 범위 밖 행 가드: begin~min(end, cutoff) 밖(경계일 라이브/미확정 캔들 등)은 제외.
+    - US 티커는 bare(suffix 없음) — KR srtnCd 정규화(_normalize_ticker)를 거치지 않는다.
+    """
+    upper = min(end, cutoff)
+    result = (data.get("chart") or {}).get("result") or []
+    if not result:
+        return []
+    res0 = result[0] or {}
+    timestamps = res0.get("timestamp") or []
+    quote = ((res0.get("indicators") or {}).get("quote") or [])
+    if not timestamps or not quote:
+        return []
+    closes = quote[0].get("close") or []
+    rows: list[dict] = []
+    for ts, raw in zip(timestamps, closes):
+        if raw is None or not isinstance(ts, (int, float)):
+            continue
+        close_date = datetime.fromtimestamp(ts, KST).date()
+        try:
+            close_price = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if begin <= close_date <= upper:
+            rows.append(
+                {"ticker": ticker, "close_date": close_date, "close_price": close_price}
+            )
+    return rows
+
+
+async def _fetch_yahoo_us_closes(
+    client: httpx.AsyncClient, ticker: str, begin: date, end: date
+) -> list[dict]:
+    """Yahoo chart v8 에서 US 종목 [begin, end] 일별 종가 수집.
+
+    bare 티커 사용(KR 의 .KS/.KQ suffix 와 다름). period1/period2(UTC epoch sec)로 구간
+    지정 — period2 는 end 다음날 자정으로 둬 end 당일 캔들을 포함시킨다(경계 inclusive).
+    cutoff(=장 마감 확정일) 초과 캔들은 _parse_yahoo_us_chart 가 제외해 장중 라이브가가 박제되지
+    않게 한다(now_kst 는 테스트 patch 가능하도록 모듈 전역 datetime.now 경유).
+    반환 형태는 fetch_daily_closes/fetch_kis_daily_closes 와 동일: [{ticker, close_date, close_price}].
+
+    실패와 진짜 빈 범위를 구분한다:
+    - 전송 실패(예외)·비200(raise_for_status)은 **raise 전파** → backfill 이 sync_state 미기록.
+    - 정상 200 + 범위 내 확정 캔들 없음(주말/휴장, cutoff 필터로 전부 제외)은 `[]` 반환.
+
+    ticker 가 화이트리스트(_US_TICKER_PATTERN)에 불일치하면 URL 경로 조작 방지를 위해 raise —
+    fetch 실패 계약과 일관(backfill 이 sync_state 미기록 → 다음 요청 재시도).
+    """
+    if not _US_TICKER_PATTERN.fullmatch(ticker):
+        raise ValueError(f"US ticker 형식 위반: {ticker!r}")
+    # period1=begin 00:00 UTC, period2=end+1일 00:00 UTC(end 당일 캔들 포함).
+    period1 = int(datetime(begin.year, begin.month, begin.day, tzinfo=timezone.utc).timestamp())
+    period2 = int(
+        (
+            datetime(end.year, end.month, end.day, tzinfo=timezone.utc) + timedelta(days=1)
+        ).timestamp()
+    )
+    cutoff = _us_final_close_cutoff(datetime.now(KST))
+    res = await client.get(
+        YAHOO_CHART_RANGE_URL.format(symbol=_to_yahoo_us_symbol(ticker)),
+        params={"interval": "1d", "period1": period1, "period2": period2},
+    )
+    res.raise_for_status()  # 비200 → raise 전파(전송 실패도 await 에서 raise).
+    return _parse_yahoo_us_chart(res.json(), ticker, begin, end, cutoff=cutoff)
+
+
+async def _fetch_yahoo_us_primary(
+    api_key: str,
+    ticker: str,
+    begin: date,
+    end: date,
+    *,
+    market: str | None,
+    client: httpx.AsyncClient,
+) -> list[dict]:
+    """US primary 공급자 — api_key(data.go.kr 전용)·market 미사용. bare 티커 그대로.
+
+    `_fetch_yahoo_us_closes` 는 전송 실패/비200 을 raise 로 전파(→ backfill 이 sync_state 미기록
+    → 다음 요청 재시도)하고, 정상 200 의 빈 범위(주말/휴장, cutoff 로 전부 제외)는 [] 를 돌려준다.
+    빈 결과를 실패로 승격하면 주말마다 US 종목 수만큼 Yahoo 재호출이 폭주하므로 rows 를 그대로
+    반환한다 — KR data.go.kr 가 빈 응답도 synced 처리하는 것과 대칭.
+    """
+    return await _fetch_yahoo_us_closes(client, ticker, begin, end)
+
+
 async def _fetch_data_go_kr_closes(
     api_key: str,
     ticker: str,
@@ -278,13 +397,18 @@ async def _fetch_kis_gap_closes(
     return await fetch_kis_daily_closes(client, ticker, begin, end)
 
 
-# 공급자 registry — 새 공급자 추가 시 여기 등록하면 env 변경만으로 전환 가능.
+# 공급자 registry(KR) — 새 공급자 추가 시 여기 등록하면 env 변경만으로 전환 가능.
 _PRIMARY_REGISTRY = {"data_go_kr": _fetch_data_go_kr_closes, "kis": _fetch_kis_primary_closes}
 _GAP_REGISTRY = {"naver": _fetch_naver_gap_closes, "kis": _fetch_kis_gap_closes}
+# 해외(US) primary registry — 현재 yahoo 단일이지만 KR 과 동일한 registry/env 구조로 통일.
+# US 는 Yahoo range 가 [begin, end] 전체를 한 번에 주므로 T+1 tail-gap 개념이 없어 gap 공급자 없음.
+_US_PRIMARY_REGISTRY = {"yahoo": _fetch_yahoo_us_primary}
 
 
-def validate_daily_price_providers(primary: str, gap: str) -> None:
-    """env DAILY_PRICE_PROVIDER/DAILY_PRICE_GAP_PROVIDER 오타를 앱 startup 에서 fail-fast.
+def validate_daily_price_providers(
+    primary: str, gap: str, us_primary: str = "yahoo"
+) -> None:
+    """env DAILY_PRICE_PROVIDER/DAILY_PRICE_GAP_PROVIDER/US_DAILY_PRICE_PROVIDER fail-fast.
 
     backfill_closes 는 GET /assets/history 요청 경로에서 호출되므로, 오타를 호출 시점
     ValueError 로 두면 사용자 대면 500 이 반복된다. gap 은 비활성 값("", "none") 허용.
@@ -292,6 +416,7 @@ def validate_daily_price_providers(primary: str, gap: str) -> None:
     resolve_chain([primary], _PRIMARY_REGISTRY, domain="daily_price")
     if gap not in _GAP_DISABLED:
         resolve_chain([gap], _GAP_REGISTRY, domain="daily_price_gap")
+    resolve_chain([us_primary], _US_PRIMARY_REGISTRY, domain="us_daily_price")
 
 
 async def backfill_closes(
@@ -302,14 +427,15 @@ async def backfill_closes(
     today: date,
     *,
     country_code: str = "KR",
-    primary_provider: str = "data_go_kr",
+    primary_provider: str | None = None,
     gap_provider: str = "naver",
 ) -> bool:
     """종목별 결측 구간(watermark 이후~어제)만 fetch→upsert. 종목 fetch 는 병렬.
 
-    `primary_provider`/`gap_provider` 는 env(DAILY_PRICE_PROVIDER/DAILY_PRICE_GAP_PROVIDER)에서
-    호출측이 전달 — 내부에서 get_settings() 를 읽지 않는다. gap_provider 가 "none"/빈 값이면
-    tail-gap 보충 비활성.
+    `primary_provider`/`gap_provider` 는 env(DAILY_PRICE_PROVIDER/US_DAILY_PRICE_PROVIDER/
+    DAILY_PRICE_GAP_PROVIDER)에서 호출측이 전달 — 내부에서 get_settings() 를 읽지 않는다.
+    `primary_provider=None`(미전달)이면 country 별 기본값(KR=data_go_kr, US=yahoo)을 쓴다.
+    gap_provider 가 "none"/빈 값이거나 country=US 면 tail-gap 보충 비활성.
 
     skip 규칙(종목별):
       - begin = max(earliest, watermark+1일). watermark = 적재된 실데이터 max(close_date).
@@ -333,20 +459,41 @@ async def backfill_closes(
 
     반환: incomplete (하나라도 fetch 실패해 결측 가능 시 True).
     """
-    if not tickers or not api_key:
-        return bool(tickers) and not api_key  # 키 없으면 적재 불가 → 종목 있으면 incomplete
+    if not tickers:
+        return False
+    # US 는 data.go.kr api_key 불필요(Yahoo primary) → 키 가드를 KR 에만 적용.
+    if country_code != "US" and not api_key:
+        return True  # 키 없으면 적재 불가 → 종목 있으면 incomplete
 
-    # 공급자 해석 — unknown 이름은 ValueError(fail-fast). gap 은 비활성 값 허용.
-    primary_fetch = resolve_chain([primary_provider], _PRIMARY_REGISTRY, domain="daily_price")[0]
-    gap_fetch = (
-        None
-        if gap_provider in _GAP_DISABLED
-        else resolve_chain([gap_provider], _GAP_REGISTRY, domain="daily_price_gap")[0]
-    )
+    # 공급자 해석 — country 별 registry 에서 primary_provider 를 해석(unknown 이면 ValueError
+    # fail-fast). US 는 T+1 tail-gap 개념이 없어 gap 없음(gap_provider 무시). KR 등은 gap
+    # 비활성 값("", "none") 허용. 호출측(라우터)이 country 에 맞는 provider 를 넘긴다.
+    if country_code == "US":
+        primary_fetch = resolve_chain(
+            [primary_provider or "yahoo"], _US_PRIMARY_REGISTRY, domain="us_daily_price"
+        )[0]
+        gap_fetch = None
+    else:
+        primary_fetch = resolve_chain(
+            [primary_provider or "data_go_kr"], _PRIMARY_REGISTRY, domain="daily_price"
+        )[0]
+        gap_fetch = (
+            None
+            if gap_provider in _GAP_DISABLED
+            else resolve_chain([gap_provider], _GAP_REGISTRY, domain="daily_price_gap")[0]
+        )
 
     yesterday = today - timedelta(days=1)
     if earliest > yesterday:
         return False  # 적재 대상 과거 구간 없음(오늘만 관심).
+
+    # US 는 새벽 시간대에 yesterday 가 아직 미확정(장 마감 전)이라 cutoff 로 클램프한다 —
+    # checked_through 를 yesterday 로 박으면 cooldown 동안 확정 종가 적재가 늦어진다.
+    # KR 은 무변경(checked_through = yesterday).
+    if country_code == "US":
+        checked_through = min(yesterday, _us_final_close_cutoff(datetime.now(KST)))
+    else:
+        checked_through = yesterday
 
     # 1) DB 순차 — 상태 일괄 조회.
     watermarks = await daily_prices_repo.get_watermarks(
@@ -433,7 +580,7 @@ async def backfill_closes(
             continue
         all_rows.extend(rows)
         if synced:
-            state_rows.append({"ticker": ticker, "checked_through_date": yesterday})
+            state_rows.append({"ticker": ticker, "checked_through_date": checked_through})
         else:
             incomplete = True  # 네이버 보충 실패 — 어제 점 결측 가능.
     if all_rows:
@@ -465,34 +612,44 @@ async def seed_daily_prices(
     api_key: str,
     primary_provider: str = "data_go_kr",
     gap_provider: str = "naver",
+    us_primary_provider: str = "yahoo",
 ) -> None:
     """전체 유저 보유종목 union 의 2년치 종가를 사전 적재(cron pre-warm).
 
     콜드스타트 백필 지연 완화용. seed_stocks 와 동일하게 자체 asyncpg.connect 로 동작한다 —
     backfill 이 data.go.kr 를 길게 호출하므로 요청 풀을 차용하지 않는다(풀 고갈 방지).
     trades 는 RLS 가 걸려있으나 service-role connect 는 RLS 를 우회하므로 전체 유저 종목을 본다.
+
+    country 별로 분리해 각 파이프라인으로 적재한다 — US 는 Yahoo, 그 외는 data.go.kr.
+    (분리 없이 전부 KR 로 태우면 US 티커가 data.go.kr 에서 빈 결과로 재시도 예산만 소모하고
+    US 종가는 영영 pre-warm 되지 않는다. 요청 경로 assets.py 와 동일하게 country 단위로 분기.)
     """
     today = date.today()
     earliest = today - timedelta(days=LOOKBACK_DAYS)
     conn = await asyncpg.connect(db_url, statement_cache_size=0)
     try:
         rows = await conn.fetch(
-            "select distinct ticker_symbol from trades "
+            "select distinct ticker_symbol, "
+            "coalesce(nullif(country_code, ''), 'KR') as country from trades "
             "where ticker_symbol is not null and ticker_symbol <> ''"
         )
-        tickers = [r["ticker_symbol"] for r in rows]
-        if not tickers:
-            return
-        await backfill_closes(
-            conn,
-            api_key,
-            tickers,
-            earliest,
-            today,
-            primary_provider=primary_provider,
-            gap_provider=gap_provider,
-        )
-        # 2년 윈도우 유지 — 오래된 종가 정리.
-        await prune_older_than(conn, earliest)
+        by_country: dict[str, list[str]] = {}
+        for r in rows:
+            by_country.setdefault(r["country"], []).append(r["ticker_symbol"])
+        for country, tickers in by_country.items():
+            await backfill_closes(
+                conn,
+                api_key,
+                tickers,
+                earliest,
+                today,
+                country_code=country,
+                primary_provider=(
+                    us_primary_provider if country == "US" else primary_provider
+                ),
+                gap_provider=gap_provider,
+            )
+            # 2년 윈도우 유지 — country 별 오래된 종가 정리.
+            await prune_older_than(conn, earliest, country_code=country)
     finally:
         await conn.close()

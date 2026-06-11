@@ -38,7 +38,7 @@ export function DashboardTitle({ totals }: DashboardProps) {
   );
 }
 
-export function DashboardBody({ totals }: DashboardProps) {
+export function DashboardBody({ totals, fxBasis }: DashboardProps & { fxBasis?: string | null }) {
   const {
     totalUnrealizedPnL,
     totalRealizedPnL,
@@ -55,10 +55,17 @@ export function DashboardBody({ totals }: DashboardProps) {
         <StatCard label="이달 확정" value={<PnLText value={monthRealizedPnL} />} />
       </div>
 
-      {monthTradeCount > 0 && (
-        <p className="text-[12px] text-muted-foreground">
-          이번 달 거래 <span className="font-semibold text-foreground">{monthTradeCount}건</span>
-        </p>
+      {(monthTradeCount > 0 || fxBasis) && (
+        <div className="flex items-center justify-between gap-2 text-[12px] text-muted-foreground tabular-nums">
+          {monthTradeCount > 0 ? (
+            <span>
+              이번 달 거래 <span className="font-semibold text-foreground">{monthTradeCount}건</span>
+            </span>
+          ) : (
+            <span />
+          )}
+          {fxBasis && <span>{fxBasis}</span>}
+        </div>
       )}
 
       <MissingQuoteBadge tickers={missingQuoteTickers} />
