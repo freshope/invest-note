@@ -26,6 +26,7 @@ from invest_note_api.domain.trade_types import (
     to_krw,
     trade_country,
 )
+from invest_note_api.domain.portfolio import build_positions
 from invest_note_api.domain.trade_utils import position_key, to_kst
 from invest_note_api.domain.trade_walker import walk_trades
 
@@ -205,6 +206,20 @@ def compute_asset_history(
     stock_gid = next(iter(steps), None) if is_stock_view else None
     per_day_close_qty: dict[date, tuple[float | None, float]] = {}
 
+    # 첫 점(=가장 오래된 거래일)의 전일대비 기준값 = 그날 보유분의 매수 원금(cost_basis, KRW).
+    # 직전 점이 없어 0 으로 두던 것을 '구매가 대비 그날 종가'(= value - cost)로 표시하기 위함.
+    # gid→cost_basis(KRW, 거래시점 환율 박제) 맵을 그날 시점 보유로 구해, 아래 value 산입과
+    # 같은 gid 만 누적(통화 미상으로 value 에서 빠진 종목의 cost 도 함께 빠져 정합 유지).
+    first_day = days[0] if days else None
+    cost_by_gid: dict[str, float] = {}
+    if first_day is not None:
+        asof_trades = [t for t in trades if _trade_kst_date(t) <= first_day]
+        asof_positions, _ = build_positions(asof_trades)
+        cost_by_gid = {
+            p.key: p.cost_basis for p in asof_positions if p.holding_quantity > 0
+        }
+    first_baseline = 0.0
+
     for d in days:
         total = 0.0
         for gid, gid_steps in steps.items():
@@ -235,15 +250,19 @@ def compute_asset_history(
                     per_day_close_qty[d] = (price, qty)  # close 는 native 유지(D4 안내용).
                 continue
             total += value_krw
+            if d == first_day:
+                # 매칭 cost 없으면 value_krw 폴백 → 그 gid 의 change 기여 0(기존 동작 보존).
+                first_baseline += cost_by_gid.get(gid, value_krw)
             if is_stock_view and gid == stock_gid:
                 per_day_close_qty[d] = (price, qty)  # close 는 native 통화 유지.
         series.append({"date": d.isoformat(), "value": total})
 
-    # items: 동일 날짜집합 역순(최신 먼저). change = 직전 거래일 대비 value 차(첫 항목 0).
+    # items: 동일 날짜집합 역순(최신 먼저). change = 직전 거래일 대비 value 차.
+    # 첫 항목(i==0)은 직전 점이 없어 매수 원금(first_baseline)을 기준으로 → change = 당일종가 - 구매가.
     items: list[dict] = []
     for i, point in enumerate(series):
-        prev_value = series[i - 1]["value"] if i > 0 else point["value"]
-        change = point["value"] - prev_value  # i==0 이면 0.
+        prev_value = series[i - 1]["value"] if i > 0 else first_baseline
+        change = point["value"] - prev_value
         item: dict = {
             "date": point["date"],
             "value": point["value"],

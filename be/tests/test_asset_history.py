@@ -80,7 +80,8 @@ def test_single_stock_qty_times_close():
     assert res.items[0]["change"] == 10 * 77000 - 10 * 75000
     assert res.items[0]["close"] == 77000.0
     assert res.items[0]["qty"] == 10.0
-    assert res.items[1]["change"] == 0  # 첫 항목(=가장 오래된).
+    # 첫 항목(=가장 오래된, 매수일) change = 당일 종가 - 구매가 = (75000-70000)×10.
+    assert res.items[1]["change"] == (75000 - 70000) * 10
     assert res.incomplete is False
 
 
@@ -163,6 +164,31 @@ def test_account_view_two_tickers_summed_per_ticker():
     # 계좌뷰 items 에는 close/qty 없음.
     assert "close" not in res.items[0]
     assert "qty" not in res.items[0]
+
+
+def test_first_day_change_is_value_minus_cost_basis():
+    """첫 거래일 change = 그날 자산 - 그날 보유분 매수 원금(0 대신 '구매가 대비 종가').
+
+    계좌뷰 합산도 동일 — 첫날 보유 종목들의 cost_basis 합을 기준으로 한다.
+    """
+    trades = [
+        make_trade(id="kb", ticker_symbol="005930", asset_name="삼성전자",
+                   quantity=10, price=70000.0, traded_at=_dt("2025-06-02T09:00:00+09:00")),
+        make_trade(id="hb", ticker_symbol="000660", asset_name="하이닉스",
+                   quantity=2, price=180000.0, traded_at=_dt("2025-06-02T09:00:00+09:00")),
+    ]
+    closes = [
+        _close("005930", "2025-06-02", 75000),
+        _close("000660", "2025-06-02", 190000),
+    ]
+    today = date(2025, 6, 2)
+    res = compute_asset_history(
+        trades, closes, live_quotes={"005930:KR": 75000.0, "000660:KR": 190000.0},
+        today=today, is_stock_view=False,
+    )
+    # 첫(유일) 거래일 = 매수일. change = (75000-70000)×10 + (190000-180000)×2.
+    expected = (75000 - 70000) * 10 + (190000 - 180000) * 2
+    assert res.items[0]["change"] == expected
 
 
 def test_past_day_missing_close_excluded_and_incomplete():
