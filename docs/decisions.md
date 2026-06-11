@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-06-11 | 안내문구 노출 — 중립=Info 아이콘+바텀시트, 경고/에러=인라인 유지 (공유 InfoHintSheet)
+
+- **맥락:** 자산추이 헤더가 금액/날짜 아래에 중립 설명(예수금 제외·환율 환산 기준)을 항상 인라인으로 깔아 시각적 잡음. 아이콘+바텀시트로 정리하면서 "안내문구를 전부 숨길지"가 쟁점 — 자산추이 문구는 성격이 둘로 갈린다.
+- **결정:**
+  - ① **중립 설명만 아이콘 뒤로, 경고/에러는 인라인 유지.** 중립(예수금 제외·환율 환산 기준 — 숫자는 정상, "이런 의미예요")은 금액/날짜 우측 lucide `Info` 아이콘 → `base/Drawer` 바텀시트로 이동. 경고/에러(환율 미상=환산 불가, incomplete=시세 보정값 포함 — 화면 숫자가 빠졌거나 보정됐다는 신호, fall 색)는 인라인 유지.
+  - ② **공유 컴포넌트 `InfoHintSheet`(`components/shared/`) 신설.** `StockMetaBadges` 의 Drawer 패턴을 일반화(`items: {title?, description}[]`). 단 `StockMetaBadges` 의 `stop()`/`display:contents`/오버레이 직접 dismiss 는 *클릭 가능한 카드 안 중첩* 때문에 필요한 것이라, 단독 트리거인 자산추이/홈 헤더엔 복사하지 않음(평범한 Drawer 트리거).
+  - ③ **홈 fxBasis 동일 적용.** 홈의 중립 "환율 … 기준 · 시각"(투명성 표시)도 아이콘+시트로 통일. `HomeDashboard` 가 fxBasis 를 `fxNote`(중립)/`fxWarning`(환율 미상) 으로 분리해 `DashboardBody` 에 전달 — 중립은 시트, 경고는 인라인.
+- **이유:** 경고를 아이콘 뒤로 숨기면 사용자가 "환율 확인 중"이나 이상한 숫자만 보고 이유를 모른다. 요청문("예수금 제외나 환율등")도 액면상 중립 설명만 가리킨다.
+- **트레이드오프:** "다른 곳 동일 적용" 범위를 자산추이 + 홈 중립 fxBasis 로 한정. 홈/분석의 경고류 배지(fxMissing·MissingQuoteBadge=평가액 제외)는 *경고 인라인 유지* 원칙상 시트 대상이 아니라 미적용 — "동일성" 타깃이 생각보다 적음. 홈 fxBasis 는 헤더 금액 우측이 아닌 기존 footer 슬롯 자리에 아이콘을 둠(최소 침습, 총자산 옆 이동 안 함).
+
+---
+
 ## 2026-06-11 | 자산추이 해외(US) KRW 환산을 BE 로 일원화 + spot 일괄
 
 - **맥락:** `/assets/history` 가 `country` 기본값 `'KR'` 로 single-country 스코프라 전체/계좌뷰(ticker=None)가 US 보유를 통째로 제외 — 같은 화면 대시보드 합계(`merge_quotes(usdkrw)` + FE overlay)는 US 포함이라 **두 수치가 어긋남**(code-review finding A). 종목뷰만 FE(`asset-history-convert.ts`+`useFxRate`)가 현재 환율로 부분 환산하던 비대칭 구조.
