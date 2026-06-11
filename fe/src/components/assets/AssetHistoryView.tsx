@@ -15,16 +15,9 @@ import { AssetHistoryChart } from "./AssetHistoryChart";
 import { AssetDailyPnlChart } from "./AssetDailyPnlChart";
 import { AssetHistoryList } from "./AssetHistoryList";
 import { useAssetHistory } from "@/hooks/useAssetHistory";
-import {
-  convertAssetSeries,
-  convertDailySeries,
-  convertInvestedAmount,
-  convertItems,
-} from "./asset-history-convert";
-import { accountsApi, type AssetHistoryPoint, type AssetHistoryItem } from "@/lib/api-client";
+import { accountsApi, type AssetHistoryPoint } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { signColor, formatMoney, formatPnLCurrency, formatFxRate } from "@/lib/format";
-import { useFxRate } from "@/hooks/useFxRate";
 import { PNL_COLORS } from "@/lib/constants/pnl-colors";
 import { cn } from "@/lib/utils";
 
@@ -90,45 +83,33 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
   const title = isStockView ? `${name ?? "종목"} 자산 추이` : "내 자산 추이";
   const showFilter = accounts.length >= 2;
 
-  // US 종목뷰일 때만 자산 추이를 원화로 통일한다(BE series 는 country 스코프 native=USD).
-  // Phase B overlay 철학: BE 무변경, FE 에서 현재 환율로 환산(historical 아님 — 안내 문구로 명시).
-  const isUsStock = isStockView && country === "US";
-  const { usdkrw } = useFxRate(isUsStock);
-  // 환율 미상(USD)이면 환산 불가 — 조용한 USD-as-KRW 금지(아래에서 안내 + 차트/헤더 비표시).
-  const fxBlocked = isUsStock && usdkrw == null;
-  // 차트·헤드라인 입력 통화 일관: US 는 native×현재환율로 KRW 통일, 그 외(KR 종목·계좌뷰)는 그대로.
-  const rate = isUsStock ? usdkrw : null;
+  // BE 가 모든 뷰에서 KRW 환산된 series/items/investedAmount 를 반환(환산 책임 BE 이관).
+  // FE 는 그대로 사용 — 이중환산 금지. close(종목뷰)만 native 통화(USD) 유지.
+  const series = data?.series ?? [];
+  const investedAmount = data?.investedAmount ?? null;
+  const items = data?.items ?? [];
 
-  // BE series(US 는 USD)를 현재 환율로 KRW 환산. KR/계좌뷰는 원본 그대로(환산 헬퍼는 순수 함수).
-  const series = useMemo<AssetHistoryPoint[]>(
-    () => (data ? convertAssetSeries(data.series, rate) : []),
-    [data, rate],
-  );
-
-  const investedAmount = useMemo<number | null>(
-    () => (data ? convertInvestedAmount(data.investedAmount, rate) : null),
-    [data, rate],
-  );
-
-  // 일별 손익 시계열 — items(최신 먼저)의 change 를 날짜 오름차순으로 변환. US 는 KRW 환산.
+  // 일별 손익 시계열 — items(최신 먼저)의 change 를 날짜 오름차순 point 로 변환(이미 KRW).
   const dailySeries = useMemo<AssetHistoryPoint[]>(
-    () => (data ? convertDailySeries(data.items, rate) : []),
-    [data, rate],
+    () => (data ? [...data.items].reverse().map((it) => ({ date: it.date, value: it.change })) : []),
+    [data],
   );
 
-  // 최신 점은 환산된 series/dailySeries 에서 도출 — focus(차트가 통지하는 KRW 점)와 단일 소스 일치.
+  // 환율 미상(usdkrw=null)인데 해외 보유 존재 → BE 가 US 기여 제외. 혼재(KR+US) 뷰는 KR 곡선이
+  // 남아 차트 표시 유지, US-only 스코프(US 종목뷰 / 전 보유 US)는 series 전부 0(일직선)이 되므로
+  // 그것만 차트·표 대신 '환율 불가' 안내. flat-zero 를 직접 감지 → US-only 두 케이스를 한 규칙으로 커버.
+  const fxBlocked =
+    !!data && data.hasForeign && data.usdkrw == null && series.every((p) => p.value === 0);
+
+  // 최신 점은 series/dailySeries 에서 도출 — focus(차트가 통지하는 KRW 점)와 단일 소스 일치.
   const latestPoint = series.length ? series[series.length - 1] : null;
   const latestDaily = dailySeries.length ? dailySeries[dailySeries.length - 1] : null;
   const display = focus ?? (tab === "daily" ? latestDaily : latestPoint);
-  // USD 보조 = KRW / 현재환율(native×rate 의 역). US 종목뷰 + 환율 정상일 때만 병기.
-  const displayNativeUsd = isUsStock && usdkrw != null && display ? display.value / usdkrw : null;
-
-  // 일별 내역 표의 '자산'(value)·'전일대비'(change)는 series/dailySeries 와 동일 데이터라 KRW 통일.
-  // '종가'(close)는 1주당 가격이라 native(USD) 유지(포트폴리오 금액이 아님). 환율 미상이면 원본.
-  const items = useMemo<AssetHistoryItem[]>(
-    () => (data ? convertItems(data.items, rate) : []),
-    [data, rate],
-  );
+  // USD 보조 = KRW / spot(BE usdkrw). US 종목뷰 + 환율 정상일 때만 병기.
+  const displayNativeUsd =
+    isStockView && country === "US" && data?.usdkrw != null && display
+      ? display.value / data.usdkrw
+      : null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -262,9 +243,9 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
                 <p className="text-[11px] text-muted-foreground">
                   자산은 보유 종목 평가액 합계예요(예수금 제외).
                 </p>
-                {isUsStock && usdkrw != null && (
+                {data.usdkrw != null && data.hasForeign && (
                   <p className="text-[11px] text-muted-foreground">
-                    환율 {formatFxRate(usdkrw)} 기준으로 원화 환산했어요(일자별이 아닌 현재 환율 적용).
+                    환율 {formatFxRate(data.usdkrw)} 기준으로 원화 환산했어요(일자별이 아닌 현재 환율 적용).
                   </p>
                 )}
                 {fxBlocked && (
@@ -272,7 +253,9 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
                     환율을 불러오지 못해 원화로 환산할 수 없어요. 잠시 후 다시 시도해 주세요.
                   </p>
                 )}
-                {data.incomplete && (
+                {/* fxBlocked(US-only+환율미상)에선 BE 가 incomplete=true 를 주지만 값이 표시되지 않아
+                    '보정한 값이 포함' 문구가 모순 — fxBlocked 안내로 충분하므로 그때는 숨긴다. */}
+                {data.incomplete && !fxBlocked && (
                   <p className={cn("text-[11px]", PNL_COLORS.fall.text)}>
                     일부 종목 시세를 불러오지 못해 직전 종가로 보정한 값이 포함돼 있어요.
                   </p>

@@ -131,7 +131,12 @@ class TestAssetHistory:
         # camelCase 계약: asOf (NOT as_of).
         assert "asOf" in body
         assert "as_of" not in body
-        assert set(body.keys()) == {"series", "items", "incomplete", "asOf", "investedAmount"}
+        assert set(body.keys()) == {
+            "series", "items", "incomplete", "asOf", "investedAmount", "usdkrw", "hasForeign"
+        }
+        # KR-only 스코프: 해외 보유 없음 → usdkrw 미조회(None), hasForeign=False.
+        assert body["usdkrw"] is None
+        assert body["hasForeign"] is False
         assert body["series"][0] == {"date": "2025-06-02", "value": 10 * 75000}
         # 보유분 매수 원금(cost_basis 합) — 차트 손익 가이드 라인 값.
         assert body["investedAmount"] == 10 * 70000
@@ -185,8 +190,8 @@ class TestAssetHistory:
     def test_account_id_routing(self, trades_client):
         """accountId 가 list_trades_with_account 로 전달되고 ticker 는 None(계좌뷰).
 
-        country 는 계좌뷰에서도 필터한다 — 종가 적재/시세가 country 단위라 타국 보유분이
-        섞이면 값에서 조용히 빠지기 때문(기본 KR).
+        계좌뷰는 country 필터를 push 하지 않는다(country=None) — US/KR 보유를 모두 로드해
+        라우터가 country 별로 분리·KRW 환산한다(finding A: 대시보드 합계와 포함범위 일치).
         """
         captured: dict = {}
 
@@ -205,7 +210,7 @@ class TestAssetHistory:
         assert resp.status_code == 200
         assert captured.get("account_id") == "a1"
         assert captured.get("ticker") is None
-        assert captured.get("country") == "KR"
+        assert captured.get("country") is None
 
     def test_empty_trades_returns_empty_series(self, trades_client):
         conn = FakeConnection([])
@@ -297,6 +302,78 @@ class TestAssetHistory:
 
         assert resp.status_code == 200
         assert resp.json()["investedAmount"] is None
+
+    def test_mixed_kr_us_krw_summed(self, trades_client):
+        """전체뷰 KR+US 혼재: US 를 spot 환산해 같은 KRW 곡선에 합산, hasForeign=True+usdkrw 노출."""
+        kr = _make_trade_row()
+        us = _make_trade_row(
+            id="u1", ticker_symbol="AAPL", asset_name="Apple", country_code="US",
+            price=150.0, total_amount=300.0, quantity=2.0,
+        )
+        kr_closes = [{"ticker": "005930", "close_date": date.fromisoformat("2025-06-02"), "close_price": 70000.0}]
+        us_closes = [{"ticker": "AAPL", "close_date": date.fromisoformat("2025-06-02"), "close_price": 200.0}]
+        # 응답 순서: [0]=trades, [1]=KR get_closes, [2]=US get_closes (backfill 은 mock).
+        conn = FakeConnection([_to_record(kr), _to_record(us)], kr_closes, us_closes)
+
+        async def mock_quotes(state, keys, *, client=None, **kw):
+            return {
+                "005930:KR": {"price": 72000.0, "currency": "KRW", "as_of": ""},
+                "AAPL:US": {"price": 210.0, "currency": "USD", "as_of": ""},
+            }
+
+        async def mock_fx(trades, state, client, *, providers=None, **kw):
+            return 1300.0
+
+        with _patch_assets(conn):
+            with patch("invest_note_api.routers.assets.daily_price_seed.backfill_closes", _no_backfill):
+                with patch("invest_note_api.routers.assets.fetch_quotes_by_keys", mock_quotes):
+                    with patch("invest_note_api.routers.assets.usdkrw_if_foreign", mock_fx):
+                        resp = trades_client.get("/assets/history")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["usdkrw"] == 1300.0
+        assert body["hasForeign"] is True
+        # 오늘 점(라이브): KR 10×72000 + US 2×210×1300.
+        assert body["series"][-1]["value"] == 10 * 72000 + 2 * 210.0 * 1300.0
+        # investedAmount: KR 700000 + US 300×1300.
+        assert body["investedAmount"] == 10 * 70000 + 2 * 150.0 * 1300.0
+
+    def test_usdkrw_none_excludes_us_incomplete(self, trades_client):
+        """usdkrw=None(환율 미상)+US 보유: US 제외 → KR 만 곡선, incomplete=True, hasForeign=True."""
+        kr = _make_trade_row()
+        us = _make_trade_row(
+            id="u1", ticker_symbol="AAPL", asset_name="Apple", country_code="US",
+            price=150.0, total_amount=300.0, quantity=2.0,
+        )
+        kr_closes = [{"ticker": "005930", "close_date": date.fromisoformat("2025-06-02"), "close_price": 70000.0}]
+        us_closes = [{"ticker": "AAPL", "close_date": date.fromisoformat("2025-06-02"), "close_price": 200.0}]
+        conn = FakeConnection([_to_record(kr), _to_record(us)], kr_closes, us_closes)
+
+        async def mock_quotes(state, keys, *, client=None, **kw):
+            return {
+                "005930:KR": {"price": 72000.0, "currency": "KRW", "as_of": ""},
+                "AAPL:US": {"price": 210.0, "currency": "USD", "as_of": ""},
+            }
+
+        async def mock_fx(trades, state, client, *, providers=None, **kw):
+            return None  # 환율 미상.
+
+        with _patch_assets(conn):
+            with patch("invest_note_api.routers.assets.daily_price_seed.backfill_closes", _no_backfill):
+                with patch("invest_note_api.routers.assets.fetch_quotes_by_keys", mock_quotes):
+                    with patch("invest_note_api.routers.assets.usdkrw_if_foreign", mock_fx):
+                        resp = trades_client.get("/assets/history")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["usdkrw"] is None
+        assert body["hasForeign"] is True
+        assert body["incomplete"] is True
+        # US 제외 → KR 만(10×72000).
+        assert body["series"][-1]["value"] == 10 * 72000
+        # investedAmount 도 US 제외 → KR 원금만.
+        assert body["investedAmount"] == 10 * 70000
 
     def test_401_without_auth(self, auth_client):
         resp = auth_client.get("/assets/history")

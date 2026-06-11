@@ -1,311 +1,169 @@
-# Spec: 해외주식(US) 지원 — Phase A (기반 plumbing)
+# 자산추이 해외(US) 보유 KRW 환산 통일 사양서
 
-## 배경 / 문제
+> code-review finding A 후속. 자산추이(/assets/history) 전체·계좌뷰 + 종목뷰 모두에서
+> 해외(US) 보유를 원화(KRW)로 환산해 포함한다. 환산 책임을 FE → BE 로 이관한다.
 
-로드맵 v2 항목 "해외 주식 지원(Yahoo Finance, USD/KRW 환율, 크로스 통화 분석 정합성 포함)"의
-첫 슬라이스. 코드베이스는 이미 다국가 확장을 염두에 두고 설계됨 — `trades`/`stocks`/
-`daily_close_prices` 에 `country_code`/`exchange`/`currency`, 포지션 키 `TICKER:COUNTRY`,
-분석 `by_country` 집계, 시세 key 포맷 `code:country`, FE `QuoteMap.currency` 가 모두 존재.
+## 배경 / 목적
 
-**핵심 제약(분할 근거):** 대시보드 총액(`build_totals`, FE `applyQuotesToTotals`)은 항상
-모든 포지션을 합산한다. 따라서 "해외 매수 차단 해제"와 "통화 인지 KRW 환산 합산"은 분리
-불가능하게 커플링되어 있다 — 차단을 푸는 순간 FX 환산 없이 USD+KRW 숫자가 **조용히** 더해져
-총액이 틀린다(에러 없음). 그래서 epic 은 vertical slice 가 아니라 **레이어**로 나눈다.
+- **현황(불일치):** BE `routers/assets.py` 의 `country` 쿼리 기본값이 `'KR'` 이라 전체/계좌뷰
+  (ticker=None)도 `country='KR'` 스코프로 처리 → US 보유를 통째로 제외, 곡선이 KR-only.
+  반면 같은 화면 대시보드 합계(`merge_quotes(usdkrw)` + FE overlay)는 US 포함이라 **두 수치가 어긋난다.**
+- **종목뷰만 부분 보정:** FE `AssetHistoryView.tsx` 가 US 종목뷰(`isUsStock`)에서만
+  `asset-history-convert.ts` + `useFxRate` 로 현재 환율 KRW 환산. 전체/계좌뷰는 `rate=null` 이라 환산 안 함.
+- **목적:** 환산을 BE 로 일원화해 전체/계좌/종목 모든 뷰에서 KRW 단위로 통일하고, 대시보드 합계와
+  자산추이 총액의 단위·포함범위를 일치시킨다(finding A 해소).
 
-**Phase A 의 안전성:** 현재 해외 거래는 dormant(해외 BUY 스키마 차단 + 브로커 import USD skip +
-seed 에 비-KR 거래 없음). Phase A 는 거래를 활성화하지 않으므로 합산 정합성을 건드리지 않는다.
-순수 인프라/유틸만 추가 → 기존 KRW 동작 무변경.
+## 확정된 설계 결정 (사용자 승인 — 변경 금지)
 
-이번 브랜치 범위: **Phase A 만**. Phase B(거래 활성화+통화 인지 합산), Phase C(USD import)는
-`docs/backlog.md` 에 epic 으로 기록하고 각각 별도 issue-start 로 진행.
+1. **환율 정책: 현재 환율(spot) 일괄 적용.** 일자별 historical FX 미적재이므로 모든 과거 일자
+   US 평가액에 '오늘 usdkrw' 하나를 곱한다(종목뷰 현행과 동일 철학). FE 에 '현재 환율 기준
+   (일자별 아님)' 고지 유지.
+2. **범위: 전체/계좌뷰 + 종목뷰 모두 BE 에서 KRW 환산.** FE 의 환산(convert) + fxBlocked +
+   useFxRate 환산 책임을 BE 로 이관, FE 에서 제거.
 
-## 목표
+## 가정 (Assumptions)
 
-- 종목 검색 API 가 US 종목(country_code="US")도 반환한다 (BE).
-- US 티커 시세를 Yahoo 로 조회해 `currency="USD"` 와 함께 반환한다.
-- USD/KRW 환율을 조회·캐시하는 서비스/엔드포인트가 동작한다 (향후 KRW 환산 합산용).
-- FE 에 통화 인지 금액 포맷 유틸(₩/$ 분기)이 준비된다 (단위 테스트 통과).
-- 위 모두 기존 KRW 경로·총액 합산에 영향이 없다 (회귀 없음).
+- 해외=US 만 존재(OTHER 통화는 현재 없음, `currency_for_country` 가 KR/OTHER→KRW 처리).
+- usdkrw 는 `fx.usdkrw_if_foreign` / `fetch_usdkrw`(spot) 으로 1회 조회. 거래 시점 `exchange_rate`
+  는 사용하지 않는다(결정 1과 일관 — 모든 과거 일자에 동일 spot 적용).
 
-향후 표시 전략(사용자 확정): **KRW 환산 단일 총액** — Phase A 의 FX 인프라가 이를 뒷받침.
+## 범위 (Scope)
 
-**Phase A 비목표(=Phase B):** 해외 BUY 차단 해제, 통화 인지 walker/합산/분석, FE 검색
-필터 해제·통화 표시 와이어링, 거래 입력/상세 화면 통화 표시.
+- 포함:
+  - `compute_asset_history` 가 종목별 통화 인식 + usdkrw 1개로 KRW 합산. 종목 식별 키를
+    `ticker+country` 로 일관화(`closes`/`live_quotes`/qty steps 동기).
+  - `assets.py` 전체/계좌뷰 country 필터 제거 → 거래를 country 별로 분리해 backfill/get_closes/
+    quotes 를 country 별 수행 후 합치기. usdkrw 는 해외 보유 시에만 1회 조회. `invested_amount`
+    도 spot KRW 환산.
+  - 응답에 `usdkrw`(float|None) + `has_foreign`(bool) 노출. AssetHistoryResponse + FE 타입 동기.
+  - FE: `AssetHistoryView` 에서 환산/`useFxRate`/`asset-history-convert` 제거, BE KRW 값 직접
+    사용. 고지 문구는 `response.usdkrw` 기반으로 재구성. USD 보조 병기는 종목뷰만 `value/usdkrw` 역산.
+  - `asset-history-convert.ts` + 그 테스트 **삭제**.
+- 제외:
+  - 일자별 historical FX 적재(결정 1로 명시 보류).
+  - 대시보드 합계(`/portfolio/summary`, `merge_quotes`) 자체 변경 — 이미 US 포함이라 무변경.
+  - OTHER 국가/통화 신규 지원.
+  - 현금/예수금 포함(자산 = 보유 종목 평가액 유지).
 
-## 설계
+## 핵심 설계 결정 (다운스트림 correctness — 반드시 준수)
 
-### 접근 방식
+- **D1. closes 행에 country 태깅:** `get_closes` 반환은 `{ticker, close_date, close_price}` 뿐이라
+  country 차원이 없다. 라우터가 country 별로 호출하므로, **merge 전에 각 행에 `country` 를 추가**
+  해서 compute 로 넘긴다. compute 는 `(ticker, country)` 로 `closes_by_ticker` 를 만든다.
+  → US/KR 티커 문자열 충돌(숫자형 티커 등) 방지.
+- **D2. qty steps gid = `(ticker or asset_name) + country`:** `asset_name` fallback 은 유지하되
+  country 를 키에 합성. ticker 없는 KR 보유가 깨지지 않게 fallback 보존.
+- **D3. 통화 환산은 `to_krw(value, currency, usdkrw)` 재사용:** 직접 곱(`× rate`) 금지.
+  `to_krw` 는 USD인데 usdkrw=None 이면 None 반환 → "조용한 USD-as-KRW 합산"을 구조적으로 차단.
+  None 이면 그 종목 기여 제외 + `incomplete=True`(KR 은 항상 환산 성공이라 영향 없음).
+- **D4. 단일 US 종목뷰 + usdkrw=None → flat-zero 곡선 금지:** US 기여 제외 시 US-only 종목뷰는
+  매일 total=0(0 일직선)으로 빈 차트보다 나쁜 UX. 응답 `has_foreign=True` 플래그로 FE 가
+  `(has_foreign && usdkrw==null)` 일 때 0 차트 대신 '환율 불가' 안내를 띄운다. 혼재 all/account뷰는
+  KR 곡선 + incomplete 로 충분.
+- **D5. invested_amount spot 환산:** `holding_invested_amount` 는 `cost_basis_native` 를 단일 통화
+  가정으로 합산(혼재 스코프에서 native USD+KRW 무가산 버그). 곡선과 단위를 맞추려면 spot 으로
+  KRW 환산해야 한다(거래 시점 환율 아님 — D 결정/결정1 일관).
 
-1. **US 시세 — Yahoo provider 확장.** `_fetch_yahoo` 는 현재 `.KS/.KQ` suffix + `currency`
-   하드코딩(`CURRENCY_KRW`). US 는 suffix 없는 티커로 `YAHOO_CHART_URL` 조회하고 응답
-   `meta.currency` 를 그대로 사용. `fetch_quotes_by_keys` 가 지금은 KR entry 만 처리(비-KR
-   null) — US entry 를 US fetch 로 라우팅. `_try_endpoint`/`_parse_yahoo_chart_price` 가
-   `currency` 를 인자/응답에서 받도록 일반화(현재 KRW 고정).
+## 작업 단위
 
-2. **USD/KRW 환율 — 신규 모듈.** `external/fx.py` 에서 Yahoo `KRW=X`(chart v8) 조회 +
-   TTL 캐시(시세 캐시 패턴 재사용). 라우터 `GET /fx/rate?base=USD&quote=KRW` 또는
-   `/stocks/fx`. 무료·API 키 불필요. Phase B 의 KRW 환산 합산이 소비할 단일 진실원.
+### 1. [BE] `be/src/invest_note_api/domain/asset_history.py` — compute 통화-aware KRW 합산
 
-3. **US 종목 마스터 seed.** `upsert_stocks` 는 이미 `country_code`/`currency`/`exchange`
-   파라미터화 완료. `seed_stocks.py` 에 US 소스 추가 — nasdaqtrader.com 공개 심볼 디렉터리
-   (`nasdaqlisted.txt` + `otherlisted.txt`: symbol·name·exchange, 무료). 볼륨이 크므로
-   (~8천) 보통주/ETF 위주 필터 권장. `country_code="US"`, `currency="USD"` 로 upsert.
+- `compute_asset_history` 시그니처에 `usdkrw: float | None = None` 추가.
+- `_qty_steps_by_ticker` → gid 를 `(ticker or asset_name):country` 합성 키로 변경(D2). 반환 키 또는
+  내부 매핑에서 gid→country 를 보존(통화 판정용).
+- `closes` 입력에 `country` 필드 추가 가정 → `closes_by_ticker` 를 `(ticker, country)` 키로 구성(D1).
+  `live_quotes` 키도 `position_key(ticker, country)` 와 동일 형식으로 일관화.
+- 일자별 합산: gid 의 country → `currency_for_country` → `to_krw(qty*price, currency, usdkrw)`(D3).
+  None 이면 기여 제외 + `incomplete=True`.
+- 종목뷰 items 의 `close` 는 **native(USD) 유지**, `value`/`change` 는 KRW. `qty` 유지.
+- 함정: **G1**(종목별 sort_for_calc→walk_trades 분리 유지 — 한 walker 다종목 금지),
+  **통화혼재 silent sum**(D3 to_krw 로 방지), **ticker+country 키 동기**(steps/closes/live_quotes 3축).
+- verify: `cd be && poetry run pytest tests/test_asset_history.py -q`
+  (호출부 시그니처 변경으로 기존 테스트 갱신 + 신규 케이스: KR-only / US-only(usdkrw 적용) /
+   혼재 일자별 KRW 합산 / usdkrw=None 시 US 제외+incomplete / ticker+country 충돌(동일 ticker 문자열
+   US·KR 동시 보유가 분리 합산되는지)).
+- 의존: 없음
 
-4. **종목 검색 country 확장.** `stocks_repo.search` 는 `country_code` 파라미터 보유(기본 KR).
-   검색 라우터/서비스가 US 결과도 포함하도록 — country 파라미터 수용 또는 KR+US 병합.
-   FE 필터는 그대로 두므로(Phase B 에서 해제) **사용자 가시 변화 없음** — 안전.
+### 2. [BE] `be/src/invest_note_api/routers/assets.py` — country 분리 파이프라인 + fx + 응답 필드
 
-5. **FE 통화 포맷 유틸(준비만).** `lib/format.ts` 의 `formatPnL`/`fmt` 후행 "원" 하드코딩을
-   통화 파라미터화한 신규 유틸 추가(기존 함수는 KRW 기본 유지로 호출부 무변경). 와이어링은
-   Phase B. `country_code`/`currency` → 기호(₩/$) 매핑 헬퍼.
+- `get_asset_history` 에 `fx_state: FxCacheState = Depends(get_fx_cache_state)` 주입(portfolio 패턴).
+- 전체/계좌뷰: `list_trades_with_account` 의 `country=` push 제거(ticker 지정 종목뷰는 유지 가능).
+  로드한 전체 거래를 `trade_country(t)` 로 KR/US 그룹 분리.
+- country 그룹별로 `backfill_closes`/`get_closes`/`fetch_quotes_by_keys` 를 각각 country_code 로 수행
+  (US=Yahoo provider, KR=data.go.kr) 후 결과 합치기. `get_closes` 결과 각 행에 해당 country 태깅(D1).
+- `live_quotes` 를 `position_key(tk, country)` 키로 합산(compute 키 일관, D1).
+- `usdkrw = await usdkrw_if_foreign(trades, fx_state, http_client, providers=settings.fx_provider_list)`
+  — 해외 보유 있을 때만 1회 조회(None 가능).
+- `has_foreign = any(currency_for_country(trade_country(t)) != CURRENCY_KRW for t in trades)`.
+- `invested_amount`: 혼재 스코프면 native 합산 금지(D5). country 분리 후 US 기여를 spot 환산 —
+  단위 2단계와 일치하도록 보정(권장: `holding_invested_amount` 를 country 별 호출 후 US×usdkrw,
+  usdkrw=None 이면 US 기여 제외; 상세는 구현 시 portfolio 헬퍼 형태 확인).
+- `compute_asset_history(..., usdkrw=usdkrw)` 호출.
+- 응답에 `usdkrw`, `has_foreign` 추가.
+- 함정: backfill/get_closes/quotes 가 country 별이라 **다른 country 결과를 한 country_code 로 섞으면
+  silent 결측**. country 별 호출/태깅 누락 주의. 종목뷰(단일 country)도 동일 환산 경로 통과.
+- verify: `cd be && poetry run pytest tests/test_assets_router.py -q`
+  (전체뷰 US+KR 혼재 응답 / usdkrw=None 응답 has_foreign=True+incomplete / usdkrw·has_foreign 필드 존재).
+- 의존: 단계 1
 
-### 주요 변경 파일
+### 3. [BE] `be/src/invest_note_api/schemas/asset_response.py` — 응답 스키마 필드 추가
 
-- `be/src/invest_note_api/external/quotes.py` — Yahoo US fetch + `fetch_quotes_by_keys`
-  비-KR 라우팅, `currency` 일반화
-- `be/src/invest_note_api/external/fx.py` *(신규)* — USD/KRW 환율 조회+캐시
-- `be/src/invest_note_api/routers/stocks.py` — FX 엔드포인트 + 검색 country 확장
-- `be/src/invest_note_api/db_ops/stocks_repo.py` — 검색 country 병합(필요 시)
-- `be/scripts/seed_stocks.py` — US 종목 소스 추가
-- `be/src/invest_note_api/services/stock_seed.py` — US 소스 파서(필요 시)
-- `fe/src/lib/format.ts` — 통화 인지 포맷 유틸 + 기호 매핑
-- 테스트: `be/tests/test_quotes*.py`, `be/tests/test_fx*.py`(신규),
-  `fe/src/lib/__tests__/format.test.ts`
+- `AssetHistoryResponse` 에 `usdkrw: float | None = None`, `has_foreign: bool = False` 추가.
+  docstring 에 의미 기재(usdkrw: KRW 환산 spot 환율, None=환율 미상; has_foreign: 스코프 해외 보유 존재).
+- verify: `cd be && poetry run pytest tests/test_assets_router.py -q`(2단계와 동반, camelCase 직렬화
+  `usdkrw`/`hasForeign` 확인).
+- 의존: 단계 2(같이 진행 — 응답 dict 키와 정합)
 
-## 구현 체크리스트
+### 4. [FE] `fe/src/lib/api-client.ts` — AssetHistoryResponse 타입 동기
 
-작은 단위(1 항목 ≈ 1 파일)로, 의존 순서대로:
+- `AssetHistoryResponse` 에 `usdkrw: number | null`, `hasForeign: boolean` 추가.
+- (params/assetsApi.history 는 country 여전히 전달 가능 — 종목뷰용. 무변경.)
+- verify: `pnpm -C fe exec tsc --noEmit`
+- 의존: 단계 3
 
-- [x] **A1. FX 조회 모듈** `external/fx.py` — Yahoo `KRW=X` + TTL 캐시. `tests/test_fx.py`.
-- [x] **A2. FX 엔드포인트** `routers/stocks.py` — `GET /stocks/fx`. `tests/test_stocks.py::TestStocksFx`.
-- [x] **A3. US 시세 provider** `quotes.py` — Yahoo US fetch(meta.currency) +
-      `fetch_quotes_by_keys` US 라우팅(`_entry_fetch_fn`). KR 회귀 + US fetch 테스트.
-- [x] **A4. US 종목 검색** `stocks_repo.search_multi` + `routers/stocks.py` — KR+US 병합
-      (FE 필터 유지로 가시 변화 없음). 검색 테스트.
-- [x] **A5. US 종목 seed** `stock_seed.py`(`_parse_nasdaqtrader`/`fetch_nasdaq_us`/`seed_us`) +
-      `scripts/seed_us_stocks.py` — nasdaqtrader 소스, US upsert. 파서 단위 테스트(네트워크 격리).
-- [x] **A6. FE 통화 포맷 유틸** `lib/format.ts` — `formatMoney`/`formatPnLCurrency`/
-      `currencyForCountry`/`currencySymbol` + ₩/$ 매핑. `format.test.ts` 단위 테스트.
-- [x] **A7. backlog epic 기록** `docs/backlog.md` — Phase B/C 항목 추가.
-- [x] BE 테스트 통과 (`cd be && poetry run pytest -q`) — 529 passed.
-- [x] FE 타입 체크 통과 (`pnpm -C fe exec tsc --noEmit`) + FE 테스트 (166 passed).
+### 5. [FE] `fe/src/components/assets/AssetHistoryView.tsx` — 환산 제거 + BE 값 직접 사용
 
-## 우려사항 / 리스크
+- `useFxRate` import/호출 제거(이 뷰의 fx fetch 자체 삭제). `asset-history-convert` import/호출 제거.
+- `series`/`dailySeries`/`items`/`investedAmount` 를 `data.series`/`data.items`(KRW 그대로) 에서 도출.
+  `dailySeries` 는 items 역순 change 매핑만 유지(환산 제거).
+- 환산 가드 재구성: `fxBlocked` → `data.hasForeign && data.usdkrw == null`(D4). US-only 종목뷰의
+  0 일직선 방지 — fxBlocked 면 차트/표 대신 '환율 불러오면 표시' 안내(기존 UX 유지).
+- USD 보조 병기(`displayNativeUsd`): 종목뷰(`isStockView && country==='US'`) + `data.usdkrw != null`
+  일 때만 `display.value / data.usdkrw` 역산(권장안 — 권장6).
+- 고지 문구: 환율 기준 표기를 `data.usdkrw`(useFxRate 아님) 로 전환, `formatFxRate(data.usdkrw)`.
+  '현재 환율 기준(일자별 아님)' 고지 유지. fxBlocked/incomplete 문구 통합·정리.
+- 함정: **한국식 색상(상승=빨강)** — 기존 `signColor`/`PNL_COLORS` 유지, western 색(상승=초록) 도입 금지.
+  이중환산 금지(rate 곱이 한 군데라도 남으면 안 됨 — convert 호출 전부 제거 확인).
+- verify: `pnpm -C fe exec tsc --noEmit` + 동작 시나리오(전체뷰 US 포함 KRW 곡선 표시 / US 종목뷰 환율
+  미상 시 안내·0차트 아님 / 고지 문구 usdkrw 반영).
+- 의존: 단계 4
 
-- **US 종목 데이터 볼륨/품질:** nasdaqtrader 디렉터리는 ~8천 심볼. 보통주/ETF 필터·정제
-  필요. 첫 구현은 인기 종목 위주 부분 seed 로 시작 가능.
-- **Yahoo 비공식 API:** US chart 엔드포인트도 비공식 — 레이트리밋/포맷 변동 가능. 기존
-  Naver/Yahoo 와 동일한 graceful fallback(null) 패턴 유지.
-- **해외 SELL latent 경로(기존 이슈):** 해외 BUY 만 차단되고 해외 SELL 은 스키마 통과(수동
-  입력 도달 가능, 단 선행 BUY 없으면 실제 포지션 미생성). Phase A 가 악화시키지 않음 —
-  통화 인지 합산과 함께 Phase B 에서 처리.
-- **메모리 정정 필요(Phase B 용):** `feedback_fe_trade_sort_for_calc` 의 "portfolio.ts 전부
-  dead code" 는 부분 오류 — `applyQuotesToTotals`/`applyQuotesToSnapshots` 는 live(BE 결과에
-  시세 overlay). Phase B 통화 인지 합산 시 죽은 `buildTotals` 가 아닌 이 live 함수를 수정해야
-  함. 구현 진입 시 메모리 정정 예정.
+### 6. [FE] `asset-history-convert.ts` + 테스트 삭제
 
-## Phase B — 정합성 슬라이스 (이 브랜치에서 이어서 완료)
+- `fe/src/components/assets/asset-history-convert.ts` 삭제(값이 KRW 로 오면 4개 함수 전부 항등).
+- `fe/src/components/assets/__tests__/asset-history-convert.test.ts` 삭제.
+- 잔여 import 0 확인(5단계에서 제거됨).
+- verify: `pnpm -C fe exec tsc --noEmit` + `pnpm -C fe test`
+- 의존: 단계 5(뷰에서 참조 제거 후 삭제)
 
-> 사용자 요청("순차적으로 계속 진행")으로 Phase B 를 같은 브랜치에 이어 구현. 차단 해제 +
-> 통화 인지 KRW 환산은 분리 불가 커플링이라 한 덩어리로 진행.
+### 7. [QA] 정합성 검증
 
-설계 결정: per-position 값은 native($) 유지·합산만 KRW 환산 / `pnl_map` 을 KRW 로 한 번 변환해
-다운스트림 무변경 / 현재 환율(historical 은 backlog) / 현금 KRW 단일 / 응답 shape 무변경
-(Position.country 로 통화 derive) / FX 실패 시 US 제외 + missing 노출.
+- BE 응답 shape(`series`/`items`/`incomplete`/`asOf`/`investedAmount`/`usdkrw`/`hasForeign`)
+  ↔ FE `AssetHistoryResponse` 타입 일치.
+- **finding A 정합(핵심):** 동일 usdkrw·동일 보유에서 대시보드 합계(`merge_quotes(usdkrw)`)
+  ↔ 자산추이 오늘 점 총액(`series[-1].value`) 일치. 두 경로가 같은 spot·같은 포함범위인지.
+- 통화 혼재 함정: US/KR 동일 ticker 문자열이 분리 합산되는지, usdkrw=None 시 US 제외+incomplete+
+  has_foreign=True 인지.
+- 색상 규칙(상승=빨강) 회귀 없음.
+- verify: `cd be && poetry run pytest -q` + `pnpm -C fe exec tsc --noEmit` + `pnpm -C fe test`
+- 의존: 단계 1~6
 
-- [x] **B1.** 해외 BUY 차단 해제(`schemas/trade.py`) + `domain/trade_types`
-      `currency_for_country`/`to_krw` 헬퍼 + 단위 테스트(`test_fx_convert.py`).
-- [x] **B2.** `realized_pnl.build_pnl_map_krw` — SELL profit_loss 통화→KRW.
-- [x] **B3.** `build_totals`/`build_account_snapshots`/`concentration` KRW 환산 + 환율 없는
-      US 제외·`missing_quote_tickers` 노출. (`holding_invested_amount` 은 단일통화 차트라 native 유지.)
-- [x] **B4.** 라우터 fx 주입 — `portfolio`/`analysis` 가 비-KR 거래 시 `fetch_usdkrw` 조회.
-- [x] **B5.** BE 통화 혼재 회귀 테스트(`test_portfolio_logic.py::TestCurrencyConversion`).
-- [x] **B6.** FE overlay KRW 환산 — `applyQuotesToTotals`/`applyQuotesToSnapshots` + `toKRW`.
-- [x] **B7.** `useFxRate` 훅(`GET /stocks/fx`) + `HomeDashboard` 주입(해외 보유 시만 enable).
-- [x] **B8.** `StockSearchInput` KR 필터 해제(US 선택 가능) + `HoldingCard` native 통화 표시.
-- [x] **B9.** FE 통화 혼재 테스트(`portfolio.test.ts`) + `format.test.ts`.
-- [x] BE `pytest -q` 528 passed · FE `tsc`·`test` 169 passed.
+## 완료 조건
 
-남은 후속(비범위, backlog 기록): Phase C(import), 거래 입력/상세 폼 통화 라벨(cosmetic),
-historical-FX 정밀화, 분석 size 분포 통화 정밀도, 해외 SELL UX.
-
-## 2026-06-09 정책 재확정 — 거래등록 입력 모델 (달러·원화 직접입력)
-
-> 기본 정책 재변경(`docs/decisions.md` 2026-06-09): 원화기준 통합표시 + 달러 보조는 그대로,
-> 거래 등록은 **환율 직접입력 → 체결 원화 직접입력**으로 변경.
-
-- [x] **B11.** `TradeBasicForm` — 해외 거래 입력칸을 `환율(USD/KRW)` → **`체결 원화(KRW)`** 로 교체.
-      제출 시 `exchange_rate = 체결원화 / (price×quantity)` 역산해 BE 전송(BE 계약·`029` 마이그레이션 무변경).
-      체결 원화 = 원금(가격×수량)만, 수수료·제세금은 USD 유지. 기본값은 현재 시세 환율 기준 제안값(수정 가능),
-      US 미입력 시 zod superRefine 검증. FE `tsc` 통과 · `pnpm test` 173 passed.
-
-## Phase C (비범위)
-
-- **Phase C — import + 엣지:** Samsung/Toss USD 파서 활성화, 해외 세율/수수료 규칙, 엣지케이스.
-
-## Phase D — 해외주식 잔여 작업 (정합/기능/UX)
-
-> Phase A/B 로 거래 활성화 + 통화 인지 KRW 환산 합산이 완료됐고, 2026-06-09 입력모델
-> 재설계로 등록폼이 통화 인지가 됐다. Phase D 는 그 위에 남은 **공백(일별종가 US 미지원),
-> SPOF(US 시세 단일 공급자), 비대칭(수정 폼·TradeUpdate 통화 미인지), 정밀도(분석 size 분포
-> native 혼입)** 를 메운다. Phase C(브로커 USD import)는 별도 진행 — 본 섹션 비범위.
-
-### 배경 / 문제 (코드 사실 기반)
-
-- **D1 일별종가 공백:** `services/daily_price_seed.py::backfill_closes` 는 KR 전용이다.
-  primary 는 env `DAILY_PRICE_PROVIDER`(=data_go_kr) 로 국가 무관 고정 주입되고
-  (`routers/assets.py:86-95`), tail-gap 보충은 `if gap_fetch is not None and country_code == "KR"`
-  (`daily_price_seed.py:405`) 로 KR 에서만 돈다. 게다가 early-return 가드가
-  `if not tickers or not api_key`(`:336`) 로 **data.go.kr api_key 부재 시 incomplete** 처리 →
-  US 는 데이터 0건 + `incomplete=True`. 결과: `/assets/history`(country 스코프, default KR,
-  `assets.py:96-98`)에서 US 는 빈 series.
-  - **FE 현실(원 지침 정정):** 작업 지침은 "미니차트가 `isKrStockCode` 게이팅"이라 했으나
-    **코드는 다르다.** `StockDetail.tsx:46` 의 `metaCodes = isKrStockCode(...) ? [ticker] : []`
-    는 `useStockMeta(metaCodes)`(:49) → **시총/연금 뱃지 메타 쿼리 전용**(`StockMetaBadges`,
-    :114)이지 차트가 아니다. StockDetail 에는 미니차트 자체가 없다(차트 import 없음).
-    자산추이는 "자산 추이" 버튼(`onAssetHistoryPress`, :88-99, **country 게이팅 없음**) →
-    `openAssetHistory` → `AssetHistoryView`(`components/assets/AssetHistoryView.tsx`)가
-    `useAssetHistory({country})`(`hooks/useAssetHistory.ts`, country 를 BE 에 그대로 전달,
-    게이팅 없음)로 그린다. **즉 FE 는 US 를 막지 않는다** — BE(D1-2)가 US series 를 채우면
-    자산추이는 **FE 코드 변경 없이** 작동한다. 따라서 D1-3 은 신규 게이팅 해제가 아니라
-    **검증/배너 확인 단위**로 축소.
-
-- **D2 US 시세 SPOF:** US quote 는 `external/quotes.py::_fetch_yahoo_us` 단일 공급자
-  (`_entry_fetch_fn:278-279`, US→`_fetch_yahoo_us` 만). Yahoo 실패 시 `_get_cached`(`:283`)가
-  `result=None` 을 **무조건 캐시에 기록**(`:315 state.cache[key] = result`)해 US 평가액이
-  TTL(`QUOTE_CACHE_TTL`) 동안 통째로 missing. 반면 FX 는 방금 stale-유지로 고침
-  (`external/fx.py:114-125`: fetch 실패 시 None 을 박지 않고 직전 성공값 `cached` 반환).
-  quote 도 동일 의도 적용 대상.
-
-- **D3 수정 폼 통화 비인지:** `components/records/TradeEditPanel.tsx` 는 가격·수량을 **실제
-  편집**한다(`:187-214`, Controller name="price"/"quantity"). 라벨은 "가격 (원)" 하드코딩
-  (`:188`)이고 `onSubmit`(`:126-142`)은 `exchange_rate`/체결원화를 patch 에 **미포함**.
-  → US 거래를 수정하면 price(USD)는 바뀌는데 환율은 기존값 고정이라, 등록폼(B11)이 박제한
-  체결환율과 어긋나며 KRW 원가·실현손익이 조용히 틀어진다. (주: `TradeMetaBuyForm.tsx`/
-  `TradeMetaSellForm.tsx` 는 전략·감정·태그·메모만 다루고 가격·환율 미편집 → D3 표면 아님.)
-
-- **D4 TradeUpdate 비대칭:** `schemas/trade.py::TradeCreate` 에는 `_foreign_requires_exchange_rate`
-  validator(`:131-137`)가 있으나 `TradeUpdate`(`:140-173`)는 없다. `exchange_rate` 는
-  `pnl_affecting=True`(`db_ops/trades_repo.py:276`)라 patch 시 `validate_mutation` 경로
-  (`routers/trades.py:425-431`)를 타지만, 그 함수는 oversell 만 본다. patch body 에 country_code
-  가 없으므로(스키마 자체 검증 불가), 라우터가 이미 읽는 `existing`(`trades.py:417`, country_code 보유)
-  으로 가드해야 한다.
-
-- **D5 분석 size 분포 native 혼입 + as_of 미노출:** `routers/analysis.py:138-139`
-  `_size_bucket(t.total_amount)` — `total_amount` 는 native(USD 거래는 달러 그대로,
-  `trade_types.py:121` + exchange_rate 별도)라 USD BUY 가 KRW 버킷에 native 로 들어가 어긋난다
-  (backlog `분석 size 분포 통화 정밀도` 항목). KRW 환산 필요(`to_krw(value, currency, usdkrw)`
-  헬퍼 존재, `trade_types.py:71`). 별개로, 평가액이 어느 환율로 환산됐는지 투명성을 위해
-  `FxRate.as_of` 노출 — 단 FE 는 이미 B7 `useFxRate` 가 `as_of` 를 가지므로 **FE-only 표시**로
-  닫을 수 있다(BE 응답 shape 무변경).
-
-### 설계 결정 (불변 제약)
-
-- 거래 시점 환율 박제 → 원가·실현손익 = KRW 고정, 평가액 = 현재환율. native(USD) 보조 필드.
-- FE 는 원화 primary + 달러 괄호(`MoneyText`).
-- **기존 KR 경로 무변경** — D1/D2 는 country 분기로 US 만 새 경로, KR 은 한 줄도 안 건드린다.
-- shape drift 가드: BE 응답 shape 변경은 D5 에서만(그조차 FE-only 로 회피 가능). 나머지는 무변경.
-
-### 구현 체크리스트 (의존 순서 · 1 단위 ≈ 1~2 파일)
-
-#### D1 [P1] US 일별종가 공급자 (가장 큰 공백)
-
-- [ ] **D1-1 [BE] Yahoo daily-closes fetch + 파서** `services/daily_price_seed.py`
-  - Yahoo chart v8 로 US daily closes backfill. **주의:** `YAHOO_CHART_URL`(constants.py:34)은
-    이미 `?interval=1d&range=1d` 가 박혀 있어 historical 엔 부적합 → `range`(예 `2y`)/`interval=1d`
-    를 받는 **새 URL 상수/빌더** 추가. 응답 파싱도 quote 와 다르다 — `_parse_yahoo_chart_price`
-    는 `meta.regularMarketPrice`(현재가 1점)만 읽으므로, daily 는 `timestamp[]` +
-    `indicators.quote[0].close[]`(epoch→KST date, null close skip)를 파싱하는 **새 함수** 필요.
-    반환 형태는 기존 `fetch_*_daily_closes` 와 동일(`[{ticker, close_date, close_price}]`).
-  - `_fetch_yahoo_us_closes(client, ticker, begin, end)` 추가 → registry 등록 불필요(국가 분기로 호출).
-  - verify: `cd be && poetry run pytest tests/test_daily_price_seed.py -q` (네트워크 격리 파서 단위 테스트 + 범위 밖 행 가드)
-  - 의존: 없음
-- [ ] **D1-2 [BE] backfill_closes US 라우팅** `services/daily_price_seed.py`
-  - `country_code == "US"` 일 때: env primary/gap 을 **우회**하고 `_fetch_yahoo_us_closes` 를
-    primary 로, gap 없음. early-return 가드(`:336 not api_key`)가 US 를 막지 않도록 분기
-    (US 는 data.go.kr api_key 불필요). KR 분기(`gap`, market 라우팅)는 무변경.
-  - verify: `cd be && poetry run pytest tests/test_daily_price_seed.py -q` (US 라우팅이 yahoo 호출·KR 은 기존 경로 유지 회귀)
-  - 의존: D1-1
-- [ ] **D1-3 [FE/QA] US 자산추이 동작 확인 + incomplete 배너 점검** (게이팅 해제 불필요)
-  - FE 는 이미 country-agnostic(위 배경 참조) → **코드 변경 없을 가능성 큼.** 실제 확인 사항:
-    (a) US 종목 상세 "자산 추이" 진입 → D1-2 후 series 가 그려지는지, (b) 콜드스타트 시 일시
-    `incomplete` 배너(`AssetHistoryView.tsx:212`) 문구가 US 맥락에 어색하지 않은지,
-    (c) `isKrStockCode` 메타 쿼리(:46)는 **건드리지 말 것**(US ticker 를 `/stocks/meta` 로
-    보내면 docstring 경고대로 가비지 → KR 6자리 전용 유지). 손볼 게 없으면 QA 체크로 닫고
-    summary 에 "FE 무변경" 기록.
-  - verify: `pnpm -C fe exec tsc --noEmit`(변경 시) + 동작 시나리오(US 자산추이 series 렌더)
-  - 의존: D1-2
-
-#### D2 [P1] US 시세 graceful fallback (SPOF 완화)
-
-- [ ] **D2-1 [BE] quote stale-유지** `external/quotes.py`
-  - `_get_cached`(`:283`)에서 fetch 결과가 `None`(실패)일 때, 기존 non-None 캐시 엔트리를
-    **덮지 않고**, **현재 호출자와 후속 호출자 모두** 직전 성공값을 TTL 내 받는다
-    (fx.py:114-125 의 `return cached` 시맨틱과 동일 — 현재 요청도 missing 으로 두지 말 것).
-    **단 구분 필요:** "None = 정상(해당 심볼 데이터 없음)" vs "None = fetch 실패".
-    `_fetch_yahoo_us` 는 실패와 데이터없음을 모두 None 으로 반환하므로, 실패 시그널을 명시
-    (예: 예외 전파 또는 sentinel)하도록 fetch_fn 계약 조정 후 stale 유지. KR 경로(naver/kis
-    fallback 으로 이미 다중 공급자)는 동작 변화 최소화.
-  - verify: `cd be && poetry run pytest tests/test_quotes.py -q` (**동시 요청 + 연속 호출** 테스트: 1차 성공→캐시, 2차 실패→직전값 유지, single-flight inflight 경합 확인. 단일 호출 테스트만으론 부족)
-  - 의존: 없음 (D1 과 병렬 가능)
-
-#### D4 [P2] TradeUpdate foreign 환율 검증 (D3 의 BE 선행)
-
-- [ ] **D4-1 [BE] PATCH 해외 환율 가드** `routers/trades.py` (권장) 또는 `schemas/trade.py`
-  - patch 에 `exchange_rate` 가 있고 `existing.country_code` 가 해외(non-KRW)인데 값이 1.0 이면
-    400. `existing` 은 이미 `:417` 에서 읽으므로 라우터 가드가 자연스럽다(`validate_mutation`
-    은 oversell 전용 유지 — 책임 분리). create 의 `_foreign_requires_exchange_rate` 와 대칭.
-  - verify: `cd be && poetry run pytest tests/test_trades_api.py -q` (US 거래 patch exchange_rate=1.0 → 400, 정상 환율 → 200, KR patch 무영향 회귀)
-  - 의존: 없음
-- [ ] **D4-2 [BE] price/qty 정정 시 환율 일관 검증(선택)** — D3-FE 가 체결원화 역산으로
-    exchange_rate 를 항상 동봉하면 D4-1 가드로 충분. 별도 단위 불필요 시 생략, summary 에 기록.
-
-#### D3 [P2] 거래 수정 UI 통화 인지 — 방향 ① (등록폼 B11 미러)
-
-> **방향 결정:** ① 통화 인지 편집(체결 원화 재입력→환율 역산). 근거: TradeEditPanel 이 이미
-> 가격·수량을 편집(`:187-214`)하므로 ②(차단) 는 "수정은 되는데 US 만 막힘"의 비일관을 낳는다.
-> 등록폼 B11 이 동일 역산(`체결원화 / (price×quantity) = exchange_rate`)을 확립했으니 재사용.
-
-- [ ] **D3-1 [FE] TradeEditPanel 통화 인지** `components/records/TradeEditPanel.tsx`
-  - US 거래일 때: 가격 라벨을 "가격 ($)" 로, 추가로 "체결 원화(KRW)" 입력칸 노출(B11 패턴).
-    제출 시 `exchange_rate = 체결원화 / (price×quantity)` 역산해 patch 에 동봉. KR 거래는
-    현행 "가격 (원)" 무변경. 체결원화 미입력 US 는 zod superRefine 거부(B11 과 동일).
-    수수료·제세금은 native 유지. (trade.country_code / exchange_rate 가 prop 으로 들어오는지
-    확인해 기본 제안값 = price×quantity×기존환율 채움.)
-  - verify: `pnpm -C fe exec tsc --noEmit` + `pnpm -C fe test`(역산 단위 + US/KR 분기 렌더) + 동작 시나리오(US 거래 가격 수정→체결원화 재입력→저장→KRW 원가 일관)
-  - 의존: D4-1 (PATCH 가 역산된 exchange_rate 를 수용·검증해야 함)
-
-#### D5 [P3] 분석 size 분포 KRW 환산 + FX as_of 노출
-
-- [ ] **D5-1 [BE] size_dist KRW 환산** `routers/analysis.py:138-139`
-  - `_size_bucket(t.total_amount)` → `_size_bucket(to_krw(t.total_amount, currency_for_country(t.country_code), usdkrw))`.
-    `usdkrw` 는 이미 `:100-103` 에서 조회됨(해외 보유 시). 환산 불가(usdkrw None) USD 거래는
-    버킷에서 제외(None skip) — 조용한 혼입 방지. KR 거래는 to_krw 가 그대로 통과(영향 없음).
-  - verify: `cd be && poetry run pytest tests/test_analysis_api.py -q` (USD BUY 가 KRW 환산 버킷에 들어가고, usdkrw 없으면 제외되는 회귀)
-  - 의존: 없음
-- [ ] **D5-2 [FE] FX as_of 표시** (FE-only — BE shape 무변경)
-  - 평가액/환산 영역에 환율 기준 시각 노출. B7 `useFxRate` 의 `FxRate.as_of` 를 그대로 표시
-    (해외 보유 시만). 어느 컴포넌트(HomeDashboard 환산 합계 근처)인지 구현 시 확정.
-  - verify: `pnpm -C fe exec tsc --noEmit` + 동작 시나리오(해외 보유 시 "환율 기준: HH:MM" 류 표기)
-  - 의존: 없음
-
-### 의존 그래프
-
-```
-D1-1(BE) → D1-2(BE) → D1-3(FE)        # US 일별종가: fetch/파서 → 라우팅 → FE 게이팅 해제
-D2-1(BE)                               # US 시세 stale (독립, D1 과 병렬)
-D4-1(BE) → D3-1(FE)                    # PATCH 환율 가드 먼저, 그 위에 수정 폼 역산
-D5-1(BE)                               # size_dist 환산 (독립)
-D5-2(FE)                               # FX as_of 표시 (독립, BE shape 무변경)
-```
-
-병렬 가능 진입점: D1-1 / D2-1 / D4-1 / D5-1 / D5-2.
-
-### 완료 조건
-
-- [ ] D1~D5 모든 단위 verify 통과
-- [ ] BE 전체 회귀 `cd be && poetry run pytest -q` 무회귀 / FE `pnpm -C fe exec tsc --noEmit` + `pnpm -C fe test`
-- [ ] 기존 KR 경로 동작 무변경(D1/D2 country 분기, D5 to_krw KR 통과 회귀로 확인)
-- [ ] `docs/backlog.md` `분석 size 분포 통화 정밀도` 항목 D5 완료로 체크
-- [ ] `docs/decisions.md` 갱신 — D2 quote stale-유지(SPOF 완화) 및 D3 수정폼 방향①(차단 대신 통화 인지) 결정 기록(트레이드오프 있는 선택)
-- [ ] Phase D 완료 후 spec → `docs/issue-history/` 이동 준비
+- [ ] 1~6 각 단위 verify 통과
+- [ ] BE 전체 회귀 `cd be && poetry run pytest -q`
+- [ ] FE `pnpm -C fe exec tsc --noEmit` + `pnpm -C fe test`
+- [ ] 대시보드 합계 ↔ 자산추이 오늘 점 총액 정합(QA)
+- [ ] `docs/decisions.md` 갱신 — "자산추이 해외 보유 KRW 환산을 BE 로 이관, spot 일괄 적용
+      (historical FX 보류)" 결정·트레이드오프 기록
+- [ ] spec → `docs/issue-history/2026-06-11-asset-history-overseas-krw.md` 이동 준비

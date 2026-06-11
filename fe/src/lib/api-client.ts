@@ -464,6 +464,10 @@ export interface AssetHistoryResponse {
   asOf: string;
   /** 현재 보유분 매수 원금(cost_basis 합). 손익 가이드 라인 기준. 보유 없음이면 null. */
   investedAmount: number | null;
+  /** KRW 환산에 쓰인 USD/KRW spot 환율(1개). null=환율 미상 또는 해외 보유 없음. */
+  usdkrw: number | null;
+  /** 스코프에 해외(비-KRW) 보유 존재 여부. */
+  hasForeign: boolean;
 }
 
 export interface AssetHistoryParams {

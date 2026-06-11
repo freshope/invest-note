@@ -20,8 +20,13 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from invest_note_api.domain.realized_pnl import sort_for_calc, trade_to_group_key
-from invest_note_api.domain.trade_types import Trade
-from invest_note_api.domain.trade_utils import to_kst
+from invest_note_api.domain.trade_types import (
+    Trade,
+    currency_for_country,
+    to_krw,
+    trade_country,
+)
+from invest_note_api.domain.trade_utils import position_key, to_kst
 from invest_note_api.domain.trade_walker import walk_trades
 
 # 최대 2년 윈도우(spec). 오늘 기준 lookback. 종가 사전적재(daily_price_seed)와 공유 —
@@ -48,19 +53,36 @@ def _trade_kst_date(trade: Trade) -> date:
     return to_kst(trade.traded_at).date()
 
 
-def _qty_steps_by_ticker(trades: list[Trade]) -> dict[str, list[tuple[date, float]]]:
-    """종목(ticker)별 (kst_date, running_qty_after) step 리스트(시간순).
+def _gid_for_trade(trade: Trade) -> str:
+    """종목 식별 키 = position_key(ticker or asset_name, country)(D2).
+
+    같은 ticker 문자열이라도 country 가 다르면(예: 숫자형 KR 코드 vs US 심볼 충돌) 별도 종목으로
+    분리한다. ticker 없는 KR 보유는 asset_name fallback 을 country 와 합성해 보존한다.
+    """
+    key = trade_to_group_key(trade)
+    code = key.ticker or key.asset_name
+    return position_key(code, trade_country(trade))
+
+
+def _qty_steps_by_ticker(
+    trades: list[Trade],
+) -> tuple[dict[str, list[tuple[date, float]]], dict[str, str]]:
+    """종목((ticker|asset_name, country)별 (kst_date, running_qty_after) step 리스트(시간순).
 
     같은 날 복수 거래면 그 날 마지막 이벤트의 running_qty 만 남긴다(날짜→qty 덮어쓰기).
-    그룹키는 기존 trade_to_group_key(account,ticker,country) 기반이되, 종목 차원만 쓰므로
-    ticker(없으면 asset_name)로 묶는다 — 같은 종목을 여러 계좌서 보유해도 합산이 목적.
+    그룹키는 `position_key(ticker or asset_name, country)`(D2) — 통화 혼재 스코프에서
+    같은 ticker 문자열이 KR/US 로 충돌해도 분리 합산된다.
+
+    Returns:
+        (steps, gid_country): gid→step 리스트, gid→country(통화 판정용).
     """
-    # ticker(또는 asset_name) → 해당 종목 거래들.
+    # gid((ticker|asset_name)+country) → 해당 종목 거래들.
     groups: dict[str, list[Trade]] = {}
+    gid_country: dict[str, str] = {}
     for t in trades:
-        key = trade_to_group_key(t)
-        gid = key.ticker or key.asset_name
+        gid = _gid_for_trade(t)
         groups.setdefault(gid, []).append(t)
+        gid_country[gid] = trade_country(t)
 
     steps: dict[str, list[tuple[date, float]]] = {}
     for gid, group_trades in groups.items():
@@ -74,7 +96,7 @@ def _qty_steps_by_ticker(trades: list[Trade]) -> dict[str, list[tuple[date, floa
         ):
             date_to_qty[_trade_kst_date(ev.trade)] = ev.state_after.running_qty
         steps[gid] = sorted(date_to_qty.items())
-    return steps
+    return steps, gid_country
 
 
 def _qty_on(steps: list[tuple[date, float]], d: date) -> float:
@@ -125,16 +147,25 @@ def compute_asset_history(
     today: date,
     is_stock_view: bool,
     include_today: bool = True,
+    usdkrw: float | None = None,
 ) -> AssetHistoryResult:
-    """자산 변화 series/items 산출.
+    """자산 변화 series/items 산출(통화-aware KRW 합산).
 
     Args:
-        trades: 스코프 거래(계좌뷰=계좌 필터 전체, 종목뷰=단일 종목).
-        closes: daily_prices_repo.get_closes 결과 [{ticker, close_date, close_price}].
-        live_quotes: {ticker: 라이브 종가} (오늘 점용). 누락 종목은 직전 종가로 fallback.
+        trades: 스코프 거래(계좌뷰=계좌 필터 전체, 종목뷰=단일 종목). KR/US 혼재 가능.
+        closes: daily_prices_repo.get_closes 결과에 country 태깅한 행
+            [{ticker, close_date, close_price, country}]. country 는 라우터가 country 별
+            get_closes 호출 후 merge 전에 각 행에 부여한다(D1) — get_closes 자체는 country 미반환.
+        live_quotes: {position_key(ticker, country): 라이브 종가(native)} (오늘 점용).
+            누락 종목은 직전 종가로 fallback.
         today: KST 오늘 날짜.
-        is_stock_view: 종목뷰면 items 에 close/qty 추가(단일 종목 가정).
+        is_stock_view: 종목뷰면 items 에 close(native)/qty 추가(단일 종목 가정).
         include_today: 오늘 점 포함 여부 — 휴장일(주말/공휴일)이면 False(market_open_today).
+        usdkrw: USD→KRW spot 환율(1개, 일자별 historical 아님). US 보유의 KRW 환산에 사용.
+            None 이면 US 종목 기여 제외 + incomplete=True(KR 은 항상 환산 성공).
+
+    series/items 의 value/change 는 **KRW**(통화 혼재 합산은 to_krw 로만, 직접 곱 금지 — D3).
+    종목뷰 items 의 close 는 **native 통화 유지**(USD 종목뷰는 USD close).
 
     Returns:
         AssetHistoryResult(series, items, incomplete).
@@ -142,12 +173,14 @@ def compute_asset_history(
     if not trades:
         return AssetHistoryResult(series=[], items=[], incomplete=False)
 
-    steps = _qty_steps_by_ticker(trades)
+    steps, gid_country = _qty_steps_by_ticker(trades)
 
-    # ticker(gid)별 종가 리스트(날짜 오름차순). closes 는 get_closes 가 ticker,close_date 순 정렬.
+    # gid(position_key(ticker, country))별 종가 리스트(날짜 오름차순).
+    # closes 는 get_closes 가 ticker,close_date 순 정렬 + 라우터가 country 태깅(D1).
     closes_by_ticker: dict[str, list[tuple[date, float]]] = {}
     for c in closes:
-        closes_by_ticker.setdefault(c["ticker"], []).append(
+        gid = position_key(c["ticker"], c["country"])
+        closes_by_ticker.setdefault(gid, []).append(
             (c["close_date"], c["close_price"])
         )
 
@@ -193,9 +226,17 @@ def compute_asset_history(
                 if is_stock_view and gid == stock_gid:
                     per_day_close_qty[d] = (None, qty)
                 continue
-            total += qty * price
+            # 종목 통화로 KRW 환산(D3) — USD+usdkrw None 이면 to_krw 가 None → 기여 제외.
+            currency = currency_for_country(gid_country.get(gid, ""))
+            value_krw = to_krw(qty * price, currency, usdkrw)
+            if value_krw is None:
+                incomplete = True  # USD 인데 환율 미상 → silent KRW 합산 방지(기여 제외).
+                if is_stock_view and gid == stock_gid:
+                    per_day_close_qty[d] = (price, qty)  # close 는 native 유지(D4 안내용).
+                continue
+            total += value_krw
             if is_stock_view and gid == stock_gid:
-                per_day_close_qty[d] = (price, qty)
+                per_day_close_qty[d] = (price, qty)  # close 는 native 통화 유지.
         series.append({"date": d.isoformat(), "value": total})
 
     # items: 동일 날짜집합 역순(최신 먼저). change = 직전 거래일 대비 value 차(첫 항목 0).
