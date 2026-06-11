@@ -218,6 +218,16 @@ def test_validate_seed_sources_trigger_time_fail_fast():
         stock_seed.validate_seed_sources(["fdr"])
 
 
+def test_validate_us_seed_sources_fail_fast():
+    # US 종목 마스터 소스도 KR 과 동일 registry/env 구조 — 오타는 ValueError, 빈 체인은 기본 소스.
+    import pytest
+
+    stock_seed.validate_us_seed_sources(["nasdaqtrader"])
+    stock_seed.validate_us_seed_sources([])  # 빈 체인 → 기본 소스
+    with pytest.raises(ValueError, match="us_stock_seed"):
+        stock_seed.validate_us_seed_sources(["nyse"])
+
+
 def test_recent_basdt_candidates_are_descending_and_bounded():
     cands = stock_seed._recent_basdt_candidates()
     assert len(cands) == stock_seed._BASDT_MAX_LOOKBACK

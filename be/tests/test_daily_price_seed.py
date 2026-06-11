@@ -510,6 +510,10 @@ def test_validate_daily_price_providers_startup_fail_fast():
         daily_price_seed.validate_daily_price_providers("kisss", "naver")
     with pytest.raises(ValueError, match="daily_price_gap"):
         daily_price_seed.validate_daily_price_providers("data_go_kr", "navr")
+    # US primary 도 검증된다 — 오타는 부팅 시점 fail-fast.
+    daily_price_seed.validate_daily_price_providers("data_go_kr", "naver", "yahoo")
+    with pytest.raises(ValueError, match="us_daily_price"):
+        daily_price_seed.validate_daily_price_providers("data_go_kr", "naver", "yahooo")
 
 
 async def test_backfill_naver_failure_keeps_datagokr_rows_state_unrecorded(monkeypatch):

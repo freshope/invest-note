@@ -21,7 +21,7 @@ import httpx
 from cachetools import TTLCache
 from fastapi import Request
 
-from invest_note_api.config import DEFAULT_QUOTE_PROVIDERS
+from invest_note_api.config import DEFAULT_QUOTE_PROVIDERS, DEFAULT_US_QUOTE_PROVIDERS
 from invest_note_api.domain.trade_types import COUNTRY_US, DEFAULT_COUNTRY, MAX_CODE_LEN
 from invest_note_api.domain.trade_utils import KST, position_key
 from invest_note_api.external.constants import (
@@ -255,25 +255,34 @@ async def _fetch_kis(client: httpx.AsyncClient, code: str) -> QuoteResult | None
     }
 
 
-# 시세 공급자 registry — env QUOTE_PROVIDERS 의 이름이 여기 등록돼 있어야 한다.
-# 새 공급자 추가 시 fetch 함수 작성 후 여기 등록하면 env 로 전환 가능.
+# 시세 공급자 registry — env QUOTE_PROVIDERS / US_QUOTE_PROVIDERS 의 이름이 여기 등록돼
+# 있어야 한다. 새 공급자 추가 시 fetch 함수 작성 후 여기 등록하면 env 로 전환 가능.
 _QUOTE_REGISTRY: dict[str, Callable] = {
     "naver": _fetch_naver,
     "yahoo": _fetch_yahoo,
     "kis": _fetch_kis,
 }
+# 해외(US) 시세 공급자 registry — 현재 yahoo 단일이지만 KR 과 동일한 체인 구조로 통일.
+_US_QUOTE_REGISTRY: dict[str, Callable] = {
+    "yahoo": _fetch_yahoo_us,
+}
 
 
-def validate_quote_providers(providers: Sequence[str]) -> None:
-    """env QUOTE_PROVIDERS 오타를 앱 startup 에서 fail-fast 로 검증.
+def validate_quote_providers(
+    providers: Sequence[str], us_providers: Sequence[str] = DEFAULT_US_QUOTE_PROVIDERS
+) -> None:
+    """env QUOTE_PROVIDERS/US_QUOTE_PROVIDERS 오타를 앱 startup 에서 fail-fast 로 검증.
 
     요청 경로는 fetch_quotes_by_keys 의 gather(return_exceptions=True) 가 ValueError 를
     삼켜 전 종목 시세가 조용히 null 이 되므로, lifespan 에서 미리 검증해야 한다.
-    빈 체인(QUOTE_PROVIDERS="")도 같은 이유로 거부 — resolve_chain([]) 은 안 던진다.
+    빈 체인("")도 같은 이유로 거부 — resolve_chain([]) 은 안 던진다.
     """
     if not providers:
         raise ValueError("quotes: 공급자 체인이 비어 있습니다 (QUOTE_PROVIDERS 확인)")
     resolve_chain(providers, _QUOTE_REGISTRY, domain="quotes")
+    if not us_providers:
+        raise ValueError("quotes: US 공급자 체인이 비어 있습니다 (US_QUOTE_PROVIDERS 확인)")
+    resolve_chain(us_providers, _US_QUOTE_REGISTRY, domain="us_quotes")
 
 
 async def _fetch_kr_price(
@@ -288,17 +297,30 @@ async def _fetch_kr_price(
     return None
 
 
+async def _fetch_us_price(
+    client: httpx.AsyncClient,
+    code: str,
+    providers: Sequence[str] = DEFAULT_US_QUOTE_PROVIDERS,
+) -> QuoteResult | None:
+    for fetch in resolve_chain(providers, _US_QUOTE_REGISTRY, domain="us_quotes"):
+        result = await fetch(client, code)
+        if result is not None:
+            return result
+    return None
+
+
 def _entry_fetch_fn(
     country: str,
     code: str,
     client: httpx.AsyncClient,
     providers: Sequence[str],
+    us_providers: Sequence[str],
 ) -> Callable[[], Awaitable[QuoteResult | None]] | None:
     """국가별 시세 fetch 콜러블. 공급자가 없는 국가는 None(→ 결과 null)."""
     if country == DEFAULT_COUNTRY:
         return lambda: _fetch_kr_price(client, code, providers)
     if country == COUNTRY_US:
-        return lambda: _fetch_yahoo_us(client, code)
+        return lambda: _fetch_us_price(client, code, us_providers)
     return None
 
 
@@ -357,13 +379,15 @@ async def fetch_quotes_by_keys(
     client: httpx.AsyncClient,
     force_refresh: bool = False,
     providers: Sequence[str] = DEFAULT_QUOTE_PROVIDERS,
+    us_providers: Sequence[str] = DEFAULT_US_QUOTE_PROVIDERS,
 ) -> dict[str, QuoteResult | None]:
-    """keys 형식: "종목코드:국가" (예: "005930:KR", "AAPL:US"). KR→공급자 체인, US→Yahoo.
+    """keys 형식: "종목코드:국가" (예: "005930:KR", "AAPL:US"). KR/US 각자 공급자 체인.
 
-    KR/US 외 국가(OTHER 등)는 공급자가 없어 null. `client` 는 라우터의
+    KR/US 외 국가(OTHER 등)는 공급자가 없어 null. 한 호출에 KR/US 키가 섞일 수 있어
+    `providers`(KR)·`us_providers`(US)를 함께 받는다. `client` 는 라우터의
     `Depends(get_http_client)` 로 주입받은 lifespan-managed 공유 인스턴스.
     `force_refresh=True` (pull-to-refresh) 면 캐시를 우회해 새 시세를 받는다.
-    `providers` 는 호출측(라우터)이 settings.quote_provider_list 를 전달 — 내부에서
+    `providers`/`us_providers` 는 호출측(라우터)이 settings 의 리스트를 전달 — 내부에서
     get_settings() 를 읽지 않는다(테스트 격리·암묵 의존 방지).
     """
     if not keys:
@@ -380,7 +404,9 @@ async def fetch_quotes_by_keys(
     task_entries = []
     tasks = []
     for e in entries:
-        fetch_fn = _entry_fetch_fn(e["country"], e["code"], client, providers)
+        fetch_fn = _entry_fetch_fn(
+            e["country"], e["code"], client, providers, us_providers
+        )
         if fetch_fn is None:
             continue  # 공급자 없는 국가 → out 기본값 None 유지
         task_entries.append(e)

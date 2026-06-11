@@ -9,10 +9,12 @@ import pytest
 from invest_note_api.external.quotes import (
     QuoteCacheState,
     _fetch_kr_price,
+    _fetch_us_price,
     _fetch_yahoo_us,
     _get_cached,
     _to_yahoo_us_symbol,
     fetch_quotes_by_keys,
+    validate_quote_providers,
 )
 
 
@@ -521,6 +523,68 @@ def test_fetch_quotes_by_keys_routes_us_to_yahoo_and_kr_to_chain():
     assert out["005930:KR"]["price"] == 71000.0
     assert out["005930:KR"]["currency"] == "KRW"
     assert out["AAPL:US"]["price"] == 195.5
+    assert out["AAPL:US"]["currency"] == "USD"
+
+
+def test_fetch_us_price_env_driven_chain_resolves_via_registry():
+    """US 시세도 KR 과 동일하게 providers 체인을 registry 로 해석한다 (env 전환 구조)."""
+    routes = {
+        "https://query2.finance.yahoo.com/v8/finance/chart/AAPL": httpx.Response(
+            200, json={"chart": {"result": [{"meta": {"regularMarketPrice": 195.5, "currency": "USD"}}]}}
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_us_price(client, "AAPL", ["yahoo"])
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["price"] == 195.5
+    assert result["currency"] == "USD"
+
+
+def test_fetch_us_price_unknown_provider_raises_value_error():
+    """US registry 에 없는 공급자명 → ValueError (US_QUOTE_PROVIDERS 오타 fail-fast)."""
+
+    async def runner():
+        async with _build_mock_client({}) as client:
+            return await _fetch_us_price(client, "AAPL", ["bogus"])
+
+    with pytest.raises(ValueError, match="us_quotes"):
+        asyncio.run(runner())
+
+
+def test_validate_quote_providers_validates_both_kr_and_us():
+    """startup 검증이 KR/US 체인의 오타·빈 값을 모두 fail-fast 한다."""
+    validate_quote_providers(["naver", "yahoo"], ["yahoo"])  # 정상 — 예외 없음
+    with pytest.raises(ValueError, match="us_quotes"):
+        validate_quote_providers(["naver"], ["bogus"])
+    with pytest.raises(ValueError, match="US 공급자 체인이 비어"):
+        validate_quote_providers(["naver"], [])
+
+
+def test_fetch_quotes_by_keys_us_providers_override_routes_us():
+    """fetch_quotes_by_keys 가 us_providers 를 US 키에 적용한다 (라우터 env 전달 경로)."""
+    state = QuoteCacheState()
+    routes = {
+        "https://query2.finance.yahoo.com/v8/finance/chart/AAPL": httpx.Response(
+            200, json={"chart": {"result": [{"meta": {"regularMarketPrice": 200.0, "currency": "USD"}}]}}
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await fetch_quotes_by_keys(
+                state,
+                ["AAPL:US"],
+                client=client,
+                providers=["naver"],
+                us_providers=["yahoo"],
+            )
+
+    out = asyncio.run(runner())
+    assert out["AAPL:US"]["price"] == 200.0
     assert out["AAPL:US"]["currency"] == "USD"
 
 

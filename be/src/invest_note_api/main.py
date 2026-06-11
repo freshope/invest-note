@@ -11,7 +11,7 @@ from invest_note_api.db import create_pool
 from invest_note_api.errors import APIError, ERR_LOCK_BUSY, api_error_handler, validation_error_handler
 from invest_note_api.external.http_client import create_http_client
 from invest_note_api.external.kis import configure_kis
-from invest_note_api.external.fx import FxCacheState
+from invest_note_api.external.fx import FxCacheState, validate_fx_providers
 from invest_note_api.external.quotes import QuoteCacheState, validate_quote_providers
 from invest_note_api.routers import accounts, admin, app_config, health, me
 from invest_note_api.routers import trades, portfolio, stocks, analysis, assets
@@ -33,9 +33,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # 삼켜 시세가 조용히 null, daily price 는 GET /assets/history 가 사용자 대면 500 을
         # 반복하므로 부팅 시점에 검증한다. admin/batch 전용 도메인(seed 소스 등)은
         # 트리거 시점 검증으로 충분(admin.py 참조).
-        validate_quote_providers(settings.quote_provider_list)
+        validate_quote_providers(
+            settings.quote_provider_list, settings.us_quote_provider_list
+        )
+        validate_fx_providers(settings.fx_provider_list)
         validate_daily_price_providers(
-            settings.daily_price_provider, settings.daily_price_gap_provider
+            settings.daily_price_provider,
+            settings.daily_price_gap_provider,
+            settings.us_daily_price_provider,
         )
         # database_url이 비어 있으면 풀 생성 생략 (테스트 환경)
         if settings.database_url:

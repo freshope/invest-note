@@ -22,7 +22,9 @@ def _use_db_provider(client) -> None:
 
 class TestStocksQuote:
     def test_quote_ok(self, trades_client):
-        async def mock_quotes(state, keys, *, client=None, force_refresh=False, providers=None):
+        async def mock_quotes(
+            state, keys, *, client=None, force_refresh=False, providers=None, us_providers=None
+        ):
             return {"005930:KR": {"price": 75000.0, "currency": "KRW", "as_of": "2024-01-15"}}
 
         with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
@@ -34,7 +36,9 @@ class TestStocksQuote:
         assert body["005930:KR"]["price"] == 75000.0
 
     def test_quote_empty_returns_empty(self, trades_client):
-        async def mock_quotes(state, keys, *, client=None, force_refresh=False, providers=None):
+        async def mock_quotes(
+            state, keys, *, client=None, force_refresh=False, providers=None, us_providers=None
+        ):
             return {}
 
         with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
@@ -45,7 +49,9 @@ class TestStocksQuote:
 
     def test_quote_us_passthrough(self, trades_client):
         """라우터는 fetch 결과를 그대로 통과 — US 는 USD quote 를 반환(Phase A 부터)."""
-        async def mock_quotes(state, keys, *, client=None, force_refresh=False, providers=None):
+        async def mock_quotes(
+            state, keys, *, client=None, force_refresh=False, providers=None, us_providers=None
+        ):
             return {"AAPL:US": {"price": 195.5, "currency": "USD", "as_of": ""}}
 
         with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
@@ -59,7 +65,9 @@ class TestStocksQuote:
         env 토글이 죽은 설정이 되지 않음을 보장하는 통합 가드."""
         received: dict = {}
 
-        async def mock_quotes(state, keys, *, client=None, force_refresh=False, providers=None):
+        async def mock_quotes(
+            state, keys, *, client=None, force_refresh=False, providers=None, us_providers=None
+        ):
             received["providers"] = providers
             return {}
 
@@ -75,8 +83,32 @@ class TestStocksQuote:
         assert resp.status_code == 200
         assert received["providers"] == ["yahoo"]
 
+    def test_quote_forwards_us_env_providers(self, trades_client):
+        """US_QUOTE_PROVIDERS env 가 fetch_quotes_by_keys 의 us_providers 로 전달된다."""
+        received: dict = {}
+
+        async def mock_quotes(
+            state, keys, *, client=None, force_refresh=False, providers=None, us_providers=None
+        ):
+            received["us_providers"] = us_providers
+            return {}
+
+        trades_client.app.dependency_overrides[get_settings] = lambda: Settings(
+            supabase_url="https://test.supabase.co", us_quote_providers="yahoo"
+        )
+        try:
+            with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
+                resp = trades_client.get("/stocks/quote", params={"symbols": "AAPL:US"})
+        finally:
+            trades_client.app.dependency_overrides.pop(get_settings, None)
+
+        assert resp.status_code == 200
+        assert received["us_providers"] == ["yahoo"]
+
     def test_quote_mixed(self, trades_client):
-        async def mock_quotes(state, keys, *, client=None, force_refresh=False, providers=None):
+        async def mock_quotes(
+            state, keys, *, client=None, force_refresh=False, providers=None, us_providers=None
+        ):
             return {
                 "005930:KR": {"price": 75000.0, "currency": "KRW", "as_of": ""},
                 "AAPL:US": None,
@@ -97,7 +129,9 @@ class TestStocksQuote:
 
 class TestStocksFx:
     def test_fx_ok(self, trades_client):
-        async def mock_fx(state, *, client=None, base="USD", quote="KRW", force_refresh=False):
+        async def mock_fx(
+            state, *, client=None, base="USD", quote="KRW", force_refresh=False, providers=None
+        ):
             return {"base": base, "quote": quote, "rate": 1350.0, "as_of": "2026-06-08"}
 
         with patch("invest_note_api.routers.stocks.get_fx_rate", mock_fx):
@@ -109,10 +143,34 @@ class TestStocksFx:
         assert body["base"] == "USD"
         assert body["quote"] == "KRW"
 
+    def test_fx_forwards_env_providers(self, trades_client):
+        """FX_PROVIDERS env 가 get_fx_rate 의 providers 로 전달된다 — 폴백 토글이 죽지 않음."""
+        received: dict = {}
+
+        async def mock_fx(
+            state, *, client=None, base="USD", quote="KRW", force_refresh=False, providers=None
+        ):
+            received["providers"] = providers
+            return {"base": base, "quote": quote, "rate": 1300.0, "as_of": ""}
+
+        trades_client.app.dependency_overrides[get_settings] = lambda: Settings(
+            supabase_url="https://test.supabase.co", fx_providers="yahoo,er_api"
+        )
+        try:
+            with patch("invest_note_api.routers.stocks.get_fx_rate", mock_fx):
+                resp = trades_client.get("/stocks/fx")
+        finally:
+            trades_client.app.dependency_overrides.pop(get_settings, None)
+
+        assert resp.status_code == 200
+        assert received["providers"] == ["yahoo", "er_api"]
+
     def test_fx_defaults_to_usd_krw(self, trades_client):
         captured: dict = {}
 
-        async def mock_fx(state, *, client=None, base="USD", quote="KRW", force_refresh=False):
+        async def mock_fx(
+            state, *, client=None, base="USD", quote="KRW", force_refresh=False, providers=None
+        ):
             captured["base"], captured["quote"] = base, quote
             return {"base": base, "quote": quote, "rate": 1300.0, "as_of": ""}
 
@@ -123,7 +181,9 @@ class TestStocksFx:
         assert captured == {"base": "USD", "quote": "KRW"}
 
     def test_fx_returns_null_on_failure(self, trades_client):
-        async def mock_fx(state, *, client=None, base="USD", quote="KRW", force_refresh=False):
+        async def mock_fx(
+            state, *, client=None, base="USD", quote="KRW", force_refresh=False, providers=None
+        ):
             return None
 
         with patch("invest_note_api.routers.stocks.get_fx_rate", mock_fx):

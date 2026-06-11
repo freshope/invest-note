@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-06-11 | 해외 공급처 env 구조 통일 + 환율(FX) 폴백 추가 (open.er-api.com)
+
+- **맥락:** 해외(US)는 시세·일별종가·종목마스터·환율을 모두 단일 공급처(Yahoo / nasdaqtrader)에 의존. 국내(KR)는 시세 naver→yahoo→kis, 종가 data.go.kr+naver/kis, 마스터 data.go.kr+kis 처럼 registry/env 로 공급처를 토글·폴백할 수 있는데 US 는 코드에 하드코딩(`backfill_closes` 가 country=US 시 env 우회·Yahoo 강제, `_entry_fetch_fn` US 가 `_fetch_yahoo_us` 직접 호출)돼 있어 비대칭. 또한 환율은 Yahoo `USDKRW=X` 단일점 — 죽으면 전 해외 평가액의 KRW 환산이 통째로 "환율미상".
+- **결정:**
+  - ① **US 도 KR 과 동일한 registry + `resolve_chain` + env 구조로 통일.** 시세 `US_QUOTE_PROVIDERS`(`_US_QUOTE_REGISTRY`), 일별종가 `US_DAILY_PRICE_PROVIDER`(`_US_PRIMARY_REGISTRY`), 종목마스터 `US_STOCK_SEED_SOURCES`(`_US_STOCK_SEED_REGISTRY`). 기본값은 현행과 동일한 단일 출처(`yahoo`/`nasdaqtrader`) — **구조만 통일**(공급처 추가/교체 시 함수+registry 등록+env 변경으로 끝). lifespan `validate_*` 가 KR/US 양쪽 오타·빈 체인을 부팅 시점 fail-fast.
+  - ② **환율 공급자 체인화 + 폴백 1개 추가.** `FX_PROVIDERS`(기본 `yahoo,er_api`). `get_fx_rate` 가 체인을 앞에서부터 시도해 첫 성공값 캐시·반환. 폴백은 **open.er-api.com**(무인증·무료, `/v6/latest/USD`→`rates.KRW`) — 기존 Yahoo/Naver/nasdaqtrader 전부 무인증인 컨벤션과 일관, 키 관리 부담 없음. 한국은행 ECOS(권위 높으나 키 필요)·frankfurter(ECB, 영업일 1회 갱신·지연) 대비 무인증+일 1회 갱신 균형으로 선택.
+- **트레이드오프:** US 단일 출처 자체는 유지(MVP 비중 작음)하되 *스왑 가능성*만 확보. 환율 폴백은 단일 통화쌍이라 추가 비용이 가장 작고 영향 반경(전역 "환율미상")이 가장 커 우선 보강. er-api 는 일 1회 갱신이라 Yahoo 대비 실시간성 낮음 — 어디까지나 2순위 폴백(Yahoo 정상 시 미사용). stale-유지(D2)는 **전체 체인 실패 후**에만 적용해 Yahoo 한 번 실패에 폴백을 건너뛰지 않게 함. cache key 는 통화쌍(`base/quote`)만 — Yahoo 실패→er_api 성공분을 같은 키에 공유.
+
+---
+
 ## 2026-06-09 | 해외(미국) 주식 — 원화기준 통합표시 + 달러 보조 + 거래등록 달러·원화 직접입력 (2026-06-08 "분리+토글" 대체)
 
 - **맥락:** 2026-06-08 "분리 섹션 + ₩/$ 토글" 방향으로 Phase A/B 구현을 진행하던 중 기본 정책을 재변경. 분리/토글 UI 대신 **단일 통화 기준(원화)으로 통일**하되 해외는 달러를 보조로 노출하는 쪽이 인지 부하가 더 낮다고 판단.

@@ -113,7 +113,11 @@ async def get_portfolio_summary(
     quotes = {}
     if with_quotes:
         usdkrw = await usdkrw_if_foreign(
-            trades, fx_state, http_client, force_refresh=refresh
+            trades,
+            fx_state,
+            http_client,
+            force_refresh=refresh,
+            providers=settings.fx_provider_list,
         )
         try:
             quotes = await fetch_quotes_by_keys(
@@ -122,6 +126,7 @@ async def get_portfolio_summary(
                 client=http_client,
                 force_refresh=refresh,
                 providers=settings.quote_provider_list,
+                us_providers=settings.us_quote_provider_list,
             )
         except Exception:
             logger.warning("fetch_quotes_by_keys 실패 user_id=%s", user.id, exc_info=True)

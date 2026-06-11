@@ -83,6 +83,8 @@ async def get_asset_history(
     incomplete_fetch = False
     async with acquire_for_user(pool, user.id) as conn:
         if tickers:
+            # primary 공급자는 country 별로 선택 — US 는 US_DAILY_PRICE_PROVIDER(Yahoo),
+            # 그 외는 DAILY_PRICE_PROVIDER. US 는 gap 개념이 없어 gap_provider 는 무시된다.
             incomplete_fetch = await daily_price_seed.backfill_closes(
                 conn,
                 settings.data_go_kr_api_key,
@@ -90,7 +92,11 @@ async def get_asset_history(
                 earliest,
                 today,
                 country_code=country,
-                primary_provider=settings.daily_price_provider,
+                primary_provider=(
+                    settings.us_daily_price_provider
+                    if country == "US"
+                    else settings.daily_price_provider
+                ),
                 gap_provider=settings.daily_price_gap_provider,
             )
         closes = await daily_prices_repo.get_closes(
@@ -104,7 +110,11 @@ async def get_asset_history(
         keys = [position_key(tk, country) for tk in tickers]
         try:
             quotes = await fetch_quotes_by_keys(
-                quote_state, keys, client=http_client, providers=settings.quote_provider_list
+                quote_state,
+                keys,
+                client=http_client,
+                providers=settings.quote_provider_list,
+                us_providers=settings.us_quote_provider_list,
             )
         except Exception:
             logger.warning("asset_history 시세 조회 실패 user_id=%s", user.id, exc_info=True)

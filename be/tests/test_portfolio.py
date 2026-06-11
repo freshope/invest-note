@@ -166,7 +166,7 @@ class TestPortfolioSummary:
         async def mock_quotes(state, keys, **kw):
             return {"AAPL:US": {"price": 220.0, "currency": "USD", "as_of": ""}}
 
-        async def mock_fx(trades, state, client, *, force_refresh=False):
+        async def mock_fx(trades, state, client, *, force_refresh=False, providers=None):
             return 1500.0  # 현재 USD/KRW
 
         with _patch_portfolio(conn):
@@ -198,7 +198,7 @@ class TestPortfolioSummary:
         async def mock_quotes(state, keys, **kw):
             return {"AAPL:US": {"price": 120.0, "currency": "USD", "as_of": ""}}
 
-        async def mock_fx(trades, state, client, *, force_refresh=False):
+        async def mock_fx(trades, state, client, *, force_refresh=False, providers=None):
             return None  # 환율 못 받음
 
         with _patch_portfolio(conn):

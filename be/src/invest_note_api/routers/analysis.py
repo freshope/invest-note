@@ -106,7 +106,13 @@ async def get_analysis_dashboard(
     # quotes fetch 와 직렬 대기하지 않고 create_task 로 동시 실행 — fetch_usdkrw 는 내부에서
     # 예외를 삼키고 None 을 반환하므로 task 예외 누수가 없다.
     fx_task = asyncio.create_task(
-        usdkrw_if_foreign(all_trades, fx_state, http_client, force_refresh=refresh)
+        usdkrw_if_foreign(
+            all_trades,
+            fx_state,
+            http_client,
+            force_refresh=refresh,
+            providers=settings.fx_provider_list,
+        )
     )
 
     pnl_map = build_pnl_map(trades)
@@ -123,6 +129,7 @@ async def get_analysis_dashboard(
             client=http_client,
             force_refresh=refresh,
             providers=settings.quote_provider_list,
+            us_providers=settings.us_quote_provider_list,
         )
     except Exception as e:
         quote_error = e

@@ -38,3 +38,5 @@ YAHOO_CHART_URL = "https://query2.finance.yahoo.com/v8/finance/chart/{symbol}?in
 # YAHOO_CHART_URL 은 ?interval=1d&range=1d 가 박혀 있어 historical 구간 조회에 부적합.
 YAHOO_CHART_RANGE_URL = "https://query2.finance.yahoo.com/v8/finance/chart/{symbol}"
 YAHOO_SEARCH_URL = "https://query2.finance.yahoo.com/v1/finance/search"
+# 환율 폴백 — open.er-api.com(무인증). 응답: {"result":"success","base_code","rates":{...},...}
+ER_API_LATEST_URL = "https://open.er-api.com/v6/latest/{base}"

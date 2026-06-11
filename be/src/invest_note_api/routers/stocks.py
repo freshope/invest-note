@@ -51,6 +51,7 @@ async def get_quotes(
         client=http_client,
         force_refresh=refresh,
         providers=settings.quote_provider_list,
+        us_providers=settings.us_quote_provider_list,
     )
 
 
@@ -65,13 +66,19 @@ async def get_fx(
     user: AuthenticatedUser = Depends(get_current_user),
     fx_state: FxCacheState = Depends(get_fx_cache_state),
     http_client: httpx.AsyncClient = Depends(get_http_client),
+    settings: Settings = Depends(get_settings),
 ) -> FxRate | None:
     """통화쌍 현재 환율. 실패 시 null. MVP 는 USD/KRW 만 허용."""
     base, quote = base.upper(), quote.upper()
     if base not in _FX_ALLOWED or quote not in _FX_ALLOWED or base == quote:
         raise HTTPException(status_code=400, detail="지원하지 않는 통화쌍입니다.")
     return await get_fx_rate(
-        fx_state, client=http_client, base=base, quote=quote, force_refresh=refresh
+        fx_state,
+        client=http_client,
+        base=base,
+        quote=quote,
+        force_refresh=refresh,
+        providers=settings.fx_provider_list,
     )
 
 

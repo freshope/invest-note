@@ -7,6 +7,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # 이 상수를 import 해 사용한다(Settings 기본 문자열과의 drift 방지).
 DEFAULT_QUOTE_PROVIDERS = ("naver", "yahoo")
 DEFAULT_STOCK_SEED_SOURCES = ("data_go_kr", "stock_prices", "securities")
+# 해외(US) 공급자 기본값 — 현재 단일 출처지만 KR 과 동일한 registry/env 구조로 통일.
+DEFAULT_US_QUOTE_PROVIDERS = ("yahoo",)
+DEFAULT_US_STOCK_SEED_SOURCES = ("nasdaqtrader",)
+# 환율(FX) 공급자 체인 — Yahoo 1순위, 실패 시 open.er-api.com(무인증) 폴백.
+DEFAULT_FX_PROVIDERS = ("yahoo", "er_api")
 
 
 class Settings(BaseSettings):
@@ -46,13 +51,26 @@ class Settings(BaseSettings):
     # "kis"(국내주식 현재가 — KIS_APP_KEY/KIS_APP_SECRET 필요).
     quote_providers: str = ",".join(DEFAULT_QUOTE_PROVIDERS)
 
+    # 해외(US) 시세 공급자 체인. 등록: "yahoo"(suffix 없는 bare 티커). KR 과 동일 fallback 구조.
+    us_quote_providers: str = ",".join(DEFAULT_US_QUOTE_PROVIDERS)
+
+    # 환율(FX, external/fx.py) 공급자 체인. 콤마 구분, 앞 항목부터 시도해 첫 성공값 사용.
+    # 등록 공급자: "yahoo"({quote}=X chart), "er_api"(open.er-api.com, 무인증).
+    fx_providers: str = ",".join(DEFAULT_FX_PROVIDERS)
+
     # 종목 마스터 seed(services/stock_seed.py) 소스 체인. 콤마 구분, 순서=우선순위.
     # 첫 번째로 데이터를 반환한 소스가 authority(종목명 overwrite), 나머지는 preserve.
     # 등록 소스: "data_go_kr", "stock_prices", "securities", "kis"(종목마스터 파일, 키 불필요).
     stock_seed_sources: str = ",".join(DEFAULT_STOCK_SEED_SOURCES)
 
+    # 해외(US) 종목 마스터 seed(stock_seed.seed_us) 소스 체인. 등록: "nasdaqtrader"(공개 심볼 파일).
+    us_stock_seed_sources: str = ",".join(DEFAULT_US_STOCK_SEED_SOURCES)
+
     # 일별 종가(services/daily_price_seed.py) primary 공급자. 등록: "data_go_kr", "kis".
     daily_price_provider: str = "data_go_kr"
+
+    # 해외(US) 일별 종가 primary 공급자. 등록: "yahoo"(chart v8 range). US 는 T+1 gap 개념이 없어 gap 없음.
+    us_daily_price_provider: str = "yahoo"
 
     # 일별 종가 T+1 tail-gap 보충 공급자. 등록: "naver", "kis"(T+0 반영).
     # "none" 또는 빈 값이면 보충 비활성.
@@ -76,8 +94,12 @@ class Settings(BaseSettings):
     # os.environ 값은 pydantic-settings 가 strip 하지 않으므로 여기서 처리해야 한다.
     @field_validator(
         "quote_providers",
+        "us_quote_providers",
+        "fx_providers",
         "stock_seed_sources",
+        "us_stock_seed_sources",
         "daily_price_provider",
+        "us_daily_price_provider",
         "daily_price_gap_provider",
         "crossvalidate_provider",
         "nps_provider",
@@ -117,8 +139,20 @@ class Settings(BaseSettings):
         return [p.strip() for p in self.quote_providers.split(",") if p.strip()]
 
     @property
+    def us_quote_provider_list(self) -> list[str]:
+        return [p.strip() for p in self.us_quote_providers.split(",") if p.strip()]
+
+    @property
+    def fx_provider_list(self) -> list[str]:
+        return [p.strip() for p in self.fx_providers.split(",") if p.strip()]
+
+    @property
     def stock_seed_source_list(self) -> list[str]:
         return [s.strip() for s in self.stock_seed_sources.split(",") if s.strip()]
+
+    @property
+    def us_stock_seed_source_list(self) -> list[str]:
+        return [s.strip() for s in self.us_stock_seed_sources.split(",") if s.strip()]
 
 
 @lru_cache

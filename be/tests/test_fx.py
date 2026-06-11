@@ -10,6 +10,7 @@ from invest_note_api.external.fx import (
     FxCacheState,
     _yahoo_fx_symbol,
     get_fx_rate,
+    validate_fx_providers,
 )
 
 
@@ -111,9 +112,58 @@ def test_get_fx_rate_returns_none_on_failure(fx_state: FxCacheState):
 
     async def runner():
         async with _build_mock_client(routes) as client:
-            return await get_fx_rate(fx_state, client=client)
+            return await get_fx_rate(fx_state, client=client, providers=["yahoo"])
 
     assert asyncio.run(runner()) is None
+
+
+def test_get_fx_rate_falls_back_to_er_api(fx_state: FxCacheState):
+    """Yahoo 실패 시 체인이 er_api 로 폴백해 환율을 채운다 — 단일 공급자 SPOF 완화."""
+    routes = {
+        "https://query2.finance.yahoo.com": httpx.Response(503),
+        "https://open.er-api.com/v6/latest/USD": httpx.Response(
+            200,
+            json={"result": "success", "base_code": "USD", "rates": {"KRW": 1450.25}},
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await get_fx_rate(
+                fx_state, client=client, providers=["yahoo", "er_api"]
+            )
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["rate"] == 1450.25
+    assert result["base"] == "USD"
+    assert result["quote"] == "KRW"
+
+
+def test_er_api_non_success_result_is_skipped(fx_state: FxCacheState):
+    """er_api result!="success" 는 0.0 으로 걸러져 None — 잘못된 환율 박제 방지."""
+    routes = {
+        "https://query2.finance.yahoo.com": httpx.Response(503),
+        "https://open.er-api.com/v6/latest/USD": httpx.Response(
+            200, json={"result": "error", "rates": {}}
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await get_fx_rate(
+                fx_state, client=client, providers=["yahoo", "er_api"]
+            )
+
+    assert asyncio.run(runner()) is None
+
+
+def test_validate_fx_providers_rejects_unknown_and_empty():
+    with pytest.raises(ValueError):
+        validate_fx_providers(["yahoo", "bogus"])
+    with pytest.raises(ValueError):
+        validate_fx_providers([])
+    validate_fx_providers(["yahoo", "er_api"])  # 정상 — 예외 없음
 
 
 def test_get_fx_rate_returns_none_on_empty_result(fx_state: FxCacheState):
@@ -151,8 +201,11 @@ def test_get_fx_rate_keeps_stale_on_refresh_failure(fx_state: FxCacheState):
 
     async def runner():
         async with client:
-            first = await get_fx_rate(fx_state, client=client)
-            second = await get_fx_rate(fx_state, client=client, force_refresh=True)
+            # 단일 공급자로 고정 — stale 유지 의미를 폴백 체인과 분리해 검증.
+            first = await get_fx_rate(fx_state, client=client, providers=["yahoo"])
+            second = await get_fx_rate(
+                fx_state, client=client, force_refresh=True, providers=["yahoo"]
+            )
             return first, second
 
     first, second = asyncio.run(runner())
@@ -167,8 +220,8 @@ def test_get_fx_rate_failure_not_negative_cached(fx_state: FxCacheState):
 
     async def runner():
         async with client:
-            a = await get_fx_rate(fx_state, client=client)
-            b = await get_fx_rate(fx_state, client=client)
+            a = await get_fx_rate(fx_state, client=client, providers=["yahoo"])
+            b = await get_fx_rate(fx_state, client=client, providers=["yahoo"])
             return a, b
 
     a, b = asyncio.run(runner())

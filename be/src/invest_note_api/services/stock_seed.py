@@ -35,7 +35,11 @@ from typing import Any, Awaitable, Callable
 import asyncpg
 import httpx
 
-from invest_note_api.config import DEFAULT_STOCK_SEED_SOURCES, Settings
+from invest_note_api.config import (
+    DEFAULT_STOCK_SEED_SOURCES,
+    DEFAULT_US_STOCK_SEED_SOURCES,
+    Settings,
+)
 from invest_note_api.domain.hangul import to_chosung
 from invest_note_api.domain.trade_types import COUNTRY_US, DEFAULT_COUNTRY
 from invest_note_api.external.constants import CURRENCY_USD, USER_AGENT
@@ -515,27 +519,52 @@ async def fetch_nasdaq_us(*, client: httpx.AsyncClient | None = None) -> list[di
     return rows
 
 
-async def seed_us(db_url: str) -> None:
-    """US 종목 마스터 적재 — nasdaqtrader authority 단일 소스 UPSERT(country_code='US').
+async def _us_source_nasdaqtrader() -> list[dict]:
+    """nasdaqtrader 소스 — 모듈 전역 late-binding 으로 테스트 monkeypatch 를 존중."""
+    return await fetch_nasdaq_us()
+
+
+# US 종목 마스터 소스 registry — env US_STOCK_SEED_SOURCES 의 이름이 여기 등록돼 있어야 한다.
+# 현재 nasdaqtrader 단일이지만 KR(_build_pipeline)과 동일한 registry/env 구조로 통일.
+_US_STOCK_SEED_REGISTRY: dict[str, Callable[[], Awaitable[list[dict]]]] = {
+    "nasdaqtrader": _us_source_nasdaqtrader,
+}
+
+
+def validate_us_seed_sources(sources: Sequence[str]) -> None:
+    """env US_STOCK_SEED_SOURCES 오타를 트리거/CLI 시점에 fail-fast. 빈 체인은 기본 소스."""
+    resolve_chain(
+        sources or DEFAULT_US_STOCK_SEED_SOURCES,
+        _US_STOCK_SEED_REGISTRY,
+        domain="us_stock_seed",
+    )
+
+
+async def seed_us(db_url: str, *, sources: Sequence[str] | None = None) -> None:
+    """US 종목 마스터 적재 — env US_STOCK_SEED_SOURCES 의 첫 소스를 authority 로 UPSERT.
 
     KR 파이프라인(seed())과 독립. authority overwrite 로 이름/보드를 canonical 화하고,
     응답이 비어있지 않을 때만 soft-delete(상폐 정리)한다 — 빈 응답에 대량 오상폐 방지.
+    `sources` 는 호출측(main_us)이 settings.us_stock_seed_source_list 를 전달.
     """
+    chain = sources or DEFAULT_US_STOCK_SEED_SOURCES
+    source_name = chain[0]  # 첫 소스 = authority(현재 단일 소스)
+    fetch = resolve_chain(chain, _US_STOCK_SEED_REGISTRY, domain="us_stock_seed")[0]
     conn = await asyncpg.connect(db_url, statement_cache_size=0)
     try:
         if not await conn.fetchval("select pg_try_advisory_lock(hashtext('seed_us_stocks'))"):
             print("다른 인스턴스가 실행 중 — skip")
             return
-        rows = await fetch_nasdaq_us()
+        rows = await fetch()
         if not rows:
-            print("  [nasdaqtrader] 빈 응답 — skip")
+            print(f"  [{source_name}] 빈 응답 — skip")
             return
         n = await upsert_stocks(
-            conn, rows, overwrite_name=True, source="nasdaqtrader", country_code=COUNTRY_US
+            conn, rows, overwrite_name=True, source=source_name, country_code=COUNTRY_US
         )
         union = {r["ticker"] for r in rows if r.get("ticker")}
         deleted = await soft_delete_not_in(conn, COUNTRY_US, union)
-        print(f"  [nasdaqtrader] {n}건 반영, soft-delete {deleted}건")
+        print(f"  [{source_name}] {n}건 반영, soft-delete {deleted}건")
         print("완료.")
     finally:
         await conn.close()
@@ -546,7 +575,9 @@ def main_us() -> None:
     db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
     if not db_url:
         raise SystemExit("database_url 미설정")
-    asyncio.run(seed_us(db_url))
+    # KR(admin.trigger_seed_stocks)과 대칭 — 엔트리포인트에서 env 오타를 fail-fast.
+    validate_us_seed_sources(settings.us_stock_seed_source_list)
+    asyncio.run(seed_us(db_url, sources=settings.us_stock_seed_source_list))
 
 
 # ─────────────────────────── 시가총액 fetcher (data.go.kr 시세) ───────────────────────────

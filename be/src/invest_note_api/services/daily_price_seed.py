@@ -397,13 +397,18 @@ async def _fetch_kis_gap_closes(
     return await fetch_kis_daily_closes(client, ticker, begin, end)
 
 
-# 공급자 registry — 새 공급자 추가 시 여기 등록하면 env 변경만으로 전환 가능.
+# 공급자 registry(KR) — 새 공급자 추가 시 여기 등록하면 env 변경만으로 전환 가능.
 _PRIMARY_REGISTRY = {"data_go_kr": _fetch_data_go_kr_closes, "kis": _fetch_kis_primary_closes}
 _GAP_REGISTRY = {"naver": _fetch_naver_gap_closes, "kis": _fetch_kis_gap_closes}
+# 해외(US) primary registry — 현재 yahoo 단일이지만 KR 과 동일한 registry/env 구조로 통일.
+# US 는 Yahoo range 가 [begin, end] 전체를 한 번에 주므로 T+1 tail-gap 개념이 없어 gap 공급자 없음.
+_US_PRIMARY_REGISTRY = {"yahoo": _fetch_yahoo_us_primary}
 
 
-def validate_daily_price_providers(primary: str, gap: str) -> None:
-    """env DAILY_PRICE_PROVIDER/DAILY_PRICE_GAP_PROVIDER 오타를 앱 startup 에서 fail-fast.
+def validate_daily_price_providers(
+    primary: str, gap: str, us_primary: str = "yahoo"
+) -> None:
+    """env DAILY_PRICE_PROVIDER/DAILY_PRICE_GAP_PROVIDER/US_DAILY_PRICE_PROVIDER fail-fast.
 
     backfill_closes 는 GET /assets/history 요청 경로에서 호출되므로, 오타를 호출 시점
     ValueError 로 두면 사용자 대면 500 이 반복된다. gap 은 비활성 값("", "none") 허용.
@@ -411,6 +416,7 @@ def validate_daily_price_providers(primary: str, gap: str) -> None:
     resolve_chain([primary], _PRIMARY_REGISTRY, domain="daily_price")
     if gap not in _GAP_DISABLED:
         resolve_chain([gap], _GAP_REGISTRY, domain="daily_price_gap")
+    resolve_chain([us_primary], _US_PRIMARY_REGISTRY, domain="us_daily_price")
 
 
 async def backfill_closes(
@@ -421,14 +427,15 @@ async def backfill_closes(
     today: date,
     *,
     country_code: str = "KR",
-    primary_provider: str = "data_go_kr",
+    primary_provider: str | None = None,
     gap_provider: str = "naver",
 ) -> bool:
     """종목별 결측 구간(watermark 이후~어제)만 fetch→upsert. 종목 fetch 는 병렬.
 
-    `primary_provider`/`gap_provider` 는 env(DAILY_PRICE_PROVIDER/DAILY_PRICE_GAP_PROVIDER)에서
-    호출측이 전달 — 내부에서 get_settings() 를 읽지 않는다. gap_provider 가 "none"/빈 값이면
-    tail-gap 보충 비활성.
+    `primary_provider`/`gap_provider` 는 env(DAILY_PRICE_PROVIDER/US_DAILY_PRICE_PROVIDER/
+    DAILY_PRICE_GAP_PROVIDER)에서 호출측이 전달 — 내부에서 get_settings() 를 읽지 않는다.
+    `primary_provider=None`(미전달)이면 country 별 기본값(KR=data_go_kr, US=yahoo)을 쓴다.
+    gap_provider 가 "none"/빈 값이거나 country=US 면 tail-gap 보충 비활성.
 
     skip 규칙(종목별):
       - begin = max(earliest, watermark+1일). watermark = 적재된 실데이터 max(close_date).
@@ -458,14 +465,17 @@ async def backfill_closes(
     if country_code != "US" and not api_key:
         return True  # 키 없으면 적재 불가 → 종목 있으면 incomplete
 
-    # 공급자 해석 — US 는 env primary/gap 을 우회하고 Yahoo 를 primary 로, gap 없음.
-    # KR 등은 unknown 이름이면 ValueError(fail-fast). gap 은 비활성 값 허용.
+    # 공급자 해석 — country 별 registry 에서 primary_provider 를 해석(unknown 이면 ValueError
+    # fail-fast). US 는 T+1 tail-gap 개념이 없어 gap 없음(gap_provider 무시). KR 등은 gap
+    # 비활성 값("", "none") 허용. 호출측(라우터)이 country 에 맞는 provider 를 넘긴다.
     if country_code == "US":
-        primary_fetch = _fetch_yahoo_us_primary
+        primary_fetch = resolve_chain(
+            [primary_provider or "yahoo"], _US_PRIMARY_REGISTRY, domain="us_daily_price"
+        )[0]
         gap_fetch = None
     else:
         primary_fetch = resolve_chain(
-            [primary_provider], _PRIMARY_REGISTRY, domain="daily_price"
+            [primary_provider or "data_go_kr"], _PRIMARY_REGISTRY, domain="daily_price"
         )[0]
         gap_fetch = (
             None
