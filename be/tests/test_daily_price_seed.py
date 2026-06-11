@@ -677,6 +677,87 @@ async def test_backfill_us_clamps_checked_through_to_cutoff(monkeypatch):
     assert incomplete is False
 
 
+async def test_backfill_us_permanent_failure_records_state_no_retry(monkeypatch):
+    """영구 실패(PermanentFetchError, 티커 형식 위반 등)는 빈 결과로 확정(synced) — 무한 재시도 차단.
+
+    transient 실패(test_backfill_us_fetch_failure_keeps_state_unrecorded)는 미기록·재시도지만,
+    재시도해도 동일한 영구 실패는 sync_state 를 기록해 매 요청 재fetch·재raise 루프를 끊는다.
+    """
+    today = date(2026, 6, 4)
+    yesterday = date(2026, 6, 3)
+    track = _patch_repo(monkeypatch, watermarks={}, sync_state={})
+
+    async def yahoo_permanent(client, ticker, begin, end):
+        raise daily_price_seed.PermanentFetchError("bad ticker")
+
+    monkeypatch.setattr(daily_price_seed, "_fetch_yahoo_us_closes", yahoo_permanent)
+    conn = _fake_conn({"AAPL": "STOCK"})
+
+    incomplete = await daily_price_seed.backfill_closes(
+        conn, "", ["AAPL"], date(2026, 6, 1), today, country_code="US"
+    )
+
+    assert track["upserted_closes"] == []
+    assert track["sync_rows"] == [{"ticker": "AAPL", "checked_through_date": yesterday}]
+    assert incomplete is False
+
+
+async def test_backfill_us_predawn_cooldown_skips_refetch(monkeypatch):
+    """US 새벽(cutoff<yesterday): sync_state 가 cutoff 까지 기록·쿨다운 내면 재fetch 안 함.
+
+    cooldown floor 를 yesterday 로 박으면 cutoff(<yesterday)가 절대 충족 못 해 새벽마다 매 요청
+    재fetch 하던 회귀 — floor 를 checked_through(=cutoff)로 맞춰 쿨다운이 걸리는지 확인.
+    """
+    from datetime import datetime, timezone
+
+    today = date(2026, 6, 4)
+    cutoff = date(2026, 6, 2)  # yesterday(6/3) 미확정 새벽
+    track = _patch_repo(
+        monkeypatch,
+        watermarks={},
+        sync_state={
+            "AAPL": {
+                "checked_through_date": cutoff,
+                "checked_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+    called: list[str] = []
+
+    async def yahoo_rows(client, ticker, begin, end):
+        called.append(ticker)
+        return []
+
+    monkeypatch.setattr(daily_price_seed, "_fetch_yahoo_us_closes", yahoo_rows)
+    monkeypatch.setattr(daily_price_seed, "_us_final_close_cutoff", lambda now: cutoff)
+    conn = _fake_conn({"AAPL": "STOCK"})
+
+    incomplete = await daily_price_seed.backfill_closes(
+        conn, "", ["AAPL"], date(2026, 6, 1), today, country_code="US"
+    )
+
+    assert called == []  # 쿨다운 내 → 재fetch 안 함
+    assert incomplete is False
+
+
+def test_parse_yahoo_us_chart_handles_null_quote_entry():
+    """indicators.quote=[null](상장폐지/거래정지)는 truthy 리스트라 가드 통과 → quote[0] None 크래시 방지."""
+    data = {
+        "chart": {
+            "result": [
+                {
+                    "timestamp": [1717200000],
+                    "indicators": {"quote": [None]},
+                }
+            ]
+        }
+    }
+    rows = daily_price_seed._parse_yahoo_us_chart(
+        data, "AAPL", date(2026, 6, 1), date(2026, 6, 3), cutoff=date(2026, 6, 3)
+    )
+    assert rows == []
+
+
 async def test_fetch_daily_closes_skips_missing_clpr():
     def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -980,7 +1061,8 @@ async def test_fetch_yahoo_us_closes_failure_raises():
 
 
 async def test_fetch_yahoo_us_closes_rejects_path_manipulating_ticker():
-    """화이트리스트 위반 ticker(`/`·`?` 등)는 HTTP 전송 없이 raise — fetch 실패 계약 일관."""
+    """화이트리스트 위반 ticker(`/`·`?` 등)는 HTTP 전송 없이 PermanentFetchError —
+    영구 실패 계약(backfill 이 빈 결과로 확정해 무한 재시도 차단)."""
     import pytest
 
     called = {"hit": False}
@@ -991,7 +1073,7 @@ async def test_fetch_yahoo_us_closes_rejects_path_manipulating_ticker():
 
     async with _mock_client(handler) as client:
         for bad in ("AAPL/../foo", "AAPL?x=1", "AAPL#frag", ""):
-            with pytest.raises(ValueError):
+            with pytest.raises(daily_price_seed.PermanentFetchError):
                 await daily_price_seed._fetch_yahoo_us_closes(
                     client, bad, date(2026, 6, 1), date(2026, 6, 3)
                 )

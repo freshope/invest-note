@@ -90,16 +90,29 @@ describe("TradeEditPanel — 해외(US) 환율 인지", () => {
     expect(screen.getByText(/가격 \(USD\)/)).toBeDefined();
   });
 
-  it("US 거래 제출 시 exchange_rate = 체결원화 / native 로 역산 전송한다(1.0 금지)", async () => {
+  it("US 거래 체결 원화를 수정하지 않으면 exchange_rate 를 patch 에서 제외한다(기록 환율 보존)", async () => {
+    // 자동 제안값(반올림)을 그대로 두고 제출하면 역산 환율이 기록 환율과 미세하게 어긋난다.
+    // exchange_rate(PNL 영향 필드)를 그 drift 값으로 전송하면 의도치 않은 group PnL 재계산이
+    // 발생하므로, 미수정 시 patch 에서 제외해 BE 가 기존 환율을 유지하게 한다.
     renderPanel(makeTrade({ country_code: "US", exchange_rate: 1350 }));
 
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
     await waitFor(() => expect(tradesApi.update).toHaveBeenCalled());
     const [, patch] = (tradesApi.update as ReturnType<typeof vi.fn>).mock.calls[0];
-    // 1,350,000 / (100 × 10) = 1350
-    expect(patch.exchange_rate).toBeCloseTo(1350, 6);
-    expect(patch.exchange_rate).not.toBe(1.0);
+    expect("exchange_rate" in patch).toBe(false);
+  });
+
+  it("체결 원화 = 가격×수량(역산 환율 1.0)이면 검증 에러로 제출을 막는다", async () => {
+    renderPanel(makeTrade({ country_code: "US", exchange_rate: 1350, price: 100, quantity: 10 }));
+
+    const amountInput = screen.getByLabelText(/체결 원화/) as HTMLInputElement;
+    // 100 × 10 = 1,000 → 역산 환율 1.0 → BE 가 해외 거래로 거부(400). FE 가 사전 차단.
+    fireEvent.change(amountInput, { target: { value: "1000" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() => expect(screen.getByText(/환율이 1이 되어/)).toBeDefined());
+    expect(tradesApi.update).not.toHaveBeenCalled();
   });
 
   it("US 거래 체결 원화를 수정하면 역산 환율도 반영된다", async () => {
@@ -133,7 +146,8 @@ describe("TradeEditPanel — 해외(US) 환율 인지", () => {
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
     await waitFor(() => expect(tradesApi.update).toHaveBeenCalled());
     const [, patch] = (tradesApi.update as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(patch.exchange_rate).toBeCloseTo(1350, 6);
+    // 가격만 수정하고 체결 원화는 직접 건드리지 않았으므로 exchange_rate 미전송 → BE 가 기록 환율 유지.
+    expect("exchange_rate" in patch).toBe(false);
   });
 
   it("US 가격에 소수점 입력(716.07)이 보존되어 제출값(역산 환율)에 반영된다", async () => {
@@ -153,7 +167,8 @@ describe("TradeEditPanel — 해외(US) 환율 인지", () => {
     await waitFor(() => expect(tradesApi.update).toHaveBeenCalled());
     const [, patch] = (tradesApi.update as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(patch.price).toBeCloseTo(716.07, 6);
-    expect(patch.exchange_rate).toBeCloseTo(1350, 0);
+    // 체결 원화 미수정 → exchange_rate 미전송(기록 환율 유지). 이 테스트의 핵심은 소수점 보존.
+    expect("exchange_rate" in patch).toBe(false);
   });
 
   it("US 거래는 현재 시세 환율 힌트를 렌더한다", async () => {

@@ -7,6 +7,18 @@ import { TradeBasicForm } from "../TradeBasicForm";
 import { STORAGE_KEYS } from "@/lib/constants/storage";
 import type { Account } from "@/types/database";
 
+vi.mock("@/lib/api-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api-client")>();
+  return {
+    ...actual,
+    // US 보유 평단가는 native(USD) — /portfolio/holding 이 KRW 정규화 없이 반환.
+    portfolioApi: {
+      ...actual.portfolioApi,
+      holding: vi.fn().mockResolvedValue({ quantity: 5, avgBuyPrice: 150.5 }),
+    },
+  };
+});
+
 vi.mock("../StockSearchInput", () => ({
   StockSearchInput: ({
     value,
@@ -155,5 +167,19 @@ describe("TradeBasicForm", () => {
     expect(holdingInput.value).toBe("Apple Inc");
     expect(screen.queryByText("AAPL")).toBeNull();
     expect(screen.getByText("종목 선택 시 자동 입력")).toBeDefined();
+  });
+
+  it("US 보유 종목 매도 시 평단가를 USD($)로 표기한다(원 아님·센트 보존)", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(STORAGE_KEYS.LAST_ACCOUNT_ID, "account-1");
+    renderForm();
+
+    await user.click(screen.getByRole("tab", { name: "매도" }));
+    fireEvent.click(screen.getByRole("button", { name: "select-sell-holding" }));
+
+    // /portfolio/holding 의 native USD 평단가(150.5)는 $150.50 으로 — '평단가 151원' 오표기 방지.
+    const line = await screen.findByText(/평단가 \$150\.50/);
+    expect(line).toBeDefined();
+    expect(line.textContent).not.toContain("원");
   });
 });

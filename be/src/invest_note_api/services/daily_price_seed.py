@@ -53,6 +53,15 @@ _PAGE_SIZE = 1000
 # 화이트리스트(quotes._US_TICKER_PATTERN 과 동일 규칙, `$`=우선주 포함). 불일치는 fetch 실패
 # 계약대로 raise. 검증은 변환 전 원본 ticker 에 적용한다.
 _US_TICKER_PATTERN = re.compile(r"[A-Za-z0-9.$\-]{1,20}")
+
+
+class PermanentFetchError(Exception):
+    """재시도해도 동일하게 실패하는 영구 오류(티커 형식 위반 등).
+
+    transient 실패(네트워크/비200)는 sync_state 미기록 → 다음 요청 재시도지만,
+    영구 실패를 같은 방식으로 두면 매 /assets/history 요청마다 재fetch·재raise 하는
+    무한 루프가 된다. backfill 은 이 예외를 빈 결과(synced)로 확정해 재시도를 멈춘다.
+    """
 # data.go.kr 동시 호출 상한(게이트웨이 429 가드). stock_seed._NAVER_CONCURRENCY 선례.
 _BACKFILL_CONCURRENCY = 8
 # 어제까지 조회 완료(빈 응답 포함)한 종목의 재probe 쿨다운. 짧으면 늦은 발행(T+1 ~14:00 KST)을
@@ -283,7 +292,9 @@ def _parse_yahoo_us_chart(
     quote = ((res0.get("indicators") or {}).get("quote") or [])
     if not timestamps or not quote:
         return []
-    closes = quote[0].get("close") or []
+    # quote=[null](상장폐지/거래정지 종목)는 truthy 리스트라 위 가드를 통과 → quote[0] None 가드.
+    q0 = quote[0] or {}
+    closes = q0.get("close") or []
     rows: list[dict] = []
     for ts, raw in zip(timestamps, closes):
         if raw is None or not isinstance(ts, (int, float)):
@@ -315,11 +326,12 @@ async def _fetch_yahoo_us_closes(
     - 전송 실패(예외)·비200(raise_for_status)은 **raise 전파** → backfill 이 sync_state 미기록.
     - 정상 200 + 범위 내 확정 캔들 없음(주말/휴장, cutoff 필터로 전부 제외)은 `[]` 반환.
 
-    ticker 가 화이트리스트(_US_TICKER_PATTERN)에 불일치하면 URL 경로 조작 방지를 위해 raise —
-    fetch 실패 계약과 일관(backfill 이 sync_state 미기록 → 다음 요청 재시도).
+    ticker 가 화이트리스트(_US_TICKER_PATTERN)에 불일치하면 URL 경로 조작 방지를 위해
+    PermanentFetchError — 재시도해도 동일하게 실패하므로 backfill 이 빈 결과로 확정해
+    무한 재fetch 루프를 차단한다(transient 실패와 구분).
     """
     if not _US_TICKER_PATTERN.fullmatch(ticker):
-        raise ValueError(f"US ticker 형식 위반: {ticker!r}")
+        raise PermanentFetchError(f"US ticker 형식 위반: {ticker!r}")
     # period1=begin 00:00 UTC, period2=end+1일 00:00 UTC(end 당일 캔들 포함).
     period1 = int(datetime(begin.year, begin.month, begin.day, tzinfo=timezone.utc).timestamp())
     period2 = int(
@@ -520,10 +532,13 @@ async def backfill_closes(
         st = sync_state.get(ticker)
         if (
             st
-            and st["checked_through_date"] >= yesterday
+            and st["checked_through_date"] >= checked_through
             and now - st["checked_at"] < _BACKFILL_RECHECK_COOLDOWN
         ):
-            continue  # 어제까지 최근 확인함(빈 범위) → 쿨다운 내 재질의 안 함.
+            # 확정 가능한 최신일(checked_through)까지 확인함 → 쿨다운 내 재질의 안 함.
+            # US 새벽처럼 checked_through 가 yesterday 미만으로 클램프돼도 cooldown 이 걸린다
+            # (yesterday 고정 시 US 가 매 요청 재fetch 하던 문제 차단). KR 은 checked_through==yesterday.
+            continue
         to_fetch.append((ticker, begin))
 
     if not to_fetch:
@@ -546,6 +561,9 @@ async def backfill_closes(
                     market=market_of.get(ticker),
                     client=client,
                 )
+            except PermanentFetchError:
+                # 영구 실패(티커 형식 위반 등) → 빈 결과로 확정(synced)해 재시도 중단.
+                return ticker, [], True
             except Exception:
                 return ticker, None, False  # 실패 → sync_state 미기록(다음 요청 재시도).
             # tail-gap 보충: primary 가 어제까지 못 채운 구간을 gap 공급자로(KR 전용 경로).

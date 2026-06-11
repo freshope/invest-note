@@ -7,6 +7,7 @@ MVP 이후 구현할 작업 후보 목록.
 ## 해외주식(US) 지원 — Phase C + 후속 (Phase A·B 완료)
 
 로드맵 v2 "해외 주식 지원". **Phase A(기반 plumbing)·B(정합성 슬라이스) 모두 2026-06-08 완료.**
+
 - Phase A: US 시세(`_fetch_yahoo_us`), USD/KRW 환율(`external/fx.py`+`GET /stocks/fx`), 검색
   KR+US 병합(`search_multi`), US seed(`seed_us`), FE 통화 포맷 유틸.
 - Phase B: 해외 BUY 차단 해제, `domain/trade_types.to_krw`/`currency_for_country`,
@@ -15,22 +16,22 @@ MVP 이후 구현할 작업 후보 목록.
   `useFxRate`), `StockSearchInput` 필터 해제, HoldingCard native 통화 표시. 표시 전략: **KRW 환산 단일 총액**.
 
 - [ ] **Phase C — import + 엣지.** Samsung/Toss 브로커 파서의 USD 거래 skip 해제
-  (`broker_import/samsung_xlsx.py`·`toss_pdf.py`), 해외 거래세/수수료 규칙, 엣지케이스.
+      (`broker_import/samsung_xlsx.py`·`toss_pdf.py`), 해외 거래세/수수료 규칙, 엣지케이스.
 - [ ] **해외 SELL latent 경로 정리** — 해외 BUY 가 이제 허용되므로 정상 경로(BUY→SELL)가 열렸다.
-  선행 BUY 없는 해외 SELL 단독 입력의 처리 규칙은 KR 과 동일(walker `running_qty>0` 가드)이라
-  포지션은 안 생기나, 수동 입력 시 사용자 안내 UX 검토.
+      선행 BUY 없는 해외 SELL 단독 입력의 처리 규칙은 KR 과 동일(walker `running_qty>0` 가드)이라
+      포지션은 안 생기나, 수동 입력 시 사용자 안내 UX 검토.
 - [x] **통화 표시/입력 전면 재설계** — 2026-06-09 완료(앞선 "폼 통화 라벨"을 대체·확장). 방향:
-  기본 표시 원화 통일 + 해외 달러 보조 + 거래 등록 시 USD 단가+환율 입력. **거래 시점 환율을
-  저장**(마이그레이션 `029_add_exchange_rate`, `trades.exchange_rate`)하고 계산 엔진을
-  `price×rate`=KRW 로 정규화(`domain/trade_types.krw_normalized_trade`) → 원가·실현손익 KRW 고정,
-  평가액만 현재 환율. Phase B 의 "현재 환율 환산" BE 모델을 대체(`build_pnl_map_krw` 삭제,
-  cost 쪽 usdkrw 제거, live-fx 는 평가액 전용). Position 에 native(USD) 보조 필드 추가, FE
-  `MoneyText`(원화+달러 보조)·입력폼 환율칸·US 자동수수료 OFF. BE 530 / FE 173 그린.
+      기본 표시 원화 통일 + 해외 달러 보조 + 거래 등록 시 USD 단가+환율 입력. **거래 시점 환율을
+      저장**(마이그레이션 `029_add_exchange_rate`, `trades.exchange_rate`)하고 계산 엔진을
+      `price×rate`=KRW 로 정규화(`domain/trade_types.krw_normalized_trade`) → 원가·실현손익 KRW 고정,
+      평가액만 현재 환율. Phase B 의 "현재 환율 환산" BE 모델을 대체(`build_pnl_map_krw` 삭제,
+      cost 쪽 usdkrw 제거, live-fx 는 평가액 전용). Position 에 native(USD) 보조 필드 추가, FE
+      `MoneyText`(원화+달러 보조)·입력폼 환율칸·US 자동수수료 OFF. BE 530 / FE 173 그린.
   - historical-FX 정밀화 backlog 항목은 이로써 **해소**(거래 시점 환율 저장).
 - [x] **historical-FX 정밀화** — 2026-06-09 위 "통화 표시/입력 재설계"로 해소. 거래 시점 환율을
-  `trades.exchange_rate` 에 저장해 원가·실현손익이 거래 시점 원화로 고정됨(평가액만 현재 환율).
+      `trades.exchange_rate` 에 저장해 원가·실현손익이 거래 시점 원화로 고정됨(평가액만 현재 환율).
 - [x] **분석 size 분포 통화 정밀도** ✅ (D5-1, 2026-06-09) — `position_size_dist` 버킷 입력을
-  `total_amount × 거래시점 exchange_rate` 로 KRW 환산하여 USD 거래 버킷 정합 해소. KR=1.0 무변경.
+      `total_amount × 거래시점 exchange_rate` 로 KRW 환산하여 USD 거래 버킷 정합 해소. KR=1.0 무변경.
 
 ## 분석 탭 성능 / 유지보수
 
@@ -79,6 +80,13 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리
 - [ ] iOS 상태바 색 동기화 — @capacitor/status-bar 도입 후 다크/라이트 전환 시 status bar style 동기화
+
+## 사용자 요청 및 추가 기능
+
+- [ ] 이미 가진 보유 종목에서 바로 매수/매도를 등록 할 수 있는 기능 추가
+- [ ] 목표가(%), 손절 및 익절 계획을 입력하고 그것을 지켰는지 여부를 분석
+- [ ] 분석태그에 사용자 태그 추가
+- [ ] 관심 종목 추가 (보유하지 않은 종목도 볼 수 있게)
 
 ## v2 — KIS API 연동 (2026-06-07 사전 조사 완료, 2-트랙 분리)
 

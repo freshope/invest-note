@@ -278,7 +278,11 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
                 환율을 불러오면 일별 내역을 표시해요.
               </div>
             ) : (
-              <AssetHistoryList items={items} isStockView={isStockView} />
+              <AssetHistoryList
+                items={items}
+                isStockView={isStockView}
+                closeCurrency={country === "US" ? "USD" : "KRW"}
+              />
             )}
           </div>
         </>

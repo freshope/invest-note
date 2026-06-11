@@ -61,6 +61,11 @@ function makeSchema(isForeign: boolean) {
     .superRefine((val, ctx) => {
       if (isForeign && !(val.amount_krw > 0)) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["amount_krw"], message: "체결 원화를 입력해주세요." });
+        return;
+      }
+      // 체결 원화 = 가격×수량이면 역산 환율이 1.0 → BE 가 해외 거래로 거부(400). 사전 차단.
+      if (isForeign && impliedExchangeRate(val.amount_krw, val.price, val.quantity) === 1) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["amount_krw"], message: "체결 원화가 가격×수량과 같으면 환율이 1이 되어 저장할 수 없어요." });
       }
     });
 }
@@ -159,10 +164,15 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
   async function onSubmit(values: FormValues) {
     try {
       // 해외(US) 거래는 체결 원화 / native(가격×수량)로 거래 시점 환율을 역산해 전송한다(1.0 금지 — BE 가드).
-      // KR 거래는 exchange_rate 를 patch 에서 제외(미포함 시 기존값 유지).
+      // 단, 사용자가 체결 원화를 직접 수정했을 때만(dirty) 포함한다. 자동 제안값(반올림) 그대로면
+      // 역산 환율이 기존 환율과 미세하게 어긋나 exchange_rate(PNL 영향 필드) patch 가 의도치 않은
+      // group PnL 재계산을 유발하므로 제외 → BE 가 기존 환율 유지. amount_krw effect(151)와 동일 신호.
+      // KR 거래는 항상 제외(미포함 시 기존값 유지).
       const implied = impliedExchangeRate(values.amount_krw, values.price, values.quantity);
       const exchangeRatePatch =
-        isForeign && implied != null ? { exchange_rate: implied } : {};
+        isForeign && getFieldState("amount_krw").isDirty && implied != null
+          ? { exchange_rate: implied }
+          : {};
       await tradesApi.update(trade.id, {
         trade_type: trade.trade_type,
         market_type: trade.market_type,

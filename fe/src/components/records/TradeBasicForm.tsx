@@ -61,6 +61,11 @@ const schema = z.object({
 }).superRefine((val, ctx) => {
   if (val.country_code === "US" && !(val.amount_krw > 0)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["amount_krw"], message: "체결 원화를 입력해주세요." });
+    return;
+  }
+  // 체결 원화 = 가격×수량이면 역산 환율이 1.0 → BE 가 해외 거래로 거부(400). 사전 차단.
+  if (val.country_code === "US" && impliedExchangeRate(val.amount_krw, val.price, val.quantity) === 1) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["amount_krw"], message: "체결 원화가 가격×수량과 같으면 환율이 1이 되어 등록할 수 없어요." });
   }
 });
 
@@ -486,7 +491,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 ? "보유 수량 조회 중..."
                 : holdingQty === 0
                   ? "보유하지 않은 종목입니다"
-                  : `보유 ${fmt(holdingQty)}주${avgBuyPrice ? ` · 평단가 ${fmt(Math.round(avgBuyPrice))}원` : ""}`}
+                  : `보유 ${fmt(holdingQty)}주${avgBuyPrice ? ` · 평단가 ${isForeign ? formatMoney(avgBuyPrice, "USD") : `${fmt(Math.round(avgBuyPrice))}원`}` : ""}`}
             </p>
           )}
         </div>
