@@ -360,6 +360,12 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 setValue("ticker_symbol", stock.code);
                 setValue("country_code", stock.market);
                 setValue("exchange", stock.exchange);
+                // 해외 종목 전환 시 KR 자동계산 수수료/세금(원화 기준)을 비운다 —
+                // recalcFees 가 isForeign 에서 early-return 이라 stale KR 값이 남는 것을 방지.
+                if (currencyForCountry(stock.market) === "USD") {
+                  setValue("commission", 0);
+                  setValue("tax", 0);
+                }
               };
 
               if (tradeType === TRADE_TYPE.SELL) {

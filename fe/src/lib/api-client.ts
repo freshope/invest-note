@@ -423,6 +423,9 @@ export interface AnalysisDashboardData {
   behavior: BehaviorData;
   suggestions: SuggestionsData;
   missingQuoteTickers: string[];
+  // 시세는 있으나 환율 미상으로 해외 평가액 제외됨 — '환율 미상' 안내용(시세 미조회와 구분).
+  // optional: 구버전 BE 응답 호환 — 소비처는 `?? false` 폴백.
+  fxMissing?: boolean;
 }
 
 export const analysisApi = {

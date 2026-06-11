@@ -98,7 +98,10 @@ export function applyQuotesToTotals(
   const missingQuoteTickers: string[] = [];
   for (const p of positionsWithQuotes) {
     if (p.evaluation === null) {
-      missingQuoteTickers.push(p.assetName);
+      // 시세는 받았는데 환율만 없는 해외 포지션은 '시세 미조회'가 아니라 '환율 미상' —
+      // currentPrice 가 있으면 환율 문제이므로 missingQuote 라벨에서 제외(오라벨 방지).
+      // 홈은 fxBasis 자리에 '환율 미상' 안내를 따로 띄운다.
+      if (p.currentPrice === null) missingQuoteTickers.push(p.assetName);
       continue;
     }
     totalEvaluation += p.evaluation;

@@ -85,7 +85,7 @@ export function HomeDashboard() {
 
   // 해외(비-KR) 보유가 있을 때만 환율 조회 — KRW 환산 합산용. 없으면 비활성(usdkrw=null).
   const hasForeign = (positions ?? []).some((p) => p.country !== DEFAULT_COUNTRY_CODE);
-  const { usdkrw, asOf } = useFxRate(hasForeign);
+  const { usdkrw, asOf, fxError } = useFxRate(hasForeign);
 
   // summary(lite) + quotes 결합: 시세 도착 전엔 base(시세 null), 도착하면 overlay 값으로 교체.
   // HoldingCard 가 null→"—" 처리하므로 깜빡임 없이 점진 렌더. 해외 보유는 usdkrw 로 KRW 환산.
@@ -141,13 +141,16 @@ export function HomeDashboard() {
     // 해외 보유 평가액이 어느 환율로 KRW 환산됐는지 노출(투명성). 환율/기준시각 둘 다 있을 때만.
     const fxTime = hasForeign && asOf ? formatTimeKST(asOf) : null;
     const showFxBasis = hasForeign && usdkrw != null && fxTime != null;
+    // 환율 미상(재시도 소진)일 땐 해외 평가금액이 빠진 이유를 명시 — 시세 미조회와 구분.
+    const fxBasis = showFxBasis
+      ? `환율 ${formatFxRate(usdkrw)} 기준 · ${fxTime}`
+      : hasForeign && fxError
+        ? "환율 미상 — 해외 평가금액 제외됨"
+        : null;
 
     return (
       <div className="pt-2 pb-6 space-y-5">
-        <DashboardBody
-          totals={totals}
-          fxBasis={showFxBasis ? `환율 ${formatFxRate(usdkrw)} 기준 · ${fxTime}` : null}
-        />
+        <DashboardBody totals={totals} fxBasis={fxBasis} />
         <AllocationTabs positions={positions} snapshots={snapshots} />
         {positions.length > 0 && (
           <div className="space-y-2">

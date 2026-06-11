@@ -176,11 +176,11 @@ class TestAnalysisDashboard:
         # result_input_rate 는 제거됨 (자동 유도값이라 의미 없음)
         assert "resultInputRate" not in summary
 
-    def test_missing_quote_uses_evaluation_criterion(self, trades_client):
-        """US 보유 + 시세 있음 + 현재 환율 None → evaluation None → missingQuoteTickers 노출.
+    def test_fx_missing_is_separated_from_missing_quote(self, trades_client):
+        """US 보유 + 시세 있음 + 현재 환율 None → evaluation None.
 
-        portfolio.build_totals·FE 와 동일 기준(evaluation). current_price 기준이면 시세가
-        있어 누락됐다 — 양 화면 배지 일관성 회귀.
+        시세는 받았으므로 missingQuoteTickers(시세 미조회)엔 넣지 않고 fxMissing(환율 미상)으로
+        노출한다 — 홈(portfolio.applyQuotesToTotals)과 동일 의미. '시세 미조회' 오라벨 방지.
         """
         buy = _make_trade_row(
             id_="b1", trade_type="BUY", ticker="AAPL", asset_name="Apple",
@@ -198,7 +198,27 @@ class TestAnalysisDashboard:
                     resp = trades_client.get("/analysis/dashboard")
 
         assert resp.status_code == 200
-        assert "Apple" in resp.json()["missingQuoteTickers"]
+        body = resp.json()
+        # 시세는 있으므로 '시세 미조회'가 아니라 '환율 미상'으로 분류.
+        assert "Apple" not in body["missingQuoteTickers"]
+        assert body["fxMissing"] is True
+
+    def test_no_quote_still_in_missing_quote_tickers(self, trades_client):
+        """시세 자체가 없는(quote fetch 빈 결과) 종목은 여전히 missingQuoteTickers 에 노출."""
+        buy = _make_trade_row(
+            id_="b1", trade_type="BUY", ticker="005930", asset_name="삼성전자",
+            price=70000.0, quantity=10.0, country_code="KR",
+        )
+        conn = FakeConnection([buy])
+
+        with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
+            with patch("invest_note_api.routers.analysis.fetch_quotes_by_keys", new=AsyncMock(return_value={})):
+                resp = trades_client.get("/analysis/dashboard")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "삼성전자" in body["missingQuoteTickers"]
+        assert body["fxMissing"] is False
 
     def test_input_rates_shape(self, trades_client):
         # BUY 2건: 1건은 buy_reason 채움, 1건은 None → buyReason = 50.0

@@ -164,14 +164,26 @@ describe("applyQuotesToTotals", () => {
     expect(totals.missingQuoteTickers).toEqual([]);
   });
 
-  it("(f) US evaluation null(환율 미상) → 제외 + missing 노출", () => {
+  it("(f) US 환율 미상(시세 있음, evaluation null) → 합계서 제외하되 missing 라벨엔 안 넣음", () => {
+    // 시세(currentPrice)는 받았고 환율만 없는 경우라 '시세 미조회'가 아니다 — 홈은 fxBasis
+    // 자리에 '환율 미상'을 따로 안내하므로 missingQuoteTickers 에 넣으면 오라벨.
     const positions = [
       makePosition({ key: "005930:KR", assetName: "삼성전자", evaluation: 700000, unrealizedPnL: 0, currentPrice: 70000 }),
       makePosition({ key: "AAPL:US", country: "US", assetName: "Apple", evaluation: null, currentPrice: 100 }),
     ];
     const totals = applyQuotesToTotals(BASE_TOTALS, positions);
     expect(totals.totalEvaluation).toBe(700_000);
-    expect(totals.missingQuoteTickers).toEqual(["Apple"]);
+    expect(totals.missingQuoteTickers).toEqual([]);
+  });
+
+  it("(f2) 시세 자체가 없는 포지션(currentPrice null)은 여전히 missing 라벨", () => {
+    const positions = [
+      makePosition({ key: "005930:KR", assetName: "삼성전자", evaluation: 700000, unrealizedPnL: 0, currentPrice: 70000 }),
+      makePosition({ key: "000660:KR", assetName: "SK하이닉스", evaluation: null, currentPrice: null }),
+    ];
+    const totals = applyQuotesToTotals(BASE_TOTALS, positions);
+    expect(totals.totalEvaluation).toBe(700_000);
+    expect(totals.missingQuoteTickers).toEqual(["SK하이닉스"]);
   });
 
   it("(g) mergeQuotes — US 는 현재 환율로 evaluation KRW + native 산출", () => {

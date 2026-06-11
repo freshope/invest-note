@@ -111,3 +111,6 @@ class AnalysisDashboardResponse(CamelModel):
     behavior: BehaviorResponse
     suggestions: SuggestionsResponse
     missing_quote_tickers: list[str]
+    # 시세는 받았으나 현재 환율 미수신으로 해외 평가액 KRW 환산 불가 → '환율 미상' 안내용.
+    # missing_quote_tickers(시세 미조회)와 구분(홈 fxBasis 안내와 동일 의미). camelCase: fxMissing.
+    fx_missing: bool = False

@@ -169,9 +169,13 @@ async def get_analysis_dashboard(
         if b in size_dist
     ]
 
-    # evaluation 기준으로 통일 — portfolio.build_totals·FE 와 동일. US 종목이 시세는 받았으나
-    # 현재 환율 미수신 시 evaluation(KRW)=None 이라 양 화면 배지가 일관되게 노출된다.
-    missing_quote_tickers = [p.asset_name for p in positions if p.evaluation is None]
+    # 시세 미조회(current_price None)와 환율 미상(시세는 있으나 KRW 환산 불가)을 구분한다 —
+    # 홈(portfolio.applyQuotesToTotals)과 동일 의미. 환율 미상은 별도 fx_missing 으로 노출해
+    # '시세 미조회' 오라벨을 피한다(US 종목이 시세는 받았으나 현재 환율 미수신인 경우).
+    missing_quote_tickers = [p.asset_name for p in positions if p.current_price is None]
+    fx_missing = any(
+        p.current_price is not None and p.evaluation is None for p in positions
+    )
 
     return AnalysisDashboardResponse.model_validate({
         "period": period_val,
@@ -189,4 +193,5 @@ async def get_analysis_dashboard(
             "suggestions": suggestions,
         },
         "missing_quote_tickers": missing_quote_tickers,
+        "fx_missing": fx_missing,
     })
