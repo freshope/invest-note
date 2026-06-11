@@ -258,20 +258,21 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
                   </>
                 )}
               </Tabs>
-              <div className="space-y-1">
-                {fxBlocked && (
-                  <p className={cn("text-[11px]", PNL_COLORS.fall.text)}>
-                    환율을 불러오지 못해 원화로 환산할 수 없어요. 잠시 후 다시 시도해 주세요.
-                  </p>
-                )}
-                {/* fxBlocked(US-only+환율미상)에선 BE 가 incomplete=true 를 주지만 값이 표시되지 않아
-                    '보정한 값이 포함' 문구가 모순 — fxBlocked 안내로 충분하므로 그때는 숨긴다. */}
-                {data.incomplete && !fxBlocked && (
-                  <p className={cn("text-[11px]", PNL_COLORS.fall.text)}>
-                    일부 종목 시세를 불러오지 못해 직전 종가로 보정한 값이 포함돼 있어요.
-                  </p>
-                )}
-              </div>
+              {/* 경고가 하나라도 있을 때만 블록을 렌더 — 빈 div 가 카드 space-y-3 간격을 점유해
+                  차트 아래 여백이 생기는 것 방지. fxBlocked 면 incomplete 문구는 모순이라 숨긴다. */}
+              {(fxBlocked || data.incomplete) && (
+                <div className="space-y-1">
+                  {fxBlocked ? (
+                    <p className={cn("text-[11px]", PNL_COLORS.fall.text)}>
+                      환율을 불러오지 못해 원화로 환산할 수 없어요. 잠시 후 다시 시도해 주세요.
+                    </p>
+                  ) : (
+                    <p className={cn("text-[11px]", PNL_COLORS.fall.text)}>
+                      일부 종목 시세를 불러오지 못해 직전 종가로 보정한 값이 포함돼 있어요.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
