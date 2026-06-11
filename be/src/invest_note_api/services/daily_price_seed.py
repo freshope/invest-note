@@ -612,34 +612,44 @@ async def seed_daily_prices(
     api_key: str,
     primary_provider: str = "data_go_kr",
     gap_provider: str = "naver",
+    us_primary_provider: str = "yahoo",
 ) -> None:
     """전체 유저 보유종목 union 의 2년치 종가를 사전 적재(cron pre-warm).
 
     콜드스타트 백필 지연 완화용. seed_stocks 와 동일하게 자체 asyncpg.connect 로 동작한다 —
     backfill 이 data.go.kr 를 길게 호출하므로 요청 풀을 차용하지 않는다(풀 고갈 방지).
     trades 는 RLS 가 걸려있으나 service-role connect 는 RLS 를 우회하므로 전체 유저 종목을 본다.
+
+    country 별로 분리해 각 파이프라인으로 적재한다 — US 는 Yahoo, 그 외는 data.go.kr.
+    (분리 없이 전부 KR 로 태우면 US 티커가 data.go.kr 에서 빈 결과로 재시도 예산만 소모하고
+    US 종가는 영영 pre-warm 되지 않는다. 요청 경로 assets.py 와 동일하게 country 단위로 분기.)
     """
     today = date.today()
     earliest = today - timedelta(days=LOOKBACK_DAYS)
     conn = await asyncpg.connect(db_url, statement_cache_size=0)
     try:
         rows = await conn.fetch(
-            "select distinct ticker_symbol from trades "
+            "select distinct ticker_symbol, "
+            "coalesce(nullif(country_code, ''), 'KR') as country from trades "
             "where ticker_symbol is not null and ticker_symbol <> ''"
         )
-        tickers = [r["ticker_symbol"] for r in rows]
-        if not tickers:
-            return
-        await backfill_closes(
-            conn,
-            api_key,
-            tickers,
-            earliest,
-            today,
-            primary_provider=primary_provider,
-            gap_provider=gap_provider,
-        )
-        # 2년 윈도우 유지 — 오래된 종가 정리.
-        await prune_older_than(conn, earliest)
+        by_country: dict[str, list[str]] = {}
+        for r in rows:
+            by_country.setdefault(r["country"], []).append(r["ticker_symbol"])
+        for country, tickers in by_country.items():
+            await backfill_closes(
+                conn,
+                api_key,
+                tickers,
+                earliest,
+                today,
+                country_code=country,
+                primary_provider=(
+                    us_primary_provider if country == "US" else primary_provider
+                ),
+                gap_provider=gap_provider,
+            )
+            # 2년 윈도우 유지 — country 별 오래된 종가 정리.
+            await prune_older_than(conn, earliest, country_code=country)
     finally:
         await conn.close()

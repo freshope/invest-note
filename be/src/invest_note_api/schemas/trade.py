@@ -36,6 +36,18 @@ FOREIGN_EXCHANGE_RATE_REQUIRED_MSG = "해외 거래는 거래 시점 환율(exch
 KRW_EXCHANGE_RATE_FORBIDDEN_MSG = "원화 거래에는 환율을 지정할 수 없습니다."
 
 
+def exchange_rate_error(country_code: str, rate: float) -> str | None:
+    """거래 시점 환율 검증 — 위반 시 에러 메시지, 정상이면 None.
+
+    TradeCreate(model_validator)와 PATCH 라우터 가드가 공유하는 단일 규칙(create/patch drift 방지):
+    - KRW(KR/OTHER) 거래는 rate==1.0 만 허용(아니면 krw_normalized_trade 가 원가·손익을 ×rate 로 부풀림).
+    - 해외(비-KRW) 거래는 rate!=1.0 필수(1.0/누락이면 native 금액을 KRW 로 오인 집계).
+    """
+    if currency_for_country(country_code) == CURRENCY_KRW:
+        return KRW_EXCHANGE_RATE_FORBIDDEN_MSG if rate != 1.0 else None
+    return FOREIGN_EXCHANGE_RATE_REQUIRED_MSG if rate == 1.0 else None
+
+
 def _comma_positive(v: object) -> float:
     """쉼표 포함 문자열/숫자 → 양수 float."""
     f = float(strip_comma_number(v))  # type: ignore[arg-type]
@@ -139,15 +151,10 @@ class TradeCreate(BaseModel):
 
     @model_validator(mode="after")
     def _foreign_requires_exchange_rate(self) -> "TradeCreate":
-        # 비-KRW(해외) 거래는 거래 시점 환율이 필수. 기본값/누락(1.0)이면 native 금액을
-        # KRW 로 간주해 원가·손익이 조용히 어긋나므로 거부한다.
-        # 반대로 KRW(KR/OTHER) 거래에 1.0 이 아닌 환율을 지정하면 krw_normalized_trade 가
-        # ×rate 로 원가·손익을 부풀리므로 미러 가드로 거부한다(역방향 가드).
-        if currency_for_country(self.country_code) == CURRENCY_KRW:
-            if self.exchange_rate != 1.0:
-                raise ValueError(KRW_EXCHANGE_RATE_FORBIDDEN_MSG)
-        elif self.exchange_rate == 1.0:
-            raise ValueError(FOREIGN_EXCHANGE_RATE_REQUIRED_MSG)
+        # 거래 시점 환율 규칙은 PATCH 라우터 가드와 공유(exchange_rate_error).
+        msg = exchange_rate_error(self.country_code, self.exchange_rate)
+        if msg:
+            raise ValueError(msg)
         return self
 
 

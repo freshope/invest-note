@@ -85,6 +85,7 @@ async def run_seed_daily_prices(
     api_key: str,
     primary_provider: str = "data_go_kr",
     gap_provider: str = "naver",
+    us_primary_provider: str = "yahoo",
 ) -> None:
     """백그라운드 일별 종가 사전 적재 래퍼 — 전체 유저 보유종목 union 2년치."""
     try:
@@ -93,6 +94,7 @@ async def run_seed_daily_prices(
             api_key=api_key,
             primary_provider=primary_provider,
             gap_provider=gap_provider,
+            us_primary_provider=us_primary_provider,
         )
     except Exception:
         logger.exception("admin seed/daily-prices 백그라운드 실행 실패")
@@ -112,6 +114,7 @@ async def trigger_seed_daily_prices(
         settings.data_go_kr_api_key,
         settings.daily_price_provider,
         settings.daily_price_gap_provider,
+        settings.us_daily_price_provider,
     )
     return {"status": "started"}
 
