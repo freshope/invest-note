@@ -435,28 +435,6 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
           />
         </div>
 
-        {/* 체결 원화 (해외만) — 가격×수량의 원금 KRW. 환율은 제출 시 역산. 기본값은 현재 시세 환율 기준 제안값, 수정 가능. */}
-        {isForeign && (
-          <div className="space-y-1.5">
-            <Label htmlFor="amount_krw">체결 원화 (KRW) <span className="text-destructive">*</span></Label>
-            <Controller
-              control={control}
-              name="amount_krw"
-              render={({ field }) => (
-                <NumericInput
-                  id="amount_krw"
-                  inputMode="numeric"
-                  value={field.value}
-                  onValueChange={field.onChange}
-                />
-              )}
-            />
-            <p className="text-[12px] text-muted-foreground">
-              {fxHintText(amountKrw, price, quantity, usdkrw)}
-            </p>
-          </div>
-        )}
-
         {/* 수량 */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
@@ -502,6 +480,28 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
             </p>
           )}
         </div>
+
+        {/* 체결 원화 (해외만) — 가격×수량의 원금 KRW. 환율은 제출 시 역산. 기본값은 현재 시세 환율 기준 제안값, 수정 가능. */}
+        {isForeign && (
+          <div className="space-y-1.5">
+            <Label htmlFor="amount_krw">체결 원화 · 총액 (KRW) <span className="text-destructive">*</span></Label>
+            <Controller
+              control={control}
+              name="amount_krw"
+              render={({ field }) => (
+                <NumericInput
+                  id="amount_krw"
+                  inputMode="numeric"
+                  value={field.value}
+                  onValueChange={field.onChange}
+                />
+              )}
+            />
+            <p className="text-[12px] text-muted-foreground">
+              {fxHintText(amountKrw, price, quantity, usdkrw)}
+            </p>
+          </div>
+        )}
 
         {/* 총액 */}
         <div className="space-y-1.5">

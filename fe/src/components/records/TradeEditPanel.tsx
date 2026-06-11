@@ -276,7 +276,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
               {/* 체결 원화 (해외만) — 가격×수량의 원금 KRW. 환율은 제출 시 역산. 초기값은 기존 거래 환율 기준, 수정 가능. */}
               {isForeign && (
                 <div className="space-y-1.5">
-                  <Label htmlFor="edit_amount_krw">체결 원화 (KRW) <span className="text-destructive">*</span></Label>
+                  <Label htmlFor="edit_amount_krw">체결 원화 · 총액 (KRW) <span className="text-destructive">*</span></Label>
                   <Controller
                     control={control}
                     name="amount_krw"
