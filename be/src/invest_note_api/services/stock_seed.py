@@ -434,8 +434,11 @@ _OTHER_EXCHANGE_MAP = {
 
 
 # 클래스주(BRK.B·BF.B 등) 허용 패턴 — `종목.클래스문자(A/B/C)`. 워런트(.WS)·유닛(.U)·
-# 우선주(.W/.R 등 2자 이상 또는 비-ABC) 는 매칭되지 않아 계속 제외된다.
+# rights(.R 등 2자 이상 또는 비-ABC) 는 fullmatch 되지 않아 계속 제외된다.
 _CLASS_SHARE_PATTERN = re.compile(r"[A-Z]+\.[ABC]")
+# 우선주(BAC$B·BAC$E 등) 허용 패턴 — `종목$단일시리즈문자`. nasdaqtrader ACT Symbol 표기.
+# 시리즈 문자 없는 `FOO$` 나 2자 이상은 fullmatch 되지 않아 제외된다.
+_PREFERRED_PATTERN = re.compile(r"[A-Z]+\$[A-Z]")
 
 
 def _parse_nasdaqtrader(text: str, *, nasdaq_default: str | None = None) -> list[dict]:
@@ -443,8 +446,8 @@ def _parse_nasdaqtrader(text: str, *, nasdaq_default: str | None = None) -> list
 
     헤더로 컬럼 위치를 잡아 nasdaqlisted/otherlisted 양식을 함께 처리한다.
       - `nasdaq_default` 지정(=nasdaqlisted) 시 보드명은 그 값(NASDAQ), 아니면 Exchange 코드 매핑.
-      - Test Issue == 'Y' 제외. 심볼은 보통주/ETF(알파벳 전용) + 클래스주(BRK.B 등 `종목.[ABC]`)만
-        남긴다 — warrant(.WS)·unit(.U)·preferred 등 '$'/'='/그 외 '.' 접미는 제외.
+      - Test Issue == 'Y' 제외. 심볼은 보통주/ETF(알파벳 전용) + 클래스주(BRK.B 등 `종목.[ABC]`)
+        + 우선주(BAC$B 등 `종목$[A-Z]`)만 남긴다 — warrant(.WS)·unit(.U)·rights(.R)·'=' 접미는 제외.
       - 마지막 'File Creation Time' 푸터 라인은 스킵.
     """
     lines = text.splitlines()
@@ -467,7 +470,11 @@ def _parse_nasdaqtrader(text: str, *, nasdaq_default: str | None = None) -> list
             continue
         if not ticker or not name:
             continue
-        if not (ticker.isalpha() or _CLASS_SHARE_PATTERN.fullmatch(ticker)):
+        if not (
+            ticker.isalpha()
+            or _CLASS_SHARE_PATTERN.fullmatch(ticker)
+            or _PREFERRED_PATTERN.fullmatch(ticker)
+        ):
             continue
         if nasdaq_default is not None:
             market = nasdaq_default

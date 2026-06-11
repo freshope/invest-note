@@ -910,6 +910,24 @@ async def test_fetch_yahoo_us_closes_sends_period_params_and_bare_symbol():
     assert captured["params"]["interval"] == "1d"
 
 
+async def test_fetch_yahoo_us_closes_converts_preferred_symbol_in_url():
+    """우선주 seed 표기 BAC$B 입력 → Yahoo URL 은 변환된 BAC-PB(원본 미전송)."""
+    captured: dict = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        captured["url"] = str(req.url)
+        return httpx.Response(200, json=_yahoo_us_body("BAC-PB", []))
+
+    async with _mock_client(handler) as client:
+        await daily_price_seed._fetch_yahoo_us_closes(
+            client, "BAC$B", date(2026, 6, 1), date(2026, 6, 3)
+        )
+
+    assert "/chart/BAC-PB" in captured["url"]
+    assert "BAC$B" not in captured["url"]
+    assert "%24" not in captured["url"]  # `$` URL-encode 형태도 미전송
+
+
 async def test_fetch_yahoo_us_closes_includes_end_day_candle():
     """end 당일 캔들이 결과에 포함되는지(period2 inclusive 회귀)."""
     points = [(_us_epoch(date(2026, 6, 3)), 205.25)]

@@ -46,8 +46,18 @@ logger = logging.getLogger(__name__)
 _HEADERS = {"User-Agent": USER_AGENT}
 
 # US 티커가 Yahoo chart URL 경로에 그대로 들어가므로 `/`·`?`·`#` 조작(trust-boundary)을 막는
-# 화이트리스트. 영숫자/`.`(클래스주)/`-`(BRK-B 표기) 1~20자만 허용.
-_US_TICKER_PATTERN = re.compile(r"[A-Za-z0-9.\-]{1,20}")
+# 화이트리스트. 영숫자/`.`(클래스주)/`$`(우선주, nasdaqtrader 표기)/`-`(BRK-B 표기) 1~20자만 허용.
+# 검증은 변환 전 원본 code 에 적용. 변환 후 `$`→`-P` 라 Yahoo URL 엔 `$` 가 가지 않는다.
+_US_TICKER_PATTERN = re.compile(r"[A-Za-z0-9.$\-]{1,20}")
+
+
+def _to_yahoo_us_symbol(ticker: str) -> str:
+    """nasdaqtrader(seed) 표기 → Yahoo chart 표기 변환.
+
+    보통주는 no-op(AAPL→AAPL), 클래스주는 `.`→`-`(BRK.B→BRK-B), 우선주는 `$`→`-P`
+    (BAC$B→BAC-PB). `$` 를 먼저 치환(우선주의 `-P` 확정), 그 다음 `.`→`-`.
+    """
+    return ticker.replace("$", "-P").replace(".", "-")
 
 
 @dataclass
@@ -183,7 +193,9 @@ async def _fetch_yahoo_us(client: httpx.AsyncClient, code: str) -> QuoteResult |
         return None
     try:
         res = await client.get(
-            YAHOO_CHART_URL.format(symbol=code), headers=_HEADERS, timeout=QUOTE_ATTEMPT_TIMEOUT
+            YAHOO_CHART_URL.format(symbol=_to_yahoo_us_symbol(code)),
+            headers=_HEADERS,
+            timeout=QUOTE_ATTEMPT_TIMEOUT,
         )
     except Exception:
         logger.warning("yahoo us 시세 실패 code=%s", code, exc_info=True)

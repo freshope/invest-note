@@ -22,7 +22,7 @@
 - **코드리뷰 보류건 처리(2026-06-11):** 1차 리뷰 후 보류했던 항목들을 사용자 판단으로 진행. 트레이드오프 있는 선택만 기록:
   - **자산추이 원화 통일(US):** US 종목 자산추이도 원화 primary + 달러 보조로 통일. **일자별 환율이 아닌 현재 환율로 전체 시계열 환산** + "현재 환율 적용" 안내 문구 — historical FX 인프라 없이 통화 일관성 확보(정밀도 대신 단순성·일관성 택함). 환율 미상 시 차트/헤더 비표시로 조용한 USD-as-KRW 차단. BE `/assets/history` 무변경, FE overlay(Phase B 철학 일관).
   - **`missing_quote_tickers` 기준 통일:** analysis 가 `current_price is None` → `evaluation is None`(portfolio·FE 와 일치). **사용자 가시 동작 변경** — US 종목이 시세는 받았으나 환율 미수신 시 analysis 대시보드에도 "시세 없음" 노출(기존엔 누락). 두 화면 배지 일관성 확보.
-  - **클래스 주식 seed 허용:** nasdaqtrader 필터를 `isalpha or [A-Z]+\.[ABC]` 로 — BRK.B·BF.B 등 A/B/C 클래스주 포함, 유닛(`.U`)·워런트(`.W`)·우선주(`$`/`=`)는 계속 제외. 경계를 `[ABC]` 로 좁힌 트레이드오프: `.U`/`.W` 오허용을 막는 대신 드문 클래스(`.K` 등)는 누락 — 실사용 대부분이 A/B/C 라 채택.
+  - **클래스주·우선주 seed 허용 + Yahoo 심볼 변환:** nasdaqtrader 필터를 `isalpha or [A-Z]+\.[ABC](클래스주) or [A-Z]+\$[A-Z](우선주)` 로 확대 — BRK.B·BF.B(클래스주), BAC$B(우선주, 한국 우선주와 가장 유사) 포함. 워런트(`.W`/`.WS`)·유닛(`.U`)·rights(`.R`)는 계속 제외(사용자가 클래스주+우선주만 선택). **핵심: nasdaqtrader↔Yahoo 표기 불일치로 시세가 안 나오던 버그 동반 수정** — seed 는 `BRK.B`/`BAC$B`(nasdaqtrader) 형식인데 Yahoo 는 `BRK-B`/`BAC-PB` 를 요구(실측: 점 형식·`BAC-B`·`BACpB` 모두 Not Found). `_to_yahoo_us_symbol`(`$`→`-P`, `.`→`-`)을 시세·일별종가 fetch 양쪽에 적용. 변환 없이는 검색·등록만 되고 평가액 영구 missing. 보통주(AAPL)·KR 경로는 no-op. 클래스 경계 `[ABC]`·우선주 단일 시리즈 문자로 좁힌 트레이드오프: 드문 클래스(`.K` 등)·복수문자 시리즈는 누락하나 실사용 대다수 커버.
   - **`exchange_rate` DB CHECK 제약:** 029 에 `CHECK (exchange_rate > 0)` 추가(029 미적용 상태라 동일 파일). API `_comma_positive` 양수 강제에 더해 DB 레벨 방어 + `exchange_rate or 1.0` 의 0→1.0 silent 치환 차단.
 
 ---

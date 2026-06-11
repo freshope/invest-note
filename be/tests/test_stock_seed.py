@@ -604,6 +604,25 @@ def test_parse_nasdaqtrader_class_share_filter_matrix():
     assert tickers == {"AAPL", "BRK.B", "BF.B"}  # 클래스주+보통주만, Test Issue=Y(TST.A) 제외
 
 
+def test_parse_nasdaqtrader_preferred_and_rights_filter_matrix():
+    """클래스주(BRK.B/BF.B)+우선주(BAC$B) 채택, 워런트/유닛/rights 제외, 보통주(AAPL) 회귀.
+
+    otherlisted 양식(ACT Symbol 첫 컬럼) — 우선주는 `$`+단일 시리즈 문자만 채택.
+    """
+    text = (
+        "ACT Symbol|Security Name|Exchange|CQS Symbol|ETF|Round Lot Size|Test Issue|NASDAQ Symbol\n"
+        "AAPL|Apple Inc.|Q|AAPL|N|100|N|AAPL\n"
+        "BRK.B|Berkshire Hathaway Class B|N|BRK B|N|100|N|N\n"
+        "BF.B|Brown-Forman Class B|N|BF B|N|100|N|N\n"
+        "BAC$B|Bank of America Pref B|N|BAC PRB|N|100|N|N\n"
+        "ABC.WS|Warrant|N|ABC WS|N|100|N|N\n"
+        "XYZ.U|Unit|N|XYZ U|N|100|N|N\n"
+        "AIIA.R|Rights|N|AIIA R|N|100|N|N\n"
+    )
+    tickers = {r["ticker"] for r in stock_seed._parse_nasdaqtrader(text)}
+    assert tickers == {"AAPL", "BRK.B", "BF.B", "BAC$B"}
+
+
 def test_parse_nasdaqtrader_skips_footer_and_empty():
     assert stock_seed._parse_nasdaqtrader("") == []
     assert stock_seed._parse_nasdaqtrader("Symbol|Security Name|Test Issue\n") == []

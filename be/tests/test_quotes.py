@@ -11,6 +11,7 @@ from invest_note_api.external.quotes import (
     _fetch_kr_price,
     _fetch_yahoo_us,
     _get_cached,
+    _to_yahoo_us_symbol,
     fetch_quotes_by_keys,
 )
 
@@ -430,11 +431,21 @@ def test_fetch_yahoo_us_returns_none_on_empty_or_failure():
     assert asyncio.run(runner()) is None
 
 
+def test_to_yahoo_us_symbol_converts_class_and_preferred():
+    """보통주 no-op, 클래스주 `.`→`-`, 우선주 `$`→`-P` ($ 먼저, . 나중)."""
+    assert _to_yahoo_us_symbol("AAPL") == "AAPL"
+    assert _to_yahoo_us_symbol("BRK.B") == "BRK-B"
+    assert _to_yahoo_us_symbol("BAC$B") == "BAC-PB"
+
+
 def test_fetch_yahoo_us_accepts_whitelisted_tickers():
-    """허용 티커(영숫자/`.`/`-`)는 통과 — 화이트리스트 가드가 정상 시세를 막지 않는다."""
-    for code in ("AAPL", "BRK.B", "BRK-B", "RDS.A"):
+    """허용 티커(영숫자/`.`/`$`/`-`)는 통과 — 화이트리스트 가드가 정상 시세를 막지 않는다.
+
+    seed 표기(`.`/`$`)는 Yahoo 표기로 변환돼 요청되므로 route key 도 변환형을 쓴다.
+    """
+    for code in ("AAPL", "BRK.B", "BRK-B", "RDS.A", "BAC$B"):
         routes = {
-            f"https://query2.finance.yahoo.com/v8/finance/chart/{code}": httpx.Response(
+            f"https://query2.finance.yahoo.com/v8/finance/chart/{_to_yahoo_us_symbol(code)}": httpx.Response(
                 200,
                 json={"chart": {"result": [{"meta": {"regularMarketPrice": 10.0, "currency": "USD"}}]}},
             ),
@@ -447,6 +458,26 @@ def test_fetch_yahoo_us_accepts_whitelisted_tickers():
         result = asyncio.run(runner())
         assert result is not None, code
         assert result["price"] == 10.0
+
+
+def test_fetch_yahoo_us_converts_seed_symbol_in_request_url():
+    """seed 표기 BRK.B 입력 → Yahoo URL 은 변환된 BRK-B(원본 BRK.B 미전송)."""
+    captured: dict = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        captured["url"] = str(req.url)
+        return httpx.Response(
+            200, json={"chart": {"result": [{"meta": {"regularMarketPrice": 10.0}}]}}
+        )
+
+    async def runner():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await _fetch_yahoo_us(client, "BRK.B")
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert "/chart/BRK-B" in captured["url"]
+    assert "BRK.B" not in captured["url"]
 
 
 def test_fetch_yahoo_us_rejects_path_manipulating_tickers():

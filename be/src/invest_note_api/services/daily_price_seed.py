@@ -25,6 +25,7 @@ from invest_note_api.external.constants import (
 )
 from invest_note_api.external.kis import kis_get
 from invest_note_api.external.provider_registry import resolve_chain
+from invest_note_api.external.quotes import _to_yahoo_us_symbol
 from invest_note_api.services.stock_seed import (
     _DATA_GO_KR_TIMEOUT,
     _basdt_to_date,
@@ -49,8 +50,9 @@ _ETN_PRICE_URL = f"{_SECURITIES_PRODUCT_BASE}/getETNPriceInfo"
 _NAVER_DAILY_CHART_URL = "https://api.stock.naver.com/chart/domestic/item/{code}/day"
 _PAGE_SIZE = 1000
 # US 티커가 Yahoo chart URL 경로에 그대로 들어가므로 `/`·`?`·`#` 조작(trust-boundary)을 막는
-# 화이트리스트(quotes._US_TICKER_PATTERN 과 동일 규칙). 불일치는 fetch 실패 계약대로 raise.
-_US_TICKER_PATTERN = re.compile(r"[A-Za-z0-9.\-]{1,20}")
+# 화이트리스트(quotes._US_TICKER_PATTERN 과 동일 규칙, `$`=우선주 포함). 불일치는 fetch 실패
+# 계약대로 raise. 검증은 변환 전 원본 ticker 에 적용한다.
+_US_TICKER_PATTERN = re.compile(r"[A-Za-z0-9.$\-]{1,20}")
 # data.go.kr 동시 호출 상한(게이트웨이 429 가드). stock_seed._NAVER_CONCURRENCY 선례.
 _BACKFILL_CONCURRENCY = 8
 # 어제까지 조회 완료(빈 응답 포함)한 종목의 재probe 쿨다운. 짧으면 늦은 발행(T+1 ~14:00 KST)을
@@ -327,7 +329,7 @@ async def _fetch_yahoo_us_closes(
     )
     cutoff = _us_final_close_cutoff(datetime.now(KST))
     res = await client.get(
-        YAHOO_CHART_RANGE_URL.format(symbol=ticker),
+        YAHOO_CHART_RANGE_URL.format(symbol=_to_yahoo_us_symbol(ticker)),
         params={"interval": "1d", "period1": period1, "period2": period2},
     )
     res.raise_for_status()  # 비200 → raise 전파(전송 실패도 await 에서 raise).
