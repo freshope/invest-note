@@ -141,16 +141,13 @@ export function HomeDashboard() {
     // 해외 보유 평가액이 어느 환율로 KRW 환산됐는지 노출(투명성). 환율/기준시각 둘 다 있을 때만.
     const fxTime = hasForeign && asOf ? formatTimeKST(asOf) : null;
     const showFxBasis = hasForeign && usdkrw != null && fxTime != null;
-    // 환율 미상(재시도 소진)일 땐 해외 평가금액이 빠진 이유를 명시 — 시세 미조회와 구분.
-    const fxBasis = showFxBasis
-      ? `환율 ${formatFxRate(usdkrw)} 기준 · ${fxTime}`
-      : hasForeign && fxError
-        ? "환율 미상 — 해외 평가금액 제외됨"
-        : null;
+    // 중립 안내(환율 기준 투명성)는 Info 아이콘 뒤 바텀시트로, 경고(환율 미상)는 인라인으로 구분.
+    const fxNote = showFxBasis ? `환율 ${formatFxRate(usdkrw)} 기준 · ${fxTime}` : null;
+    const fxWarning = !showFxBasis && hasForeign && fxError ? "환율 미상 — 해외 평가금액 제외됨" : null;
 
     return (
       <div className="pt-2 pb-6 space-y-5">
-        <DashboardBody totals={totals} fxBasis={fxBasis} />
+        <DashboardBody totals={totals} fxNote={fxNote} fxWarning={fxWarning} />
         <AllocationTabs positions={positions} snapshots={snapshots} />
         {positions.length > 0 && (
           <div className="space-y-2">
