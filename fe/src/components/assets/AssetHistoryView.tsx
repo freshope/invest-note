@@ -289,7 +289,14 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
             className="flex-1 min-h-0 overflow-y-auto px-5"
             style={{ paddingBottom: "calc(2.5rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))" }}
           >
-            <AssetHistoryList items={items} isStockView={isStockView} />
+            {/* 환율 미상(US)이면 '자산'·'전일대비' 가 native(USD) raw 라 KRW 열에 혼재 — 차트와 동일하게 비표시. */}
+            {fxBlocked ? (
+              <div className="flex h-full items-center justify-center text-[13px] text-muted-foreground">
+                환율을 불러오면 일별 내역을 표시해요.
+              </div>
+            ) : (
+              <AssetHistoryList items={items} isStockView={isStockView} />
+            )}
           </div>
         </>
       )}
