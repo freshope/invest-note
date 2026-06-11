@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeftIcon, ChevronDownIcon } from "lucide-react";
 import { ErrorState } from "@/components/shared/ErrorState";
+import { InfoHintSheet, type InfoHintItem } from "@/components/shared/InfoHintSheet";
 import { AccountFilter } from "@/components/shared/AccountFilter";
 import { CountUpNumber } from "@/components/shared/CountUpNumber";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/base/Tabs";
@@ -111,6 +112,21 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
       ? display.value / data.usdkrw
       : null;
 
+  // 중립 설명문구 — 금액/날짜 우측 Info 아이콘 뒤 바텀시트로 안내(인라인 미노출).
+  // 경고/에러(환율 미상·시세 보정)는 가시성을 위해 카드 하단 인라인으로 따로 유지한다.
+  const assetNotes: InfoHintItem[] = data
+    ? [
+        { description: "자산은 보유 종목 평가액 합계예요(예수금 제외)." },
+        ...(data.usdkrw != null && data.hasForeign
+          ? [
+              {
+                description: `환율 ${formatFxRate(data.usdkrw)} 기준으로 원화 환산했어요(일자별이 아닌 현재 환율 적용).`,
+              },
+            ]
+          : []),
+      ]
+    : [];
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* 헤더 — 종목상세/거래상세 패널과 동일 레이아웃(h-14, safe-area, 중앙 타이틀) */}
@@ -177,7 +193,8 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
                   <TabsTrigger value="asset">자산</TabsTrigger>
                   <TabsTrigger value="daily">일별 손익</TabsTrigger>
                 </TabsList>
-                <div className="mt-3">
+                <div className="mt-3 flex items-start justify-between gap-2">
+                  <div>
                   <p className="text-[12px] text-muted-foreground">
                     {display ? display.date.replace(/-/g, ".") : "현재 자산"}
                   </p>
@@ -212,6 +229,8 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
                       )}
                     </p>
                   )}
+                  </div>
+                  <InfoHintSheet title="자산 안내" items={assetNotes} className="mt-1" />
                 </div>
                 {/* 환율 미상(US)이면 차트도 native(USD)를 KRW 단위 차트에 그리는 셈이라 비표시(조용한 혼재 금지). */}
                 {fxBlocked ? (
@@ -240,14 +259,6 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
                 )}
               </Tabs>
               <div className="space-y-1">
-                <p className="text-[11px] text-muted-foreground">
-                  자산은 보유 종목 평가액 합계예요(예수금 제외).
-                </p>
-                {data.usdkrw != null && data.hasForeign && (
-                  <p className="text-[11px] text-muted-foreground">
-                    환율 {formatFxRate(data.usdkrw)} 기준으로 원화 환산했어요(일자별이 아닌 현재 환율 적용).
-                  </p>
-                )}
                 {fxBlocked && (
                   <p className={cn("text-[11px]", PNL_COLORS.fall.text)}>
                     환율을 불러오지 못해 원화로 환산할 수 없어요. 잠시 후 다시 시도해 주세요.
