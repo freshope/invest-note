@@ -281,6 +281,29 @@ def test_us_only_krw_converted_with_usdkrw():
     assert res.incomplete is False
 
 
+def test_us_first_point_baseline_uses_current_rate():
+    """US 첫 점 전일대비 기준값은 거래시점 환율(박제)이 아니라 현재 spot 으로 환산.
+
+    가격이 그대로면(매수가=첫날 종가) 환율이 거래시점(1300)→현재(1400)로 올라도 첫 점 전일대비는
+    가격 변동만 반영해 0 이어야 한다(value·가이드선과 같은 현재율 기준). 거래시점 환율을 쓰면
+    value(1400) - cost(1300) 만큼 환율차가 새어 들어간다.
+    """
+    trades = [
+        make_trade(id="ub", ticker_symbol="AAPL", asset_name="Apple", country_code="US",
+                   quantity=2, price=150.0, exchange_rate=1300.0,
+                   traded_at=_dt("2025-06-02T09:00:00+09:00")),
+    ]
+    closes = [_close("AAPL", "2025-06-02", 150.0, country="US")]  # 종가 = 매수가(가격 변동 0).
+    today = date(2025, 6, 2)
+    res = compute_asset_history(
+        trades, closes, live_quotes={"AAPL:US": 150.0}, today=today,
+        is_stock_view=True, usdkrw=1400.0,  # 현재 환율 ≠ 거래시점(1300).
+    )
+    # value = 2 × 150 × 1400. baseline = cost_native(300) × 1400 = 동일 → change = 0.
+    assert res.series[-1]["value"] == 2 * 150.0 * 1400.0
+    assert res.items[0]["change"] == 0.0
+
+
 def test_mixed_kr_us_summed_in_krw():
     """KR+US 혼재: 일자별 KRW 합산 = KR native + US native×usdkrw."""
     trades = [

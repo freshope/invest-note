@@ -210,9 +210,16 @@ async def _fetch_yahoo_us(client: httpx.AsyncClient, code: str) -> QuoteResult |
     price, traded_on = _parse_yahoo_chart_price(data)
     if price <= 0:
         return None
+    # 다운스트림(merge_quotes/to_krw)은 quote 통화가 아니라 position 통화(country=US→USD)로
+    # 환산하므로, USD 가 아닌 단위(예: GBp/센트)가 오면 ×usdkrw 가 ~100배 과대평가된다.
+    # 통화 불일치는 graceful null(시세 미조회)로 거르는 편이 잘못된 KRW 평가보다 안전하다.
+    q_currency = meta.get("currency")
+    if q_currency and q_currency != CURRENCY_USD:
+        logger.warning("yahoo us 비-USD 통화 code=%s currency=%s", code, q_currency)
+        return None
     return {
         "price": price,
-        "currency": meta.get("currency") or CURRENCY_USD,
+        "currency": q_currency or CURRENCY_USD,
         "as_of": datetime.now(timezone.utc).isoformat(),
         "traded_on": traded_on,
     }

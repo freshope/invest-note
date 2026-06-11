@@ -1,6 +1,7 @@
 """portfolio 라우터 — holding + summary."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from uuid import UUID
 
@@ -112,12 +113,16 @@ async def get_portfolio_summary(
     usdkrw = None
     quotes = {}
     if with_quotes:
-        usdkrw = await usdkrw_if_foreign(
-            trades,
-            fx_state,
-            http_client,
-            force_refresh=refresh,
-            providers=settings.fx_provider_list,
+        # FX 왕복을 quotes fetch 와 직렬 대기하지 않고 create_task 로 동시 실행 — fetch_usdkrw 는
+        # 내부에서 예외를 삼키고 None 을 반환하므로 task 예외 누수가 없다(analysis 라우터와 동일).
+        fx_task = asyncio.create_task(
+            usdkrw_if_foreign(
+                trades,
+                fx_state,
+                http_client,
+                force_refresh=refresh,
+                providers=settings.fx_provider_list,
+            )
         )
         try:
             quotes = await fetch_quotes_by_keys(
@@ -130,6 +135,7 @@ async def get_portfolio_summary(
             )
         except Exception:
             logger.warning("fetch_quotes_by_keys 실패 user_id=%s", user.id, exc_info=True)
+        usdkrw = await fx_task
 
     positions = merge_quotes(positions0, quotes, usdkrw)
     snapshots = build_account_snapshots(accounts, lot_map, quotes, usdkrw)

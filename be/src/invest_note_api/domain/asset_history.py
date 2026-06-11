@@ -206,18 +206,23 @@ def compute_asset_history(
     stock_gid = next(iter(steps), None) if is_stock_view else None
     per_day_close_qty: dict[date, tuple[float | None, float]] = {}
 
-    # 첫 점(=가장 오래된 거래일)의 전일대비 기준값 = 그날 보유분의 매수 원금(cost_basis, KRW).
+    # 첫 점(=가장 오래된 거래일)의 전일대비 기준값 = 그날 보유분의 매수 원금(KRW).
     # 직전 점이 없어 0 으로 두던 것을 '구매가 대비 그날 종가'(= value - cost)로 표시하기 위함.
-    # gid→cost_basis(KRW, 거래시점 환율 박제) 맵을 그날 시점 보유로 구해, 아래 value 산입과
-    # 같은 gid 만 누적(통화 미상으로 value 에서 빠진 종목의 cost 도 함께 빠져 정합 유지).
+    # value 산입·invested_amount 가이드선과 동일하게 현재 spot 환율로 환산(cost_basis_native ×
+    # usdkrw) — US 보유에서 거래시점 환율 박제(cost_basis)를 쓰면 첫 점 전일대비에 환율차가 섞여
+    # 가이드선과 어긋난다. 통화 미상(USD+usdkrw None)이면 to_krw=None → 누적 제외(아래 value 에서도
+    # 같은 gid 가 빠지므로 정합 유지).
     first_day = days[0] if days else None
     cost_by_gid: dict[str, float] = {}
     if first_day is not None:
         asof_trades = [t for t in trades if _trade_kst_date(t) <= first_day]
         asof_positions, _ = build_positions(asof_trades)
-        cost_by_gid = {
-            p.key: p.cost_basis for p in asof_positions if p.holding_quantity > 0
-        }
+        for p in asof_positions:
+            if p.holding_quantity <= 0:
+                continue
+            cost_krw = to_krw(p.cost_basis_native, p.currency, usdkrw)
+            if cost_krw is not None:
+                cost_by_gid[p.key] = cost_krw
     first_baseline = 0.0
 
     for d in days:

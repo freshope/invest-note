@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 
@@ -98,8 +99,12 @@ async def get_asset_history(
     )
 
     # 해외(비-KRW) 보유가 있을 때만 USD/KRW spot 1회 조회(None 가능 — 환율 미상).
-    usdkrw = await usdkrw_if_foreign(
-        trades, fx_state, http_client, providers=settings.fx_provider_list
+    # FX 는 DB backfill/quotes 와 독립이라 create_task 로 동시 실행하고, 실제 사용 직전(아래
+    # _invested_amount_krw / compute_asset_history)에 await 해 임계 경로 직렬 지연을 줄인다.
+    fx_task = asyncio.create_task(
+        usdkrw_if_foreign(
+            trades, fx_state, http_client, providers=settings.fx_provider_list
+        )
     )
 
     # 2) country 별 backfill + get_closes. get_closes 반환에는 country 차원이 없어,
@@ -158,6 +163,8 @@ async def get_asset_history(
         for key, q in quotes.items():
             if q is not None:
                 live_quotes[key] = q["price"]
+
+    usdkrw = await fx_task
 
     # 현재 보유분 매수 원금(KRW) — 차트 손익 기준 가이드 라인. 혼재 스코프는 native 단일통화
     # 합산이 통화 무가산 버그라(D5), country 별 holding_invested_amount 를 spot 으로 KRW 환산.

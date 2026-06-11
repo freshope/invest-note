@@ -18,7 +18,13 @@ import { AssetHistoryList } from "./AssetHistoryList";
 import { useAssetHistory } from "@/hooks/useAssetHistory";
 import { accountsApi, type AssetHistoryPoint } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
-import { signColor, formatMoney, formatPnLCurrency, formatFxRate } from "@/lib/format";
+import {
+  signColor,
+  formatMoney,
+  formatPnLCurrency,
+  formatFxRate,
+  currencyForCountry,
+} from "@/lib/format";
 import { PNL_COLORS } from "@/lib/constants/pnl-colors";
 import { cn } from "@/lib/utils";
 
@@ -108,7 +114,7 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
   const display = focus ?? (tab === "daily" ? latestDaily : latestPoint);
   // USD 보조 = KRW / spot(BE usdkrw). US 종목뷰 + 환율 정상일 때만 병기.
   const displayNativeUsd =
-    isStockView && country === "US" && data?.usdkrw != null && display
+    isStockView && currencyForCountry(country ?? "") === "USD" && data?.usdkrw != null && display
       ? display.value / data.usdkrw
       : null;
 
@@ -293,7 +299,7 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
               <AssetHistoryList
                 items={items}
                 isStockView={isStockView}
-                closeCurrency={country === "US" ? "USD" : "KRW"}
+                closeCurrency={currencyForCountry(country ?? "")}
               />
             )}
           </div>
