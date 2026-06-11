@@ -73,8 +73,7 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [ ] **일별 종가 자동 적재 + 2년 prune 운영** — 현재 종가 백필은 페이지 진입 시 동기 실행(종목별 watermark 증분), 전체 사전적재는 `POST /admin/seed/daily-prices`(수동/cron). 콜드스타트 지연 완화·stale 방지를 위해 Coolify scheduled task 로 주기 실행 + `prune_older_than`(2년 윈도우) 운영 연결 검토. (`seed_daily_prices` 가 prune 까지 수행하므로 cron 만 걸면 됨.)
   - **2026-06-04 갱신:** 진입 backfill 에 `daily_price_sync_state` 마커 + 종목 병렬화 적용(`docs/decisions.md` 참고). 휴장/발행지연 무한 재질의 제거·data.go.kr 호출수 상한 고정·신규 종목 자동 처리로 **cron 우선순위 하향**. cron 은 콜드스타트 첫-오픈 지연을 더 줄이고 싶을 때의 옵션으로 남음.
-
-## 모바일앱 (v2.5) 잔여
+- [ ] **오늘 점 시세 소스 정합 (자산추이 ↔ 대시보드)** — 2026-06-11 자산추이 KRW 환산 BE 이관 후 잔여. 자산추이 오늘 점 총액은 BE `fetch_quotes_by_keys` 로, 대시보드 합계는 `/portfolio/summary` + FE overlay 시세로 계산돼 **오늘 점 총액이 미세하게 어긋날 수 있다**(포함범위·usdkrw 소스는 일치, finding A 해소됨). 같은 시세 소스로 통일하거나 허용 오차를 명시. 트리거: 사용자가 두 화면 오늘 값 차이를 체감하거나 시세 변동성 큰 종목에서 괴리 보고 시.
 
 - [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리
 - [ ] iOS 상태바 색 동기화 — @capacitor/status-bar 도입 후 다크/라이트 전환 시 status bar style 동기화

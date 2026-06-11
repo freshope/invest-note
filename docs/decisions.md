@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-06-11 | 자산추이 해외(US) KRW 환산을 BE 로 일원화 + spot 일괄
+
+- **맥락:** `/assets/history` 가 `country` 기본값 `'KR'` 로 single-country 스코프라 전체/계좌뷰(ticker=None)가 US 보유를 통째로 제외 — 같은 화면 대시보드 합계(`merge_quotes(usdkrw)` + FE overlay)는 US 포함이라 **두 수치가 어긋남**(code-review finding A). 종목뷰만 FE(`asset-history-convert.ts`+`useFxRate`)가 현재 환율로 부분 환산하던 비대칭 구조.
+- **결정:**
+  - ① **환산 책임을 FE → BE 로 이관.** `compute_asset_history` 가 `usdkrw` 인자를 받아 종목별 `to_krw` 로 KRW 합산(직접 곱 금지 — USD+usdkrw=None 은 None 전파로 기여 제외+incomplete, silent USD-as-KRW 합산 구조적 차단). 종목 식별 키를 `position_key(ticker, country)` 로 일관화(steps/closes/live_quotes 3축 동기, US/KR ticker 충돌 방지). `assets.py` 는 전체/계좌뷰에서 country 필터를 제거하고 country 별 파이프라인(backfill/get_closes/quotes)을 분리·합산, `usdkrw` 는 해외 보유 시 1회 조회. 응답에 `usdkrw`/`has_foreign` 노출. FE 는 `asset-history-convert.ts` 삭제하고 BE KRW 값을 그대로 사용.
+  - ② **환율 정책: 현재 환율(spot) 일괄 적용**(일자별 historical FX 아님). 모든 과거 일자 US 평가액에 '오늘 usdkrw' 하나를 곱한다. FE 에 '현재 환율 기준(일자별 아님)' 고지 유지.
+- **트레이드오프:** spot 일괄이라 과거 곡선 모양이 오늘 환율로 왜곡됨(USD 가격 변동만 반영) — 정확한 일자별 환산은 USD/KRW 일별 시계열 적재라는 별도 대형 작업이 필요해 **보류**. 오늘 점 총액은 자산추이(BE `fetch_quotes_by_keys`)와 대시보드(FE overlay)의 시세 소스가 갈려 미세 불일치 가능(포함범위·usdkrw 소스는 일치 — backlog 후속).
+
+---
+
 ## 2026-06-11 | 해외 공급처 env 구조 통일 + 환율(FX) 폴백 추가 (open.er-api.com)
 
 - **맥락:** 해외(US)는 시세·일별종가·종목마스터·환율을 모두 단일 공급처(Yahoo / nasdaqtrader)에 의존. 국내(KR)는 시세 naver→yahoo→kis, 종가 data.go.kr+naver/kis, 마스터 data.go.kr+kis 처럼 registry/env 로 공급처를 토글·폴백할 수 있는데 US 는 코드에 하드코딩(`backfill_closes` 가 country=US 시 env 우회·Yahoo 강제, `_entry_fetch_fn` US 가 `_fetch_yahoo_us` 직접 호출)돼 있어 비대칭. 또한 환율은 Yahoo `USDKRW=X` 단일점 — 죽으면 전 해외 평가액의 KRW 환산이 통째로 "환율미상".
