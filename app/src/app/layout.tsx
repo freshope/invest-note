@@ -6,6 +6,8 @@ import { QueryProvider } from "@/components/providers/QueryProvider";
 import { AppToaster } from "@/components/providers/AppToaster";
 import { ForceUpdateGate } from "@/components/providers/ForceUpdateGate";
 import { LiveUpdateReady } from "@/components/providers/LiveUpdateReady";
+import { PageviewTracker } from "@/components/providers/PageviewTracker";
+import { PostHogIdentifyBridge } from "@/components/providers/PostHogIdentifyBridge";
 import "./globals.css";
 
 const pretendard = localFont({
@@ -41,6 +43,8 @@ export default function RootLayout({
         <LiveUpdateReady />
         <AuthProvider>
           <CapacitorDeepLinkHandler />
+          <PostHogIdentifyBridge />
+          <PageviewTracker />
           <QueryProvider>{children}</QueryProvider>
         </AuthProvider>
         <AppToaster />

@@ -22,6 +22,7 @@ import { BROKERS } from "@/lib/brokers";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { VALIDATION_LIMITS } from "@/lib/constants/validation";
 import { fmtNumberInput, formatNumberInput, parseNumberInput } from "@/lib/format";
+import { capture } from "@/lib/analytics";
 import type { Account } from "@/types/database";
 
 const schema = z.object({
@@ -88,6 +89,7 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
         await accountsApi.update(account!.id, input);
       } else {
         await accountsApi.create(input);
+        capture("account_added", { source: "manual" }); // 계좌명/예수금 등 미포함
       }
       await queryClient.invalidateQueries({ queryKey: queryKeys.portfolio });
       onOpenChange(false);

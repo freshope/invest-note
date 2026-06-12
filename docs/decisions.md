@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-06-12 | PostHog 제품 분석 도입 — FE 전용·Cloud·정적 export instrumentation-client·민감값 보호
+
+- **맥락:** 사용자가 어떤 화면을 쓰고 어떤 기능에 도달하는지 알 수 있는 analytics 가 전무했다. 제품 의사결정 근거를 위해 PostHog 도입. 핵심 제약은 앱이 순수 웹이 아니라 `next.config output:"export"` 정적 빌드를 Capacitor 웹뷰(iOS `capacitor://localhost`, Android `https://localhost`)로 패키징한 모바일이라는 점.
+- **결정:**
+  - ① **PostHog Cloud + FE 클라이언트 전용**(BE 서버사이드 추적 없음). 정적 export 라 Next.js rewrite reverse-proxy 불가 → 클라이언트가 PostHog host 로 직접 전송. `api_host` 는 `NEXT_PUBLIC_POSTHOG_HOST`(기본 us).
+  - ② **init 진입점 = `app/src/instrumentation-client.ts`**(Next 15.3+ 클라이언트 전용 파일, 자동 로드). 정적 export 빌드에서 모든 페이지 HTML 이 이 청크를 참조함을 빌드로 검증(단일 의존점 — 안 실리면 조용히 no-op 인데 tsc/build 는 통과하므로 사전 확인 필수). 폴백은 useEffect provider.
+  - ③ **키 없으면 전체 no-op** — `NEXT_PUBLIC_POSTHOG_KEY` 빈값이면 init·모든 헬퍼가 건너뜀. 로컬/CI 키 없이 빌드·동작(`POSTHOG_ENABLED` 단일 판정, app-config.ts 빈 env 패턴 차용).
+  - ④ **금융 민감값 보호**: autocapture·session recording off, identify 는 UUID 만(email 등 person property 금지), 커스텀 이벤트는 명시 필드만(종목/티커/금액/수량/가격/수수료/세금/환율/계좌명 전송 금지). 2중 방어 `property_denylist`(키 차단) + `before_send`(런타임 scrub). persistence "localStorage"(웹뷰 쿠키 불안정), person_profiles "identified_only"(익명 프로필·MAU·PII 축소).
+  - ⑤ **수동 페이지뷰** `usePathname`(`useSearchParams` 는 정적 export Suspense 경계 강제 → 금지). 유저 식별은 `PostHogIdentifyBridge`(AuthProvider 미수정, 관심사 분리).
+  - ⑥ **environment·project super property** — 모든 이벤트에 `environment`(`NEXT_PUBLIC_POSTHOG_ENV` 우선, 없으면 NODE_ENV)·`project`("invest-note") 부착해 PostHog 필터로 dev/prod·앱 구분. dev local 에도 키가 있어 로컬 검증 이벤트는 development 로 분리.
+  - 커스텀 이벤트 3종: `trade_recorded`·`trades_imported`·`account_added`.
+- **트레이드오프:** FE 전용이라 서버사이드 이벤트(import 실패 원인 등)는 미수집 — 필요 시 BE 확장. capture_pageleave 는 켜두되 모바일 웹뷰는 unload 불안정(백그라운드 전환)이라 세션 시간 신뢰도 낮음. 출시 전 개인정보 고지(처리방침·스토어 라벨·PIPA)는 코드 외 별도 작업으로 분리(backlog).
+
+---
+
 ## 2026-06-11 | 안내문구 노출 — 중립=Info 아이콘+바텀시트, 경고/에러=인라인 유지 (공유 InfoHintSheet)
 
 - **맥락:** 자산추이 헤더가 금액/날짜 아래에 중립 설명(예수금 제외·환율 환산 기준)을 항상 인라인으로 깔아 시각적 잡음. 아이콘+바텀시트로 정리하면서 "안내문구를 전부 숨길지"가 쟁점 — 자산추이 문구는 성격이 둘로 갈린다.

@@ -38,6 +38,7 @@ import type { Account, TradeType } from "@/types/database";
 import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { formatTradedAtLabel } from "@/lib/trade-utils";
+import { capture } from "@/lib/analytics";
 
 const FUTURE_TRADE_MESSAGE = "미래 날짜의 거래는 등록할 수 없습니다.";
 
@@ -240,6 +241,11 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
         queryClient.invalidateQueries({ queryKey: queryKeys.assets }),
       ]);
+      capture("trade_recorded", {
+        trade_type: result.trade_type, // BUY/SELL 만
+        source: "manual",
+        country: values.country_code, // KR/US 등 — 민감값 아님
+      });
       onTradeCreated(result.id, result.trade_type);
     } catch (err) {
       setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
