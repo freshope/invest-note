@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import httpx
-import pytest
 
 from invest_note_api.external import naver_search
 
