@@ -205,19 +205,19 @@ _TRADE_INSERT_SQL = """
 INSERT INTO trades (
     user_id, account_id, asset_name, ticker_symbol, market_type,
     trade_type, price, quantity, traded_at, commission, tax,
-    country_code, exchange,
+    country_code, exchange, exchange_rate,
     strategy_type, reasoning_tags, buy_reason, sell_reason,
     emotion, result
 ) VALUES (
     $1, $2, $3, $4, $5,
     $6, $7, $8, $9, $10, $11,
-    $12, $13,
-    $14, $15, $16, $17,
-    $18, $19
+    $12, $13, $14,
+    $15, $16, $17, $18,
+    $19, $20
 )
 """
 
-_TRADE_INSERT_PARAM_COUNT = 19
+_TRADE_INSERT_PARAM_COUNT = 20
 
 
 def _trade_insert_params(user_id: str, data: dict) -> tuple:
@@ -235,6 +235,7 @@ def _trade_insert_params(user_id: str, data: dict) -> tuple:
         data.get("tax", 0),
         data.get("country_code", DEFAULT_COUNTRY),
         data.get("exchange", ""),
+        data.get("exchange_rate", 1.0),
         data.get("strategy_type"),
         data.get("reasoning_tags", []),
         data.get("buy_reason"),
@@ -272,6 +273,7 @@ TRADE_FIELD_META: dict[str, TradeFieldMeta] = {
     "market_type":    TradeFieldMeta(patchable=True),
     "price":          TradeFieldMeta(patchable=True, pnl_affecting=True),
     "quantity":       TradeFieldMeta(patchable=True, pnl_affecting=True),
+    "exchange_rate":  TradeFieldMeta(patchable=True, pnl_affecting=True),
     "commission":     TradeFieldMeta(patchable=True, pnl_affecting=True),
     "tax":            TradeFieldMeta(patchable=True, pnl_affecting=True),
     "strategy_type":  TradeFieldMeta(patchable=True, pnl_affecting=True),

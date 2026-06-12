@@ -20,15 +20,19 @@ class PositionResponse(CamelModel):
     key: str
     ticker: str
     country: str
+    currency: str
     asset_name: str
     exchange: str
     holding_quantity: float
-    avg_buy_price: float
-    cost_basis: float
-    realized_pnl: float
-    current_price: float | None
-    evaluation: float | None
-    unrealized_pnl: float | None
+    avg_buy_price: float            # KRW (primary)
+    avg_buy_price_native: float     # native(USD 등) — 달러 보조
+    cost_basis: float               # KRW
+    cost_basis_native: float        # native
+    realized_pnl: float             # KRW
+    current_price: float | None     # native 시세
+    evaluation: float | None        # KRW
+    evaluation_native: float | None  # native
+    unrealized_pnl: float | None    # KRW
     last_note_type: str | None
     last_note: str | None
     last_traded_at: str

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useClickOutside } from "@/hooks/useClickOutside";
@@ -9,7 +9,6 @@ import { stocksApi, type StockSearchResult } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { QUERY_STOCK_SEARCH_STALE_TIME_MS } from "@/lib/constants/query";
 import { CountryBadge } from "./trade-display";
-import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 
 export interface SelectedStock {
   name: string;
@@ -44,10 +43,6 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
     enabled: debouncedValue.trim().length >= 1,
     staleTime: QUERY_STOCK_SEARCH_STALE_TIME_MS,
   });
-  const krSuggestions = useMemo(
-    () => suggestions.filter((stock) => stock.market === DEFAULT_COUNTRY_CODE),
-    [suggestions],
-  );
 
   // 쿼리 키(debouncedValue) 변경 시 activeIndex 초기화 — 렌더 중 state 비교 패턴.
   // suggestions 참조 비교는 useQuery 구조분해 기본값 `= []`가 매 렌더 새 배열을 만들어 무한 루프 유발.
@@ -61,7 +56,7 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
   const open = !hidden
     && value.trim().length > 0
     && value !== lastSelected
-    && krSuggestions.length > 0;
+    && suggestions.length > 0;
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setLastSelected("");
@@ -81,19 +76,19 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
     if (!open) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActiveIndex((i) => Math.min(i + 1, krSuggestions.length - 1));
+      setActiveIndex((i) => Math.min(i + 1, suggestions.length - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActiveIndex((i) => Math.max(i - 1, -1));
     } else if (e.key === "Enter") {
-      if (activeIndex >= 0 && krSuggestions[activeIndex]) {
+      if (activeIndex >= 0 && suggestions[activeIndex]) {
         e.preventDefault();
-        handleSelect(krSuggestions[activeIndex]);
+        handleSelect(suggestions[activeIndex]);
       }
     } else if (e.key === "Escape") {
       setHidden(true);
     }
-  }, [open, krSuggestions, activeIndex, handleSelect]);
+  }, [open, suggestions, activeIndex, handleSelect]);
 
   useClickOutside(containerRef, () => setHidden(true));
 
@@ -105,7 +100,7 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
         value={value}
         onChange={handleInputChange}
         onKeyDown={handleKeyDown}
-        onFocus={() => { if (krSuggestions.length > 0) setHidden(false); }}
+        onFocus={() => { if (suggestions.length > 0) setHidden(false); }}
         autoComplete="off"
         autoCorrect="off"
         role="combobox"
@@ -119,14 +114,14 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" />
         </div>
       )}
-      {open && krSuggestions.length > 0 && (
+      {open && suggestions.length > 0 && (
         <ul
           id="stock-search-listbox"
           role="listbox"
           aria-label="종목 검색 결과"
           className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 max-h-[280px] overflow-y-auto rounded-xl bg-popover shadow-md ring-1 ring-foreground/10"
         >
-          {krSuggestions.map((stock, i) => (
+          {suggestions.map((stock, i) => (
             <li
               key={`${stock.market}-${stock.code}`}
               id={`stock-option-${i}`}
@@ -137,7 +132,7 @@ export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }
                 i === activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"
               }`}
             >
-              <CountryBadge countryCode="KR" className="shrink-0" />
+              <CountryBadge countryCode={stock.market} className="shrink-0" />
               <span className="flex-1 font-medium truncate">{stock.name}</span>
               <span className="shrink-0 text-[12px] text-muted-foreground font-mono">{stock.code}</span>
               <span className="shrink-0 text-[11px] text-muted-foreground">{stock.exchange}</span>

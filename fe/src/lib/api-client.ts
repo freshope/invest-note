@@ -58,6 +58,7 @@ const ROUTES = {
     search: "/stocks/search",
     quote: "/stocks/quote",
     meta: "/stocks/meta",
+    fx: "/stocks/fx",
   },
   analysis: {
     dashboard: "/analysis/dashboard",
@@ -155,6 +156,7 @@ export interface TradeCreateInput {
   ticker_symbol: string;
   country_code?: string;
   exchange?: string; // optional: server default("") fills absent value
+  exchange_rate?: number; // 거래 시점 USD/KRW(해외). KR 은 1. 미전송 시 서버 default(1).
   price: number;
   quantity: number;
   commission?: number;
@@ -369,6 +371,14 @@ export interface StockMeta {
 }
 export type StockMetaMap = Record<string, StockMeta>;
 
+// 환율(BE /stocks/fx 응답). rate: base 1단위 = rate × quote (USD/KRW 1350 → 1 USD = 1350 KRW).
+export interface FxRate {
+  base: string;
+  quote: string;
+  rate: number;
+  as_of: string;
+}
+
 export const stocksApi = {
   search: (q: string) =>
     apiFetch<StockSearchResult[]>(`${ROUTES.stocks.search}?q=${encodeURIComponent(q)}`),
@@ -381,6 +391,12 @@ export const stocksApi = {
 
   meta: (codes: string) =>
     apiFetch<StockMetaMap>(`${ROUTES.stocks.meta}?codes=${encodeURIComponent(codes)}`),
+
+  // 통화쌍 환율(기본 USD/KRW). KRW 환산 합산용 — 실패 시 BE 가 null 반환.
+  fx: (base = "USD", quote = "KRW") =>
+    apiFetch<FxRate | null>(
+      `${ROUTES.stocks.fx}?base=${encodeURIComponent(base)}&quote=${encodeURIComponent(quote)}`
+    ),
 };
 
 // ============================================================
@@ -407,6 +423,9 @@ export interface AnalysisDashboardData {
   behavior: BehaviorData;
   suggestions: SuggestionsData;
   missingQuoteTickers: string[];
+  // 시세는 있으나 환율 미상으로 해외 평가액 제외됨 — '환율 미상' 안내용(시세 미조회와 구분).
+  // optional: 구버전 BE 응답 호환 — 소비처는 `?? false` 폴백.
+  fxMissing?: boolean;
 }
 
 export const analysisApi = {
@@ -448,6 +467,10 @@ export interface AssetHistoryResponse {
   asOf: string;
   /** 현재 보유분 매수 원금(cost_basis 합). 손익 가이드 라인 기준. 보유 없음이면 null. */
   investedAmount: number | null;
+  /** KRW 환산에 쓰인 USD/KRW spot 환율(1개). null=환율 미상 또는 해외 보유 없음. */
+  usdkrw: number | null;
+  /** 스코프에 해외(비-KRW) 보유 존재 여부. */
+  hasForeign: boolean;
 }
 
 export interface AssetHistoryParams {

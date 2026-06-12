@@ -39,6 +39,7 @@ def _make_trade_row(**kwargs) -> dict:
         "holding_days": None,
         "country_code": "KR",
         "exchange": "",
+        "exchange_rate": 1.0,
         "commission": 0.0,
         "tax": 0.0,
         "created_at": _dt("2024-01-01T00:00:00Z"),
@@ -148,6 +149,68 @@ class TestPortfolioSummary:
         assert "user_id" in snap_account
         assert "cash_balance" in snap_account
 
+    def test_summary_us_position_converts_to_krw(self, trades_client):
+        """US 포지션이 라우터를 통과 — 원가는 거래시점 환율로 KRW 고정, 평가액은 현재 환율.
+
+        라우터 fx 와이어링(게이트+DI+fetch_usdkrw)을 검증. cost_basis 는 KRW 고정,
+        evaluation 은 현재 환율 환산, evaluation_native 는 USD 보조.
+        """
+        # US BUY $200×10 @1300(거래시점) → 원가 2,600,000 KRW 고정.
+        trade = _make_trade_row(
+            asset_name="Apple", ticker_symbol="AAPL", country_code="US",
+            exchange="NASDAQ", price=200.0, quantity=10.0, exchange_rate=1300.0,
+        )
+        account = _make_account_row()
+        conn = FakeConnection([_to_record(trade)], [_to_record(account)])
+
+        async def mock_quotes(state, keys, **kw):
+            return {"AAPL:US": {"price": 220.0, "currency": "USD", "as_of": ""}}
+
+        async def mock_fx(trades, state, client, *, force_refresh=False, providers=None):
+            return 1500.0  # 현재 USD/KRW
+
+        with _patch_portfolio(conn):
+            with patch("invest_note_api.routers.portfolio.fetch_quotes_by_keys", mock_quotes):
+                with patch("invest_note_api.routers.portfolio.usdkrw_if_foreign", mock_fx):
+                    resp = trades_client.get("/portfolio/summary")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        pos = body["positions"][0]
+        assert pos["costBasis"] == 2_600_000.0       # 거래시점 환율로 KRW 고정
+        assert pos["costBasisNative"] == 2000.0      # USD ($200×10)
+        assert pos["evaluation"] == 3_300_000.0      # 220×10×1500(현재환율)
+        assert pos["evaluationNative"] == 2200.0     # USD
+        assert pos["currency"] == "USD"
+        # 총액(KRW): 평가 3,300,000
+        assert body["totals"]["totalEvaluation"] == 3_300_000.0
+        assert body["totals"]["missingQuoteTickers"] == []
+
+    def test_summary_us_position_excluded_when_fx_unavailable(self, trades_client):
+        """현재 환율 조회 실패(None) → US 평가액 KRW 미상(missing). 원가는 KRW 고정 유지."""
+        trade = _make_trade_row(
+            asset_name="Apple", ticker_symbol="AAPL", country_code="US",
+            exchange="NASDAQ", price=200.0, quantity=10.0, exchange_rate=1300.0,
+        )
+        account = _make_account_row()
+        conn = FakeConnection([_to_record(trade)], [_to_record(account)])
+
+        async def mock_quotes(state, keys, **kw):
+            return {"AAPL:US": {"price": 120.0, "currency": "USD", "as_of": ""}}
+
+        async def mock_fx(trades, state, client, *, force_refresh=False, providers=None):
+            return None  # 환율 못 받음
+
+        with _patch_portfolio(conn):
+            with patch("invest_note_api.routers.portfolio.fetch_quotes_by_keys", mock_quotes):
+                with patch("invest_note_api.routers.portfolio.usdkrw_if_foreign", mock_fx):
+                    resp = trades_client.get("/portfolio/summary")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["totals"]["totalEvaluation"] == 0.0
+        assert "Apple" in body["totals"]["missingQuoteTickers"]
+
     def test_summary_default_includes_holdings(self, trades_client):
         """파라미터 미전송(default withQuotes=true) → 기존 시세 동작 유지 + holdings additive 필드 존재."""
         trade = _make_trade_row()
@@ -238,6 +301,63 @@ class TestPortfolioSummary:
         assert snap["holdings"] == [{"key": "005930:KR", "quantity": 10.0}]
         assert snap["stockEvaluation"] == 0.0
         assert snap["totalValue"] == snap["cashBalance"]
+
+    def test_summary_lite_mode_skips_fx_fetch(self, trades_client):
+        """withQuotes=false(신규 FE 기본)는 US 보유여도 fetch_usdkrw 미호출.
+
+        lite 모드는 quotes={} 라 usdkrw 가 전혀 소비되지 않는다(FE 가 useFxRate 로 자체 환산) —
+        임계 경로에서 불필요한 Yahoo 왕복(최대 2초) 제거 회귀 가드.
+        """
+        trade = _make_trade_row(
+            asset_name="Apple", ticker_symbol="AAPL", country_code="US",
+            exchange="NASDAQ", price=200.0, quantity=10.0, exchange_rate=1300.0,
+        )
+        account = _make_account_row()
+        conn = FakeConnection([_to_record(trade)], [_to_record(account)])
+
+        called = {"fx": False}
+
+        async def must_not_call_fx(trades, state, client, *, force_refresh=False):
+            called["fx"] = True
+            return 1500.0
+
+        with _patch_portfolio(conn):
+            with patch("invest_note_api.routers.portfolio.usdkrw_if_foreign", must_not_call_fx):
+                resp = trades_client.get(
+                    "/portfolio/summary", params={"withQuotes": "false"}
+                )
+
+        assert resp.status_code == 200
+        assert called["fx"] is False, "lite 모드인데 환율 fetch 가 호출됨"
+
+    def test_summary_other_country_skips_fx_fetch(self, trades_client):
+        """country=OTHER(통화 KRW)만 보유 시 환율 네트워크 fetch 미호출 — 게이트는 통화 기준.
+
+        with_quotes=true 라 usdkrw_if_foreign 자체는 호출되지만, 비-KRW 거래가 없어 내부 게이트가
+        실제 fetch_usdkrw(Yahoo 왕복)를 건너뛴다 — fx 모듈의 fetch_usdkrw 를 spy 로 검증.
+        """
+        trade = _make_trade_row(
+            asset_name="비트코인", ticker_symbol="BTC", country_code="OTHER",
+        )
+        account = _make_account_row()
+        conn = FakeConnection([_to_record(trade)], [_to_record(account)])
+
+        called = {"fx": False}
+
+        async def must_not_call_fx(state, client, *, force_refresh=False):
+            called["fx"] = True
+            return 1500.0
+
+        async def mock_quotes(state, keys, **kw):
+            return {}
+
+        with _patch_portfolio(conn):
+            with patch("invest_note_api.routers.portfolio.fetch_quotes_by_keys", mock_quotes):
+                with patch("invest_note_api.external.fx.fetch_usdkrw", must_not_call_fx):
+                    resp = trades_client.get("/portfolio/summary")
+
+        assert resp.status_code == 200
+        assert called["fx"] is False, "KRW 통화(OTHER)인데 환율 네트워크 fetch 가 호출됨"
 
     def test_summary_quote_failure_fallback(self, trades_client):
         """시세 fetch 실패 시에도 200 반환 (evaluation=null 허용)."""

@@ -59,14 +59,21 @@ from invest_note_api.domain.trade_import import (
     trade_to_signature,
 )
 from invest_note_api.domain.trade_types import (
+    CURRENCY_KRW,
     DEFAULT_COUNTRY,
     MARKET_TYPE_STOCK,
     TRADE_TYPE_BUY,
     TRADE_TYPE_SELL,
     Trade,
+    currency_for_country,
 )
 from invest_note_api.errors import ERR_TRADE_NOT_FOUND, APIError
-from invest_note_api.schemas.trade import TradeBulkDeleteRequest, TradeCreate, TradeUpdate
+from invest_note_api.schemas.trade import (
+    TradeBulkDeleteRequest,
+    TradeCreate,
+    TradeUpdate,
+    exchange_rate_error,
+)
 from invest_note_api.schemas.trade_import import (
     ImportCommitRequest,
     ImportCommitResponse,
@@ -74,7 +81,7 @@ from invest_note_api.schemas.trade_import import (
     ImportPreviewResponse,
 )
 from invest_note_api.schemas.trade_response import TradeSummaryResponse
-from invest_note_api.broker_import import PARSERS, detect_broker
+from invest_note_api.broker_import import PARSERS
 from invest_note_api.broker_import.ticker_resolver import resolve_tickers
 
 logger = logging.getLogger(__name__)
@@ -327,6 +334,7 @@ async def create_trade(
             "tax": data.tax,
             "country_code": data.country_code or DEFAULT_COUNTRY,
             "exchange": data.exchange or "",
+            "exchange_rate": data.exchange_rate,
         })
 
         fresh_trades = [*group_trades, new_trade.model_copy(update={"id": row["id"]})]
@@ -420,6 +428,15 @@ async def update_trade(
         patch, fields = strip_sell_auto_derived(patch, fields, existing.trade_type)
         if not patch:
             return Response(status_code=204)
+
+        # TradeUpdate 에는 country_code 가 없어 스키마 validator 로 검증 불가.
+        # existing.country_code 기준으로 create 와 대칭 가드(exchange_rate_error 공유).
+        # patch 에 exchange_rate 미포함이면 .get→None 이라 자동 skip(기존 환율 유지).
+        patch_rate = patch.get("exchange_rate")
+        if patch_rate is not None:
+            rate_err = exchange_rate_error(existing.country_code, patch_rate)
+            if rate_err:
+                raise APIError(rate_err, 400)
 
         if fields & PNL_AFFECTING_FIELDS:
             key = trade_to_group_key(existing)
@@ -613,11 +630,10 @@ async def import_preview(
     if ext not in allowed_extensions:
         raise APIError("지원하지 않는 파일 형식입니다 (xlsx, xls, pdf만 허용).", 415)
 
-    detected_key = broker_key or detect_broker(filename, file_bytes)
-    if not detected_key or detected_key not in PARSERS:
-        raise APIError("증권사를 자동으로 감지하지 못했습니다. broker_key를 명시해주세요.", 400)
+    if not broker_key or broker_key not in PARSERS:
+        raise APIError("지원하지 않는 증권사입니다. broker_key를 확인해주세요.", 400)
 
-    parser = PARSERS[detected_key]
+    parser = PARSERS[broker_key]
     # 동기 pdfplumber/openpyxl 파싱은 threadpool 로 — async 이벤트 루프 비차단
     parse_result = await run_in_threadpool(parser.parse, file_bytes, filename)
 
@@ -724,7 +740,7 @@ async def import_preview(
         "rows": rows_to_stage,
         "parse_errors": [e.model_dump() for e in parse_errors],
         "usd_skip_count": parse_result.usd_skip_count,
-        "broker_key": detected_key,
+        "broker_key": broker_key,
         "account_hint": parse_result.account_hint,
     }
 
@@ -738,7 +754,7 @@ async def import_preview(
 
     return ImportPreviewResponse(
         staging_id=staging_id,
-        broker_key=detected_key,
+        broker_key=broker_key,
         broker_name=parser.display_name,
         account_hint=parse_result.account_hint,
         new_count=len(rows_to_stage) - dup_count,
@@ -841,6 +857,16 @@ async def import_commit(
                     skipped_count += 1
                     continue
 
+                # 방어 가드: import 경로는 create 의 _foreign_requires_exchange_rate validator 를
+                # 우회한다. 현재 staging 은 country_code=KR 하드코딩이라 가드가 발동하지 않지만,
+                # Phase C(해외 import) 추가 시 exchange_rate(미설정→DB default 1.0) 누락이 조용히
+                # 통과해 해외 원가가 왜곡되는 것을 막는다. 해외 import 도입 시 이 가드가 강제로
+                # exchange_rate 처리를 재검토하게 한다. KR 하드코딩 전제를 코드로 못박는다.
+                if currency_for_country(row["country_code"]) != CURRENCY_KRW:
+                    raise APIError(
+                        "해외(비-KRW) 거래 import 는 거래 시점 환율(exchange_rate)이 필요합니다.",
+                        400,
+                    )
                 insert_row = {
                     "account_id": str(body.account_id),
                     "asset_name": row["asset_name"],

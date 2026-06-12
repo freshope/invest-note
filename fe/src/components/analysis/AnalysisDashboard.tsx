@@ -35,7 +35,7 @@ function SkeletonCard({ h = "h-28" }: { h?: string }) {
 
 export function AnalysisDashboard() {
   const [period, setPeriod] = useState<Period>(DEFAULT_ANALYSIS_PERIOD);
-  const { summary, behavior, suggestionsData, missingQuoteTickers, loading, isError, refetch } = useAnalysisData(period);
+  const { summary, behavior, suggestionsData, missingQuoteTickers, fxMissing, loading, isError, refetch } = useAnalysisData(period);
 
   const isEmpty = summary && summary.totalTrades === 0;
   const isEmptyPeriod = !!isEmpty && period !== "all";
@@ -77,6 +77,10 @@ export function AnalysisDashboard() {
         ) : summary ? (
           <>
             <MissingQuoteBadge tickers={missingQuoteTickers} />
+            {/* 환율 미상: 시세는 있으나 KRW 환산 불가 — 홈 안내 문구와 동일(시세 미조회와 구분). */}
+            {fxMissing && (
+              <p className="text-[11px] text-muted-foreground">환율 미상 — 해외 평가금액 제외됨</p>
+            )}
 
             {/* 섹션 1: 핵심 성과 */}
             <SummaryCards summary={summary} />

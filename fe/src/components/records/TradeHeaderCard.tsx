@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
-import { fmt } from "@/lib/format";
+import { currencyForCountry, formatMoney } from "@/lib/format";
+import { MoneyText } from "@/components/shared/MoneyText";
 import { getTradeTypeAccent } from "@/lib/constants/colors";
 import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import { TradeTypeBadge } from "@/components/shared/TradeTypeBadge";
 import { StockMetaBadges } from "@/components/stocks/StockMetaBadges";
 import { useStockMeta, isKrStockCode } from "@/hooks/useStockMeta";
 import {
-  CountryBadge,
   MarketTypeBadge,
   getQuantityUnit,
 } from "./trade-display";
@@ -19,7 +19,7 @@ import type { Trade, TradeType } from "@/types/database";
 interface TradeHeaderCardProps {
   trade: Pick<
     Trade,
-    "asset_name" | "ticker_symbol" | "market_type" | "country_code" | "exchange"
+    "asset_name" | "ticker_symbol" | "market_type" | "country_code" | "exchange" | "exchange_rate"
   >;
   tradeType: TradeType;
   totalAmount: number;
@@ -58,19 +58,19 @@ export function TradeHeaderCard({
             <button
               type="button"
               onClick={onStockPress}
-              className="text-[20px] font-bold text-foreground underline-offset-2 hover:underline text-left"
+              className="min-w-0 break-words text-[20px] font-bold text-foreground underline-offset-2 hover:underline text-left"
             >
               {trade.asset_name}
             </button>
           ) : stockHref ? (
             <Link
               href={stockHref}
-              className="text-[20px] font-bold text-foreground underline-offset-2 hover:underline"
+              className="min-w-0 break-words text-[20px] font-bold text-foreground underline-offset-2 hover:underline"
             >
               {trade.asset_name}
             </Link>
           ) : (
-            <span className="text-[20px] font-bold text-foreground">{trade.asset_name}</span>
+            <span className="min-w-0 break-words text-[20px] font-bold text-foreground">{trade.asset_name}</span>
           )}
           {trade.ticker_symbol && (
             <span className="text-[13px] font-mono text-muted-foreground">
@@ -82,23 +82,26 @@ export function TradeHeaderCard({
         <div className="flex items-center gap-2 flex-wrap">
           <MarketTypeBadge marketType={trade.market_type} />
           {trade.market_type === "STOCK" && (
-            <>
-              <CountryBadge countryCode={trade.country_code ?? DEFAULT_COUNTRY_CODE} />
-              <StockMetaBadges
-                market={trade.exchange}
-                rank={stockMeta?.marcap_rank}
-                nps={stockMeta?.nps_holding}
-                npsAsOf={stockMeta?.nps_as_of}
-              />
-            </>
+            <StockMetaBadges
+              countryCode={trade.country_code ?? DEFAULT_COUNTRY_CODE}
+              market={trade.exchange || stockMeta?.market}
+              rank={stockMeta?.marcap_rank}
+              nps={stockMeta?.nps_holding}
+              npsAsOf={stockMeta?.nps_as_of}
+            />
           )}
         </div>
         <div className="mt-4 pt-4 border-t border-border/40">
           <p className={cn("text-[24px] font-bold tabular-nums text-right", accent.text)}>
-            {fmt(totalAmount)}원
+            <MoneyText
+              krw={totalAmount * Number(trade.exchange_rate ?? 1)}
+              native={totalAmount}
+              currency={currencyForCountry(trade.country_code ?? DEFAULT_COUNTRY_CODE)}
+              nativeClassName="text-[14px]"
+            />
           </p>
           <p className="text-[12px] text-muted-foreground text-right mt-0.5 tabular-nums">
-            {fmt(price)}원 × {quantity}
+            {formatMoney(price, currencyForCountry(trade.country_code ?? DEFAULT_COUNTRY_CODE))} × {quantity}
             {getQuantityUnit(trade.market_type)}
           </p>
         </div>

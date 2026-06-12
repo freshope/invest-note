@@ -7,7 +7,8 @@ import { AccountChip } from "@/components/shared/AccountChip";
 import { TradeTypeBadge } from "@/components/shared/TradeTypeBadge";
 import { STRATEGY_LABELS, EMOTION_LABELS, RESULT_LABELS, TRADE_TYPE } from "@/lib/constants/trading";
 import { PNL_COLORS, getTradeTypeAccent } from "@/lib/constants/colors";
-import { fmt, formatPnL } from "@/lib/format";
+import { currencyForCountry, formatMoney, formatPnLCurrency } from "@/lib/format";
+import { MoneyText } from "@/components/shared/MoneyText";
 import { CheckIcon, Trash2Icon } from "lucide-react";
 import { StockMetaBadges } from "@/components/stocks/StockMetaBadges";
 import type { TradeWithAccount } from "@/lib/trade-utils";
@@ -56,12 +57,17 @@ export const TradeCard = memo(function TradeCard({
 }: TradeCardProps) {
   const isBuy = trade.trade_type === TRADE_TYPE.BUY;
 
-  const price = fmt(Number(trade.price));
+  // 거래 통화(국내=원, 해외=USD). 금액은 원화(primary)로 통일하고 해외는 달러 보조 병기.
+  const currency = currencyForCountry(trade.country_code ?? "KR");
+  const rate = Number(trade.exchange_rate ?? 1);
+  const nativePrice = Number(trade.price);
   const quantity = Number(trade.quantity);
-  const totalAmount = fmt(Number(trade.total_amount));
+  const nativeTotal = Number(trade.total_amount);
 
-  // 뱃지 줄에 표시할 게 하나라도 있을 때만 줄을 렌더(빈 여백 방지). 마켓은 trade.exchange.
-  const hasMeta = !!trade.exchange || meta?.marcap_rank != null || !!meta?.nps_holding;
+  // 종목 거래는 국가 뱃지를 항상 보여주므로(식별 묶음 일관) STOCK 이면 뱃지 줄을 렌더한다.
+  // 비주식(코인 등)은 국가 개념이 없어 exchange/메타가 있을 때만 렌더.
+  const isStock = trade.market_type === "STOCK";
+  const hasMeta = isStock || !!trade.exchange || meta?.marcap_rank != null || !!meta?.nps_holding;
 
   // 선택 모드에서는 스와이프 비활성 (체크박스 토글이 우선).
   const swipeEnabled = !selectionMode && !!onSwipeOpenChange;
@@ -211,14 +217,15 @@ export const TradeCard = memo(function TradeCard({
               <div className="flex items-start justify-between gap-2">
                 {/* 종목명 + 매수/매도 뱃지, 그 아래 메타 뱃지 줄 */}
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-[16px] font-bold text-foreground truncate">{trade.asset_name}</span>
+                  <div className="flex items-start gap-2 min-w-0">
+                    <span className="min-w-0 text-[16px] font-bold text-foreground break-words">{trade.asset_name}</span>
                     <TradeTypeBadge tradeType={trade.trade_type} size="sm" />
                   </div>
                   {hasMeta && (
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                       <StockMetaBadges
-                        market={trade.exchange}
+                        countryCode={isStock ? trade.country_code : undefined}
+                        market={trade.exchange || meta?.market}
                         rank={meta?.marcap_rank}
                         nps={meta?.nps_holding}
                         npsAsOf={meta?.nps_as_of}
@@ -240,17 +247,19 @@ export const TradeCard = memo(function TradeCard({
                     </div>
                     {trade.profit_loss != null && (
                       <div className="text-[12px] font-semibold tabular-nums">
-                        {formatPnL(Number(trade.profit_loss))}
+                        {formatPnLCurrency(Number(trade.profit_loss), "KRW")}
                       </div>
                     )}
                   </div>
                 )}
               </div>
 
-              {/* 가격 × 수량 = 총액 */}
+              {/* 단가(native) × 수량 = 총액(원화 primary + 달러 보조) */}
               <div className="mt-1.5 text-[13px] text-muted-foreground">
-                {price}원 × {quantity}주 ={" "}
-                <span className="font-semibold text-foreground">{totalAmount}원</span>
+                {formatMoney(nativePrice, currency)} × {quantity}주 ={" "}
+                <span className="font-semibold text-foreground">
+                  <MoneyText krw={nativeTotal * rate} native={nativeTotal} currency={currency} />
+                </span>
               </div>
 
               {trade.account && (

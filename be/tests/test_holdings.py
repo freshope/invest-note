@@ -104,4 +104,27 @@ class TestComputeFlexibleBreakdown:
         assert bd.avg_cost_price == 0.0
         assert bd.pnl == 0.0
 
+    def test_us_sell_normalizes_native_amounts_to_krw(self):
+        """US SELL(exchange_rate≠1.0): price/commission/tax(native USD) 가 거래 시점 환율로
+        KRW 환산. avg_buy_price/profit_loss 는 이미 KRW(저장값)라 그대로 사용.
+        """
+        sell = make_trade(
+            id="s1", trade_type="SELL", country_code="US", exchange="NASDAQ",
+            price=210.0, quantity=10.0, exchange_rate=1500.0,
+            avg_buy_price=300000.0,  # 이미 KRW
+            commission=2.0, tax=1.0,  # native USD
+            profit_loss=150000.0,     # 이미 KRW
+        )
+        bd = compute_flexible_breakdown(sell)
+        # native → KRW: price 210×1500=315,000 / sell_amount ×10 = 3,150,000
+        assert bd.sell_price == 315000.0
+        assert bd.sell_amount == 3_150_000.0
+        # avg_buy_price 는 KRW 그대로 → cost_basis = 300,000 ×10
+        assert bd.avg_cost_price == 300000.0
+        assert bd.cost_basis == 3_000_000.0
+        # commission/tax native ×환율
+        assert bd.commission == 3000.0  # 2×1500
+        assert bd.tax == 1500.0          # 1×1500
+        assert bd.pnl == 150000.0        # KRW 저장값 그대로
+
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useForm, useWatch, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -8,7 +8,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/base/Button";
 import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
 import { AccountChip } from "@/components/shared/AccountChip";
-import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/base/Tabs";
 import {
@@ -29,8 +28,11 @@ import { STORAGE_KEYS } from "@/lib/constants/storage";
 import { COUNTRY_CODES, DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
 import { HoldingSelectInput } from "./HoldingSelectInput";
+import { NumericInput } from "./NumericInput";
 import { CountryBadge } from "./trade-display";
-import { fmt, fmtNumberInput, parseNumberInput } from "@/lib/format";
+import { currencyForCountry, fmt, formatMoney } from "@/lib/format";
+import { impliedExchangeRate, fxHintText } from "./fx-input";
+import { useFxRate } from "@/hooks/useFxRate";
 import { cn, getFirstFormError } from "@/lib/utils";
 import type { Account, TradeType } from "@/types/database";
 import { CalendarIcon } from "lucide-react";
@@ -49,11 +51,23 @@ const schema = z.object({
   ticker_symbol: z.string().min(1, "자동완성으로 종목을 선택해주세요."),
   country_code: z.enum(COUNTRY_CODES),
   exchange: z.string().trim().max(VALIDATION_LIMITS.EXCHANGE_MAX),
+  // 해외 거래의 체결 원화(가격×수량의 원금 KRW). 환율은 제출 시 amount_krw / (price×quantity) 로 역산.
+  amount_krw: z.number().min(0),
   traded_at: z.date().refine((date) => date.getTime() <= Date.now(), FUTURE_TRADE_MESSAGE),
   price: z.number().positive("올바른 가격을 입력해주세요."),
   quantity: z.number().positive("올바른 수량을 입력해주세요."),
   commission: z.number().min(0),
   tax: z.number().min(0),
+}).superRefine((val, ctx) => {
+  const isForeign = currencyForCountry(val.country_code) === "USD";
+  if (isForeign && !(val.amount_krw > 0)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["amount_krw"], message: "체결 원화를 입력해주세요." });
+    return;
+  }
+  // 체결 원화 = 가격×수량이면 역산 환율이 1.0 → BE 가 해외 거래로 거부(400). 사전 차단.
+  if (isForeign && impliedExchangeRate(val.amount_krw, val.price, val.quantity) === 1) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["amount_krw"], message: "체결 원화가 가격×수량과 같으면 환율이 1이 되어 등록할 수 없어요." });
+  }
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -94,6 +108,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
       ticker_symbol: "",
       country_code: "OTHER",
       exchange: "",
+      amount_krw: 0,
       traded_at: new Date(),
       price: 0,
       quantity: 0,
@@ -103,10 +118,20 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
   });
 
   // 폼 상태를 한 번에 일괄 구독해 입력 시 form 전역 리렌더 횟수를 줄인다.
-  const [tradeType, price, quantity, accountId, assetName, tickerSymbol, countryCode] = useWatch({
+  const [tradeType, price, quantity, accountId, assetName, tickerSymbol, countryCode, amountKrw] = useWatch({
     control,
-    name: ["trade_type", "price", "quantity", "account_id", "asset_name", "ticker_symbol", "country_code"],
+    name: ["trade_type", "price", "quantity", "account_id", "asset_name", "ticker_symbol", "country_code", "amount_krw"],
   });
+  // 해외(USD) 거래 여부 — 체결 원화 입력칸·역산 환율 미리보기·자동 수수료 OFF 분기.
+  const isForeign = currencyForCountry(countryCode ?? "KR") === "USD";
+  const { usdkrw } = useFxRate(isForeign);
+  // 해외 거래는 체결 원화를 현재 시세 환율 기준으로 제안(가격·수량 변경 시 갱신). 사용자가 직접 입력하면(dirty) 갱신 중단.
+  useEffect(() => {
+    if (isForeign && usdkrw != null && !getFieldState("amount_krw").isDirty) {
+      const totalNative = (price || 0) * (quantity || 0);
+      setValue("amount_krw", totalNative > 0 ? Math.round(totalNative * usdkrw) : 0);
+    }
+  }, [isForeign, usdkrw, price, quantity, getFieldState, setValue]);
   const [calOpen, setCalOpen] = useState(false);
   const priceInputRef = useRef<HTMLInputElement>(null);
   const selectedAssetNameRef = useRef("");
@@ -117,6 +142,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
     setValue("ticker_symbol", "");
     setValue("country_code", "OTHER");
     setValue("exchange", "");
+    setValue("amount_krw", 0);
   }, [setValue]);
 
   const handleAssetNameChange = useCallback((value: string, onChange: (value: string) => void) => {
@@ -154,6 +180,8 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
   // 가격·수량·trade_type 변경 시 수수료/제세금 자동 계산.
   // 사용자가 수수료/제세금을 직접 수정한 경우(getFieldState().isDirty=true) 자동 계산을 건너뛴다.
   const recalcFees = useCallback((nextPrice: number, nextQty: number, nextType: TradeType) => {
+    // 해외(US) 거래는 KR 수수료율/거래세 체계가 달라 자동 계산하지 않는다(수동 입력).
+    if (isForeign) return;
     const total = (nextPrice || 0) * (nextQty || 0);
     if (!getFieldState("commission").isDirty) {
       setValue("commission", total > 0 ? calcCommission(total) : 0);
@@ -166,10 +194,10 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
       // BUY 전환 시 SELL에서 수동 입력한 stale 값이 다음 SELL에 노출되지 않도록 dirty 무시.
       setValue("tax", 0);
     }
-  }, [getFieldState, setValue]);
+  }, [getFieldState, setValue, isForeign]);
 
   const total = (price || 0) * (quantity || 0);
-  const totalDisplay = total > 0 ? fmt(total) : "-";
+  const totalDisplay = total > 0 ? formatMoney(total, isForeign ? "USD" : "KRW") : "-";
 
   const firstError = getFirstFormError(errors);
 
@@ -184,6 +212,13 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         }
       }
 
+      // 환율은 체결 원화 / 체결 달러(가격×수량)로 역산. 국내(KRW)는 1.0.
+      const implied = impliedExchangeRate(values.amount_krw, values.price, values.quantity);
+      const exchangeRate =
+        currencyForCountry(values.country_code) === "USD" && implied != null
+          ? implied
+          : 1;
+
       const result = await tradesApi.create({
         trade_type: values.trade_type,
         market_type: "STOCK",
@@ -192,6 +227,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         ticker_symbol: values.ticker_symbol,
         country_code: values.country_code,
         exchange: values.exchange,
+        exchange_rate: exchangeRate,
         price: values.price,
         quantity: values.quantity,
         commission: values.commission,
@@ -325,6 +361,12 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 setValue("ticker_symbol", stock.code);
                 setValue("country_code", stock.market);
                 setValue("exchange", stock.exchange);
+                // 해외 종목 전환 시 KR 자동계산 수수료/세금(원화 기준)을 비운다 —
+                // recalcFees 가 isForeign 에서 early-return 이라 stale KR 값이 남는 것을 방지.
+                if (currencyForCountry(stock.market) === "USD") {
+                  setValue("commission", 0);
+                  setValue("tax", 0);
+                }
               };
 
               if (tradeType === TRADE_TYPE.SELL) {
@@ -374,20 +416,17 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
 
         {/* 가격 */}
         <div className="space-y-1.5">
-          <Label htmlFor="price">가격 (원) <span className="text-destructive">*</span></Label>
+          <Label htmlFor="price">가격 ({isForeign ? "USD" : "원"}) <span className="text-destructive">*</span></Label>
           <Controller
             control={control}
             name="price"
             render={({ field }) => (
-              <Input
-                ref={priceInputRef}
+              <NumericInput
+                inputRef={priceInputRef}
                 id="price"
-                type="text"
-                inputMode="numeric"
-                placeholder="0"
-                value={fmtNumberInput(field.value)}
-                onChange={(e) => {
-                  const next = parseNumberInput(e.target.value);
+                inputMode={isForeign ? "decimal" : "numeric"}
+                value={field.value}
+                onValueChange={(next) => {
                   field.onChange(next);
                   recalcFees(next, getValues("quantity"), getValues("trade_type"));
                 }}
@@ -417,14 +456,11 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
             control={control}
             name="quantity"
             render={({ field }) => (
-              <Input
+              <NumericInput
                 id="quantity"
-                type="text"
                 inputMode="decimal"
-                placeholder="0"
-                value={fmtNumberInput(field.value)}
-                onChange={(e) => {
-                  const next = parseNumberInput(e.target.value);
+                value={field.value}
+                onValueChange={(next) => {
                   field.onChange(next);
                   recalcFees(getValues("price"), next, getValues("trade_type"));
                 }}
@@ -440,33 +476,53 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                 ? "보유 수량 조회 중..."
                 : holdingQty === 0
                   ? "보유하지 않은 종목입니다"
-                  : `보유 ${fmt(holdingQty)}주${avgBuyPrice ? ` · 평단가 ${fmt(Math.round(avgBuyPrice))}원` : ""}`}
+                  : `보유 ${fmt(holdingQty)}주${avgBuyPrice ? ` · 평단가 ${isForeign ? formatMoney(avgBuyPrice, "USD") : `${fmt(Math.round(avgBuyPrice))}원`}` : ""}`}
             </p>
           )}
         </div>
+
+        {/* 체결 원화 (해외만) — 가격×수량의 원금 KRW. 환율은 제출 시 역산. 기본값은 현재 시세 환율 기준 제안값, 수정 가능. */}
+        {isForeign && (
+          <div className="space-y-1.5">
+            <Label htmlFor="amount_krw">체결 원화 · 총액 (KRW) <span className="text-destructive">*</span></Label>
+            <Controller
+              control={control}
+              name="amount_krw"
+              render={({ field }) => (
+                <NumericInput
+                  id="amount_krw"
+                  inputMode="numeric"
+                  value={field.value}
+                  onValueChange={field.onChange}
+                />
+              )}
+            />
+            <p className="text-[12px] text-muted-foreground">
+              {fxHintText(amountKrw, price, quantity, usdkrw)}
+            </p>
+          </div>
+        )}
 
         {/* 총액 */}
         <div className="space-y-1.5">
           <Label>총액 (자동계산)</Label>
           <div className="flex h-12 items-center rounded-xl bg-muted px-4 text-[15px] font-semibold text-foreground">
-            {totalDisplay !== "-" ? `${totalDisplay} 원` : "-"}
+            {totalDisplay}
           </div>
         </div>
 
         {/* 수수료 */}
         <div className="space-y-1.5">
-          <Label htmlFor="commission">수수료 (원)</Label>
+          <Label htmlFor="commission">수수료 ({isForeign ? "USD" : "원"})</Label>
           <Controller
             control={control}
             name="commission"
             render={({ field }) => (
-              <Input
+              <NumericInput
                 id="commission"
-                type="text"
-                inputMode="numeric"
-                placeholder="0"
-                value={fmtNumberInput(field.value)}
-                onChange={(e) => field.onChange(parseNumberInput(e.target.value))}
+                inputMode={isForeign ? "decimal" : "numeric"}
+                value={field.value}
+                onValueChange={field.onChange}
               />
             )}
           />
@@ -475,18 +531,16 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
         {/* 제세금 (매도) */}
         {tradeType === TRADE_TYPE.SELL && (
           <div className="space-y-1.5">
-            <Label htmlFor="tax">제세금 (원)</Label>
+            <Label htmlFor="tax">제세금 ({isForeign ? "USD" : "원"})</Label>
             <Controller
               control={control}
               name="tax"
               render={({ field }) => (
-                <Input
+                <NumericInput
                   id="tax"
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="0"
-                  value={fmtNumberInput(field.value)}
-                  onChange={(e) => field.onChange(parseNumberInput(e.target.value))}
+                  inputMode={isForeign ? "decimal" : "numeric"}
+                  value={field.value}
+                  onValueChange={field.onChange}
                 />
               )}
             />

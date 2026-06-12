@@ -49,11 +49,6 @@ class BrokerStatementParser(ABC):
     key: str          # 레지스트리 식별자 (예: "samsung_xlsx")
     display_name: str # 사용자 노출 이름 (예: "삼성증권")
 
-    @classmethod
-    @abstractmethod
-    def match(cls, filename: str, head_bytes: bytes) -> bool:
-        """파일명과 앞부분 바이트로 이 파서가 해당 파일을 처리할 수 있는지 판단."""
-
     @abstractmethod
     def parse(self, file_bytes: bytes, filename: str) -> ParseResult:
         """파일 바이트를 받아 ParseResult 를 반환한다."""

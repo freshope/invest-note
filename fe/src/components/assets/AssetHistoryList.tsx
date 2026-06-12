@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { signColor } from "@/lib/format";
+import { signColor, formatMoney } from "@/lib/format";
 import type { AssetHistoryItem } from "@/lib/api-client";
 
 function formatChange(change: number): string {
@@ -18,9 +18,11 @@ interface AssetHistoryListProps {
   items: AssetHistoryItem[];
   /** 종목뷰면 종가·수량 열 추가 */
   isStockView: boolean;
+  /** 종목뷰 종가 컬럼 통화(native). KR=KRW, US=USD. 자산/전일대비는 항상 KRW. */
+  closeCurrency?: string;
 }
 
-export function AssetHistoryList({ items, isStockView }: AssetHistoryListProps) {
+export function AssetHistoryList({ items, isStockView, closeCurrency = "KRW" }: AssetHistoryListProps) {
   if (items.length === 0) {
     return (
       <div className="py-8 text-center text-[13px] text-muted-foreground">
@@ -58,7 +60,11 @@ export function AssetHistoryList({ items, isStockView }: AssetHistoryListProps) 
             </td>
             {isStockView && (
               <td className="py-2 text-right text-foreground">
-                {it.close != null ? formatValue(it.close) : "-"}
+                {it.close != null
+                  ? closeCurrency === "KRW"
+                    ? formatValue(it.close)
+                    : formatMoney(it.close, closeCurrency)
+                  : "-"}
               </td>
             )}
             {isStockView && (

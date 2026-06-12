@@ -3,6 +3,7 @@ import { fmt, fmtCompact, signColor } from "@/lib/format";
 import { StatCard } from "@/components/shared/StatCard";
 import { CountUpNumber } from "@/components/shared/CountUpNumber";
 import { MissingQuoteBadge } from "@/components/shared/MissingQuoteBadge";
+import { InfoHintSheet } from "@/components/shared/InfoHintSheet";
 import type { DashboardTotals } from "@/lib/portfolio";
 
 function PnLText({ value }: { value: number }) {
@@ -38,7 +39,11 @@ export function DashboardTitle({ totals }: DashboardProps) {
   );
 }
 
-export function DashboardBody({ totals }: DashboardProps) {
+export function DashboardBody({
+  totals,
+  fxNote,
+  fxWarning,
+}: DashboardProps & { fxNote?: string | null; fxWarning?: string | null }) {
   const {
     totalUnrealizedPnL,
     totalRealizedPnL,
@@ -55,10 +60,22 @@ export function DashboardBody({ totals }: DashboardProps) {
         <StatCard label="이달 확정" value={<PnLText value={monthRealizedPnL} />} />
       </div>
 
-      {monthTradeCount > 0 && (
-        <p className="text-[12px] text-muted-foreground">
-          이번 달 거래 <span className="font-semibold text-foreground">{monthTradeCount}건</span>
-        </p>
+      {(monthTradeCount > 0 || fxNote || fxWarning) && (
+        <div className="flex items-center justify-between gap-2 text-[12px] text-muted-foreground tabular-nums">
+          {monthTradeCount > 0 ? (
+            <span>
+              이번 달 거래 <span className="font-semibold text-foreground">{monthTradeCount}건</span>
+            </span>
+          ) : (
+            <span />
+          )}
+          {/* 중립 환율 기준 안내는 아이콘 뒤 시트로, 환율 미상 경고는 인라인 유지(가시성). */}
+          {fxNote ? (
+            <InfoHintSheet title="환율 안내" items={[{ description: fxNote }]} />
+          ) : fxWarning ? (
+            <span>{fxWarning}</span>
+          ) : null}
+        </div>
       )}
 
       <MissingQuoteBadge tickers={missingQuoteTickers} />

@@ -21,6 +21,10 @@ _MAX_RESULTS = 10
 # 누락된 한국 거래소가 있어 매칭 실패가 보고되면 이 셋에 추가한다.
 _KR_TYPE_CODES = frozenset({"KOSPI", "KOSDAQ", "KONEX", "ETF", "ETN", "ELW"})
 
+# 미국 거래소 typeCode. US 종목 한글명 백필 전용(find_overseas_korean_name).
+_US_TYPE_CODES = frozenset({"NASDAQ", "NYSE", "AMEX"})
+_HANGUL_RE = re.compile(r"[가-힣]")
+
 
 class StockSearchResult(TypedDict):
     code: str
@@ -78,6 +82,56 @@ async def search_kr(
     except Exception:
         logger.warning("naver_search 실패 q=%r", q, exc_info=True)
         return []
+
+
+async def find_overseas_korean_name(
+    ticker: str, *, client: httpx.AsyncClient | None = None
+) -> str | None:
+    """US 종목 ticker 의 Naver 한글명 1건 조회 — 별칭 백필 전용.
+
+    Naver 자동완성에 ticker 를 질의하고 `code` 가 ticker 와 정확히 일치하는 미국 거래소
+    항목의 한글명을 돌려준다. 한글이 없는 응답(영문 echo 등)은 별칭 가치가 없어 None.
+    `search_kr` 과 분리한 이유: search_kr 은 한국 거래소 typeCode 만 채택하므로 US 를 거른다.
+
+    HTTP 실패/빈 결과/예외는 모두 None 으로 흡수한다 — 대량 병렬 백필에서 호출자가
+    try/except 를 둘 필요 없다.
+    """
+    ticker = ticker.strip().upper()
+    if not ticker:
+        return None
+    try:
+        if client is None:
+            async with httpx.AsyncClient() as owned:
+                res = await _do_get(owned, ticker)
+        else:
+            res = await _do_get(client, ticker)
+
+        if res.status_code != 200:
+            return None
+
+        items = res.json().get("items") or []
+        if not isinstance(items, list):
+            return None
+
+        for item in items:
+            code = item.get("code", "")
+            name = item.get("name", "")
+            if not isinstance(code, str) or not isinstance(name, str):
+                continue
+            if code.upper() != ticker:
+                continue
+            if item.get("typeCode") not in _US_TYPE_CODES:
+                continue
+            if not _HANGUL_RE.search(name):
+                return None  # 영문 echo — 별칭으로 둘 가치 없음
+            return name[:MAX_NAME_LEN]
+        return None
+    except httpx.HTTPError as e:
+        logger.info("naver overseas 네트워크 예외 ticker=%r: %s", ticker, type(e).__name__)
+        return None
+    except Exception:
+        logger.warning("naver overseas 실패 ticker=%r", ticker, exc_info=True)
+        return None
 
 
 async def _do_get(client: httpx.AsyncClient, q: str) -> httpx.Response:

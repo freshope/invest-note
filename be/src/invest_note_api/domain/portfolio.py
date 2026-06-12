@@ -7,6 +7,9 @@ from typing import TYPE_CHECKING
 
 from invest_note_api.domain.trade_types import (
     TRADE_TYPE_SELL,
+    currency_for_country,
+    krw_normalized_trade,
+    to_krw,
     trade_country,
     trade_identifier,
 )
@@ -47,8 +50,9 @@ class Lot:
     account_id: str
     exchange: str
     running_qty: float
-    running_cost: float
-    realized_pnl: float
+    running_cost: float         # KRW (거래 시점 환율 고정, primary)
+    running_cost_native: float  # native 통화(USD 등) — 달러 보조 표시용
+    realized_pnl: float         # KRW
     last_traded_at: str
     last_note_type: str | None
     last_note: str | None
@@ -62,15 +66,19 @@ class Position:
     key: str            # "TICKER:COUNTRY"
     ticker: str
     country: str
+    currency: str       # 거래 통화(KRW|USD) — 달러 보조 표시 분기용
     asset_name: str
     exchange: str
     holding_quantity: float
-    avg_buy_price: float
-    cost_basis: float
-    realized_pnl: float
-    current_price: float | None
-    evaluation: float | None
-    unrealized_pnl: float | None
+    avg_buy_price: float          # KRW (거래 시점 환율 고정, primary)
+    avg_buy_price_native: float   # native(USD 등) — 달러 보조
+    cost_basis: float             # KRW (primary)
+    cost_basis_native: float      # native
+    realized_pnl: float           # KRW
+    current_price: float | None   # native(USD 등) — 시세 그대로
+    evaluation: float | None      # KRW (= current_price × qty × 현재환율, primary)
+    evaluation_native: float | None  # native(= current_price × qty)
+    unrealized_pnl: float | None  # KRW (= evaluation - cost_basis)
     last_note_type: str | None   # "근거" | "회고" | None
     last_note: str | None
     last_traded_at: str
@@ -124,19 +132,32 @@ def _build_lot_map(trades: list["Trade"]) -> LotMap:
         # walk 루프 동안 가변 누산 — 종료 시점에 frozen Lot 인스턴스로 등록
         exchange = ""
         running_qty = 0.0
-        running_cost = 0.0
+        running_cost = 0.0          # KRW (정규화 walk)
+        running_cost_native = 0.0   # native (원본 price walk)
         realized_pnl = 0.0
         last_traded_at = first.traded_at.isoformat()
         last_note_type: str | None = None
         last_note: str | None = None
 
-        for ev in walk_trades(
-            lot_trades,
+        # 동일 정렬 순서의 두 walk 를 병렬로 진행: 정규화(KRW) + 원본(native).
+        # 원가/평단은 KRW(primary)를, native(USD)는 달러 보조 표시용으로 함께 추적한다.
+        # stored_avg_cost_deduction 은 SELL 의 avg_buy_price(KRW 저장값)를 쓰므로 정규화 walk 와
+        # 일관(둘 다 KRW). native walk 는 avg_buy_price 가 native 가 아니라 KRW 라 부정확할 수
+        # 있어 recomputed(running) 차감을 써서 native 원가를 일관 산출한다.
+        krw_walk = walk_trades(
+            [krw_normalized_trade(t) for t in lot_trades],
             group_filter=lambda _t: True,
             sort_fn=sort_for_calc,
             cost_deduction=stored_avg_cost_deduction,
             track_fifo_lots=False,
-        ):
+        )
+        native_walk = walk_trades(
+            lot_trades,
+            group_filter=lambda _t: True,
+            sort_fn=sort_for_calc,
+            track_fifo_lots=False,
+        )
+        for ev, ev_native in zip(krw_walk, native_walk):
             last_traded_at = ev.trade.traded_at.isoformat()
             if ev.trade.exchange:
                 exchange = ev.trade.exchange
@@ -153,6 +174,7 @@ def _build_lot_map(trades: list["Trade"]) -> LotMap:
                     last_note = note
             running_qty = ev.state_after.running_qty
             running_cost = ev.state_after.running_cost
+            running_cost_native = ev_native.state_after.running_cost
 
         lot_map[lot_key] = Lot(
             ticker=trade_identifier(first),
@@ -162,6 +184,7 @@ def _build_lot_map(trades: list["Trade"]) -> LotMap:
             exchange=exchange,
             running_qty=running_qty,
             running_cost=running_cost,
+            running_cost_native=running_cost_native,
             realized_pnl=realized_pnl,
             last_traded_at=last_traded_at,
             last_note_type=last_note_type,
@@ -185,6 +208,7 @@ def _lot_to_positions(lot_map: LotMap) -> list[Position]:
                 "exchange": lot.exchange,
                 "running_qty": 0.0,
                 "running_cost": 0.0,
+                "running_cost_native": 0.0,
                 "realized_pnl": 0.0,
                 "last_traded_at": lot.last_traded_at,
                 "account_ids": set(),
@@ -194,6 +218,7 @@ def _lot_to_positions(lot_map: LotMap) -> list[Position]:
         pos = pos_map[display_key]
         pos["running_qty"] += lot.running_qty
         pos["running_cost"] += lot.running_cost
+        pos["running_cost_native"] += lot.running_cost_native
         pos["realized_pnl"] += lot.realized_pnl
         if lot.last_traded_at > pos["last_traded_at"]:
             pos["last_traded_at"] = lot.last_traded_at
@@ -208,18 +233,25 @@ def _lot_to_positions(lot_map: LotMap) -> list[Position]:
     for key, pos in pos_map.items():
         holding_qty = pos["running_qty"]
         avg_buy_price = pos["running_cost"] / holding_qty if holding_qty > 0 else 0.0
+        avg_buy_price_native = (
+            pos["running_cost_native"] / holding_qty if holding_qty > 0 else 0.0
+        )
         positions.append(Position(
             key=key,
             ticker=pos["ticker"],
             country=pos["country"],
+            currency=currency_for_country(pos["country"]),
             asset_name=pos["asset_name"],
             exchange=pos["exchange"],
             holding_quantity=holding_qty,
             avg_buy_price=avg_buy_price,
+            avg_buy_price_native=avg_buy_price_native,
             cost_basis=pos["running_cost"],
+            cost_basis_native=pos["running_cost_native"],
             realized_pnl=pos["realized_pnl"],
             current_price=None,
             evaluation=None,
+            evaluation_native=None,
             unrealized_pnl=None,
             last_note_type=pos["last_note_type"],
             last_note=pos["last_note"],
@@ -244,26 +276,42 @@ def build_positions(trades: list["Trade"]) -> tuple[list[Position], LotMap]:
 def holding_invested_amount(trades: list["Trade"]) -> float | None:
     """현재 보유분 매수 원금(cost_basis 합) — 자산 차트 손익 가이드 라인 기준값.
 
-    대시보드 평가손익과 동일한 walker 기반 cost_basis 를 사용한다. 보유가 없으면 None.
+    자산 추이 차트(`/assets/history`)는 단일 country 로 스코프되어 단일 통화이므로 native
+    통화 합산을 그대로 쓴다(차트 series 와 같은 단위 유지 — KRW 환산하면 단위 불일치).
+    보유가 없으면 None.
     """
     positions, _ = build_positions(trades)
-    invested = sum(p.cost_basis for p in positions if p.holding_quantity > 0)
+    # 자산 추이 차트는 단일 country(통화)이므로 native cost_basis 합산(차트 series 와 같은 단위).
+    invested = sum(p.cost_basis_native for p in positions if p.holding_quantity > 0)
     return invested if invested > 0 else None
 
 
-def merge_quotes(positions: list[Position], quotes: QuoteMap) -> list[Position]:
+def merge_quotes(
+    positions: list[Position], quotes: QuoteMap, usdkrw: float | None = None
+) -> list[Position]:
+    """시세를 포지션에 overlay. current_price 는 native(시세 그대로). 평가액은 현재 환율로
+    KRW(primary)와 native 를 함께 산출. 원가는 KRW 고정(거래 시점 환율)이므로 환산 불필요.
+
+    해외인데 현재 환율(usdkrw)을 못 받으면 evaluation(KRW)=None(미실현 미상) — 원가 KRW 는 유지.
+    """
     result = []
     for pos in positions:
         quote = quotes.get(pos.key)
         if not quote:
             result.append(pos)
             continue
-        evaluation = quote["price"] * pos.holding_quantity
+        price = quote["price"]
+        evaluation_native = price * pos.holding_quantity
+        evaluation_krw = to_krw(evaluation_native, pos.currency, usdkrw)
+        unrealized = (
+            evaluation_krw - pos.cost_basis if evaluation_krw is not None else None
+        )
         result.append(replace(
             pos,
-            current_price=quote["price"],
-            evaluation=evaluation,
-            unrealized_pnl=evaluation - pos.cost_basis,
+            current_price=price,
+            evaluation=evaluation_krw,
+            evaluation_native=evaluation_native,
+            unrealized_pnl=unrealized,
         ))
     return result
 
@@ -272,10 +320,12 @@ def build_account_snapshots(
     accounts: list[Account],
     lot_map: LotMap,
     quotes: QuoteMap,
+    usdkrw: float | None = None,
 ) -> list[AccountSnapshot]:
-    """`build_positions` 가 반환한 lot_map 을 재사용해 계좌별 stock_evaluation 집계.
+    """`build_positions` 가 반환한 lot_map 을 재사용해 계좌별 stock_evaluation 집계(KRW).
 
-    trades 풀스캔 없이 lot 의 running_qty 와 quote.price 만으로 평가액을 계산한다.
+    trades 풀스캔 없이 lot 의 running_qty 와 quote.price 만으로 평가액을 계산하고,
+    통화별 평가액을 `usdkrw` 로 KRW 환산해 합산한다(현금은 KRW 가정). 환산 불가 lot 은 제외.
     """
     by_account: dict[str, list[Lot]] = defaultdict(list)
     for lot in lot_map.values():
@@ -293,7 +343,13 @@ def build_account_snapshots(
             holdings.append(AccountHolding(key=quote_key, quantity=lot.running_qty))
             quote = quotes.get(quote_key)
             if quote:
-                stock_evaluation += quote["price"] * lot.running_qty
+                krw = to_krw(
+                    quote["price"] * lot.running_qty,
+                    currency_for_country(lot.country),
+                    usdkrw,
+                )
+                if krw is not None:
+                    stock_evaluation += krw
 
         snapshots.append(AccountSnapshot(
             account=account,
@@ -312,13 +368,16 @@ def build_totals(
     trades: list["Trade"],
     pnl_map: dict[str, float],
 ) -> DashboardTotals:
-    """포트폴리오 totals 집계.
+    """포트폴리오 totals 집계(KRW 단일값).
 
-    `pnl_map` 은 호출자가 `build_pnl_map(trades)` 로 미리 빌드해 주입한다.
-    내부에서 다시 빌드하지 않으므로 summary 핫패스에서 trades 풀스캔이 1회 줄어든다.
+    evaluation/unrealized 는 merge_quotes 가 이미 KRW(현재 환율 환산)로 채웠고, 원가·실현손익은
+    거래 시점 환율로 KRW 고정이라 추가 환산이 필요 없다. evaluation 이 None 인 포지션(시세 없음
+    또는 해외인데 현재 환율 미수신)은 합산에서 빠지고 `missing_quote_tickers` 로 노출된다.
+
+    `pnl_map` 은 호출자가 `build_pnl_map(trades)`(저장 profit_loss=KRW)로 빌드해 주입한다.
     """
-    total_evaluation = sum(p.evaluation or 0 for p in positions)
-    total_unrealized_pnl = sum(p.unrealized_pnl or 0 for p in positions)
+    total_evaluation = sum(p.evaluation or 0.0 for p in positions)
+    total_unrealized_pnl = sum(p.unrealized_pnl or 0.0 for p in positions)
     total_cash = sum(a.cash_balance for a in accounts)
 
     now = to_kst(datetime.now(timezone.utc))
@@ -338,7 +397,8 @@ def build_totals(
             if trade.trade_type == TRADE_TYPE_SELL:
                 month_realized_pnl += pnl_map.get(trade.id, 0.0)
 
-    missing_quote_tickers = [p.asset_name for p in positions if p.current_price is None]
+    # evaluation 이 None = 시세 없음 또는 해외인데 현재 환율 미수신 → KRW 평가액 미상.
+    missing_quote_tickers = [p.asset_name for p in positions if p.evaluation is None]
 
     return DashboardTotals(
         total_evaluation=total_evaluation,

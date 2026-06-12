@@ -26,6 +26,8 @@ class ConcentrationData:
 
 
 def compute_concentration(positions: list[Position], trades: list[Trade]) -> ConcentrationData:
+    # evaluation/cost_basis 는 이미 KRW(평가액=현재환산, 원가=거래시점 고정)라 추가 환산 불필요.
+    # 평가액이 없으면(시세/환율 미상) 원가(KRW)로 fallback — 비중은 항상 KRW 단일 기준.
     values = [
         {
             "key": p.key,

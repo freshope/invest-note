@@ -41,7 +41,7 @@ export function CountryBadge({ countryCode, className }: { countryCode: string; 
   return (
     <span
       className={cn(
-        "text-[11px] font-bold px-1.5 py-0.5 rounded-md",
+        "shrink-0 whitespace-nowrap text-[11px] font-bold px-1.5 py-0.5 rounded-md",
         COUNTRY_BADGE_CLASS[countryCode] ?? "bg-muted text-muted-foreground",
         className,
       )}

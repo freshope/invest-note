@@ -26,6 +26,7 @@
 import asyncio
 import hashlib
 import io
+import re
 import zipfile
 from collections.abc import Sequence
 from datetime import date, timedelta
@@ -34,11 +35,15 @@ from typing import Any, Awaitable, Callable
 import asyncpg
 import httpx
 
-from invest_note_api.config import DEFAULT_STOCK_SEED_SOURCES, Settings
+from invest_note_api.config import (
+    DEFAULT_STOCK_SEED_SOURCES,
+    DEFAULT_US_STOCK_SEED_SOURCES,
+    Settings,
+)
 from invest_note_api.domain.hangul import to_chosung
-from invest_note_api.domain.trade_types import DEFAULT_COUNTRY
-from invest_note_api.external.constants import USER_AGENT
-from invest_note_api.external.naver_search import search_kr
+from invest_note_api.domain.trade_types import COUNTRY_US, DEFAULT_COUNTRY
+from invest_note_api.external.constants import CURRENCY_USD, USER_AGENT
+from invest_note_api.external.naver_search import find_overseas_korean_name, search_kr
 from invest_note_api.external.provider_registry import resolve_chain
 
 _DATA_GO_KR_URL = (
@@ -412,6 +417,242 @@ async def fetch_kis_master(*, client: httpx.AsyncClient | None = None) -> list[d
     else:
         await _run(client)
     return rows
+
+
+# ─────────────────────────── US 종목 마스터 fetcher (nasdaqtrader) ───────────────────────────
+
+# nasdaqtrader.com 공개 심볼 디렉터리(인증 불필요, pipe-delimited).
+#   nasdaqlisted.txt : NASDAQ 상장. 컬럼 Symbol|Security Name|Market Category|Test Issue|...|ETF|...
+#   otherlisted.txt  : NYSE/AMEX/ARCA 등. 컬럼 ACT Symbol|Security Name|Exchange|...|Test Issue|...
+_NASDAQ_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt"
+_OTHER_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
+_US_MASTER_TIMEOUT = 30
+# otherlisted.txt 의 Exchange 코드 → 보드명. 미매핑 코드는 "US" 로 둔다.
+_OTHER_EXCHANGE_MAP = {
+    "A": "NYSE MKT",
+    "N": "NYSE",
+    "P": "NYSE ARCA",
+    "Z": "Cboe BZX",
+    "V": "IEX",
+}
+
+
+# 클래스주(BRK.B·BF.B 등) 허용 패턴 — `종목.클래스문자(A/B/C)`. 워런트(.WS)·유닛(.U)·
+# rights(.R 등 2자 이상 또는 비-ABC) 는 fullmatch 되지 않아 계속 제외된다.
+_CLASS_SHARE_PATTERN = re.compile(r"[A-Z]+\.[ABC]")
+# 우선주(BAC$B·BAC$E 등) 허용 패턴 — `종목$단일시리즈문자`. nasdaqtrader ACT Symbol 표기.
+# 시리즈 문자 없는 `FOO$` 나 2자 이상은 fullmatch 되지 않아 제외된다.
+_PREFERRED_PATTERN = re.compile(r"[A-Z]+\$[A-Z]")
+
+
+def _parse_nasdaqtrader(text: str, *, nasdaq_default: str | None = None) -> list[dict]:
+    """nasdaqtrader 심볼 파일 텍스트 → [{ticker, asset_name, market, exchange, currency}].
+
+    헤더로 컬럼 위치를 잡아 nasdaqlisted/otherlisted 양식을 함께 처리한다.
+      - `nasdaq_default` 지정(=nasdaqlisted) 시 보드명은 그 값(NASDAQ), 아니면 Exchange 코드 매핑.
+      - Test Issue == 'Y' 제외. 심볼은 보통주/ETF(알파벳 전용) + 클래스주(BRK.B 등 `종목.[ABC]`)
+        + 우선주(BAC$B 등 `종목$[A-Z]`)만 남긴다 — warrant(.WS)·unit(.U)·rights(.R)·'=' 접미는 제외.
+      - 마지막 'File Creation Time' 푸터 라인은 스킵.
+    """
+    lines = text.splitlines()
+    if len(lines) < 2:
+        return []
+    cols = {name.strip(): i for i, name in enumerate(lines[0].split("|"))}
+    sym_col = "Symbol" if "Symbol" in cols else "ACT Symbol"
+    if sym_col not in cols or "Security Name" not in cols:
+        return []
+    rows: list[dict] = []
+    for line in lines[1:]:
+        if line.startswith("File Creation Time"):
+            continue
+        parts = line.split("|")
+        if len(parts) < len(cols):
+            continue
+        ticker = parts[cols[sym_col]].strip()
+        name = parts[cols["Security Name"]].strip()
+        if "Test Issue" in cols and parts[cols["Test Issue"]].strip() == "Y":
+            continue
+        if not ticker or not name:
+            continue
+        if not (
+            ticker.isalpha()
+            or _CLASS_SHARE_PATTERN.fullmatch(ticker)
+            or _PREFERRED_PATTERN.fullmatch(ticker)
+        ):
+            continue
+        if nasdaq_default is not None:
+            market = nasdaq_default
+        else:
+            market = _OTHER_EXCHANGE_MAP.get(parts[cols["Exchange"]].strip(), "US") if "Exchange" in cols else "US"
+        rows.append(
+            {
+                "ticker": ticker,
+                "asset_name": name,
+                "market": market,
+                "exchange": market,
+                "currency": CURRENCY_USD,
+            }
+        )
+    return rows
+
+
+async def fetch_nasdaq_us(*, client: httpx.AsyncClient | None = None) -> list[dict]:
+    """nasdaqlisted + otherlisted 두 파일을 받아 US 종목 rows 로 병합(인증 불필요)."""
+    rows: list[dict] = []
+
+    async def _run(c: httpx.AsyncClient) -> None:
+        nasdaq_res, other_res = await asyncio.gather(
+            c.get(_NASDAQ_LISTED_URL), c.get(_OTHER_LISTED_URL)
+        )
+        nasdaq_res.raise_for_status()
+        other_res.raise_for_status()
+        rows.extend(_parse_nasdaqtrader(nasdaq_res.text, nasdaq_default="NASDAQ"))
+        rows.extend(_parse_nasdaqtrader(other_res.text))
+
+    if client is None:
+        async with httpx.AsyncClient(
+            headers={"User-Agent": USER_AGENT}, timeout=_US_MASTER_TIMEOUT
+        ) as owned:
+            await _run(owned)
+    else:
+        await _run(client)
+    return rows
+
+
+async def _us_source_nasdaqtrader() -> list[dict]:
+    """nasdaqtrader 소스 — 모듈 전역 late-binding 으로 테스트 monkeypatch 를 존중."""
+    return await fetch_nasdaq_us()
+
+
+# US 종목 마스터 소스 registry — env US_STOCK_SEED_SOURCES 의 이름이 여기 등록돼 있어야 한다.
+# 현재 nasdaqtrader 단일이지만 KR(_build_pipeline)과 동일한 registry/env 구조로 통일.
+_US_STOCK_SEED_REGISTRY: dict[str, Callable[[], Awaitable[list[dict]]]] = {
+    "nasdaqtrader": _us_source_nasdaqtrader,
+}
+
+
+def validate_us_seed_sources(sources: Sequence[str]) -> None:
+    """env US_STOCK_SEED_SOURCES 오타를 트리거/CLI 시점에 fail-fast. 빈 체인은 기본 소스."""
+    resolve_chain(
+        sources or DEFAULT_US_STOCK_SEED_SOURCES,
+        _US_STOCK_SEED_REGISTRY,
+        domain="us_stock_seed",
+    )
+
+
+# 한국 개인투자자가 한글로 검색할 법한 미국 대형주/인기 ETF 부트스트랩.
+# US seed 가 드물게(수동) 도므로 거래이력 집합만으론 "미보유 종목 첫 검색"을 못 덮는다 —
+# 이 리스트가 한글 검색 커버리지의 주력. 티커만 두고 한글명은 Naver 에서 받는다(박제 회피).
+# 점(.) 포함 티커(BRK.B 등)는 code 포맷 엣지를 피해 제외.
+_US_POPULAR_TICKERS = (
+    # 메가캡/대형 기술주
+    "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "META", "NVDA", "TSLA", "AVGO", "ORCL",
+    "ADBE", "CRM", "NFLX", "AMD", "INTC", "QCOM", "TXN", "MU", "CSCO", "IBM",
+    "ARM", "ASML", "TSM", "SMCI", "PLTR", "SNOW", "NOW", "UBER", "ABNB", "SHOP",
+    "MRVL", "AMAT", "LRCX", "KLAC", "ON", "ANET", "DELL", "MDB", "NET", "CRWD",
+    "PANW", "ZS", "DDOG", "SOFI", "HOOD", "COIN", "MSTR", "RKLB", "IONQ", "RGTI",
+    # 소비/헬스/금융/산업
+    "DIS", "SBUX", "MCD", "NKE", "KO", "PEP", "COST", "WMT", "TGT", "LOW",
+    "HD", "PG", "JNJ", "LLY", "ABBV", "MRK", "PFE", "MRNA", "UNH", "V",
+    "MA", "PYPL", "JPM", "BAC", "WFC", "GS", "MS", "C", "XOM", "CVX",
+    "BA", "CAT", "GE", "F", "GM", "T", "VZ",
+    # EV/중국/기타 리테일 인기
+    "RIVN", "LCID", "NIO", "BABA",
+    # 인기 ETF / 레버리지
+    "SPY", "QQQ", "VOO", "VTI", "SCHD", "JEPI", "DIA", "IWM", "ARKK", "SOXX",
+    "TQQQ", "SQQQ", "SOXL", "SOXS", "UPRO", "TMF", "TSLL", "NVDL", "LABU",
+)
+
+
+async def _naver_us_korean_names(
+    tickers: Sequence[str], *, client: httpx.AsyncClient | None = None
+) -> dict[str, str]:
+    """US 티커 목록 → {ticker: 한글명}. Naver 동시 호출은 _NAVER_CONCURRENCY 로 제한."""
+    sem = asyncio.Semaphore(_NAVER_CONCURRENCY)
+    out: dict[str, str] = {}
+
+    async def _run(c: httpx.AsyncClient) -> None:
+        async def _one(t: str) -> None:
+            async with sem:
+                name = await find_overseas_korean_name(t, client=c)
+            if name:
+                out[t] = name
+
+        await asyncio.gather(*(_one(t) for t in tickers))
+
+    if client is None:
+        async with httpx.AsyncClient(
+            headers={"User-Agent": USER_AGENT}, timeout=10
+        ) as owned:
+            await _run(owned)
+    else:
+        await _run(client)
+    return out
+
+
+async def backfill_us_aliases(
+    conn: Any, *, client: httpx.AsyncClient | None = None
+) -> int:
+    """US 종목 한글 별칭 백필 — 인기 리스트 ∪ 거래이력(전 사용자) ∩ 활성 US 종목.
+
+    Naver 에서 한글명을 받아 stock_aliases(source='naver') 에 멱등 적재한다. alias_chosung 은
+    upsert_aliases 가 계산 → 초성 검색도 자동 지원. seed_us 말미에서 호출.
+    """
+    traded = await conn.fetch(
+        "select distinct ticker_symbol from trades "
+        "where coalesce(nullif(country_code, ''), 'KR') = $1 "
+        "and nullif(ticker_symbol, '') is not null",
+        COUNTRY_US,
+    )
+    target = set(_US_POPULAR_TICKERS) | {r["ticker_symbol"] for r in traded}
+    existing = await _existing_tickers(conn, COUNTRY_US, target)
+    if not existing:
+        return 0
+    names = await _naver_us_korean_names(sorted(existing), client=client)
+    aliases = [{"ticker": t, "alias": n, "source": "naver"} for t, n in names.items()]
+    return await upsert_aliases(conn, aliases, country_code=COUNTRY_US)
+
+
+async def seed_us(db_url: str, *, sources: Sequence[str] | None = None) -> None:
+    """US 종목 마스터 적재 — env US_STOCK_SEED_SOURCES 의 첫 소스를 authority 로 UPSERT.
+
+    KR 파이프라인(seed())과 독립. authority overwrite 로 이름/보드를 canonical 화하고,
+    응답이 비어있지 않을 때만 soft-delete(상폐 정리)한다 — 빈 응답에 대량 오상폐 방지.
+    `sources` 는 호출측(main_us)이 settings.us_stock_seed_source_list 를 전달.
+    """
+    chain = sources or DEFAULT_US_STOCK_SEED_SOURCES
+    source_name = chain[0]  # 첫 소스 = authority(현재 단일 소스)
+    fetch = resolve_chain(chain, _US_STOCK_SEED_REGISTRY, domain="us_stock_seed")[0]
+    conn = await asyncpg.connect(db_url, statement_cache_size=0)
+    try:
+        if not await conn.fetchval("select pg_try_advisory_lock(hashtext('seed_us_stocks'))"):
+            print("다른 인스턴스가 실행 중 — skip")
+            return
+        rows = await fetch()
+        if not rows:
+            print(f"  [{source_name}] 빈 응답 — skip")
+            return
+        n = await upsert_stocks(
+            conn, rows, overwrite_name=True, source=source_name, country_code=COUNTRY_US
+        )
+        union = {r["ticker"] for r in rows if r.get("ticker")}
+        deleted = await soft_delete_not_in(conn, COUNTRY_US, union)
+        print(f"  [{source_name}] {n}건 반영, soft-delete {deleted}건")
+        alias_n = await backfill_us_aliases(conn)
+        print(f"  [naver/us-alias] 한글 별칭 {alias_n}건")
+        print("완료.")
+    finally:
+        await conn.close()
+
+
+def main_us() -> None:
+    settings = Settings()
+    db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+    if not db_url:
+        raise SystemExit("database_url 미설정")
+    # KR(admin.trigger_seed_stocks)과 대칭 — 엔트리포인트에서 env 오타를 fail-fast.
+    validate_us_seed_sources(settings.us_stock_seed_source_list)
+    asyncio.run(seed_us(db_url, sources=settings.us_stock_seed_source_list))
 
 
 # ─────────────────────────── 시가총액 fetcher (data.go.kr 시세) ───────────────────────────
@@ -964,4 +1205,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    # `python -m invest_note_api.services.stock_seed`     → KR 종목 마스터(기존, 매일 스케줄)
+    # `python -m invest_note_api.services.stock_seed us`  → US 종목 마스터 + 한글 별칭 백필
+    if len(sys.argv) > 1 and sys.argv[1] == "us":
+        main_us()
+    else:
+        main()

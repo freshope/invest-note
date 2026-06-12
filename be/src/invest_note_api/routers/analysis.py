@@ -1,6 +1,7 @@
 """analysis 라우터 — dashboard 단일 엔드포인트."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import Counter
 from dataclasses import asdict
@@ -23,6 +24,11 @@ from invest_note_api.domain.analysis.strategy_adherence import build_strategy_ev
 from invest_note_api.domain.portfolio import build_positions, merge_quotes
 from invest_note_api.domain.realized_pnl import build_pnl_map
 from invest_note_api.domain.trade_types import TRADE_TYPE_BUY
+from invest_note_api.external.fx import (
+    FxCacheState,
+    get_fx_cache_state,
+    usdkrw_if_foreign,
+)
 from invest_note_api.external.http_client import get_http_client
 from invest_note_api.external.quotes import (
     QuoteCacheState,
@@ -86,6 +92,7 @@ async def get_analysis_dashboard(
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
     quote_state: QuoteCacheState = Depends(get_quote_cache_state),
+    fx_state: FxCacheState = Depends(get_fx_cache_state),
     http_client: httpx.AsyncClient = Depends(get_http_client),
     settings: Settings = Depends(get_settings),
 ) -> AnalysisDashboardResponse:
@@ -94,11 +101,27 @@ async def get_analysis_dashboard(
     period_val = parse_period(period)
     trades = filter_by_period(all_trades, period_val)
 
+    # 실현손익은 거래 시점 환율로 KRW 고정(저장값) — 환산 불필요. 집중도의 평가액(현재 시세)만
+    # live 환율이 필요하므로 비-KRW(해외) 보유가 있을 때 USD/KRW 1회 조회.
+    # quotes fetch 와 직렬 대기하지 않고 create_task 로 동시 실행 — fetch_usdkrw 는 내부에서
+    # 예외를 삼키고 None 을 반환하므로 task 예외 누수가 없다.
+    fx_task = asyncio.create_task(
+        usdkrw_if_foreign(
+            all_trades,
+            fx_state,
+            http_client,
+            force_refresh=refresh,
+            providers=settings.fx_provider_list,
+        )
+    )
+
     pnl_map = build_pnl_map(trades)
     holding_days_map = compute_holding_days_map(trades)
     positions0, _ = build_positions(all_trades)
 
     positions = positions0
+    quote_error = None
+    quotes = {}
     try:
         quotes = await fetch_quotes_by_keys(
             quote_state,
@@ -106,10 +129,16 @@ async def get_analysis_dashboard(
             client=http_client,
             force_refresh=refresh,
             providers=settings.quote_provider_list,
+            us_providers=settings.us_quote_provider_list,
         )
-        positions = merge_quotes(positions0, quotes)
     except Exception as e:
-        logger.warning("시세 fetch 실패, cost_basis fallback: %s", e)
+        quote_error = e
+
+    usdkrw = await fx_task
+    if quote_error is not None:
+        logger.warning("시세 fetch 실패, cost_basis fallback: %s", quote_error)
+    else:
+        positions = merge_quotes(positions0, quotes, usdkrw)
 
     concentration = compute_concentration(positions, all_trades)
     summary = compute_summary(trades, pnl_map, holding_days_map)
@@ -127,8 +156,12 @@ async def get_analysis_dashboard(
         if b in holding_dist
     ]
 
+    # 버킷 임계는 KRW 기준. total_amount 는 native(price×quantity)이므로 거래 시점
+    # 환율로 KRW 원금으로 환산해 비교한다(원가·실현손익 KRW 고정 모델과 일관). KR=1.0.
     size_dist = Counter(
-        _size_bucket(t.total_amount) for t in trades if t.trade_type == TRADE_TYPE_BUY
+        _size_bucket(t.total_amount * (t.exchange_rate or 1.0))
+        for t in trades
+        if t.trade_type == TRADE_TYPE_BUY
     )
     position_size_dist = [
         {"bucket": b, "count": size_dist[b]}
@@ -136,7 +169,13 @@ async def get_analysis_dashboard(
         if b in size_dist
     ]
 
+    # 시세 미조회(current_price None)와 환율 미상(시세는 있으나 KRW 환산 불가)을 구분한다 —
+    # 홈(portfolio.applyQuotesToTotals)과 동일 의미. 환율 미상은 별도 fx_missing 으로 노출해
+    # '시세 미조회' 오라벨을 피한다(US 종목이 시세는 받았으나 현재 환율 미수신인 경우).
     missing_quote_tickers = [p.asset_name for p in positions if p.current_price is None]
+    fx_missing = any(
+        p.current_price is not None and p.evaluation is None for p in positions
+    )
 
     return AnalysisDashboardResponse.model_validate({
         "period": period_val,
@@ -154,4 +193,5 @@ async def get_analysis_dashboard(
             "suggestions": suggestions,
         },
         "missing_quote_tickers": missing_quote_tickers,
+        "fx_missing": fx_missing,
     })

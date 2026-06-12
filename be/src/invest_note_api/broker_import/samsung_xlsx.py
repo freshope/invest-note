@@ -25,15 +25,6 @@ class SamsungXlsxParser(BrokerStatementParser):
     key = "samsung_xlsx"
     display_name = "삼성증권"
 
-    @classmethod
-    def match(cls, filename: str, head_bytes: bytes) -> bool:
-        if re.match(r"^삼성증권.*\.xlsx?$", filename, re.IGNORECASE):
-            return True
-        # xlsx 매직 바이트(PK zip) + 시트명 시그니처로 fallback
-        if head_bytes[:2] == b"PK" and b"Col1" in head_bytes[:4096]:
-            return True
-        return False
-
     def parse(self, file_bytes: bytes, filename: str) -> ParseResult:
         result = ParseResult()
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)

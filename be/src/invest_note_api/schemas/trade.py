@@ -10,21 +10,42 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..domain.trade_types import (
+    CURRENCY_KRW,
     CountryCode,
-    DEFAULT_COUNTRY,
     EmotionType,
     MAX_NAME_LEN,
     MarketType,
     ReasoningTag,
     StrategyType,
-    TRADE_TYPE_BUY,
     TradeResult,
     TradeType,
+    currency_for_country,
 )
 from ..domain.trade_utils import KST_OFFSET
 from ..utils.numbers import strip_comma_number
 
 TRADE_FREE_TEXT_MAX_LEN = 5000
+
+# 해외(비-KRW) 거래에 거래 시점 환율이 누락(1.0)됐을 때의 에러 메시지.
+# TradeCreate(model_validator)와 PATCH 라우터 가드가 공유 — 계약상 동일 문구 유지.
+FOREIGN_EXCHANGE_RATE_REQUIRED_MSG = "해외 거래는 거래 시점 환율(exchange_rate)이 필요합니다."
+
+# 원화(KRW: KR/OTHER) 거래에 1.0 이 아닌 환율을 지정했을 때의 에러 메시지.
+# krw_normalized_trade 가 rate != 1.0 이면 무조건 ×rate 해 원가·손익을 부풀리므로 거부한다.
+# TradeCreate(model_validator)와 PATCH 라우터 가드가 공유 — 계약상 동일 문구 유지.
+KRW_EXCHANGE_RATE_FORBIDDEN_MSG = "원화 거래에는 환율을 지정할 수 없습니다."
+
+
+def exchange_rate_error(country_code: str, rate: float) -> str | None:
+    """거래 시점 환율 검증 — 위반 시 에러 메시지, 정상이면 None.
+
+    TradeCreate(model_validator)와 PATCH 라우터 가드가 공유하는 단일 규칙(create/patch drift 방지):
+    - KRW(KR/OTHER) 거래는 rate==1.0 만 허용(아니면 krw_normalized_trade 가 원가·손익을 ×rate 로 부풀림).
+    - 해외(비-KRW) 거래는 rate!=1.0 필수(1.0/누락이면 native 금액을 KRW 로 오인 집계).
+    """
+    if currency_for_country(country_code) == CURRENCY_KRW:
+        return KRW_EXCHANGE_RATE_FORBIDDEN_MSG if rate != 1.0 else None
+    return FOREIGN_EXCHANGE_RATE_REQUIRED_MSG if rate == 1.0 else None
 
 
 def _comma_positive(v: object) -> float:
@@ -71,6 +92,7 @@ class TradeCreate(BaseModel):
     ticker_symbol: str
     country_code: CountryCode = "KR"
     exchange: str = ""
+    exchange_rate: float = 1.0
     traded_at: datetime
     price: float
     quantity: float
@@ -117,7 +139,7 @@ class TradeCreate(BaseModel):
     def _parse_traded_at(cls, v: object) -> datetime:
         return _traded_at_transform(v)
 
-    @field_validator("price", "quantity", mode="before")
+    @field_validator("price", "quantity", "exchange_rate", mode="before")
     @classmethod
     def _positive(cls, v: object) -> float:
         return _comma_positive(v)
@@ -128,9 +150,11 @@ class TradeCreate(BaseModel):
         return _comma_non_negative(v)
 
     @model_validator(mode="after")
-    def _mvp_foreign_buy_blocked(self) -> "TradeCreate":
-        if self.trade_type == TRADE_TYPE_BUY and self.country_code != DEFAULT_COUNTRY:
-            raise ValueError("MVP에서는 해외 주식 신규 매수를 등록할 수 없습니다.")
+    def _foreign_requires_exchange_rate(self) -> "TradeCreate":
+        # 거래 시점 환율 규칙은 PATCH 라우터 가드와 공유(exchange_rate_error).
+        msg = exchange_rate_error(self.country_code, self.exchange_rate)
+        if msg:
+            raise ValueError(msg)
         return self
 
 
@@ -138,6 +162,7 @@ class TradeUpdate(BaseModel):
     market_type: MarketType | None = None
     price: float | None = None
     quantity: float | None = None
+    exchange_rate: float | None = None
     commission: float | None = None
     tax: float | None = None
     strategy_type: StrategyType | None = None
@@ -154,7 +179,7 @@ class TradeUpdate(BaseModel):
             raise ValueError(f"자유 텍스트는 {TRADE_FREE_TEXT_MAX_LEN}자 이내여야 합니다.")
         return v
 
-    @field_validator("price", "quantity", mode="before")
+    @field_validator("price", "quantity", "exchange_rate", mode="before")
     @classmethod
     def _positive(cls, v: object) -> float | None:
         if v is None:
