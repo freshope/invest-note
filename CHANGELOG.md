@@ -13,6 +13,18 @@
 
 - App Store Connect 수출 규정 자동 응답 설정 (`ITSAppUsesNonExemptEncryption=false`)
 
+## [1.2.1] - 2026-06-12
+
+백엔드 패치 릴리즈 (사용자 가시 변경 없음 — 테스트·내부 도구 정리).
+
+### Changed
+
+- OTA 발행 스크립트(`scripts/publish-ota.mjs`) `required_native` 기본값을 레포 마케팅 버전 → `.env OTA_REQUIRED_NATIVE` 단일 출처로 전환 (스토어 라이브 바이너리 버전 추적, 미설정 시 중단)
+
+### Fixed
+
+- BE 테스트 lint 오류 정리 (미사용 변수·import 제거)
+
 ## [1.1.21] - 2026-06-08
 
 백엔드 인프라 릴리즈 (사용자 가시 변경 없음 — 모바일 스토어 제출 생략).
