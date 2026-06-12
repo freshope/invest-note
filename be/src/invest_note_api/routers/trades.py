@@ -81,7 +81,7 @@ from invest_note_api.schemas.trade_import import (
     ImportPreviewResponse,
 )
 from invest_note_api.schemas.trade_response import TradeSummaryResponse
-from invest_note_api.broker_import import PARSERS, detect_broker
+from invest_note_api.broker_import import PARSERS
 from invest_note_api.broker_import.ticker_resolver import resolve_tickers
 
 logger = logging.getLogger(__name__)
@@ -630,11 +630,10 @@ async def import_preview(
     if ext not in allowed_extensions:
         raise APIError("지원하지 않는 파일 형식입니다 (xlsx, xls, pdf만 허용).", 415)
 
-    detected_key = broker_key or detect_broker(filename, file_bytes)
-    if not detected_key or detected_key not in PARSERS:
-        raise APIError("증권사를 자동으로 감지하지 못했습니다. broker_key를 명시해주세요.", 400)
+    if not broker_key or broker_key not in PARSERS:
+        raise APIError("지원하지 않는 증권사입니다. broker_key를 확인해주세요.", 400)
 
-    parser = PARSERS[detected_key]
+    parser = PARSERS[broker_key]
     # 동기 pdfplumber/openpyxl 파싱은 threadpool 로 — async 이벤트 루프 비차단
     parse_result = await run_in_threadpool(parser.parse, file_bytes, filename)
 
@@ -741,7 +740,7 @@ async def import_preview(
         "rows": rows_to_stage,
         "parse_errors": [e.model_dump() for e in parse_errors],
         "usd_skip_count": parse_result.usd_skip_count,
-        "broker_key": detected_key,
+        "broker_key": broker_key,
         "account_hint": parse_result.account_hint,
     }
 
@@ -755,7 +754,7 @@ async def import_preview(
 
     return ImportPreviewResponse(
         staging_id=staging_id,
-        broker_key=detected_key,
+        broker_key=broker_key,
         broker_name=parser.display_name,
         account_hint=parse_result.account_hint,
         new_count=len(rows_to_stage) - dup_count,

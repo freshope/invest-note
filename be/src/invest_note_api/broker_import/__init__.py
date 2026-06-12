@@ -1,4 +1,8 @@
-"""증권사 파서 레지스트리 및 자동 감지."""
+"""증권사 파서 레지스트리.
+
+업로드 화면에서 사용자가 계좌(=증권사)를 직접 선택하므로 import 엔드포인트는 항상
+`broker_key` 를 전달받는다. 파일명/바이트 기반 자동 감지는 불필요해 두지 않는다.
+"""
 
 from __future__ import annotations
 
@@ -12,19 +16,4 @@ PARSERS: dict[str, BrokerStatementParser] = {
     TossPdfParser.key: TossPdfParser(),
 }
 
-_HEAD_BYTES = 4096
-
-
-def detect_broker(filename: str, file_bytes: bytes) -> str | None:
-    """파일명과 앞부분 바이트를 이용해 증권사 키를 자동 감지한다.
-
-    반환값: PARSERS 의 key 문자열, 감지 실패 시 None.
-    """
-    head = file_bytes[:_HEAD_BYTES]
-    for key, parser in PARSERS.items():
-        if parser.__class__.match(filename, head):
-            return key
-    return None
-
-
-__all__ = ["PARSERS", "detect_broker", "BrokerStatementParser", "ParseResult"]
+__all__ = ["PARSERS", "BrokerStatementParser", "ParseResult"]

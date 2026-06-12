@@ -5,7 +5,7 @@ import io
 import openpyxl
 import pytest
 
-from invest_note_api.broker_import import PARSERS, detect_broker
+from invest_note_api.broker_import import PARSERS
 from invest_note_api.broker_import.samsung_xlsx import SamsungXlsxParser
 from invest_note_api.broker_import.toss_pdf import (
     TossPdfParser,
@@ -61,10 +61,6 @@ def _buy_row(date_str="2026-03-30", name="매수", asset="삼성전자",
 
 class TestSamsungXlsxParser:
     parser = SamsungXlsxParser()
-
-    def test_match_by_filename(self):
-        assert SamsungXlsxParser.match("삼성증권 거래내역서.xlsx", b"PK")
-        assert not SamsungXlsxParser.match("토스증권_거래내역.pdf", b"%PDF")
 
     def test_parses_buy_trade(self):
         xlsx = _make_samsung_xlsx([_buy_row()])
@@ -230,10 +226,6 @@ class TestTossPdfParserLine:
         assert trade is not None
         assert trade.price == pytest.approx(100000.0)
 
-    def test_match_by_filename(self):
-        assert TossPdfParser.match("토스증권_거래내역서_20250417_20260416_1.pdf", b"%PDF")
-        assert not TossPdfParser.match("삼성증권 거래내역서.xlsx", b"PK")
-
 
 class TestTossPdfParserFixture:
     """실제 sample PDF 로 회귀 가드. extract_tables 가 비어 있을 때 0건 침묵 반환되던
@@ -328,22 +320,7 @@ class TestTossColumnMap:
         assert _build_column_map("발급번호 20260522-101-11-B000033") is None
 
 
-class TestDetectBroker:
-    def test_detects_samsung_by_filename(self):
-        xlsx_bytes = _make_samsung_xlsx([])
-        key = detect_broker("삼성증권 거래내역서.xlsx", xlsx_bytes)
-        assert key == "samsung_xlsx"
-
-    def test_detects_toss_by_filename(self):
-        # 실제 PDF 바이트 없이 파일명으로만 감지
-        fake_pdf = b"%PDF-1.4 " + b"\x00" * 100
-        key = detect_broker("토스증권_거래내역서_20250417_20260416_1.pdf", fake_pdf)
-        assert key == "toss_pdf"
-
-    def test_returns_none_for_unknown(self):
-        key = detect_broker("unknown_bank.xlsx", b"PK\x03\x04")
-        assert key is None
-
+class TestParsersRegistry:
     def test_parsers_registry_has_both_brokers(self):
         assert "samsung_xlsx" in PARSERS
         assert "toss_pdf" in PARSERS

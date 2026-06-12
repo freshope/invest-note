@@ -11,7 +11,6 @@ from invest_note_api.domain.trade_types import TRADE_TYPE_BUY, TRADE_TYPE_SELL
 
 from .base import BrokerStatementParser, ParsedTrade, ParseResult, parse_number
 
-_FILENAME_RE = re.compile(r"^토스증권_거래내역서_\d{8}_\d{8}_\d+\.pdf$")
 _ACCOUNT_RE = re.compile(r"계좌\s*번호\s+([\d\-]+)")
 # KRX 6자리 코드. 우선주는 'A' 접두사가 붙는 경우가 있어(예: A005935) A?로 허용.
 _TICKER_RE = re.compile(r"^(.+?)\(A?(\d{6})\)$")
@@ -79,15 +78,6 @@ def _build_column_map(header_line: str) -> dict[str, int] | None:
 class TossPdfParser(BrokerStatementParser):
     key = "toss_pdf"
     display_name = "토스증권"
-
-    @classmethod
-    def match(cls, filename: str, head_bytes: bytes) -> bool:
-        if _FILENAME_RE.match(filename):
-            return True
-        # PDF 매직 + 토스 시그니처
-        if head_bytes[:4] == b"%PDF" and b"\xed\x86\xa0\xec\x8a\xa4\xec\xa6\x9d\xea\xb6\x8c" in head_bytes[:2048]:
-            return True
-        return False
 
     def parse(self, file_bytes: bytes, filename: str) -> ParseResult:
         # pdfplumber.extract_tables() 는 토스 PDF 의 텍스트 레이아웃에서 테이블 경계를

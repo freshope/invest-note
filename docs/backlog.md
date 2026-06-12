@@ -54,11 +54,36 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] Preview staging 멀티 워커 대응 — 현재 `TTLCache` (단일 워커 메모리). 멀티 워커 배포 전 DB 임시 테이블 또는 Redis로 교체 필요
 - [ ] 임포트 통합 테스트 — `/import/preview`, `/import/commit` HTTP 엔드포인트 단위 테스트 (DB mock 또는 테스트 DB)
 - [ ] import preview 그룹 검증 중복 제거 (2026-05-26 API 성능 분석 #5) — `import_preview` 가 `account_id` 를 받으면 `_validate_import_groups` 가 commit 과 동일한 그룹별 `list_trades_in_group` + oversell 검증을 한 번 더 수행한다(`routers/trades.py` 의 preview 경로). 그룹 수가 많은 파일일수록 preview 에서 N회 추가 쿼리. 작업: preview 의 dedup 용 date-range fetch 결과를 재활용하거나, 정합성(oversell) 검증을 commit 단계로 일원화하고 preview 는 참고용 카운트만 노출. 주의: preview 단계에서 사용자에게 위반을 미리 보여주는 UX 가치가 있으므로 제거 전 FE 노출 동작 확인 필요.
-- [ ] 해외 주식 임포트 지원 — 토스 PDF `달러 거래내역` 섹션 + 삼성 USD 처리 (현재 skip: `samsung_xlsx.py:96`, `toss_pdf.py` USD 섹션). **미국 거래 샘플 확보 후 착수.** 본체(US 직접입력·KRW 통합표시·거래시점 환율 저장)는 이미 출시됨 — 위 "해외주식(US) 지원" 섹션 Phase C 와 동일 작업.
+- [ ] 해외 주식 임포트 지원 — 토스 PDF `달러 거래내역` 섹션 + 삼성 USD 처리 (현재 skip: `samsung_xlsx.py:96`, `toss_pdf.py` USD 섹션). **2026-06-12 토스 해외포함 샘플 확보 → 아래 "거래내역서 일괄등록 고도화 — 해외주식(US/USD)" 섹션으로 상세화.** 본체(US 직접입력·KRW 통합표시·거래시점 환율 저장)는 이미 출시됨 — 위 "해외주식(US) 지원" 섹션 Phase C 와 동일 작업.
 - [ ] `BROKERS`(`lib/brokers.ts`) ↔ `BROKER_OPTIONS`(`ImportTradesPanel/brokers.ts`) 라벨 동기화 단위 테스트 — `findBrokerKeyByAccountBroker`가 라벨 정확 일치에 의존(예: "삼성증권"). 한쪽 표기가 변하면 매칭이 조용히 깨짐. 두 테이블 라벨 교집합을 단위 테스트로 강제
 - [ ] 일괄 등록 — 모든 계좌가 미지원 증권사일 때 별도 안내 — 계좌가 0개일 때(빈 상태)와 다른 메시지(예: "등록된 계좌의 증권사가 아직 일괄 등록을 지원하지 않습니다") 노출. 현재는 비활성 카드에 "일괄 등록 미지원" 라벨만 표시되고 전체 안내 메시지는 없음(`AccountStep.tsx`)
 - [ ] 머지 갱신 범위 확장 재검토 — 현재 머지는 `commission`/`tax`/`traded_at` 만 update, `market_type`/`country_code`/`exchange` 는 사용자 분류를 우선해 **보존**(`docs/decisions.md` 2026-05-18 참고). 다음 트리거 발생 시 재검토: ① 사용자가 거래내역서로 분류 자동 보정을 명시적으로 원함, ② 증권사 파서가 사용자 수동 분류보다 더 정확한 케이스가 다수 보고됨. 재검토 시 `update_trade_from_import` 화이트리스트와 `build_merge_patch` 비교 필드를 함께 확장
 - [ ] 다운로드 가이드 콘텐츠 검수 — `fe/src/components/records/ImportTradesPanel/brokers.ts` 의 `downloadGuide` 는 AI 1차 초안(`TODO` 주석 표시). 삼성증권 mPOP/토스 앱과 실제 화면 대조 후 단계 텍스트·`helpUrl` 수정. 증권사 앱 UI 개편 시 깨질 수 있어 분기별 점검 또는 사용자 신고 트리거 시 갱신. 캡처 이미지 단계 안내가 더 효과적이라 판단되면 별도 spec 으로 보강
+
+## 거래내역서 일괄등록 고도화 — 해외주식(US/USD)
+
+2026-06-12 토스 해외포함 거래내역서 샘플(`sample/거래내역서_토스_해외포함_20250613_20260612_1.pdf`) 검토 결과 정리. 본체(US 직접입력·KRW 통합표시·거래시점 환율 저장)는 이미 출시됨 — 위 "해외주식(US) 지원" 섹션 **Phase C** 및 "거래내역서 임포트 — 후속 과제"의 "해외 주식 임포트 지원" 항목을 이 섹션으로 통합·상세화한다.
+
+**확인된 토스 해외 행 구조(한 거래 = 2줄):**
+```
+거래일자 거래구분 종목명(종목코드) 환율 거래수량 거래대금 정산금액 단가 수수료 제세금 변제/연체합 잔고 잔액
+2026.06.10 구매 게임하우스 홀딩스(KYG3731B1086) 1,518.40 1 3,006 3,006 3,006 0 0 0 1 3,036   ← KRW 환산값 + 환율
+              ($ 1.98)  ($ 1.98) ($ 1.98) ($ 0.00) ($ 0.00) ($ 0.00) ($ 2.00)                  ← USD 원값
+```
+일자·구분·종목명·**환율(1,518.40)**·수량·KRW단가·USD단가($1.98)가 모두 존재. USD 섹션 헤더는 KRW 섹션과 달리 `거래세` 컬럼이 없다(동적 `_build_column_map` 이 흡수).
+
+### 🚨 프로덕션 배포 전 필수 — 해외 거래 silent loss 방지 (ship-now)
+
+- [x] **해외 거래 누락 안내 (상시 고지)** — 2026-06-12 구현. 배경: 토스 해외포함 PDF 업로드 시 **국내 거래만 등록되고 해외 매매행은 흔적 없이 사라진다**(실측: 샘플 해외 2건이 파싱 0건·`usd_skip_count=0`). 원인은 해외 매매행이 `_DATA_LINE_RE` 의 6자리 코드(`A?\d{6}`) 요구에서 **먼저 탈락**(`toss_pdf.py:131`)해 USD skip 카운트(`:134`)까지 못 가는 것. **결정:** 감지(`usd_skip_count`)에 의존하면 토스 포맷이 또 바뀔 때 false negative(침묵)가 재발하므로, **감지 여부와 무관한 상시 안내 배너**로 설계. `PreviewStep.tsx` 에 항상 노출되는 "해외 거래는 일괄 등록 미지원 — 직접 입력" 안내 추가 + 신뢰 불가한 "USD 미지원" 카운트 카드 제거(0이 떠 오히려 "해외 0건"으로 오인시킴). ⚠️ 실제 해외 **등록**은 아래 본구현 전까지 여전히 미지원(국내만 등록) — 이 항목은 사용자 인지 확보까지만.
+
+### 본구현 — 해외 일괄등록 (US/USD)
+
+- [ ] **파서 USD 섹션 파싱** — ① 종목코드 정규식 6자리→ISIN(12자리 영숫자) 허용, ② 한 거래=2줄(KRW행 + `($…)` USD행) 연결 파싱, ③ 환율·USD 단가 추출, ④ `ParsedTrade` 에 `exchange_rate` 필드 추가(`base.py`). ⚠️ **샘플엔 구매(BUY) 행만 존재 — 판매(SELL) 행 포맷은 미관측**, SELL 포함 실샘플 확보 후 검증 필요.
+- [ ] **종목 식별 (핵심 병목)** — 파일은 ISIN(`KYG3731B1086`)만 제공하나 시스템은 해외 종목을 **Yahoo 티커 + country_code** 로 식별·시세조회한다(`external/quotes.py` US 경로). ISIN→(티커·거래소·국가) 매핑 부재 시 전건 미해결. ISIN 접두는 설립지(KY=케이맨)라 상장국가도 도출 불가. `resolve_tickers→lookup_by_names` 는 `country_code=KR` 기본값으로만 검색하고 파일은 한글명이라 영문 US 마스터와도 불일치. 선택지: ① stocks 마스터에 ISIN 매핑 자료원 확보(예탁원/KRX), ② 종목명 매칭, ③ 미해결 종목 수동 매칭 UI(아래 후속 과제 항목)로 사용자가 직접 검색·매칭. **현실적 1차안: ③(+②).**
+- [ ] **커밋 환율 가드 충족** — `import_commit` 이 비-KRW 거래에 `exchange_rate` 강제(`trades.py:866` 방어 가드). 파서가 추출한 환율을 staging→`insert_row` 까지 배선하고, `country_code` 하드코딩(KR, `trades.py:730`)을 해외 실국가로 해소.
+- [ ] **삼성증권 USD** — `samsung_xlsx.py:96` 동일 skip 존재. 동일 silent-loss 여부 검증 후 같은 안내 가드·본구현 적용. (삼성 USD 샘플 확보 후)
+
+- [x] **파일명 자동감지(`detect_broker`/`match`) 제거** — 2026-06-12 완료. 사용자가 일괄등록 화면에서 **계좌(=증권사)를 직접 선택**하므로 FE 가 `broker_key` 를 항상 전달(`api-client.ts` preview + `index.tsx handleFileSelect` 가 `effectiveBrokerKey` 없으면 차단). BE 의 `broker_key or detect_broker(...)` fallback 은 broker_key 분기만 타 자동감지가 **실사용에서 한 번도 호출되지 않았다**(테스트만 커버, 토스 `match()` 는 파일명·시그니처 둘 다 실패해 동작 불능이기도 했음). 제거 내역: `import_preview` 가 `broker_key` 검증만 수행(없으면 400), `detect_broker`/각 파서 `match()`/`BrokerStatementParser.match` 추상메서드/`_FILENAME_RE`/바이트 시그니처 분기 + 관련 테스트 삭제. 전체 604 테스트 통과. **대안(향후 필요 시):** "선택한 증권사 ↔ 업로드 파일 형식 일치 검증"(예: 토스 계좌인데 삼성 xlsx 업로드 시 경고)으로 재설계해야 의미가 생김.
 
 ## 자산 추이 페이지 — 운영 잔여 (페이지 자체는 2026-06-04 출시)
 

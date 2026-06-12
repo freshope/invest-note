@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDownIcon, ChevronUpIcon, AlertCircleIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronUpIcon, AlertCircleIcon, InfoIcon } from "lucide-react";
 import { Button } from "@/components/base/Button";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
@@ -65,7 +65,7 @@ export function PreviewStep({ preview, account, onCommit, onBack, isLoading }: P
           <span className="font-medium text-foreground">{preview.broker_name}</span> 거래내역서 분석 결과
         </p>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-3 gap-3">
           <CountCard label="신규 등록" value={effectiveNewCount} variant="success" />
           <CountCard label="기존 거래 갱신(근사)" value={preview.duplicate_count} variant="default" />
           <CountCard
@@ -73,14 +73,26 @@ export function PreviewStep({ preview, account, onCommit, onBack, isLoading }: P
             value={totalExcluded}
             variant={totalExcluded > 0 ? "warn" : "default"}
           />
-          <CountCard label="USD 미지원" value={preview.usd_skip_count} variant={preview.usd_skip_count > 0 ? "warn" : "default"} />
+        </div>
+
+        {/* 해외 거래는 아직 일괄 등록 미지원. 감지 여부와 무관하게 상시 고지해
+            해외 행이 조용히 누락되는 것(silent loss)을 사용자가 인지하도록 한다. */}
+        <div className="flex items-start gap-2 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+          <InfoIcon className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            해외(미국 등) 거래는 아직 일괄 등록을 지원하지 않습니다. 이 결과에는 국내 거래만
+            포함되어 있으니, 해외 거래가 있다면 직접 입력해 주세요.
+          </span>
         </div>
         {preview.duplicate_count > 0 && (
-          <p className="text-xs text-muted-foreground -mt-3">
-            * 같은 계좌·날짜·종목·단가·수량의 기존 거래는 수수료·세금·체결 시각만 갱신되고
-            메모/감정/근거 등은 그대로 보존됩니다. 미리보기 카운트는 근사값이며 실제
-            등록 시 정확히 처리됩니다.
-          </p>
+          <div className="flex items-start gap-2 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+            <InfoIcon className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              같은 계좌·날짜·종목·단가·수량의 기존 거래는 수수료·세금·체결 시각만 갱신되고
+              메모/감정/근거 등은 그대로 보존됩니다. 미리보기 카운트는 근사값이며 실제
+              등록 시 정확히 처리됩니다.
+            </span>
+          </div>
         )}
 
         {preview.unresolved_ticker_count > 0 && (
