@@ -19,6 +19,15 @@
 
 ---
 
+## 2026-06-12 | US S&P500 편입 뱃지 — us_index 메타 + /stocks/meta 무국가 단일 쿼리(format-inference)
+
+- **맥락:** US 종목에 'S&P 500' 편입 뱃지(KR "시총 N위" 대칭)를 추가하려면 `stocks.us_index`('SP500')를 `/stocks/meta` 로 노출해야 한다. 기존 `fetch_meta` 는 `where country_code=$1 and ticker=any($2)` 로 KR 고정이라, US 코드도 조회되게 country 를 다뤄야 했다. 선택지: ① `country` 쿼리 파라미터 추가, ② 코드 포맷으로 국가 추론(무분기 단일 쿼리).
+- **결정:** ② **format-inference.** `fetch_meta(conn, codes)` 에서 country 인자 제거, `where ticker = any($1)` 단일 쿼리. KR 티커(정확히 6자리 숫자)와 US 티커(선두 알파벳 + `.`/`$`)가 **disjoint** 라 한 쿼리로 KR/US 를 함께 매칭한다. FE 게이트도 `isKrStockCode` → `isMetaCode`(`/^\d{6}$/` 또는 `/^[A-Z][A-Z.$]*$/`)로 일반화 — 이 게이트가 4개 호출처에서 US 를 차단하던 게 숨은 작업량이었다. 뱃지 라벨은 `{SP500:'S&P 500'}` 매핑 + `?? usIndex` 폴백(미지 인덱스도 안 깨짐).
+- **이유:** codes 는 bare ticker(국가 접두 없음) 라 country 파라미터를 추가하면 FE 가 코드별 국가를 따로 실어 보내야 한다. 포맷이 이미 disjoint 라 추론이 더 단순하고 호출부 변경이 적다.
+- **트레이드오프:** "KR=6자리 숫자 / US=비숫자" disjoint 가정에 의존한다. 6자리 숫자 US 티커나 비숫자 KR 티커가 생기면 깨지므로 그때는 country 분기로 전환해야 한다(현 거래소 심볼 체계상 충돌 없음). 부수효과: US 메타를 처음 fetch 하게 되어, exchange 미기록 수기 US 거래도 `meta.market` 으로 상장시장 뱃지가 노출된다(정보상 정확, 의도 수용).
+
+---
+
 ## 2026-06-11 | 안내문구 노출 — 중립=Info 아이콘+바텀시트, 경고/에러=인라인 유지 (공유 InfoHintSheet)
 
 - **맥락:** 자산추이 헤더가 금액/날짜 아래에 중립 설명(예수금 제외·환율 환산 기준)을 항상 인라인으로 깔아 시각적 잡음. 아이콘+바텀시트로 정리하면서 "안내문구를 전부 숨길지"가 쟁점 — 자산추이 문구는 성격이 둘로 갈린다.

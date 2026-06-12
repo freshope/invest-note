@@ -40,6 +40,7 @@ const meta: StockMeta = {
   marcap_rank: 1,
   nps_holding: "major",
   nps_as_of: "2026-03-31",
+  us_index: null,
 };
 
 afterEach(cleanup);

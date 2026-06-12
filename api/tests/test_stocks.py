@@ -223,6 +223,29 @@ class TestStocksMeta:
         assert body["005930"]["marcap_rank"] == 1
         assert body["005930"]["nps_holding"] == "major"
 
+    def test_meta_us_ticker_passes_gate(self, trades_client):
+        """US 티커(점/달러 포함)가 6자리 게이트 없이 parsed 로 통과해 us_index 응답에 포함."""
+        captured = {}
+
+        async def mock_meta(conn, codes, **kw):
+            captured["codes"] = codes
+            return {
+                "BRK.B": {"market": "NYSE", "marcap_rank": None, "nps_holding": None,
+                          "nps_as_of": None, "us_index": "SP500"},
+                "BAC$B": {"market": "NYSE", "marcap_rank": None, "nps_holding": None,
+                          "nps_as_of": None, "us_index": None},
+            }
+
+        _use_fake_pool(trades_client)
+        with patch("invest_note_api.db_ops.stocks_repo.fetch_meta", mock_meta):
+            resp = trades_client.get("/stocks/meta", params={"codes": "BRK.B,BAC$B"})
+
+        assert resp.status_code == 200
+        # 점/달러 티커가 필터 없이 그대로 fetch_meta 로 전달됨(트랩 #1 가드).
+        assert captured["codes"] == ["BRK.B", "BAC$B"]
+        assert resp.json()["BRK.B"]["us_index"] == "SP500"
+        assert resp.json()["BAC$B"]["us_index"] is None
+
     def test_meta_empty_returns_empty(self, trades_client):
         _use_fake_pool(trades_client)
         resp = trades_client.get("/stocks/meta", params={"codes": ""})

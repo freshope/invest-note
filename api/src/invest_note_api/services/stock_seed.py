@@ -24,6 +24,7 @@
 """
 
 import asyncio
+import csv
 import hashlib
 import io
 import re
@@ -540,6 +541,70 @@ def validate_us_seed_sources(sources: Sequence[str]) -> None:
     )
 
 
+# ─────────────────────────── US 인덱스 편입(S&P 500) ───────────────────────────
+
+# S&P 500 구성종목(datahub, 주기 갱신·인증 불필요). Symbol 컬럼만 사용. 클래스주는 점 표기(BRK.B)
+# 로 nasdaqtrader 마스터와 동일 → 그대로 매칭된다.
+_SP500_CONSTITUENTS_URL = (
+    "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"
+)
+_US_INDEX_SP500 = "SP500"
+
+
+async def fetch_sp500_tickers(*, client: httpx.AsyncClient | None = None) -> set[str]:
+    """S&P 500 구성종목 티커 집합. 실패/빈 응답은 빈 set → 호출측이 기존 멤버십 보존."""
+
+    async def _run(c: httpx.AsyncClient) -> set[str]:
+        res = await c.get(_SP500_CONSTITUENTS_URL)
+        res.raise_for_status()
+        reader = csv.DictReader(io.StringIO(res.text))
+        return {(row.get("Symbol") or "").strip() for row in reader if (row.get("Symbol") or "").strip()}
+
+    try:
+        if client is None:
+            async with httpx.AsyncClient(
+                headers={"User-Agent": USER_AGENT}, timeout=_US_MASTER_TIMEOUT
+            ) as owned:
+                return await _run(owned)
+        return await _run(client)
+    except Exception as e:
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        print(f"  [sp500] 구성종목 조회 실패({f'HTTP {status}' if status else type(e).__name__}) — skip")
+        return set()
+
+
+async def update_us_index(conn: Any, *, client: httpx.AsyncClient | None = None) -> int:
+    """US 종목 인덱스 편입(us_index) 갱신 — 현재 S&P 500.
+
+    구성종목을 fetch 해 활성 US 종목 중 매칭 ticker 에 us_index='SP500' 을 set 하고, 집합에서
+    빠진 종목의 stale 값은 NULL 로 리셋(편출/상폐)한다. 빈 응답이면 기존 멤버십 보존(skip) —
+    soft-delete 와 동일한 "빈 응답에 대량 오변경 방지" 가드. seed_us 말미, alias 백필 직전 호출.
+
+    반환: SP500 으로 태깅된(매칭) ticker 수.
+    """
+    members = await fetch_sp500_tickers(client=client)
+    if not members:
+        return 0
+    member_list = list(members)
+    # 집합에서 빠진 기존 SP500 태그 리셋.
+    await conn.execute(
+        "update stocks set us_index = null "
+        "where country_code = $1 and us_index = $2 and not (ticker = any($3::text[]))",
+        COUNTRY_US,
+        _US_INDEX_SP500,
+        member_list,
+    )
+    # 활성 US 종목 중 구성종목에 태깅.
+    result = await conn.execute(
+        "update stocks set us_index = $2 "
+        "where country_code = $1 and is_active and ticker = any($3::text[])",
+        COUNTRY_US,
+        _US_INDEX_SP500,
+        member_list,
+    )
+    return int(result.split()[-1]) if result.startswith("UPDATE") else 0
+
+
 # 한국 개인투자자가 한글로 검색할 법한 미국 대형주/인기 ETF 부트스트랩.
 # US seed 가 드물게(수동) 도므로 거래이력 집합만으론 "미보유 종목 첫 검색"을 못 덮는다 —
 # 이 리스트가 한글 검색 커버리지의 주력. 티커만 두고 한글명은 Naver 에서 받는다(박제 회피).
@@ -593,10 +658,14 @@ async def _naver_us_korean_names(
 async def backfill_us_aliases(
     conn: Any, *, client: httpx.AsyncClient | None = None
 ) -> int:
-    """US 종목 한글 별칭 백필 — 인기 리스트 ∪ 거래이력(전 사용자) ∩ 활성 US 종목.
+    """US 종목 한글 별칭 백필 — (인기 리스트 ∪ 거래이력 ∪ 인덱스 편입) ∩ 활성 US 종목.
 
     Naver 에서 한글명을 받아 stock_aliases(source='naver') 에 멱등 적재한다. alias_chosung 은
-    upsert_aliases 가 계산 → 초성 검색도 자동 지원. seed_us 말미에서 호출.
+    upsert_aliases 가 계산 → 초성 검색도 자동 지원. seed_us 말미(update_us_index 직후)에서 호출.
+
+    인덱스 편입(us_index)은 "유동성 상위 청크" 커버리지의 주력 — 미보유 종목 첫 검색도 한글로
+    덮는다. naver_checked_at(KR 교차검증과 공유, provider 무관 "Naver 조회 완료 시각") 으로 종목당
+    1회만 조회한다 — 한글명이 없어 별칭이 안 생긴 종목도 checked 로 기록해 매 run 재조회를 막는다.
     """
     traded = await conn.fetch(
         "select distinct ticker_symbol from trades "
@@ -605,12 +674,27 @@ async def backfill_us_aliases(
         COUNTRY_US,
     )
     target = set(_US_POPULAR_TICKERS) | {r["ticker_symbol"] for r in traded}
-    existing = await _existing_tickers(conn, COUNTRY_US, target)
-    if not existing:
+    pending = await conn.fetch(
+        "select ticker from stocks "
+        "where country_code = $1 and naver_checked_at is null "
+        "and (ticker = any($2::text[]) or us_index is not null)",
+        COUNTRY_US,
+        list(target),
+    )
+    tickers = [r["ticker"] for r in pending]
+    if not tickers:
         return 0
-    names = await _naver_us_korean_names(sorted(existing), client=client)
+    names = await _naver_us_korean_names(sorted(tickers), client=client)
     aliases = [{"ticker": t, "alias": n, "source": "naver"} for t, n in names.items()]
-    return await upsert_aliases(conn, aliases, country_code=COUNTRY_US)
+    n = await upsert_aliases(conn, aliases, country_code=COUNTRY_US)
+    # 결과 유무와 무관하게 조회 완료를 기록 → None(한글명 없음) 종목도 다음 run 에서 skip.
+    await conn.execute(
+        "update stocks set naver_checked_at = now() "
+        "where country_code = $1 and ticker = any($2::text[])",
+        COUNTRY_US,
+        tickers,
+    )
+    return n
 
 
 async def seed_us(db_url: str, *, sources: Sequence[str] | None = None) -> None:
@@ -638,6 +722,8 @@ async def seed_us(db_url: str, *, sources: Sequence[str] | None = None) -> None:
         union = {r["ticker"] for r in rows if r.get("ticker")}
         deleted = await soft_delete_not_in(conn, COUNTRY_US, union)
         print(f"  [{source_name}] {n}건 반영, soft-delete {deleted}건")
+        idx_n = await update_us_index(conn)
+        print(f"  [sp500/us-index] 편입 태깅 {idx_n}건")
         alias_n = await backfill_us_aliases(conn)
         print(f"  [naver/us-alias] 한글 별칭 {alias_n}건")
         print("완료.")

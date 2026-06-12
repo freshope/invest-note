@@ -79,19 +79,38 @@ async def test_fetch_meta_empty_codes_skips_db():
 
 @pytest.mark.asyncio
 async def test_fetch_meta_maps_rows_by_ticker():
-    """row→snake_case dict, nps_as_of isoformat, null marcap/nps 유지, 키=ticker."""
+    """row→snake_case dict, nps_as_of isoformat, null marcap/nps/us_index 유지, 키=ticker."""
     conn = AsyncMock()
     conn.fetch.return_value = [
         {"ticker": "005930", "market": "KOSPI", "marcap_rank": 1,
-         "nps_holding": "major", "nps_as_of": datetime.date(2026, 3, 31)},
+         "nps_holding": "major", "nps_as_of": datetime.date(2026, 3, 31), "us_index": None},
         {"ticker": "069500", "market": "ETF", "marcap_rank": None,
-         "nps_holding": None, "nps_as_of": None},
+         "nps_holding": None, "nps_as_of": None, "us_index": None},
     ]
     res = await stocks_repo.fetch_meta(conn, ["005930", "069500"])
     assert res == {
-        "005930": {"market": "KOSPI", "marcap_rank": 1, "nps_holding": "major", "nps_as_of": "2026-03-31"},
-        "069500": {"market": "ETF", "marcap_rank": None, "nps_holding": None, "nps_as_of": None},
+        "005930": {"market": "KOSPI", "marcap_rank": 1, "nps_holding": "major",
+                   "nps_as_of": "2026-03-31", "us_index": None},
+        "069500": {"market": "ETF", "marcap_rank": None, "nps_holding": None,
+                   "nps_as_of": None, "us_index": None},
     }
+
+
+@pytest.mark.asyncio
+async def test_fetch_meta_maps_us_index_and_dotted_ticker():
+    """US 티커(점 포함)와 us_index='SP500' 매핑 — 무국가 단일 쿼리($1 만 전달)."""
+    conn = AsyncMock()
+    conn.fetch.return_value = [
+        {"ticker": "BRK.B", "market": "NYSE", "marcap_rank": None,
+         "nps_holding": None, "nps_as_of": None, "us_index": "SP500"},
+    ]
+    res = await stocks_repo.fetch_meta(conn, ["BRK.B"])
+    assert res == {
+        "BRK.B": {"market": "NYSE", "marcap_rank": None, "nps_holding": None,
+                  "nps_as_of": None, "us_index": "SP500"},
+    }
+    # country_code 인자 없이 codes 만 전달(무국가 단일 쿼리).
+    assert conn.fetch.call_args.args[1] == ["BRK.B"]
 
 
 @pytest.mark.asyncio

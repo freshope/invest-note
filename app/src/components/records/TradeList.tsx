@@ -17,7 +17,7 @@ import { useAccountFilter, useEffectiveAccountId } from "@/components/providers/
 import { useHideBottomNav } from "@/components/providers/BottomNavProvider";
 import { useTradeSelection } from "@/hooks/useTradeSelection";
 import { useDialogState } from "@/hooks/useDialogState";
-import { useStockMeta, isKrStockCode } from "@/hooks/useStockMeta";
+import { useStockMeta, isMetaCode } from "@/hooks/useStockMeta";
 import { tradesApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
@@ -73,11 +73,11 @@ export function TradeList({ trades, accounts }: TradeListProps) {
 
   const grouped = useMemo(() => groupByDate(filteredTrades), [filteredTrades]);
 
-  // 보이는 KR 종목 코드를 한 번에 모아 배치 조회 (카드별 N+1 방지).
+  // 보이는 KR/US 종목 코드를 한 번에 모아 배치 조회 (카드별 N+1 방지).
   const metaCodes = useMemo(() => {
     const set = new Set<string>();
     for (const t of filteredTrades) {
-      if (isKrStockCode(t.ticker_symbol, t.country_code)) set.add(t.ticker_symbol);
+      if (isMetaCode(t.ticker_symbol, t.country_code)) set.add(t.ticker_symbol);
     }
     return [...set];
   }, [filteredTrades]);

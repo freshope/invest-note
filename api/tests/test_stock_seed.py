@@ -248,23 +248,46 @@ def test_basdt_to_date_converts_yyyymmdd():
 
 
 class _FakeConn:
-    """backfill_us_aliases 의 trades/stocks 쿼리·executemany 만 흉내내는 최소 stub."""
+    """backfill_us_aliases 의 trades/stocks 쿼리·executemany·execute 만 흉내내는 최소 stub."""
 
-    def __init__(self, traded: list[str], universe: set[str]) -> None:
+    def __init__(
+        self,
+        traded: list[str],
+        universe: set[str],
+        checked: set[str] | None = None,
+        indexed: set[str] | None = None,
+    ) -> None:
         self.traded = traded
         self.universe = universe  # stocks 에 실재하는 US 티커
+        self.checked = set(checked or ())  # naver_checked_at 이 채워진 티커
+        self.indexed = set(indexed or ())  # us_index 가 채워진(편입) 티커
         self.upserted: list[tuple] = []
+        self.marked: list[str] = []  # naver_checked_at = now() 로 기록된 티커
 
     async def fetch(self, sql: str, *args):
         if "from trades" in sql:
             return [{"ticker_symbol": t} for t in self.traded]
         if "from stocks" in sql:
-            requested = set(args[1])  # _existing_tickers(country, tickers)
-            return [{"ticker": t} for t in requested & self.universe]
+            if "naver_checked_at is null" in sql:  # backfill pending — (target ∪ 편입) ∩ 미조회
+                target = set(args[1])
+                rows = {
+                    t
+                    for t in self.universe
+                    if (t in target or t in self.indexed) and t not in self.checked
+                }
+                return [{"ticker": t} for t in rows]
+            return [{"ticker": t} for t in set(args[1]) & self.universe]  # _existing_tickers
         raise AssertionError(f"예상치 못한 쿼리: {sql}")
 
     async def executemany(self, _sql: str, tuples) -> None:
         self.upserted.extend(tuples)
+
+    async def execute(self, sql: str, *args) -> None:
+        if "set naver_checked_at" in sql:
+            self.marked.extend(args[1])
+            self.checked.update(args[1])
+            return
+        raise AssertionError(f"예상치 못한 execute: {sql}")
 
 
 async def test_backfill_us_aliases_unions_popular_and_traded(monkeypatch):
@@ -291,6 +314,26 @@ async def test_backfill_us_aliases_unions_popular_and_traded(monkeypatch):
     assert {t[1] for t in conn.upserted} == {"AAPL", "TRD"}
     aapl = next(t for t in conn.upserted if t[1] == "AAPL")
     assert aapl == (COUNTRY_US, "AAPL", "한글AAPL", to_chosung("한글AAPL"), "naver")
+    # 조회한 종목은 naver_checked_at 으로 기록 → 다음 run skip
+    assert set(conn.marked) == {"AAPL", "TRD"}
+
+
+async def test_backfill_us_aliases_skips_checked_and_marks_none(monkeypatch):
+    # AAPL 은 이미 조회됨(checked) → 재조회 안 함. NEW 만 조회하나 한글명 없음(None).
+    conn = _FakeConn(traded=["NEW"], universe={"AAPL", "NEW"}, checked={"AAPL"})
+
+    async def fake_names(tickers, *, client=None):
+        assert list(tickers) == ["NEW"]  # 이미 checked 인 AAPL 은 제외
+        return {}  # Naver 에 한글명 없음
+
+    monkeypatch.setattr(stock_seed, "_naver_us_korean_names", fake_names)
+
+    n = await stock_seed.backfill_us_aliases(conn)
+
+    assert n == 0  # 별칭 0건
+    assert conn.upserted == []
+    # 한글명이 없어도 checked 로 기록 → 매 run 재조회 방지(negative 결과 영속화)
+    assert conn.marked == ["NEW"]
 
 
 async def test_backfill_us_aliases_no_existing_tickers_skips_naver(monkeypatch):
@@ -304,6 +347,88 @@ async def test_backfill_us_aliases_no_existing_tickers_skips_naver(monkeypatch):
     assert await stock_seed.backfill_us_aliases(conn) == 0
     assert conn.upserted == []
     assert stock_seed._basdt_to_date("bad") is None
+
+
+async def test_backfill_us_aliases_includes_index_members(monkeypatch):
+    # 인기/거래에 없지만 S&P500 편입(SPX)이면 alias 타깃에 포함된다(유동성-상위 청크).
+    conn = _FakeConn(traded=[], universe={"SPX"}, indexed={"SPX"})
+
+    async def fake_names(tickers, *, client=None):
+        assert list(tickers) == ["SPX"]
+        return {t: f"한글{t}" for t in tickers}
+
+    monkeypatch.setattr(stock_seed, "_naver_us_korean_names", fake_names)
+
+    n = await stock_seed.backfill_us_aliases(conn)
+
+    assert n == 1
+    assert {t[1] for t in conn.upserted} == {"SPX"}
+    assert conn.marked == ["SPX"]
+
+
+# ─────────────────────────── US 인덱스 편입(S&P 500) ───────────────────────────
+
+
+async def test_fetch_sp500_tickers_parses_symbol_column():
+    csv_text = "Symbol,Security,GICS Sector\nAAPL,Apple,Tech\nBRK.B,Berkshire,Fin\n,Empty,X\n"
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=csv_text)
+
+    async with _mock_client(handler) as client:
+        tickers = await stock_seed.fetch_sp500_tickers(client=client)
+
+    # 빈 Symbol 행 제외, 클래스주 점 표기 보존
+    assert tickers == {"AAPL", "BRK.B"}
+
+
+async def test_fetch_sp500_tickers_empty_on_http_error():
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(503)
+
+    async with _mock_client(handler) as client:
+        assert await stock_seed.fetch_sp500_tickers(client=client) == set()
+
+
+class _IndexConn:
+    """update_us_index 의 execute(reset/set) 만 흉내내는 최소 stub."""
+
+    def __init__(self, set_count: int) -> None:
+        self._set_count = set_count
+        self.ops: list[str] = []
+
+    async def execute(self, sql: str, *args) -> str:
+        self.ops.append(sql)
+        if "set us_index = $2" in sql:
+            return f"UPDATE {self._set_count}"
+        return "UPDATE 0"  # stale 리셋
+
+
+async def test_update_us_index_tags_members(monkeypatch):
+    async def fake_fetch(*, client=None):
+        return {"AAPL", "MSFT"}
+
+    monkeypatch.setattr(stock_seed, "fetch_sp500_tickers", fake_fetch)
+    conn = _IndexConn(set_count=2)
+
+    n = await stock_seed.update_us_index(conn)
+
+    assert n == 2
+    # stale 리셋 + 편입 set 두 쿼리 모두 실행
+    assert any("us_index = null" in s for s in conn.ops)
+    assert any("set us_index = $2" in s for s in conn.ops)
+
+
+async def test_update_us_index_empty_preserves(monkeypatch):
+    async def empty_fetch(*, client=None):
+        return set()
+
+    monkeypatch.setattr(stock_seed, "fetch_sp500_tickers", empty_fetch)
+    conn = _IndexConn(set_count=0)
+
+    assert await stock_seed.update_us_index(conn) == 0
+    # 빈 응답이면 어떤 UPDATE 도 안 함 → 기존 멤버십 보존
+    assert conn.ops == []
 
 
 # ─────────────────────────── require_admin_token ───────────────────────────

@@ -85,6 +85,7 @@ export const HoldingCard = memo(function HoldingCard({ position, meta, onPress }
               rank={meta?.marcap_rank}
               nps={meta?.nps_holding}
               npsAsOf={meta?.nps_as_of}
+              usIndex={meta?.us_index}
             />
           </div>
         </div>
