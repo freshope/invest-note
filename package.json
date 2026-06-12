@@ -3,11 +3,11 @@
   "private": true,
   "packageManager": "pnpm@10.17.1",
   "scripts": {
-    "dev": "pnpm -C fe dev",
-    "build": "pnpm -C fe build",
-    "lint": "pnpm -C fe lint",
-    "test": "pnpm -C fe test",
-    "tsc": "pnpm -C fe exec tsc --noEmit"
+    "dev": "pnpm -C app dev",
+    "build": "pnpm -C app build",
+    "lint": "pnpm -C app lint",
+    "test": "pnpm -C app test",
+    "tsc": "pnpm -C app exec tsc --noEmit"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1063.0"

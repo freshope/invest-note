@@ -36,15 +36,15 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 배포 / 인프라
 
-- [ ] internal 패키지명 일관화 검토 — `fe/package.json` `"name": "invest-note"` 과 `be/pyproject.toml` `name = "invest-note-api"` 의 BE/FE 명시화 (`invest-note-fe`, `invest-note-be` 등) 검토. 폴더명과 일관성 vs 변경 비용(import 경로, 빌드 설정, 외부 참조) 비교 후 결정.
+- [ ] internal 패키지명 일관화 검토 — `app/package.json` `"name": "invest-note"` 과 `api/pyproject.toml` `name = "invest-note-api"` 의 명시화 (`invest-note-app`, `invest-note-api` 등) 검토. 폴더명과 일관성 vs 변경 비용(import 경로, 빌드 설정, 외부 참조) 비교 후 결정.
 - [ ] user-scoped 테이블 신규 추가 시 `on delete cascade` 가드 — `auth.users` 삭제 시 cascade 누락된 FK가 있으면 탈퇴가 FK 위반으로 실패. 향후 새 user_id 컬럼을 가진 테이블을 추가하는 마이그레이션은 PR 리뷰 시 cascade 옵션 확인을 체크리스트로 명시. 또는 통합 테스트로 데모 사용자 삭제→재시드 시나리오를 자동화 검토.
 - [ ] **OTA post-store 검증** — 2026-06-08 OTA v1(`docs/spec-history/2026-06-08-capacitor-ota-live-update.md`) 도입 후, 스토어 빌드 라이브 시점에 수행할 실검증. ① 실 R2 발행 1회(`node scripts/publish-ota.mjs`) 후 manifest/zip URL 200 + BE `POST /live-update/manifest` 분기 확인, ② 실기기 스큐 매트릭스 — 구네이티브+신웹(`required_native_version > version_build`) → OTA 차단되고 force-update 폴백 / 신네이티브+구웹 → OTA 적용 / 신규설치(`version_name="builtin"`) 중복 다운로드 없음, ③ 부팅 실패 번들 → `notifyAppReady()` 미달 시 자동 롤백, ④ capgo CLI checksum ↔ 플러그인 무결성 실디바이스 확인. v1 은 코드/pytest 까지라 실기기 항목이 미검증으로 남음.
 - [ ] **OTA v2 확장** — v1 에서 의도적으로 제외한 항목. ① 서명/E2E 암호화(v1 은 checksum 무결성 + TLS 만 — 출처 위변조 방지용 서명 키 도입), ② 단계 롤아웃(%)(v1 은 100% 일괄 + 자동롤백 + 빠른 재푸시 — 사용자 증가 후 매니페스트 결정 API 에 `device_id` 해시 % 게이팅 추가), ③ 델타(차등) 업데이트(현재 매 발행 풀 zip 다운로드 — `out/` 크기 커지면 검토), ④ 채택률/실패율 통계 대시보드(R2 JSON SSOT 는 이력·통계 없음 — 도입 시 Postgres SSOT 재검토, `decisions.md` 2026-06-08 OTA 결정 참고). 부수: `ota-publish` Makefile 타깃 위치 정리(현재 스크립트 직접 호출, thin wrapper 관례).
 
 ## API 라우터 prefix 마이그레이션
 
-- [ ] BE legacy `/api/*` alias 제거 (sunset) — 2026-05-21 `docs/spec-history/2026-05-21-be-dual-api-prefix.md` 에서 신/구 prefix 동시 지원 등록 (legacy 는 `include_in_schema=False`). FE/웹은 이미 새 경로 전환. 강제 업데이트 메커니즘은 2026-05-26 머지(`docs/spec-history/2026-05-26-force-update.md`). **남은 선행 조건**: 양 스토어 승인 + 옛 번들 사용자가 새 번들로 모두 이동 + 운영 로그에서 `/api/*` 트래픽이 충분히 줄어든 시점. 작업: `be/src/invest_note_api/main.py` 의 legacy `include_router` 루프 제거 + `tests/test_legacy_api_prefix.py` 폐기.
-- [ ] `be/README.md` curl 예시 새 경로 갱신 — README 의 `http://localhost:8000/api/{accounts,trades,portfolio,stocks,analysis}` curl 예시 약 20곳을 신 경로로 일괄 갱신. 코스메틱.
+- [ ] BE legacy `/api/*` alias 제거 (sunset) — 2026-05-21 `docs/spec-history/2026-05-21-be-dual-api-prefix.md` 에서 신/구 prefix 동시 지원 등록 (legacy 는 `include_in_schema=False`). FE/웹은 이미 새 경로 전환. 강제 업데이트 메커니즘은 2026-05-26 머지(`docs/spec-history/2026-05-26-force-update.md`). **남은 선행 조건**: 양 스토어 승인 + 옛 번들 사용자가 새 번들로 모두 이동 + 운영 로그에서 `/api/*` 트래픽이 충분히 줄어든 시점. 작업: `api/src/invest_note_api/main.py` 의 legacy `include_router` 루프 제거 + `tests/test_legacy_api_prefix.py` 폐기.
+- [ ] `api/README.md` curl 예시 새 경로 갱신 — README 의 `http://localhost:8000/api/{accounts,trades,portfolio,stocks,analysis}` curl 예시 약 20곳을 신 경로로 일괄 갱신. 코스메틱.
 
 ## 거래내역서 임포트 — 후속 과제
 
@@ -58,18 +58,20 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] `BROKERS`(`lib/brokers.ts`) ↔ `BROKER_OPTIONS`(`ImportTradesPanel/brokers.ts`) 라벨 동기화 단위 테스트 — `findBrokerKeyByAccountBroker`가 라벨 정확 일치에 의존(예: "삼성증권"). 한쪽 표기가 변하면 매칭이 조용히 깨짐. 두 테이블 라벨 교집합을 단위 테스트로 강제
 - [ ] 일괄 등록 — 모든 계좌가 미지원 증권사일 때 별도 안내 — 계좌가 0개일 때(빈 상태)와 다른 메시지(예: "등록된 계좌의 증권사가 아직 일괄 등록을 지원하지 않습니다") 노출. 현재는 비활성 카드에 "일괄 등록 미지원" 라벨만 표시되고 전체 안내 메시지는 없음(`AccountStep.tsx`)
 - [ ] 머지 갱신 범위 확장 재검토 — 현재 머지는 `commission`/`tax`/`traded_at` 만 update, `market_type`/`country_code`/`exchange` 는 사용자 분류를 우선해 **보존**(`docs/decisions.md` 2026-05-18 참고). 다음 트리거 발생 시 재검토: ① 사용자가 거래내역서로 분류 자동 보정을 명시적으로 원함, ② 증권사 파서가 사용자 수동 분류보다 더 정확한 케이스가 다수 보고됨. 재검토 시 `update_trade_from_import` 화이트리스트와 `build_merge_patch` 비교 필드를 함께 확장
-- [ ] 다운로드 가이드 콘텐츠 검수 — `fe/src/components/records/ImportTradesPanel/brokers.ts` 의 `downloadGuide` 는 AI 1차 초안(`TODO` 주석 표시). 삼성증권 mPOP/토스 앱과 실제 화면 대조 후 단계 텍스트·`helpUrl` 수정. 증권사 앱 UI 개편 시 깨질 수 있어 분기별 점검 또는 사용자 신고 트리거 시 갱신. 캡처 이미지 단계 안내가 더 효과적이라 판단되면 별도 spec 으로 보강
+- [ ] 다운로드 가이드 콘텐츠 검수 — `app/src/components/records/ImportTradesPanel/brokers.ts` 의 `downloadGuide` 는 AI 1차 초안(`TODO` 주석 표시). 삼성증권 mPOP/토스 앱과 실제 화면 대조 후 단계 텍스트·`helpUrl` 수정. 증권사 앱 UI 개편 시 깨질 수 있어 분기별 점검 또는 사용자 신고 트리거 시 갱신. 캡처 이미지 단계 안내가 더 효과적이라 판단되면 별도 spec 으로 보강
 
 ## 거래내역서 일괄등록 고도화 — 해외주식(US/USD)
 
 2026-06-12 토스 해외포함 거래내역서 샘플(`sample/거래내역서_토스_해외포함_20250613_20260612_1.pdf`) 검토 결과 정리. 본체(US 직접입력·KRW 통합표시·거래시점 환율 저장)는 이미 출시됨 — 위 "해외주식(US) 지원" 섹션 **Phase C** 및 "거래내역서 임포트 — 후속 과제"의 "해외 주식 임포트 지원" 항목을 이 섹션으로 통합·상세화한다.
 
 **확인된 토스 해외 행 구조(한 거래 = 2줄):**
+
 ```
 거래일자 거래구분 종목명(종목코드) 환율 거래수량 거래대금 정산금액 단가 수수료 제세금 변제/연체합 잔고 잔액
 2026.06.10 구매 게임하우스 홀딩스(KYG3731B1086) 1,518.40 1 3,006 3,006 3,006 0 0 0 1 3,036   ← KRW 환산값 + 환율
               ($ 1.98)  ($ 1.98) ($ 1.98) ($ 0.00) ($ 0.00) ($ 0.00) ($ 2.00)                  ← USD 원값
 ```
+
 일자·구분·종목명·**환율(1,518.40)**·수량·KRW단가·USD단가($1.98)가 모두 존재. USD 섹션 헤더는 KRW 섹션과 달리 `거래세` 컬럼이 없다(동적 `_build_column_map` 이 흡수).
 
 ### 🚨 프로덕션 배포 전 필수 — 해외 거래 silent loss 방지 (ship-now)
@@ -100,6 +102,7 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 목표가(%), 손절 및 익절 계획을 입력하고 그것을 지켰는지 여부를 분석
 - [ ] 분석태그에 사용자 태그 추가
 - [ ] 관심 종목 추가 (보유하지 않은 종목도 볼 수 있게)
+- [ ] 국내/해외 뱃지를 국기로 표시
 
 ## v2 — KIS API 연동 (2026-06-07 사전 조사 완료, 2-트랙 분리)
 
