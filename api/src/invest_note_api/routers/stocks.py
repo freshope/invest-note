@@ -88,7 +88,11 @@ async def get_stock_meta(
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> dict:
-    """종목 코드 목록(콤마 구분, KR 6자리) → {code: 메타}. 뱃지용 배치 조회."""
+    """종목 코드 목록(콤마 구분, KR/US 혼재) → {code: 메타}. 뱃지용 배치 조회.
+
+    국가 무분기 단일 쿼리로 조회한다(KR 6자리 ↔ US 비숫자 disjoint 가정). codes 파싱은
+    strip/dedup 만 하므로 US 티커(점 `BRK.B`/달러 `BAC$B`)도 그대로 통과한다.
+    """
     parsed = list(dict.fromkeys(c.strip() for c in codes.split(",") if c.strip()))
     if not parsed:
         return {}

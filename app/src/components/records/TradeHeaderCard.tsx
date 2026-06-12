@@ -9,7 +9,7 @@ import { getTradeTypeAccent } from "@/lib/constants/colors";
 import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import { TradeTypeBadge } from "@/components/shared/TradeTypeBadge";
 import { StockMetaBadges } from "@/components/stocks/StockMetaBadges";
-import { useStockMeta, isKrStockCode } from "@/hooks/useStockMeta";
+import { useStockMeta, isMetaCode } from "@/hooks/useStockMeta";
 import {
   MarketTypeBadge,
   getQuantityUnit,
@@ -43,7 +43,7 @@ export function TradeHeaderCard({
   const interactive = onStockPress && hasStock;
 
   const metaCodes = useMemo(
-    () => (isKrStockCode(trade.ticker_symbol, trade.country_code) ? [trade.ticker_symbol] : []),
+    () => (isMetaCode(trade.ticker_symbol, trade.country_code) ? [trade.ticker_symbol] : []),
     [trade.ticker_symbol, trade.country_code],
   );
   const { meta } = useStockMeta(metaCodes);
@@ -88,6 +88,7 @@ export function TradeHeaderCard({
               rank={stockMeta?.marcap_rank}
               nps={stockMeta?.nps_holding}
               npsAsOf={stockMeta?.nps_as_of}
+              usIndex={stockMeta?.us_index}
             />
           )}
         </div>

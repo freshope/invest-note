@@ -37,6 +37,9 @@ const COUNTRY_DESC: Record<string, string> = {
   US: "미국 시장(NASDAQ·NYSE 등)에 상장된 해외 종목입니다.",
 };
 
+// US 지수 편입 라벨. 미지의 값은 폴백(?? usIndex)으로 raw 표시 — NASDAQ100 등도 안 깨짐.
+const US_INDEX_LABEL: Record<string, string> = { SP500: "S&P 500" };
+
 interface SheetSection {
   /** 시트 헤더에 표시할 뱃지 미니어처(목록의 실제 뱃지와 동일 모양). */
   badge: ReactNode;
@@ -47,14 +50,15 @@ interface SheetSection {
 }
 
 /**
- * 종목 식별 태그 묶음 — 국가 + 상장시장 + 시가총액 순위 + 국민연금 보유. 값이 있는 것만 렌더하고,
- * 부모의 flex 행에 직접 들어가도록 fragment 를 반환한다. 종목 카드/상세/거래 화면이 모두 이 한
- * 컴포넌트를 써서 표시 묶음과 클릭 설명을 일관되게 유지한다.
+ * 종목 식별 태그 묶음 — 국가 + 상장시장 + 시가총액 순위 + 국민연금 보유 + 인덱스 편입. 값이 있는
+ * 것만 렌더하고, 부모의 flex 행에 직접 들어가도록 fragment 를 반환한다. 종목 카드/상세/거래 화면이
+ * 모두 이 한 컴포넌트를 써서 표시 묶음과 클릭 설명을 일관되게 유지한다.
  *
  * - `countryCode`: 국내/해외 구분 뱃지(색상은 CountryBadge).
  * - `market`: 상장 시장/거래소. **거래에 기록된 exchange(KOSPI/KOSDAQ/NASDAQ…) 를 우선**으로
- *   넘기고 meta.market 은 폴백 — meta 는 KR 전용이라 US 는 exchange 가 유일한 출처다.
+ *   넘기고 meta.market 은 폴백 — exchange 없는 거래는 meta.market(KR/US 모두 제공)으로 표시된다.
  * - `rank`/`nps`: KR 전용 메타(시총순위·국민연금). US 는 비어 있는 게 정상.
+ * - `usIndex`: US 전용 메타(인덱스 편입, 예 'SP500'). KR 은 비어 있는 게 정상.
  *
  * 어떤 뱃지를 탭해도 바텀시트 하나가 열리고, 이 종목에 표시된 뱃지 전체의 설명을 한 페이지로 보여준다.
  * (모바일에서 Popover 는 위치가 불안정하고 뱃지별로 열고 닫아야 해서 바텀시트로 통일.)
@@ -65,16 +69,20 @@ export function StockMetaBadges({
   rank,
   nps,
   npsAsOf,
+  usIndex,
 }: {
   countryCode?: string | null;
   market?: string | null;
   rank?: number | null;
   nps?: "held" | "major" | null;
   npsAsOf?: string | null;
+  usIndex?: string | null;
 }) {
   const [open, setOpen] = useState(false);
 
-  if (!countryCode && !market && rank == null && !nps) return null;
+  if (!countryCode && !market && rank == null && !nps && !usIndex) return null;
+
+  const usIndexLabel = usIndex ? US_INDEX_LABEL[usIndex] ?? usIndex : null;
 
   const openSheet = (e: SyntheticEvent) => {
     stop(e);
@@ -102,6 +110,13 @@ export function StockMetaBadges({
       badge: <span className={badgeClass}>{`시총 ${rank}위`}</span>,
       title: "시가총액 순위",
       description: "국내 주식(KOSPI·KOSDAQ 통합)의 시가총액 순위입니다. 매일 갱신됩니다.",
+    });
+  }
+  if (usIndexLabel) {
+    sections.push({
+      badge: <span className={badgeClass}>{usIndexLabel}</span>,
+      title: "지수 편입",
+      description: `${usIndexLabel} 지수에 편입된 미국 종목입니다.`,
     });
   }
   if (nps) {
@@ -146,6 +161,16 @@ export function StockMetaBadges({
           onPointerDown={stop}
         >
           {`시총 ${rank}위`}
+        </button>
+      )}
+      {usIndexLabel && (
+        <button
+          type="button"
+          className={`${badgeClass} cursor-pointer`}
+          onClick={openSheet}
+          onPointerDown={stop}
+        >
+          {usIndexLabel}
         </button>
       )}
       {nps && (

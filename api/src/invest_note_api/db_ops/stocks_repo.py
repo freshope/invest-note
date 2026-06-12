@@ -27,6 +27,7 @@ class StockMeta(TypedDict):
     marcap_rank: int | None
     nps_holding: str | None
     nps_as_of: str | None
+    us_index: str | None
 
 
 def _row_to_result(row: Any) -> StockSearchResult:
@@ -157,32 +158,30 @@ async def lookup_by_names(
 
 
 _META_SQL = """
-select ticker, market, marcap_rank, nps_holding, nps_as_of
+select ticker, market, marcap_rank, nps_holding, nps_as_of, us_index
 from stocks
-where country_code = $1 and ticker = any($2::text[])
+where ticker = any($1::text[])
 """
 
 
-async def fetch_meta(
-    conn: Any,
-    codes: list[str],
-    *,
-    country_code: str = DEFAULT_COUNTRY,
-) -> dict[str, StockMeta]:
+async def fetch_meta(conn: Any, codes: list[str]) -> dict[str, StockMeta]:
     """종목 코드 목록 → {code: 메타}. 매칭된 code 만 키로 포함. 빈 codes 면 DB 조회 생략.
 
+    국가 무분기 단일 쿼리(`ticker = any($1)`). KR 6자리 숫자 ↔ US 비숫자(점/달러 포함)
+    티커가 disjoint 하다는 가정에 기대 KR/US 혼재 코드를 한 번에 조회한다.
     응답 키는 snake_case 로 통일한다(/stocks/quote 와 동일하게 변환 없이 그대로 통과).
-    marcap_rank 는 ETF/ETN 에서 NULL, nps_holding 은 대부분 NULL.
+    marcap_rank 는 ETF/ETN 에서 NULL, nps_holding 은 대부분 NULL, us_index 는 SP500 편입 시 'SP500'.
     """
     if not codes:
         return {}
-    rows = await conn.fetch(_META_SQL, country_code, codes)
+    rows = await conn.fetch(_META_SQL, codes)
     return {
         row["ticker"]: {
             "market": row["market"] or "",
             "marcap_rank": row["marcap_rank"],
             "nps_holding": row["nps_holding"],
             "nps_as_of": row["nps_as_of"].isoformat() if row["nps_as_of"] else None,
+            "us_index": row["us_index"],
         }
         for row in rows
     }

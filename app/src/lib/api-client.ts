@@ -372,6 +372,7 @@ export interface StockMeta {
   marcap_rank: number | null;
   nps_holding: "held" | "major" | null;
   nps_as_of: string | null;
+  us_index: string | null;
 }
 export type StockMetaMap = Record<string, StockMeta>;
 

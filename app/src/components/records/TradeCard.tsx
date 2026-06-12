@@ -229,6 +229,7 @@ export const TradeCard = memo(function TradeCard({
                         rank={meta?.marcap_rank}
                         nps={meta?.nps_holding}
                         npsAsOf={meta?.nps_as_of}
+                        usIndex={meta?.us_index}
                       />
                     </div>
                   )}

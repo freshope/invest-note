@@ -8,7 +8,7 @@ import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade
 import { TradeCard } from "@/components/records/TradeCard";
 import { ChevronLeftIcon, ChevronDownIcon, ChartSplineIcon } from "lucide-react";
 import { StockMetaBadges } from "@/components/stocks/StockMetaBadges";
-import { useStockMeta, isKrStockCode } from "@/hooks/useStockMeta";
+import { useStockMeta, isMetaCode } from "@/hooks/useStockMeta";
 import { Button } from "@/components/base/Button";
 import { AccountFilter } from "@/components/shared/AccountFilter";
 import { EmptyCard } from "@/components/shared/EmptyCard";
@@ -43,7 +43,7 @@ export function StockDetail({ assetName, ticker, country, trades, stats, account
   const grouped = useMemo(() => groupByDate(trades), [trades]);
 
   const metaCodes = useMemo(
-    () => (isKrStockCode(ticker, country) ? [ticker] : []),
+    () => (isMetaCode(ticker, country) ? [ticker] : []),
     [ticker, country],
   );
   const { meta } = useStockMeta(metaCodes);
@@ -117,6 +117,7 @@ export function StockDetail({ assetName, ticker, country, trades, stats, account
               rank={stockMeta?.marcap_rank}
               nps={stockMeta?.nps_holding}
               npsAsOf={stockMeta?.nps_as_of}
+              usIndex={stockMeta?.us_index}
             />
           </div>
         </div>
