@@ -712,7 +712,7 @@ async def test_backfill_us_predawn_cooldown_skips_refetch(monkeypatch):
 
     today = date(2026, 6, 4)
     cutoff = date(2026, 6, 2)  # yesterday(6/3) 미확정 새벽
-    track = _patch_repo(
+    _patch_repo(
         monkeypatch,
         watermarks={},
         sync_state={
