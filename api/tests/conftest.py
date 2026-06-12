@@ -24,7 +24,7 @@ TEST_EMAIL = "test@example.com"
 TEST_SUPABASE_URL = "https://test.supabase.co"
 TEST_JWKS_URI = f"{TEST_SUPABASE_URL}/auth/v1/.well-known/jwks.json"
 
-# 테스트 Settings 가 개발 머신 be/.env.local 값(provider 토글·실제 키)에 오염되지 않게
+# 테스트 Settings 가 개발 머신 api/.env.local 값(provider 토글·실제 키)에 오염되지 않게
 # dotenv 소스를 전역 비활성화한다 — 명시 kwargs 로 안 넘긴 필드가 .env.local 로 덮여
 # 로컬에서만 실패하는 테스트(CI 는 .env.local 없음)를 막는다. get_settings() 경로의
 # 필수 SUPABASE_URL 은 CI(ci-be.yml env)와 동일하게 env 로 공급한다.

@@ -32,3 +32,4 @@ Key routing rules:
 | 2026-05-18 | 초기 구성 (4명 팀 + 워크플로 스킬) | 전체 | - |
 | 2026-06-07 | spec-current/spec-history → issue-current/issue-history 경로 갱신 | 에이전트 4종 + 워크플로 스킬 | docs 폴더·파일 이름 변경 |
 | 2026-06-08 | issue-current/issue-history → spec-current/spec-history 경로 복원 (2026-06-07 역방향) | docs 폴더·AGENTS.md·참조 | devtools 스킬이 spec-* 네이밍으로 복원됨 |
+| 2026-06-12 | 디렉토리 rename `be`→`api`, `fe`→`app` 경로 갱신 | 에이전트 4종 + 워크플로 스킬·문서·빌드/CI/OTA 설정 | 폴더명을 역할이 명확한 api/app 으로 변경 |

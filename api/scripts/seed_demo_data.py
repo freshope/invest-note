@@ -4,7 +4,7 @@
 이익/손실/부분매도/보유 시나리오가 섞여 분석 탭이 의미있게 보이도록 설계.
 
 전제:
-- BE 가상환경에서 실행 (`cd be && poetry run python scripts/seed_demo_data.py ...`)
+- API 가상환경에서 실행 (`cd api && poetry run python scripts/seed_demo_data.py ...`)
 - DATABASE_URL 이 .env.local 또는 환경변수로 설정되어 있고 service role 권한
 - 데모 계좌는 이름 prefix "[데모]" 로 표시 — `--reset` 시 이 prefix 만 일괄 삭제
 
@@ -295,7 +295,7 @@ async def main_async(args: argparse.Namespace) -> None:
     random.seed(args.seed)
     settings = get_settings()
     if not settings.database_url:
-        raise SystemExit("❌ DATABASE_URL 이 설정되지 않았습니다. be/.env.local 을 확인하세요.")
+        raise SystemExit("❌ DATABASE_URL 이 설정되지 않았습니다. api/.env.local 을 확인하세요.")
 
     pool = await create_pool(settings.database_url)
     try:

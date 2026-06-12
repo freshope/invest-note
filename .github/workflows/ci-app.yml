@@ -1,22 +1,22 @@
-name: CI FE
+name: CI APP
 
 on:
   pull_request:
     branches: [main, develop]
     paths:
-      - "fe/**"
+      - "app/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
-      - ".github/workflows/ci-fe.yml"
+      - ".github/workflows/ci-app.yml"
   push:
     branches: [main, develop]
     paths:
-      - "fe/**"
+      - "app/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
-      - ".github/workflows/ci-fe.yml"
+      - ".github/workflows/ci-app.yml"
 
 jobs:
   frontend:
