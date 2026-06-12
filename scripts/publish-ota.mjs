@@ -10,8 +10,9 @@
 // --dry-run        R2 PUT 을 스킵하고 build+zip+manifest 생성·검증까지만 수행.
 //                  R2 자격증명이 없으면 자동으로 dry-run 으로 폴백한다.
 // --required-native <semver>
-//                  manifest 의 required_native_version 을 명시 상향.
-//                  미지정 시 현재 네이티브 마케팅 버전(fe/package.json version)을 사용.
+//                  manifest 의 required_native_version 을 명시 지정.
+//                  미지정 시 .env OTA_REQUIRED_NATIVE 를 사용(= 현재 스토어 라이브 바이너리의
+//                  마케팅 버전). 둘 다 없으면 중단한다(레포 version 으로 폴백하지 않는다).
 //
 // R2 자격증명은 루트 gitignored .env(릴리즈 전용)에서 로드한다(결정 4).
 // fe public env(NEXT_PUBLIC_*, .env.development.local)에는 절대 두지 않는다.
@@ -94,7 +95,18 @@ if (!dryRun && !haveCreds) {
 const fePkg = JSON.parse(readFileSync(join(FE, "package.json"), "utf8"));
 const version = fePkg.version;
 if (!version) die("fe/package.json 에서 version 을 읽지 못했다.");
-const requiredNative = requiredNativeOverride || version;
+// required_native = OTA 번들이 요구하는 최소 네이티브 버전 = "현재 스토어 라이브 바이너리의
+// 마케팅 버전"이다. 레포의 fe/package.json version 은 OTA web-only 릴리즈마다 앞서가 스토어
+// 바이너리와 싱크되지 않으므로(예: 레포 1.2.0 vs 스토어 1.1.23) default 로 쓰면 게이트가 너무
+// 높아져 라이브 기기가 번들을 못 받는다. 그래서 별도 단일 출처(.env OTA_REQUIRED_NATIVE)에서
+// 읽고, 네이티브를 실제 제출·승인할 때만 그 값을 갱신한다. 미설정 시 조용한 오발행 대신 중단.
+const requiredNative = requiredNativeOverride || getEnv("OTA_REQUIRED_NATIVE");
+if (!requiredNative) {
+  die(
+    "required_native 미설정 — --required-native <semver> 인자 또는 .env OTA_REQUIRED_NATIVE 를 설정하라.\n" +
+      "  값 = 현재 스토어에 라이브로 승인된 네이티브 바이너리의 마케팅 버전(레포 version 아님)."
+  );
+}
 
 log(`version=${version} required_native_version=${requiredNative} dryRun=${dryRun}`);
 
