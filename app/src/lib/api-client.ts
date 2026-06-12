@@ -35,6 +35,10 @@ export class ApiError extends Error {
 // NEXT_PUBLIC_API_BASE_URL: FastAPI 서버 주소. 정적 export 환경에서는 필수.
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
 
+// 인증 API 정식 prefix. ROUTES 경로는 bare 로 두고 여기서 /v1 을 합성한다.
+// public 라우트(app-config/live-update)는 별도 모듈에서 bare 호출하므로 영향 없음.
+const API_PREFIX = "/v1";
+
 // FastAPI 라우트 매핑 — 인라인 경로 문자열 사용 금지, 반드시 이 객체 경유.
 const ROUTES = {
   accounts: {
@@ -92,7 +96,7 @@ async function getBearerHeader(): Promise<Record<string, string>> {
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const bearer = await getBearerHeader();
-  const url = `${API_BASE}${path}`;
+  const url = `${API_BASE}${API_PREFIX}${path}`;
   const res = await fetch(url, {
     ...init,
     headers: { "Content-Type": "application/json", ...bearer, ...(init?.headers ?? {}) },
