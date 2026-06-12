@@ -248,23 +248,36 @@ def test_basdt_to_date_converts_yyyymmdd():
 
 
 class _FakeConn:
-    """backfill_us_aliases 의 trades/stocks 쿼리·executemany 만 흉내내는 최소 stub."""
+    """backfill_us_aliases 의 trades/stocks 쿼리·executemany·execute 만 흉내내는 최소 stub."""
 
-    def __init__(self, traded: list[str], universe: set[str]) -> None:
+    def __init__(
+        self, traded: list[str], universe: set[str], checked: set[str] | None = None
+    ) -> None:
         self.traded = traded
         self.universe = universe  # stocks 에 실재하는 US 티커
+        self.checked = set(checked or ())  # naver_checked_at 이 채워진 티커
         self.upserted: list[tuple] = []
+        self.marked: list[str] = []  # naver_checked_at = now() 로 기록된 티커
 
     async def fetch(self, sql: str, *args):
         if "from trades" in sql:
             return [{"ticker_symbol": t} for t in self.traded]
         if "from stocks" in sql:
-            requested = set(args[1])  # _existing_tickers(country, tickers)
-            return [{"ticker": t} for t in requested & self.universe]
+            rows = set(args[1]) & self.universe
+            if "naver_checked_at is null" in sql:  # backfill 의 미조회 필터
+                rows -= self.checked
+            return [{"ticker": t} for t in rows]
         raise AssertionError(f"예상치 못한 쿼리: {sql}")
 
     async def executemany(self, _sql: str, tuples) -> None:
         self.upserted.extend(tuples)
+
+    async def execute(self, sql: str, *args) -> None:
+        if "set naver_checked_at" in sql:
+            self.marked.extend(args[1])
+            self.checked.update(args[1])
+            return
+        raise AssertionError(f"예상치 못한 execute: {sql}")
 
 
 async def test_backfill_us_aliases_unions_popular_and_traded(monkeypatch):
@@ -291,6 +304,26 @@ async def test_backfill_us_aliases_unions_popular_and_traded(monkeypatch):
     assert {t[1] for t in conn.upserted} == {"AAPL", "TRD"}
     aapl = next(t for t in conn.upserted if t[1] == "AAPL")
     assert aapl == (COUNTRY_US, "AAPL", "한글AAPL", to_chosung("한글AAPL"), "naver")
+    # 조회한 종목은 naver_checked_at 으로 기록 → 다음 run skip
+    assert set(conn.marked) == {"AAPL", "TRD"}
+
+
+async def test_backfill_us_aliases_skips_checked_and_marks_none(monkeypatch):
+    # AAPL 은 이미 조회됨(checked) → 재조회 안 함. NEW 만 조회하나 한글명 없음(None).
+    conn = _FakeConn(traded=["NEW"], universe={"AAPL", "NEW"}, checked={"AAPL"})
+
+    async def fake_names(tickers, *, client=None):
+        assert list(tickers) == ["NEW"]  # 이미 checked 인 AAPL 은 제외
+        return {}  # Naver 에 한글명 없음
+
+    monkeypatch.setattr(stock_seed, "_naver_us_korean_names", fake_names)
+
+    n = await stock_seed.backfill_us_aliases(conn)
+
+    assert n == 0  # 별칭 0건
+    assert conn.upserted == []
+    # 한글명이 없어도 checked 로 기록 → 매 run 재조회 방지(negative 결과 영속화)
+    assert conn.marked == ["NEW"]
 
 
 async def test_backfill_us_aliases_no_existing_tickers_skips_naver(monkeypatch):

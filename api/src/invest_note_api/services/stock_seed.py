@@ -597,6 +597,9 @@ async def backfill_us_aliases(
 
     Naver 에서 한글명을 받아 stock_aliases(source='naver') 에 멱등 적재한다. alias_chosung 은
     upsert_aliases 가 계산 → 초성 검색도 자동 지원. seed_us 말미에서 호출.
+
+    naver_checked_at(KR 교차검증과 공유, provider 무관 "Naver 조회 완료 시각") 으로 종목당 1회만
+    조회한다 — 한글명이 없어 별칭이 안 생긴 종목도 checked 로 기록해 매 run 재조회를 막는다.
     """
     traded = await conn.fetch(
         "select distinct ticker_symbol from trades "
@@ -605,12 +608,26 @@ async def backfill_us_aliases(
         COUNTRY_US,
     )
     target = set(_US_POPULAR_TICKERS) | {r["ticker_symbol"] for r in traded}
-    existing = await _existing_tickers(conn, COUNTRY_US, target)
-    if not existing:
+    pending = await conn.fetch(
+        "select ticker from stocks "
+        "where country_code = $1 and naver_checked_at is null and ticker = any($2::text[])",
+        COUNTRY_US,
+        list(target),
+    )
+    tickers = [r["ticker"] for r in pending]
+    if not tickers:
         return 0
-    names = await _naver_us_korean_names(sorted(existing), client=client)
+    names = await _naver_us_korean_names(sorted(tickers), client=client)
     aliases = [{"ticker": t, "alias": n, "source": "naver"} for t, n in names.items()]
-    return await upsert_aliases(conn, aliases, country_code=COUNTRY_US)
+    n = await upsert_aliases(conn, aliases, country_code=COUNTRY_US)
+    # 결과 유무와 무관하게 조회 완료를 기록 → None(한글명 없음) 종목도 다음 run 에서 skip.
+    await conn.execute(
+        "update stocks set naver_checked_at = now() "
+        "where country_code = $1 and ticker = any($2::text[])",
+        COUNTRY_US,
+        tickers,
+    )
+    return n
 
 
 async def seed_us(db_url: str, *, sources: Sequence[str] | None = None) -> None:
