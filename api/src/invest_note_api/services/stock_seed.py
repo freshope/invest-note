@@ -1,7 +1,7 @@
 """종목 마스터(stocks/stock_aliases) 다중 소스 순차 병합 적재 — 주기 실행 진입점.
 
 사용법:
-    cd be
+    cd api
     poetry run python scripts/seed_stocks.py
 
 병합 모델(소스 우선순위 순):

@@ -3,7 +3,7 @@
 본체는 invest_note_api.services.stock_seed 로 이동(웹 라우터와 공유).
 
 사용법:
-    cd be
+    cd api
     poetry run python scripts/seed_stocks.py
 """
 

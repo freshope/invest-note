@@ -384,7 +384,7 @@ async def reconcile_nps_unmatched(
 
 
 def main() -> None:
-    """CLI 진입점 — `cd be && poetry run python -m invest_note_api.services.nps_seed`.
+    """CLI 진입점 — `cd api && poetry run python -m invest_note_api.services.nps_seed`.
 
     reconcile(관리자 resolved_ticker 해소) 선행 후 seed_nps — admin /seed/nps 래퍼와 동일 순서.
     reconcile 이 과거사명을 별칭(nps_reconcile)으로 등록하면 이어지는 seed 매칭이 자동 해소해

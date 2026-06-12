@@ -3,7 +3,7 @@
 본체는 invest_note_api.services.stock_seed.seed_us (KR seed 와 독립).
 
 사용법:
-    cd be
+    cd api
     poetry run python scripts/seed_us_stocks.py
 """
 

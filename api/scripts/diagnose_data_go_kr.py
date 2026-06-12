@@ -4,7 +4,7 @@
 운영에 영향 없는 read-only GET 진단이며, 결과만 stdout 으로 출력한다(DB 미접근).
 
 사용:
-    cd be && poetry run python scripts/diagnose_data_go_kr.py [반복횟수]
+    cd api && poetry run python scripts/diagnose_data_go_kr.py [반복횟수]
 """
 
 import asyncio
