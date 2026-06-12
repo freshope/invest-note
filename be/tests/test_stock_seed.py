@@ -242,6 +242,67 @@ def test_basdt_to_date_converts_yyyymmdd():
     assert stock_seed._basdt_to_date("20260530") == date(2026, 5, 30)
     assert stock_seed._basdt_to_date(None) is None
     assert stock_seed._basdt_to_date("") is None
+
+
+# ─────────────────────────── backfill_us_aliases ───────────────────────────
+
+
+class _FakeConn:
+    """backfill_us_aliases 의 trades/stocks 쿼리·executemany 만 흉내내는 최소 stub."""
+
+    def __init__(self, traded: list[str], universe: set[str]) -> None:
+        self.traded = traded
+        self.universe = universe  # stocks 에 실재하는 US 티커
+        self.upserted: list[tuple] = []
+
+    async def fetch(self, sql: str, *args):
+        if "from trades" in sql:
+            return [{"ticker_symbol": t} for t in self.traded]
+        if "from stocks" in sql:
+            requested = set(args[1])  # _existing_tickers(country, tickers)
+            return [{"ticker": t} for t in requested & self.universe]
+        raise AssertionError(f"예상치 못한 쿼리: {sql}")
+
+    async def executemany(self, _sql: str, tuples) -> None:
+        self.upserted.extend(tuples)
+
+
+async def test_backfill_us_aliases_unions_popular_and_traded(monkeypatch):
+    from invest_note_api.domain.hangul import to_chosung
+    from invest_note_api.domain.trade_types import COUNTRY_US
+
+    # 거래이력에 비인기 종목 TRD(실재) + 미실재 ZZZZ. 인기 리스트의 AAPL 도 실재.
+    conn = _FakeConn(traded=["TRD", "ZZZZ"], universe={"AAPL", "TRD"})
+
+    captured: dict = {}
+
+    async def fake_names(tickers, *, client=None):
+        captured["asked"] = list(tickers)
+        return {t: f"한글{t}" for t in tickers}
+
+    monkeypatch.setattr(stock_seed, "_naver_us_korean_names", fake_names)
+
+    n = await stock_seed.backfill_us_aliases(conn)
+
+    # Naver 조회 대상 = (인기 ∪ 거래) ∩ 실재 = {AAPL, TRD} (미실재 ZZZZ 제외, 정렬됨)
+    assert captured["asked"] == ["AAPL", "TRD"]
+    assert n == 2
+    # source='naver', alias_chosung 계산 포함해 적재
+    assert {t[1] for t in conn.upserted} == {"AAPL", "TRD"}
+    aapl = next(t for t in conn.upserted if t[1] == "AAPL")
+    assert aapl == (COUNTRY_US, "AAPL", "한글AAPL", to_chosung("한글AAPL"), "naver")
+
+
+async def test_backfill_us_aliases_no_existing_tickers_skips_naver(monkeypatch):
+    conn = _FakeConn(traded=[], universe=set())
+
+    async def fail_names(tickers, *, client=None):
+        raise AssertionError("실재 티커가 없으면 Naver 를 호출하면 안 된다")
+
+    monkeypatch.setattr(stock_seed, "_naver_us_korean_names", fail_names)
+
+    assert await stock_seed.backfill_us_aliases(conn) == 0
+    assert conn.upserted == []
     assert stock_seed._basdt_to_date("bad") is None
 
 

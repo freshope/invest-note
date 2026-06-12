@@ -43,7 +43,7 @@ from invest_note_api.config import (
 from invest_note_api.domain.hangul import to_chosung
 from invest_note_api.domain.trade_types import COUNTRY_US, DEFAULT_COUNTRY
 from invest_note_api.external.constants import CURRENCY_USD, USER_AGENT
-from invest_note_api.external.naver_search import search_kr
+from invest_note_api.external.naver_search import find_overseas_korean_name, search_kr
 from invest_note_api.external.provider_registry import resolve_chain
 
 _DATA_GO_KR_URL = (
@@ -540,6 +540,79 @@ def validate_us_seed_sources(sources: Sequence[str]) -> None:
     )
 
 
+# 한국 개인투자자가 한글로 검색할 법한 미국 대형주/인기 ETF 부트스트랩.
+# US seed 가 드물게(수동) 도므로 거래이력 집합만으론 "미보유 종목 첫 검색"을 못 덮는다 —
+# 이 리스트가 한글 검색 커버리지의 주력. 티커만 두고 한글명은 Naver 에서 받는다(박제 회피).
+# 점(.) 포함 티커(BRK.B 등)는 code 포맷 엣지를 피해 제외.
+_US_POPULAR_TICKERS = (
+    # 메가캡/대형 기술주
+    "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "META", "NVDA", "TSLA", "AVGO", "ORCL",
+    "ADBE", "CRM", "NFLX", "AMD", "INTC", "QCOM", "TXN", "MU", "CSCO", "IBM",
+    "ARM", "ASML", "TSM", "SMCI", "PLTR", "SNOW", "NOW", "UBER", "ABNB", "SHOP",
+    "MRVL", "AMAT", "LRCX", "KLAC", "ON", "ANET", "DELL", "MDB", "NET", "CRWD",
+    "PANW", "ZS", "DDOG", "SOFI", "HOOD", "COIN", "MSTR", "RKLB", "IONQ", "RGTI",
+    # 소비/헬스/금융/산업
+    "DIS", "SBUX", "MCD", "NKE", "KO", "PEP", "COST", "WMT", "TGT", "LOW",
+    "HD", "PG", "JNJ", "LLY", "ABBV", "MRK", "PFE", "MRNA", "UNH", "V",
+    "MA", "PYPL", "JPM", "BAC", "WFC", "GS", "MS", "C", "XOM", "CVX",
+    "BA", "CAT", "GE", "F", "GM", "T", "VZ",
+    # EV/중국/기타 리테일 인기
+    "RIVN", "LCID", "NIO", "BABA",
+    # 인기 ETF / 레버리지
+    "SPY", "QQQ", "VOO", "VTI", "SCHD", "JEPI", "DIA", "IWM", "ARKK", "SOXX",
+    "TQQQ", "SQQQ", "SOXL", "SOXS", "UPRO", "TMF", "TSLL", "NVDL", "LABU",
+)
+
+
+async def _naver_us_korean_names(
+    tickers: Sequence[str], *, client: httpx.AsyncClient | None = None
+) -> dict[str, str]:
+    """US 티커 목록 → {ticker: 한글명}. Naver 동시 호출은 _NAVER_CONCURRENCY 로 제한."""
+    sem = asyncio.Semaphore(_NAVER_CONCURRENCY)
+    out: dict[str, str] = {}
+
+    async def _run(c: httpx.AsyncClient) -> None:
+        async def _one(t: str) -> None:
+            async with sem:
+                name = await find_overseas_korean_name(t, client=c)
+            if name:
+                out[t] = name
+
+        await asyncio.gather(*(_one(t) for t in tickers))
+
+    if client is None:
+        async with httpx.AsyncClient(
+            headers={"User-Agent": USER_AGENT}, timeout=10
+        ) as owned:
+            await _run(owned)
+    else:
+        await _run(client)
+    return out
+
+
+async def backfill_us_aliases(
+    conn: Any, *, client: httpx.AsyncClient | None = None
+) -> int:
+    """US 종목 한글 별칭 백필 — 인기 리스트 ∪ 거래이력(전 사용자) ∩ 활성 US 종목.
+
+    Naver 에서 한글명을 받아 stock_aliases(source='naver') 에 멱등 적재한다. alias_chosung 은
+    upsert_aliases 가 계산 → 초성 검색도 자동 지원. seed_us 말미에서 호출.
+    """
+    traded = await conn.fetch(
+        "select distinct ticker_symbol from trades "
+        "where coalesce(nullif(country_code, ''), 'KR') = $1 "
+        "and nullif(ticker_symbol, '') is not null",
+        COUNTRY_US,
+    )
+    target = set(_US_POPULAR_TICKERS) | {r["ticker_symbol"] for r in traded}
+    existing = await _existing_tickers(conn, COUNTRY_US, target)
+    if not existing:
+        return 0
+    names = await _naver_us_korean_names(sorted(existing), client=client)
+    aliases = [{"ticker": t, "alias": n, "source": "naver"} for t, n in names.items()]
+    return await upsert_aliases(conn, aliases, country_code=COUNTRY_US)
+
+
 async def seed_us(db_url: str, *, sources: Sequence[str] | None = None) -> None:
     """US 종목 마스터 적재 — env US_STOCK_SEED_SOURCES 의 첫 소스를 authority 로 UPSERT.
 
@@ -565,6 +638,8 @@ async def seed_us(db_url: str, *, sources: Sequence[str] | None = None) -> None:
         union = {r["ticker"] for r in rows if r.get("ticker")}
         deleted = await soft_delete_not_in(conn, COUNTRY_US, union)
         print(f"  [{source_name}] {n}건 반영, soft-delete {deleted}건")
+        alias_n = await backfill_us_aliases(conn)
+        print(f"  [naver/us-alias] 한글 별칭 {alias_n}건")
         print("완료.")
     finally:
         await conn.close()
@@ -1130,4 +1205,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    # `python -m invest_note_api.services.stock_seed`     → KR 종목 마스터(기존, 매일 스케줄)
+    # `python -m invest_note_api.services.stock_seed us`  → US 종목 마스터 + 한글 별칭 백필
+    if len(sys.argv) > 1 and sys.argv[1] == "us":
+        main_us()
+    else:
+        main()
