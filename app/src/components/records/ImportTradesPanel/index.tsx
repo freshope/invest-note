@@ -17,6 +17,7 @@ import { FileStep } from "./FileStep";
 import { PreviewStep } from "./PreviewStep";
 import { ResultStep } from "./ResultStep";
 import { BROKER_OPTIONS, findBrokerKeyByAccountBroker } from "./brokers";
+import { capture } from "@/lib/analytics";
 import type { Account } from "@/types/database";
 
 type Step = "account" | "file" | "preview" | "result";
@@ -76,6 +77,11 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
       const res = await importApi.commit(preview.staging_id, selectedAccountId);
       setResult(res);
       setStep("result");
+      capture("trades_imported", {
+        broker: effectiveBrokerKey, // 증권사 식별 키 — 종목/금액 아님
+        inserted_count: res.inserted_count,
+        merged_count: res.merged_count,
+      });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
         queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
