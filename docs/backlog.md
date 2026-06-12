@@ -34,6 +34,14 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] **미사용 admin 라우터 + ADMIN_TOKEN 인프라 제거** — 현재 모든 seed 스케줄은 Coolify 에서 CLI(`python -m invest_note_api.services.{stock_seed,nps_seed}`)로 돌고, `POST /admin/seed/{stocks,nps,daily-prices}`·`/admin/reconcile/nps` HTTP 트리거는 실제로 호출되지 않는다(`daily-prices` 는 스케줄 미등록·비활성 옵션). 작업: `routers/admin.py` 삭제 + `main.py` 의 `include_router(admin.router)` 제거 + `auth/admin.py`(`require_admin_token`) 제거 + `config.py` `admin_token`·env `ADMIN_TOKEN` 정리 + 관련 테스트 폐기. **단 `services/daily_price_seed.py` 의 `seed_daily_prices`(pre-warm) 함수는 보존** — 자산 추이 콜드스타트 첫-오픈 지연을 더 줄이고 싶을 때 살릴 여지(현재 비활성, `docs/decisions.md` 2026-06-04 cron 우선순위 하향 참고). 트리거: 별도 관리자 페이지를 만들 때 그에 맞는 엔드포인트로 재설계하며 함께 정리.
 - [ ] PnL 저장값 검증 엔드포인트 (이슈 E) — `/admin/verify-pnl` 신설. SELL의 저장된 `profit_loss`/`avg_buy_price`/`holding_days`/`strategy_type`/`reasoning_tags`/`emotion`을 `compute_group_pnl()`로 재계산해 차이 검출. 사용자 단위 batch + 차이 리포트 + (옵션) 자동 보정. 권한은 admin scope. DB 직접 수정·마이그레이션 누락·mutation 경로 우회 시 분석 탭과 거래 기록 합계 불일치를 잡기 위함.
 
+## PostHog 제품 분석 — 출시 전 후속 (도입은 2026-06-12 완료)
+
+2026-06-12 PostHog(FE 전용, Cloud) 도입(`docs/decisions.md` 참고). 코드·tsc·build·정적 export 청크 로드까지 검증. 아래는 코드 외/실환경 잔여.
+
+- [ ] **실환경 검증** — ① 웹 dev 로그인 후 PostHog Activity 에서 `$pageview`·`$identify`·커스텀 이벤트(`trade_recorded`/`trades_imported`/`account_added`) 도착 + 이벤트 프로퍼티에 종목/금액 등 민감값 없는지 직접 점검, ② `environment` 필터로 dev/prod 분리 동작 확인, ③ Capacitor 실기기(iOS/Android) — 탭 이동 시 pageview 도착·앱 재시작 후 distinct_id 유지·로그인/로그아웃 identify/reset·웹뷰 네트워크 차단 회귀 없음.
+- [ ] **출시 전 개인정보 고지 (코드 외, 필수)** — 스토어 게시 금융 앱에 UUID 식별 서드파티 분석 도입에 따른 고지 의무. ① 개인정보처리방침 갱신(`invest-note.pixelwave.app`, 통합 저장소 freshope/pixelwave-web — PostHog 수집 항목·국외 이전 명시), ② Play Data Safety / App Store 개인정보 라벨("사용 데이터/식별자" 신고), ③ PIPA 동의·국외이전 검토. **불필요(확인됨):** posthog-js 는 1st-party JS — iOS ATT 프롬프트·`PrivacyInfo.xcprivacy` 번들 SDK 요건 미트리거.
+- [ ] **운영 키 주입 확인** — `app/.env.production` 의 `NEXT_PUBLIC_POSTHOG_KEY` 는 빌드타임 주입(Coolify env 아님). 출시 빌드에 키가 실제 박혔는지 1회 확인(빈값이면 운영에서도 조용히 no-op).
+
 ## 배포 / 인프라
 
 - [ ] internal 패키지명 일관화 검토 — `app/package.json` `"name": "invest-note"` 과 `api/pyproject.toml` `name = "invest-note-api"` 의 명시화 (`invest-note-app`, `invest-note-api` 등) 검토. 폴더명과 일관성 vs 변경 비용(import 경로, 빌드 설정, 외부 참조) 비교 후 결정.
