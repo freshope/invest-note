@@ -631,15 +631,25 @@ _US_POPULAR_TICKERS = (
 
 async def _naver_us_korean_names(
     tickers: Sequence[str], *, client: httpx.AsyncClient | None = None
-) -> dict[str, str]:
-    """US 티커 목록 → {ticker: 한글명}. Naver 동시 호출은 _NAVER_CONCURRENCY 로 제한."""
+) -> tuple[dict[str, str], list[str]]:
+    """US 티커 목록 → ({ticker: 한글명}, 확정 조회된 ticker 목록).
+
+    동시 호출은 _NAVER_CONCURRENCY 로 제한. find_overseas_korean_name 이 한글명(str)이나
+    한글명 없음(None)을 돌려준 종목만 "확정 조회됨"으로 본다 — 일시 실패(예외 전파)는 checked
+    에 넣지 않아 호출자가 다음 run 에 재시도한다(전체 outage 가 영구 오염되지 않도록).
+    """
     sem = asyncio.Semaphore(_NAVER_CONCURRENCY)
     out: dict[str, str] = {}
+    checked: list[str] = []
 
     async def _run(c: httpx.AsyncClient) -> None:
         async def _one(t: str) -> None:
             async with sem:
-                name = await find_overseas_korean_name(t, client=c)
+                try:
+                    name = await find_overseas_korean_name(t, client=c)
+                except Exception:
+                    return  # 일시 실패 — checked 미기록(다음 run 재시도)
+            checked.append(t)
             if name:
                 out[t] = name
 
@@ -652,7 +662,7 @@ async def _naver_us_korean_names(
             await _run(owned)
     else:
         await _run(client)
-    return out
+    return out, checked
 
 
 async def backfill_us_aliases(
@@ -684,16 +694,18 @@ async def backfill_us_aliases(
     tickers = [r["ticker"] for r in pending]
     if not tickers:
         return 0
-    names = await _naver_us_korean_names(sorted(tickers), client=client)
+    names, checked = await _naver_us_korean_names(sorted(tickers), client=client)
     aliases = [{"ticker": t, "alias": n, "source": "naver"} for t, n in names.items()]
     n = await upsert_aliases(conn, aliases, country_code=COUNTRY_US)
-    # 결과 유무와 무관하게 조회 완료를 기록 → None(한글명 없음) 종목도 다음 run 에서 skip.
-    await conn.execute(
-        "update stocks set naver_checked_at = now() "
-        "where country_code = $1 and ticker = any($2::text[])",
-        COUNTRY_US,
-        tickers,
-    )
+    # 확정 조회된 종목만 checked 로 기록 → 한글명 없음(None)은 박제(다음 run skip)하되,
+    # 일시 실패(예외)는 제외해 다음 run 에 재시도한다(전체 outage 의 영구 오염 방지).
+    if checked:
+        await conn.execute(
+            "update stocks set naver_checked_at = now() "
+            "where country_code = $1 and ticker = any($2::text[])",
+            COUNTRY_US,
+            checked,
+        )
     return n
 
 

@@ -98,7 +98,7 @@ async def test_fetch_meta_maps_rows_by_ticker():
 
 @pytest.mark.asyncio
 async def test_fetch_meta_maps_us_index_and_dotted_ticker():
-    """US 티커(점 포함)와 us_index='SP500' 매핑 — 무국가 단일 쿼리($1 만 전달)."""
+    """US 티커(점 포함)와 us_index='SP500' 매핑 — 형식 추론으로 US 코드만 us 인자에 전달."""
     conn = AsyncMock()
     conn.fetch.return_value = [
         {"ticker": "BRK.B", "market": "NYSE", "marcap_rank": None,
@@ -109,8 +109,10 @@ async def test_fetch_meta_maps_us_index_and_dotted_ticker():
         "BRK.B": {"market": "NYSE", "marcap_rank": None, "nps_holding": None,
                   "nps_as_of": None, "us_index": "SP500"},
     }
-    # country_code 인자 없이 codes 만 전달(무국가 단일 쿼리).
-    assert conn.fetch.call_args.args[1] == ["BRK.B"]
+    # 비숫자 티커는 US 로 분류 → ($1=KR, $2=kr_codes[], $3=US, $4=us_codes[BRK.B]).
+    args = conn.fetch.call_args.args
+    assert args[2] == []  # KR 코드 없음
+    assert args[4] == ["BRK.B"]  # US 코드
 
 
 @pytest.mark.asyncio

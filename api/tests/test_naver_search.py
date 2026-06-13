@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import httpx
+import pytest
 
 from invest_note_api.external import naver_search
 
@@ -54,9 +55,11 @@ async def test_no_exact_code_match_returns_none():
         assert await naver_search.find_overseas_korean_name("AAPL", client=client) is None
 
 
-async def test_non_200_returns_none():
+async def test_non_200_raises_for_retry():
+    # non-200 은 결과 확정 불가(일시 실패) → 예외 전파. 호출자가 checked 박제 없이 재시도한다.
     async with _client(_AAPL_ITEMS, status=500) as client:
-        assert await naver_search.find_overseas_korean_name("AAPL", client=client) is None
+        with pytest.raises(httpx.HTTPStatusError):
+            await naver_search.find_overseas_korean_name("AAPL", client=client)
 
 
 async def test_empty_items_returns_none():

@@ -93,45 +93,39 @@ async def find_overseas_korean_name(
     항목의 한글명을 돌려준다. 한글이 없는 응답(영문 echo 등)은 별칭 가치가 없어 None.
     `search_kr` 과 분리한 이유: search_kr 은 한국 거래소 typeCode 만 채택하므로 US 를 거른다.
 
-    HTTP 실패/빈 결과/예외는 모두 None 으로 흡수한다 — 대량 병렬 백필에서 호출자가
-    try/except 를 둘 필요 없다.
+    반환/예외 의미(백필 게이팅용): 200 응답을 정상 파싱하면 한글명(str) 또는 한글명 없음(None)을
+    "확정 결과"로 돌려준다. 네트워크 오류·non-200·파싱 실패 등 결과를 확정할 수 없는 일시 실패는
+    예외를 전파한다 — 호출자(_naver_us_korean_names)가 그 종목을 checked 로 박제하지 않고 다음
+    run 에 재시도하도록. (예전엔 모든 실패를 None 으로 흡수해, 일시 장애가 영구 오염을 유발했다.)
     """
     ticker = ticker.strip().upper()
     if not ticker:
         return None
-    try:
-        if client is None:
-            async with httpx.AsyncClient() as owned:
-                res = await _do_get(owned, ticker)
-        else:
-            res = await _do_get(client, ticker)
+    if client is None:
+        async with httpx.AsyncClient() as owned:
+            res = await _do_get(owned, ticker)
+    else:
+        res = await _do_get(client, ticker)
 
-        if res.status_code != 200:
-            return None
+    res.raise_for_status()  # non-200 → 일시 실패로 간주(예외 전파, 호출자가 재시도)
 
-        items = res.json().get("items") or []
-        if not isinstance(items, list):
-            return None
+    items = res.json().get("items") or []
+    if not isinstance(items, list):
+        return None
 
-        for item in items:
-            code = item.get("code", "")
-            name = item.get("name", "")
-            if not isinstance(code, str) or not isinstance(name, str):
-                continue
-            if code.upper() != ticker:
-                continue
-            if item.get("typeCode") not in _US_TYPE_CODES:
-                continue
-            if not _HANGUL_RE.search(name):
-                return None  # 영문 echo — 별칭으로 둘 가치 없음
-            return name[:MAX_NAME_LEN]
-        return None
-    except httpx.HTTPError as e:
-        logger.info("naver overseas 네트워크 예외 ticker=%r: %s", ticker, type(e).__name__)
-        return None
-    except Exception:
-        logger.warning("naver overseas 실패 ticker=%r", ticker, exc_info=True)
-        return None
+    for item in items:
+        code = item.get("code", "")
+        name = item.get("name", "")
+        if not isinstance(code, str) or not isinstance(name, str):
+            continue
+        if code.upper() != ticker:
+            continue
+        if item.get("typeCode") not in _US_TYPE_CODES:
+            continue
+        if not _HANGUL_RE.search(name):
+            return None  # 영문 echo — 별칭으로 둘 가치 없음
+        return name[:MAX_NAME_LEN]
+    return None
 
 
 async def _do_get(client: httpx.AsyncClient, q: str) -> httpx.Response:

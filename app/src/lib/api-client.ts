@@ -282,7 +282,7 @@ export const importApi = {
     if (brokerKey) params.set("broker_key", brokerKey);
     if (accountId) params.set("account_id", accountId);
     const qs = params.toString();
-    const url = `${API_BASE}${ROUTES.trades.importPreview}${qs ? `?${qs}` : ""}`;
+    const url = `${API_BASE}${API_PREFIX}${ROUTES.trades.importPreview}${qs ? `?${qs}` : ""}`;
     const res = await fetch(url, {
       method: "POST",
       headers: { ...bearer },

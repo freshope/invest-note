@@ -160,21 +160,26 @@ async def lookup_by_names(
 _META_SQL = """
 select ticker, market, marcap_rank, nps_holding, nps_as_of, us_index
 from stocks
-where ticker = any($1::text[])
+where (country_code = $1 and ticker = any($2::text[]))
+   or (country_code = $3 and ticker = any($4::text[]))
 """
 
 
 async def fetch_meta(conn: Any, codes: list[str]) -> dict[str, StockMeta]:
     """종목 코드 목록 → {code: 메타}. 매칭된 code 만 키로 포함. 빈 codes 면 DB 조회 생략.
 
-    국가 무분기 단일 쿼리(`ticker = any($1)`). KR 6자리 숫자 ↔ US 비숫자(점/달러 포함)
-    티커가 disjoint 하다는 가정에 기대 KR/US 혼재 코드를 한 번에 조회한다.
+    코드 형식으로 국가를 추론해 country_code 로 스코프한다(KR=6자리 숫자, 그 외=US).
+    stocks PK 가 (country_code, ticker) 라 동일 ticker 가 KR/US 양쪽에 존재할 수 있으므로
+    무국가 조회는 교차 국가 오매칭(엉뚱한 국가 메타 반환)을 낳는다 — FE isMetaCode 게이트
+    (KR `^\\d{6}$` / US 비숫자)와 동일한 형식 분류로 KR/US 혼재 코드를 한 번에 조회한다.
     응답 키는 snake_case 로 통일한다(/stocks/quote 와 동일하게 변환 없이 그대로 통과).
     marcap_rank 는 ETF/ETN 에서 NULL, nps_holding 은 대부분 NULL, us_index 는 SP500 편입 시 'SP500'.
     """
     if not codes:
         return {}
-    rows = await conn.fetch(_META_SQL, codes)
+    kr_codes = [c for c in codes if len(c) == 6 and c.isdigit()]
+    us_codes = [c for c in codes if not (len(c) == 6 and c.isdigit())]
+    rows = await conn.fetch(_META_SQL, DEFAULT_COUNTRY, kr_codes, COUNTRY_US, us_codes)
     return {
         row["ticker"]: {
             "market": row["market"] or "",

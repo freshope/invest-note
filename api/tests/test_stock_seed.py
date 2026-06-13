@@ -301,7 +301,7 @@ async def test_backfill_us_aliases_unions_popular_and_traded(monkeypatch):
 
     async def fake_names(tickers, *, client=None):
         captured["asked"] = list(tickers)
-        return {t: f"한글{t}" for t in tickers}
+        return {t: f"한글{t}" for t in tickers}, list(tickers)
 
     monkeypatch.setattr(stock_seed, "_naver_us_korean_names", fake_names)
 
@@ -324,7 +324,7 @@ async def test_backfill_us_aliases_skips_checked_and_marks_none(monkeypatch):
 
     async def fake_names(tickers, *, client=None):
         assert list(tickers) == ["NEW"]  # 이미 checked 인 AAPL 은 제외
-        return {}  # Naver 에 한글명 없음
+        return {}, list(tickers)  # 한글명 없음 + 확정 조회됨(200, 한글명 없음)
 
     monkeypatch.setattr(stock_seed, "_naver_us_korean_names", fake_names)
 
@@ -332,8 +332,24 @@ async def test_backfill_us_aliases_skips_checked_and_marks_none(monkeypatch):
 
     assert n == 0  # 별칭 0건
     assert conn.upserted == []
-    # 한글명이 없어도 checked 로 기록 → 매 run 재조회 방지(negative 결과 영속화)
+    # 확정 조회됐으면 한글명이 없어도 checked 로 기록 → 매 run 재조회 방지(negative 결과 영속화)
     assert conn.marked == ["NEW"]
+
+
+async def test_backfill_us_aliases_transient_failure_not_marked(monkeypatch):
+    # Naver 일시 실패로 확정 조회 못한 종목은 checked 로 박제하지 않는다 → 다음 run 재시도.
+    conn = _FakeConn(traded=["NEW"], universe={"NEW"})
+
+    async def flaky_names(tickers, *, client=None):
+        return {}, []  # 한글명 0건 + 확정 조회 0건(전부 일시 실패)
+
+    monkeypatch.setattr(stock_seed, "_naver_us_korean_names", flaky_names)
+
+    n = await stock_seed.backfill_us_aliases(conn)
+
+    assert n == 0
+    assert conn.upserted == []
+    assert conn.marked == []  # 일시 실패 → 미기록 → 다음 run 재시도(영구 오염 방지)
 
 
 async def test_backfill_us_aliases_no_existing_tickers_skips_naver(monkeypatch):
@@ -355,7 +371,7 @@ async def test_backfill_us_aliases_includes_index_members(monkeypatch):
 
     async def fake_names(tickers, *, client=None):
         assert list(tickers) == ["SPX"]
-        return {t: f"한글{t}" for t in tickers}
+        return {t: f"한글{t}" for t in tickers}, list(tickers)
 
     monkeypatch.setattr(stock_seed, "_naver_us_korean_names", fake_names)
 
