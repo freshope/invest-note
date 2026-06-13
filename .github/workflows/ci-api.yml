@@ -1,0 +1,51 @@
+name: CI API
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "api/**"
+      - "supabase/**" # 마이그레이션은 API 도메인 — 스키마 변경 커밋도 API 테스트를 거친다.
+      - ".github/workflows/ci-api.yml"
+  push:
+    branches: [main, develop]
+    paths:
+      - "api/**"
+      - "supabase/**"
+      - ".github/workflows/ci-api.yml"
+
+jobs:
+  backend:
+    name: Backend (FastAPI)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    env:
+      SUPABASE_URL: https://example.supabase.co
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: api/.python-version
+
+      - uses: snok/install-poetry@v1
+        with:
+          virtualenvs-in-project: true
+
+      - name: Cache Poetry venv
+        uses: actions/cache@v4
+        with:
+          path: api/.venv
+          key: poetry-${{ runner.os }}-${{ hashFiles('api/poetry.lock') }}
+          restore-keys: |
+            poetry-${{ runner.os }}-
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
+
+      - name: Lint (ruff)
+        run: poetry run ruff check
+
+      - name: Unit tests
+        run: poetry run pytest -q

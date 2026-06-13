@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // OTA 발행 스크립트 (Capacitor self-hosted OTA v1)
 //
-// 흐름: pnpm -C fe build → @capgo/cli bundle zip --json → R2 zip PUT →
+// 흐름: pnpm -C app build → @capgo/cli bundle zip --json → R2 zip PUT →
 //       HEAD 재검증 → manifest JSON 원자적 flip(PUT).
 //
 // 사용법:
@@ -15,7 +15,7 @@
 //                  마케팅 버전). 둘 다 없으면 중단한다(레포 version 으로 폴백하지 않는다).
 //
 // R2 자격증명은 루트 gitignored .env(릴리즈 전용)에서 로드한다(결정 4).
-// fe public env(NEXT_PUBLIC_*, .env.development.local)에는 절대 두지 않는다.
+// app public env(NEXT_PUBLIC_*, .env.development.local)에는 절대 두지 않는다.
 
 import { execFileSync } from "node:child_process";
 import { readFileSync, mkdtempSync, existsSync, readdirSync } from "node:fs";
@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
-const FE = join(ROOT, "fe");
+const APP = join(ROOT, "app");
 
 // ── 인자 파싱 ───────────────────────────────────────────────
 const args = process.argv.slice(2);
@@ -91,12 +91,12 @@ if (!dryRun && !haveCreds) {
   dryRun = true;
 }
 
-// ── 버전 출처: fe/package.json (마케팅 버전, semver) ─────────
-const fePkg = JSON.parse(readFileSync(join(FE, "package.json"), "utf8"));
-const version = fePkg.version;
-if (!version) die("fe/package.json 에서 version 을 읽지 못했다.");
+// ── 버전 출처: app/package.json (마케팅 버전, semver) ─────────
+const appPkg = JSON.parse(readFileSync(join(APP, "package.json"), "utf8"));
+const version = appPkg.version;
+if (!version) die("app/package.json 에서 version 을 읽지 못했다.");
 // required_native = OTA 번들이 요구하는 최소 네이티브 버전 = "현재 스토어 라이브 바이너리의
-// 마케팅 버전"이다. 레포의 fe/package.json version 은 OTA web-only 릴리즈마다 앞서가 스토어
+// 마케팅 버전"이다. 레포의 app/package.json version 은 OTA web-only 릴리즈마다 앞서가 스토어
 // 바이너리와 싱크되지 않으므로(예: 레포 1.2.0 vs 스토어 1.1.23) default 로 쓰면 게이트가 너무
 // 높아져 라이브 기기가 번들을 못 받는다. 그래서 별도 단일 출처(.env OTA_REQUIRED_NATIVE)에서
 // 읽고, 네이티브를 실제 제출·승인할 때만 그 값을 갱신한다. 미설정 시 조용한 오발행 대신 중단.
@@ -110,20 +110,20 @@ if (!requiredNative) {
 
 log(`version=${version} required_native_version=${requiredNative} dryRun=${dryRun}`);
 
-// ── 1. 정적 export 빌드 (fe/out) ────────────────────────────
-log("1) pnpm -C fe build (정적 export → fe/out)");
-execFileSync("pnpm", ["-C", "fe", "build"], { cwd: ROOT, stdio: "inherit" });
-const OUT = join(FE, "out");
+// ── 1. 정적 export 빌드 (app/out) ────────────────────────────
+log("1) pnpm -C app build (정적 export → app/out)");
+execFileSync("pnpm", ["-C", "app", "build"], { cwd: ROOT, stdio: "inherit" });
+const OUT = join(APP, "out");
 if (!existsSync(join(OUT, "index.html"))) {
   die(`빌드 산출물 누락: ${join(OUT, "index.html")} 가 없다.`);
 }
 
 // ── 2. capgo CLI 로 호환 zip + checksum 생성 ────────────────
 // ⚠ 표준 zip/sha256sum 금지 — 플러그인 무결성 검증은 capgo CLI checksum 과만 일치한다.
-// checksum 은 --json 출력에서 파싱(직접 계산 금지). 호출은 fe 핀 버전을 결정적으로.
-const CAPGO_BIN = join(FE, "node_modules", ".bin", "capgo");
+// checksum 은 --json 출력에서 파싱(직접 계산 금지). 호출은 app 핀 버전을 결정적으로.
+const CAPGO_BIN = join(APP, "node_modules", ".bin", "capgo");
 if (!existsSync(CAPGO_BIN)) {
-  die(`@capgo/cli 미설치: ${CAPGO_BIN} 없음. 'pnpm -C fe add -D @capgo/cli' 필요.`);
+  die(`@capgo/cli 미설치: ${CAPGO_BIN} 없음. 'pnpm -C app add -D @capgo/cli' 필요.`);
 }
 const workDir = mkdtempSync(join(tmpdir(), "ota-"));
 const zipPath = join(workDir, `${version}.zip`);
@@ -135,7 +135,7 @@ const capgoOut = execFileSync(
   [
     "bundle",
     "zip",
-    fePkg.appId ?? "app.pixelwave.investnote",
+    appPkg.appId ?? "app.pixelwave.investnote",
     "--path",
     OUT,
     "--bundle",

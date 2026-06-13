@@ -3,21 +3,21 @@
 DEVTOOLS_DIR ?= $(HOME)/devtools
 
 # ── 프로젝트 구성 (이름 = 폴더명) ────────────────
-PROJECTS := fe be
+PROJECTS := app api
 
-# fe — Next.js + Capacitor 모바일 앱
-fe_FRAMEWORK      := nextjs
-fe_PORT           := 3000
-fe_MOBILE         := 1
-fe_ARCHIVE_PREFIX := InvestNote
-fe_OTA            := 1
+# app — Next.js + Capacitor 모바일 앱
+app_FRAMEWORK      := nextjs
+app_PORT           := 3000
+app_MOBILE         := 1
+app_ARCHIVE_PREFIX := InvestNote
+app_OTA            := 1
 
-# be — FastAPI
-be_FRAMEWORK    := fastapi
-be_PORT         := 8000
-be_APP          := invest_note_api.main:create_app
-be_PYTHONPATH   := src
-be_UVICORN_OPTS := --factory --reload
+# api — FastAPI
+api_FRAMEWORK    := fastapi
+api_PORT         := 8000
+api_APP          := invest_note_api.main:create_app
+api_PYTHONPATH   := src
+api_UVICORN_OPTS := --factory --reload
 # ────────────────────────────────────────────────
 
 ifeq ($(wildcard $(DEVTOOLS_DIR)/Makefile.common),)

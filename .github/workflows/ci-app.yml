@@ -1,0 +1,49 @@
+name: CI APP
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "app/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/ci-app.yml"
+  push:
+    branches: [main, develop]
+    paths:
+      - "app/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/ci-app.yml"
+
+jobs:
+  frontend:
+    name: Frontend (Next.js + Capacitor)
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_dummy
+      NEXT_PUBLIC_API_BASE_URL: ""
+      NEXT_PUBLIC_SITE_URL: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm tsc
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
