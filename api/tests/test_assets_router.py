@@ -314,11 +314,12 @@ class TestAssetHistory:
         us_closes = [{"ticker": "AAPL", "close_date": date.fromisoformat("2025-06-02"), "close_price": 200.0}]
         # 응답 순서: [0]=trades, [1]=KR get_closes, [2]=US get_closes (backfill 은 mock).
         conn = FakeConnection([_to_record(kr), _to_record(us)], kr_closes, us_closes)
+        today_iso = datetime.now(KST).date().isoformat()
 
         async def mock_quotes(state, keys, *, client=None, **kw):
             return {
-                "005930:KR": {"price": 72000.0, "currency": "KRW", "as_of": ""},
-                "AAPL:US": {"price": 210.0, "currency": "USD", "as_of": ""},
+                "005930:KR": {"price": 72000.0, "currency": "KRW", "as_of": "", "traded_on": today_iso},
+                "AAPL:US": {"price": 210.0, "currency": "USD", "as_of": "", "traded_on": today_iso},
             }
 
         async def mock_fx(trades, state, client, *, providers=None, **kw):
@@ -349,11 +350,12 @@ class TestAssetHistory:
         kr_closes = [{"ticker": "005930", "close_date": date.fromisoformat("2025-06-02"), "close_price": 70000.0}]
         us_closes = [{"ticker": "AAPL", "close_date": date.fromisoformat("2025-06-02"), "close_price": 200.0}]
         conn = FakeConnection([_to_record(kr), _to_record(us)], kr_closes, us_closes)
+        today_iso = datetime.now(KST).date().isoformat()
 
         async def mock_quotes(state, keys, *, client=None, **kw):
             return {
-                "005930:KR": {"price": 72000.0, "currency": "KRW", "as_of": ""},
-                "AAPL:US": {"price": 210.0, "currency": "USD", "as_of": ""},
+                "005930:KR": {"price": 72000.0, "currency": "KRW", "as_of": "", "traded_on": today_iso},
+                "AAPL:US": {"price": 210.0, "currency": "USD", "as_of": "", "traded_on": today_iso},
             }
 
         async def mock_fx(trades, state, client, *, providers=None, **kw):
