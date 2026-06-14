@@ -20,6 +20,7 @@ const trade: TradeWithAccount = {
   traded_at: "2026-06-01T00:00:00Z",
   strategy_type: null,
   reasoning_tags: [],
+  custom_tags: [],
   buy_reason: null,
   sell_reason: null,
   emotion: null,

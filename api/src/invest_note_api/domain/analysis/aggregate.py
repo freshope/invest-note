@@ -55,6 +55,14 @@ class TagStats:
 
 
 @dataclass
+class CustomTagStats:
+    tag: str
+    count: int
+    win_rate: float
+    sum_pnl: float
+
+
+@dataclass
 class StrategyAdherenceStats:
     type: str
     count: int
@@ -72,6 +80,7 @@ class AnalysisSummary:
     by_strategy: list[StrategyStats] = field(default_factory=list)
     by_emotion: list[EmotionStats] = field(default_factory=list)
     by_tag: list[TagStats] = field(default_factory=list)
+    by_custom_tag: list[CustomTagStats] = field(default_factory=list)
     missing_tag_rate: float = 0.0
     feeling_rate: float = 0.0
     reflection_rate: float = 0.0
@@ -220,6 +229,32 @@ def compute_summary(
         reverse=True,
     )
 
+    # byCustomTag — 사용자 정의 태그(자유 텍스트). 미입력 SELL은 버킷을 만들지 않는다
+    # (선택적 태그라 UNTAGGED 집계 불필요). 다중 태그 거래의 PnL 중복 합산은 byTag와 동일.
+    custom_tag_map: dict[str, dict] = {}
+    for sell in sells:
+        for tag in sell.custom_tags:
+            if tag not in custom_tag_map:
+                custom_tag_map[tag] = {"pnls": [], "results": []}
+            ctm = custom_tag_map[tag]
+            ctm["pnls"].append(pnl_map.get(sell.id, 0.0))
+            if sell.result:
+                ctm["results"].append(sell.result)
+
+    by_custom_tag = sorted(
+        [
+            CustomTagStats(
+                tag=tag,
+                count=len(ctm["pnls"]),
+                win_rate=_win_rate(ctm["results"]),
+                sum_pnl=sum(ctm["pnls"]),
+            )
+            for tag, ctm in custom_tag_map.items()
+        ],
+        key=lambda x: x.count,
+        reverse=True,
+    )
+
     # 메타 지표
     missing_tag_rate = _percent(
         sum(1 for t in buys if not t.reasoning_tags), len(buys)
@@ -239,6 +274,7 @@ def compute_summary(
         by_strategy=by_strategy,
         by_emotion=by_emotion,
         by_tag=by_tag,
+        by_custom_tag=by_custom_tag,
         missing_tag_rate=missing_tag_rate,
         feeling_rate=feeling_rate,
         reflection_rate=reflection_rate,

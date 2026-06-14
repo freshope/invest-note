@@ -20,14 +20,14 @@ import { queryKeys } from "@/lib/query-keys";
 import {
   STRATEGIES,
   EMOTIONS,
-  REASONING_TAGS,
   STRATEGY_VALUES,
   EMOTION_VALUES,
   REASONING_TAG_VALUES,
   TRADE_RESULT_VALUES,
   TRADE_TYPE,
 } from "@/lib/constants/trading";
-import { AutoBuyReasonField, AutoEmotionField, AutoReasoningTagsField } from "./AutoMetaField";
+import { AutoBuyReasonField, AutoEmotionField, AutoReasoningTagsField, AutoCustomTagsField } from "./AutoMetaField";
+import { AnalysisTagsField } from "./AnalysisTagsField";
 import { TradeHeaderCard } from "./TradeHeaderCard";
 import { NumericInput } from "./NumericInput";
 import { CompactRow } from "./trade-display";
@@ -54,6 +54,7 @@ function makeSchema(isForeign: boolean) {
       strategy_type: z.enum(STRATEGY_VALUES).nullable(),
       emotion: z.enum(EMOTION_VALUES).nullable(),
       reasoning_tags: z.array(z.enum(REASONING_TAG_VALUES)),
+      custom_tags: z.array(z.string()),
       result: z.enum(TRADE_RESULT_VALUES).nullable(),
       buy_reason: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, TRADE_FREE_TEXT_ERROR),
       sell_reason: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, TRADE_FREE_TEXT_ERROR),
@@ -83,6 +84,7 @@ function buildFormValues(trade: Trade): FormValues {
     strategy_type: trade.strategy_type ?? null,
     emotion: trade.emotion ?? null,
     reasoning_tags: (trade.reasoning_tags ?? []) as ReasoningTag[],
+    custom_tags: trade.custom_tags ?? [],
     result: trade.result ?? null,
     buy_reason: trade.buy_reason ?? "",
     sell_reason: trade.sell_reason ?? "",
@@ -138,6 +140,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
 
   const {
     reasoning_tags: tags,
+    custom_tags: customTags,
     price: livePrice,
     quantity: liveQty,
     amount_krw: liveAmountKrw,
@@ -182,10 +185,15 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
         commission: values.commission,
         tax: values.tax,
         strategy_type: isSell ? (summary?.strategyEvaluation?.planned ?? null) : values.strategy_type,
-        // SELL의 emotion / reasoning_tags / result는 백엔드가 자동 산출 — 패치 미포함.
+        // SELL의 emotion / reasoning_tags / custom_tags / result는 백엔드가 자동 산출(매칭 매수 상속) — 패치 미포함.
         ...(isSell
           ? {}
-          : { emotion: values.emotion, reasoning_tags: values.reasoning_tags, result: values.result }),
+          : {
+              emotion: values.emotion,
+              reasoning_tags: values.reasoning_tags,
+              custom_tags: values.custom_tags,
+              result: values.result,
+            }),
         buy_reason: values.buy_reason.trim() || null,
         sell_reason: values.sell_reason.trim() || null,
       });
@@ -380,20 +388,24 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                   </div>
                 )}
 
-                {/* 분석 태그 */}
+                {/* 분석 태그 (프리셋 + 사용자 정의 통합) */}
                 {isSell ? (
-                  <div className="mb-5">
-                    <AutoReasoningTagsField tags={trade.reasoning_tags} />
-                  </div>
+                  <>
+                    <div className="mb-5">
+                      <AutoReasoningTagsField tags={trade.reasoning_tags} />
+                    </div>
+                    <div className="mb-5">
+                      <AutoCustomTagsField tags={trade.custom_tags} />
+                    </div>
+                  </>
                 ) : (
                   <div className="space-y-2 mb-5">
                     <Label>분석 태그 <span className="text-[12px] font-normal text-muted-foreground">(복수 선택)</span></Label>
-                    <ToggleChipGrid<ReasoningTag>
-                      multi
-                      options={REASONING_TAGS}
-                      value={tags}
-                      onChange={(next) => setValue("reasoning_tags", next)}
-                      columns={2}
+                    <AnalysisTagsField
+                      reasoningTags={tags}
+                      customTags={customTags}
+                      onReasoningChange={(next) => setValue("reasoning_tags", next)}
+                      onCustomChange={(next) => setValue("custom_tags", next)}
                     />
                   </div>
                 )}

@@ -34,6 +34,7 @@ _COMPARE_FIELDS: list[tuple[str, Callable[[Any, Any], bool]]] = [
     ("holding_days", operator.eq),
     ("strategy_type", operator.eq),
     ("reasoning_tags", operator.eq),
+    ("custom_tags", operator.eq),
     ("emotion", operator.eq),
     ("result", operator.eq),
 ]
@@ -67,6 +68,7 @@ async def recalc_group_pnl(
             entry.holding_days,
             entry.strategy_type,
             entry.reasoning_tags,
+            entry.custom_tags,
             entry.emotion,
             entry.result,
             sell_id,
@@ -81,7 +83,8 @@ async def recalc_group_pnl(
     try:
         await conn.executemany(
             "UPDATE trades SET profit_loss = $1, avg_buy_price = $2, holding_days = $3, "
-            "strategy_type = $4, reasoning_tags = $5, emotion = $6, result = $7 WHERE id = $8",
+            "strategy_type = $4, reasoning_tags = $5, custom_tags = $6, emotion = $7, "
+            "result = $8 WHERE id = $9",
             rows,
         )
     except Exception as exc:

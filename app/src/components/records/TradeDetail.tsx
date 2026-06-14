@@ -139,7 +139,7 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
         )}
 
         {/* 근거 / 감정 */}
-        {((isBuy && trade.strategy_type) || trade.emotion || trade.reasoning_tags?.length || trade.buy_reason) && (
+        {((isBuy && trade.strategy_type) || trade.emotion || trade.reasoning_tags?.length || trade.custom_tags?.length || trade.buy_reason) && (
           <div className="rounded-2xl bg-muted/60 px-4 py-1">
             {isBuy && trade.strategy_type && (
               <InfoRow label="전략">{STRATEGY_LABELS[trade.strategy_type] ?? trade.strategy_type}</InfoRow>
@@ -149,12 +149,17 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
                 {EMOTION_LABELS[trade.emotion] ?? trade.emotion}
               </InfoRow>
             )}
-            {trade.reasoning_tags && trade.reasoning_tags.length > 0 && (
+            {((trade.reasoning_tags?.length ?? 0) > 0 || (trade.custom_tags?.length ?? 0) > 0) && (
               <InfoRow label={isBuy ? "분석 태그" : "분석 태그 (자동)"}>
                 <div className="flex flex-wrap gap-1 justify-end">
-                  {trade.reasoning_tags.map((tag) => (
-                    <span key={tag} className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                  {trade.reasoning_tags?.map((tag) => (
+                    <span key={`r-${tag}`} className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
                       {REASONING_TAG_LABELS[tag] ?? tag}
+                    </span>
+                  ))}
+                  {trade.custom_tags?.map((tag) => (
+                    <span key={`c-${tag}`} className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium break-all">
+                      {tag}
                     </span>
                   ))}
                 </div>

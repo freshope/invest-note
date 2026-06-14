@@ -11,6 +11,7 @@ export const queryKeys = {
   trades: ["trades"] as const,
   trade: (id: string) => ["trade", id] as const,
   tradeSummary: (id: string) => ["trade-summary", id] as const,
+  customTags: ["custom-tags"] as const,
 
   holding: (
     accountId: string,
