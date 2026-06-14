@@ -107,7 +107,7 @@ export function TradeList({ trades, accounts }: TradeListProps) {
   }, [openSwipeId]);
 
   const handleTradePress = useCallback(
-    (trade: TradeWithAccount) => openTrade({ trade, accounts, allTrades: trades }),
+    (trade: TradeWithAccount) => openTrade({ trade, accounts, allTrades: trades }, "records_list"),
     [openTrade, accounts, trades],
   );
 

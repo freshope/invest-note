@@ -23,6 +23,7 @@ import { useOpenStock } from "@/hooks/useOpenStock";
 import { buildPnlMap } from "@/lib/analysis/realized-pnl";
 import { queryKeys } from "@/lib/query-keys";
 import { tradesApi } from "@/lib/api-client";
+import { capture } from "@/lib/analytics";
 import { TRADE_TYPE } from "@/lib/constants/trading";
 import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import { useEffectiveAccountId } from "@/components/providers/AccountFilterProvider";
@@ -51,8 +52,8 @@ export type AssetHistoryPayload =
   | { assetName: null; ticker: null; country: null };
 
 interface DetailPanelContextValue {
-  openTrade: (payload: TradePayload) => void;
-  openStock: (payload: StockPayload) => void;
+  openTrade: (payload: TradePayload, source?: string) => void;
+  openStock: (payload: StockPayload, source?: string) => void;
   openAssetHistory: (payload: AssetHistoryPayload) => void;
 }
 
@@ -73,12 +74,22 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
   const [stockPayload, setStockPayload] = useState<StockPayload | null>(null);
   const [assetPayload, setAssetPayload] = useState<AssetHistoryPayload | null>(null);
 
-  const openTrade = useCallback((payload: TradePayload) => setTradePayload(payload), []);
-  const openStock = useCallback((payload: StockPayload) => setStockPayload(payload), []);
-  const openAssetHistory = useCallback(
-    (payload: AssetHistoryPayload) => setAssetPayload(payload),
-    [],
-  );
+  // 상세 진입 수집(방식 A): 익명 메타데이터만 — ticker/assetName 등 종목 식별자는 절대 싣지 않는다.
+  const openTrade = useCallback((payload: TradePayload, source?: string) => {
+    capture("trade_detail_viewed", { source });
+    setTradePayload(payload);
+  }, []);
+  const openStock = useCallback((payload: StockPayload, source?: string) => {
+    capture("stock_detail_viewed", { country: payload.country, source });
+    setStockPayload(payload);
+  }, []);
+  const openAssetHistory = useCallback((payload: AssetHistoryPayload) => {
+    capture("asset_history_viewed", {
+      scope: payload.assetName === null ? "all" : "stock",
+      country: payload.country,
+    });
+    setAssetPayload(payload);
+  }, []);
   const closeTrade = useCallback(() => setTradePayload(null), []);
   const closeStock = useCallback(() => setStockPayload(null), []);
   const closeAssetHistory = useCallback(() => setAssetPayload(null), []);
@@ -141,7 +152,7 @@ interface TradePanelProps {
   onClose: () => void;
   onMutated: () => void;
   onSaved: () => void;
-  openStock: (p: StockPayload) => void;
+  openStock: (p: StockPayload, source?: string) => void;
 }
 
 function TradePanel({ externalPayload, onClose, onMutated, onSaved, openStock }: TradePanelProps) {
@@ -166,7 +177,7 @@ interface TradePanelContentProps {
   onClose: () => void;
   onMutated: () => void;
   onSaved: () => void;
-  openStock: (p: StockPayload) => void;
+  openStock: (p: StockPayload, source?: string) => void;
 }
 
 function TradePanelContent({ open, payload, onClose, onMutated, onSaved, openStock }: TradePanelContentProps) {
@@ -176,13 +187,16 @@ function TradePanelContent({ open, payload, onClose, onMutated, onSaved, openSto
     () =>
       trade.ticker_symbol
         ? () =>
-            openStock({
-              assetName: trade.asset_name,
-              ticker: trade.ticker_symbol!,
-              country: trade.country_code ?? DEFAULT_COUNTRY_CODE,
-              allTrades,
-              accounts,
-            })
+            openStock(
+              {
+                assetName: trade.asset_name,
+                ticker: trade.ticker_symbol!,
+                country: trade.country_code ?? DEFAULT_COUNTRY_CODE,
+                allTrades,
+                accounts,
+              },
+              "trade_detail",
+            )
         : undefined,
     [trade.ticker_symbol, trade.asset_name, trade.country_code, allTrades, accounts, openStock],
   );
@@ -206,8 +220,8 @@ function TradePanelContent({ open, payload, onClose, onMutated, onSaved, openSto
 interface StockPanelProps {
   externalPayload: StockPayload | null;
   onClose: () => void;
-  openStock: (p: StockPayload) => void;
-  openTrade: (p: TradePayload) => void;
+  openStock: (p: StockPayload, source?: string) => void;
+  openTrade: (p: TradePayload, source?: string) => void;
   openAssetHistory: (p: AssetHistoryPayload) => void;
 }
 
@@ -216,7 +230,7 @@ function StockPanel({ externalPayload, onClose, openStock, openTrade, openAssetH
   // 전환 시트는 리마운트되는 keyed content 밖(이 wrapper)에서 소유한다.
   // 종목 선택 → remountKey 증가로 content 가 unmount 돼도 시트는 살아남아 닫힘 애니메이션이 정상 동작.
   const [switchOpen, setSwitchOpen] = useState(false);
-  const switchToStock = useOpenStock(openStock);
+  const switchToStock = useOpenStock(openStock, "switch_sheet");
 
   if (payload === null) return null;
 
@@ -255,7 +269,7 @@ function StockPanel({ externalPayload, onClose, openStock, openTrade, openAssetH
 interface StockPanelContentProps {
   payload: StockPayload;
   onClose: () => void;
-  openTrade: (p: TradePayload) => void;
+  openTrade: (p: TradePayload, source?: string) => void;
   openAssetHistory: (p: AssetHistoryPayload) => void;
   onSwitchStock: () => void;
 }
@@ -307,7 +321,7 @@ function StockPanelContent({ payload, onClose, openTrade, openAssetHistory, onSw
 
   const handleTradePress = useCallback(
     (trade: TradeWithAccount) => {
-      openTrade({ trade, accounts, allTrades });
+      openTrade({ trade, accounts, allTrades }, "stock_detail");
     },
     [openTrade, accounts, allTrades],
   );

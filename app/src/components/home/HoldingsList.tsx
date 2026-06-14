@@ -13,7 +13,7 @@ interface HoldingsListProps {
 
 export function HoldingsList({ positions }: HoldingsListProps) {
   const { openStock } = useDetailPanel();
-  const openStockByPosition = useOpenStock(openStock);
+  const openStockByPosition = useOpenStock(openStock, "holdings");
 
   // evaluation 은 이미 KRW(단일 통화)라 그대로 내림차순 정렬(US 가 환율 반영돼 올바른 순위).
   const sorted = useMemo(
