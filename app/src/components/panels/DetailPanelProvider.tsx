@@ -16,6 +16,7 @@ import {
   useStaggeredPanel,
 } from "@/components/base/FullScreenPanel";
 import { TradeDetail } from "@/components/records/TradeDetail";
+import { TradeFormPanel } from "@/components/records/TradeFormPanel";
 import { StockDetail } from "@/components/stocks/StockDetail";
 import { StockSwitchSheet } from "@/components/stocks/StockSwitchSheet";
 import { AssetHistoryView } from "@/components/assets/AssetHistoryView";
@@ -25,9 +26,10 @@ import { queryKeys } from "@/lib/query-keys";
 import { tradesApi } from "@/lib/api-client";
 import { capture } from "@/lib/analytics";
 import { TRADE_TYPE } from "@/lib/constants/trading";
-import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
+import { DEFAULT_COUNTRY_CODE, isCountryCode } from "@/lib/constants/market";
 import { useEffectiveAccountId } from "@/components/providers/AccountFilterProvider";
-import type { Account } from "@/types/database";
+import type { SelectedStock } from "@/components/records/StockSearchInput";
+import type { Account, TradeType } from "@/types/database";
 import type { TradeWithAccount } from "@/lib/trade-utils";
 import type { Position } from "@/lib/portfolio";
 
@@ -43,6 +45,11 @@ export type StockPayload = {
   country: string;
   allTrades: TradeWithAccount[];
   accounts: Account[];
+};
+
+export type TradeFormPayload = {
+  accounts: Account[];
+  prefill: { stock: SelectedStock; tradeType: TradeType; accountId: string | null };
 };
 
 // 필드가 모두 null 이면 계좌 전체 자산 뷰 (홈 헤더 진입), 모두 값이 있으면 종목 뷰.
@@ -73,6 +80,7 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
   const [tradePayload, setTradePayload] = useState<TradePayload | null>(null);
   const [stockPayload, setStockPayload] = useState<StockPayload | null>(null);
   const [assetPayload, setAssetPayload] = useState<AssetHistoryPayload | null>(null);
+  const [tradeFormPayload, setTradeFormPayload] = useState<TradeFormPayload | null>(null);
 
   // 상세 진입 수집(방식 A): 익명 메타데이터만 — ticker/assetName 등 종목 식별자는 절대 싣지 않는다.
   const openTrade = useCallback((payload: TradePayload, source?: string) => {
@@ -90,9 +98,19 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
     });
     setAssetPayload(payload);
   }, []);
+  // 종목 상세에서 prefill 된 거래 등록 폼. stockPayload 를 닫지 않고 위에 겹친다(openTrade 와 동일 패턴).
+  const openTradeForm = useCallback((payload: TradeFormPayload) => {
+    capture("trade_form_opened", {
+      trade_type: payload.prefill.tradeType,
+      country: payload.prefill.stock.market, // KR/US/OTHER — 민감값 아님
+      source: "stock_detail",
+    });
+    setTradeFormPayload(payload);
+  }, []);
   const closeTrade = useCallback(() => setTradePayload(null), []);
   const closeStock = useCallback(() => setStockPayload(null), []);
   const closeAssetHistory = useCallback(() => setAssetPayload(null), []);
+  const closeTradeForm = useCallback(() => setTradeFormPayload(null), []);
 
   const pathname = usePathname();
   useEffect(() => {
@@ -101,6 +119,7 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
     setTradePayload(null);
     setStockPayload(null);
     setAssetPayload(null);
+    setTradeFormPayload(null);
   }, [pathname]);
 
   const handleTradeMutated = useCallback(() => {
@@ -137,12 +156,14 @@ export function DetailPanelProvider({ children }: { children: React.ReactNode })
         openStock={openStock}
         openTrade={openTrade}
         openAssetHistory={openAssetHistory}
+        openTradeForm={openTradeForm}
       />
       <AssetHistoryPanel
         externalPayload={assetPayload}
         onClose={closeAssetHistory}
         openAssetHistory={openAssetHistory}
       />
+      <TradeFormHost externalPayload={tradeFormPayload} onClose={closeTradeForm} />
     </DetailPanelContext.Provider>
   );
 }
@@ -223,9 +244,10 @@ interface StockPanelProps {
   openStock: (p: StockPayload, source?: string) => void;
   openTrade: (p: TradePayload, source?: string) => void;
   openAssetHistory: (p: AssetHistoryPayload) => void;
+  openTradeForm: (p: TradeFormPayload) => void;
 }
 
-function StockPanel({ externalPayload, onClose, openStock, openTrade, openAssetHistory }: StockPanelProps) {
+function StockPanel({ externalPayload, onClose, openStock, openTrade, openAssetHistory, openTradeForm }: StockPanelProps) {
   const { open, payload, remountKey } = useStaggeredPanel(externalPayload);
   // 전환 시트는 리마운트되는 keyed content 밖(이 wrapper)에서 소유한다.
   // 종목 선택 → remountKey 증가로 content 가 unmount 돼도 시트는 살아남아 닫힘 애니메이션이 정상 동작.
@@ -252,6 +274,7 @@ function StockPanel({ externalPayload, onClose, openStock, openTrade, openAssetH
             onClose={onClose}
             openTrade={openTrade}
             openAssetHistory={openAssetHistory}
+            openTradeForm={openTradeForm}
             onSwitchStock={() => setSwitchOpen(true)}
           />
         </FullScreenPanelContent>
@@ -271,10 +294,11 @@ interface StockPanelContentProps {
   onClose: () => void;
   openTrade: (p: TradePayload, source?: string) => void;
   openAssetHistory: (p: AssetHistoryPayload) => void;
+  openTradeForm: (p: TradeFormPayload) => void;
   onSwitchStock: () => void;
 }
 
-function StockPanelContent({ payload, onClose, openTrade, openAssetHistory, onSwitchStock }: StockPanelContentProps) {
+function StockPanelContent({ payload, onClose, openTrade, openAssetHistory, openTradeForm, onSwitchStock }: StockPanelContentProps) {
   const { assetName, ticker, country, allTrades: initialTrades, accounts: initialAccounts } = payload;
 
   // 거래 mutation 후 queryKeys.trades 가 invalidate 되면 prefix 매칭으로 함께 refetch 되도록
@@ -319,11 +343,61 @@ function StockPanelContent({ payload, onClose, openTrade, openAssetHistory, onSw
     };
   }, [filteredTrades, pnlMap]);
 
+  // 보유 수량 = 표시 중인(계좌 필터 반영) 거래의 net(BUY +, SELL -). 덧셈이라 정렬 무관.
+  const holdingQuantity = useMemo(() => {
+    const net = filteredTrades.reduce(
+      (sum, t) => sum + (t.trade_type === TRADE_TYPE.BUY ? t.quantity : -t.quantity),
+      0,
+    );
+    return Math.max(0, net);
+  }, [filteredTrades]);
+
+  const selectedStock = useMemo<SelectedStock>(
+    () => ({
+      name: assetName,
+      code: ticker,
+      market: isCountryCode(country) ? country : "OTHER",
+      exchange: filteredTrades.find((t) => t.exchange)?.exchange ?? "",
+    }),
+    [assetName, ticker, country, filteredTrades],
+  );
+
   const handleTradePress = useCallback(
     (trade: TradeWithAccount) => {
       openTrade({ trade, accounts, allTrades }, "stock_detail");
     },
     [openTrade, accounts, allTrades],
+  );
+
+  // 전체 계좌 뷰(effectiveAccountId=null)에서 매도 시: 이 종목을 보유한 계좌(net 최대)를 자동 선택한다.
+  // 매도 버튼 활성 기준(전 계좌 합산 보유)과 폼 prefill 계좌의 출처를 일치시켜 "버튼은 켜졌는데 폼이 막힘"을 방지.
+  const resolveFormAccountId = useCallback(
+    (tradeType: TradeType): string | null => {
+      if (effectiveAccountId !== null) return effectiveAccountId;
+      if (tradeType !== TRADE_TYPE.SELL) return null; // 매수는 localStorage 기본 계좌에 맡김
+      const netByAccount = new Map<string, number>();
+      for (const t of filteredTrades) {
+        const delta = t.trade_type === TRADE_TYPE.BUY ? t.quantity : -t.quantity;
+        netByAccount.set(t.account_id, (netByAccount.get(t.account_id) ?? 0) + delta);
+      }
+      let best: string | null = null;
+      let bestQty = 0;
+      for (const [accId, qty] of netByAccount) {
+        if (qty > bestQty) {
+          bestQty = qty;
+          best = accId;
+        }
+      }
+      return best;
+    },
+    [effectiveAccountId, filteredTrades],
+  );
+
+  const handleOpenForm = useCallback(
+    (tradeType: TradeType) => {
+      openTradeForm({ accounts, prefill: { stock: selectedStock, tradeType, accountId: resolveFormAccountId(tradeType) } });
+    },
+    [openTradeForm, accounts, selectedStock, resolveFormAccountId],
   );
 
   return (
@@ -334,10 +408,36 @@ function StockPanelContent({ payload, onClose, openTrade, openAssetHistory, onSw
       trades={filteredTrades}
       stats={stats}
       accounts={accounts}
+      holdingQuantity={holdingQuantity}
       onBack={onClose}
       onTradePress={handleTradePress}
       onAssetHistoryPress={() => openAssetHistory({ assetName, ticker, country })}
       onSwitchStock={onSwitchStock}
+      onBuy={() => handleOpenForm(TRADE_TYPE.BUY)}
+      onSell={() => handleOpenForm(TRADE_TYPE.SELL)}
+    />
+  );
+}
+
+interface TradeFormHostProps {
+  externalPayload: TradeFormPayload | null;
+  onClose: () => void;
+}
+
+function TradeFormHost({ externalPayload, onClose }: TradeFormHostProps) {
+  // TradePanel/StockPanel 과 동일한 staggered 패턴 — 매 오픈마다 remountKey 로 폼/step 을 reset.
+  const { open, payload, remountKey } = useStaggeredPanel(externalPayload);
+  if (payload === null) return null;
+  return (
+    <TradeFormPanel
+      key={`tradeform-${remountKey}`}
+      open={open}
+      onOpenChange={onClose}
+      accounts={payload.accounts}
+      prefillStock={payload.prefill.stock}
+      prefillTradeType={payload.prefill.tradeType}
+      prefillAccountId={payload.prefill.accountId}
+      source="stock_detail"
     />
   );
 }
