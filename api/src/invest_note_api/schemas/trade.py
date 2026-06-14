@@ -28,6 +28,14 @@ from ..utils.numbers import strip_comma_number
 
 TRADE_FREE_TEXT_MAX_LEN = 5000
 
+
+def _clean_tag_label(raw: str) -> str:
+    """사용자 정의 태그 라벨 trim + 최대 길이 검증(공통). 빈 값 허용 여부는 호출측 책임."""
+    label = raw.strip()
+    if len(label) > CUSTOM_TAG_MAX_LEN:
+        raise ValueError(f"태그는 {CUSTOM_TAG_MAX_LEN}자 이내여야 합니다.")
+    return label
+
 # 해외(비-KRW) 거래에 거래 시점 환율이 누락(1.0)됐을 때의 에러 메시지.
 # TradeCreate(model_validator)와 PATCH 라우터 가드가 공유 — 계약상 동일 문구 유지.
 FOREIGN_EXCHANGE_RATE_REQUIRED_MSG = "해외 거래는 거래 시점 환율(exchange_rate)이 필요합니다."
@@ -191,11 +199,9 @@ class TradeUpdate(BaseModel):
         seen: set[str] = set()
         result: list[str] = []
         for raw in v:
-            tag = raw.strip()
+            tag = _clean_tag_label(raw)
             if not tag or tag in seen:
                 continue
-            if len(tag) > CUSTOM_TAG_MAX_LEN:
-                raise ValueError(f"태그는 {CUSTOM_TAG_MAX_LEN}자 이내여야 합니다.")
             seen.add(tag)
             result.append(tag)
         if len(result) > MAX_CUSTOM_TAGS:
@@ -231,9 +237,7 @@ class CustomTagCreate(BaseModel):
     @field_validator("label")
     @classmethod
     def _normalize_label(cls, v: str) -> str:
-        label = v.strip()
+        label = _clean_tag_label(v)
         if not label:
             raise ValueError("태그를 입력해주세요.")
-        if len(label) > CUSTOM_TAG_MAX_LEN:
-            raise ValueError(f"태그는 {CUSTOM_TAG_MAX_LEN}자 이내여야 합니다.")
         return label

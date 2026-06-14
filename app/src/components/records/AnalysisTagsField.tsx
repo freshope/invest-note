@@ -19,15 +19,17 @@ import {
   useDeleteCustomTag,
 } from "@/hooks/useCustomTags";
 import { cn } from "@/lib/utils";
+import {
+  CHIP_CLASS,
+  CHIP_SELECTED_CLASS,
+  CHIP_UNSELECTED_CLASS,
+} from "@/components/shared/ToggleChipGrid";
 import type { ReasoningTag } from "@/types/database";
 
 const { CUSTOM_TAG_MAX_LEN, CUSTOM_TAG_MAX_COUNT } = VALIDATION_LIMITS;
 
-// ToggleChipGrid 와 동일한 칩 시각 — 프리셋/커스텀 칩이 한 그리드에서 구분 없이 보이게 한다.
-const CHIP_BASE =
-  "rounded-xl border px-3 py-2.5 text-[13px] font-semibold transition-colors";
-const CHIP_SELECTED = "bg-primary text-primary-foreground border-primary";
-const CHIP_UNSELECTED = "border-border bg-muted/50 text-muted-foreground";
+// 칩 시각은 ToggleChipGrid 상수를 단일 출처로 재사용. flex 레이아웃이라 가로 패딩(px-3)만 추가.
+const CHIP_BASE = cn(CHIP_CLASS, "px-3");
 
 interface AnalysisTagsFieldProps {
   reasoningTags: ReasoningTag[];
@@ -79,7 +81,7 @@ export function AnalysisTagsField({
             key={opt.value}
             type="button"
             onClick={() => toggleReasoning(opt.value)}
-            className={cn(CHIP_BASE, selected ? CHIP_SELECTED : CHIP_UNSELECTED)}
+            className={cn(CHIP_BASE, selected ? CHIP_SELECTED_CLASS : CHIP_UNSELECTED_CLASS)}
           >
             {opt.label}
           </button>
@@ -96,7 +98,7 @@ export function AnalysisTagsField({
             className={cn(
               CHIP_BASE,
               "max-w-full break-all text-left",
-              selected ? CHIP_SELECTED : CHIP_UNSELECTED,
+              selected ? CHIP_SELECTED_CLASS : CHIP_UNSELECTED_CLASS,
             )}
           >
             {label}
