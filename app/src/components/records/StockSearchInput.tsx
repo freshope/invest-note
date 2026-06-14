@@ -22,18 +22,20 @@ interface StockSearchInputProps {
   onSelectComplete?: () => void;
   value: string;
   onChange: (value: string) => void;
+  // prefill 로 이미 선택된 종목명 — 진입 시 드롭다운 자동 오픈을 억제한다.
+  initialSelectedName?: string;
 }
 
 async function fetchStocks(query: string): Promise<StockSearchResult[]> {
   return stocksApi.search(query);
 }
 
-export function StockSearchInput({ onSelect, onSelectComplete, value, onChange }: StockSearchInputProps) {
+export function StockSearchInput({ onSelect, onSelectComplete, value, onChange, initialSelectedName }: StockSearchInputProps) {
   // hidden: 사용자가 명시적으로 닫은 상태 (Escape / 외부 클릭)
   const [hidden, setHidden] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
-  // 마지막으로 선택한 종목명 — value와 일치하면 드롭다운 억제
-  const [lastSelected, setLastSelected] = useState("");
+  // 마지막으로 선택한 종목명 — value와 일치하면 드롭다운 억제. prefill 진입 시 자동 오픈 방지.
+  const [lastSelected, setLastSelected] = useState(initialSelectedName ?? "");
   const containerRef = useRef<HTMLDivElement>(null);
   const debouncedValue = useDebounce(value, 300);
 

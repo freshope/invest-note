@@ -84,12 +84,29 @@ function getInitialAccountId(accounts: Account[]): string {
   return stored && accounts.some((a) => a.id === stored) ? stored : "";
 }
 
+// prefillAccountId 가 현재 계좌 목록에 있으면 우선, 없으면 localStorage 기본값.
+function resolveAccountId(accounts: Account[], prefillAccountId?: string | null): string {
+  if (prefillAccountId && accounts.some((a) => a.id === prefillAccountId)) return prefillAccountId;
+  return getInitialAccountId(accounts);
+}
+
 interface TradeBasicFormProps {
   accounts: Account[];
   onTradeCreated: (tradeId: string, tradeType: TradeType) => void;
+  prefillStock?: SelectedStock;
+  prefillTradeType?: TradeType;
+  prefillAccountId?: string | null;
+  source?: string;
 }
 
-export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps) {
+export function TradeBasicForm({
+  accounts,
+  onTradeCreated,
+  prefillStock,
+  prefillTradeType,
+  prefillAccountId,
+  source = "manual",
+}: TradeBasicFormProps) {
   const queryClient = useQueryClient();
 
   const {
@@ -103,12 +120,12 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      trade_type: TRADE_TYPE.BUY,
-      account_id: getInitialAccountId(accounts),
-      asset_name: "",
-      ticker_symbol: "",
-      country_code: "OTHER",
-      exchange: "",
+      trade_type: prefillTradeType ?? TRADE_TYPE.BUY,
+      account_id: resolveAccountId(accounts, prefillAccountId),
+      asset_name: prefillStock?.name ?? "",
+      ticker_symbol: prefillStock?.code ?? "",
+      country_code: prefillStock?.market ?? "OTHER",
+      exchange: prefillStock?.exchange ?? "",
       amount_krw: 0,
       traded_at: new Date(),
       price: 0,
@@ -135,7 +152,8 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
   }, [isForeign, usdkrw, price, quantity, getFieldState, setValue]);
   const [calOpen, setCalOpen] = useState(false);
   const priceInputRef = useRef<HTMLInputElement>(null);
-  const selectedAssetNameRef = useRef("");
+  // prefill 종목명을 "선택됨"으로 초기화 → 자동완성 드롭다운 억제 + clearStockSelection 오발동 방지.
+  const selectedAssetNameRef = useRef(prefillStock?.name ?? "");
   const handleFocusPrice = useCallback(() => priceInputRef.current?.focus(), []);
 
   const clearStockSelection = useCallback(() => {
@@ -243,7 +261,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
       ]);
       capture("trade_recorded", {
         trade_type: result.trade_type, // BUY/SELL 만
-        source: "manual",
+        source,
         country: values.country_code, // KR/US 등 — 민감값 아님
       });
       onTradeCreated(result.id, result.trade_type);
@@ -393,6 +411,7 @@ export function TradeBasicForm({ accounts, onTradeCreated }: TradeBasicFormProps
                   onChange={(v) => handleAssetNameChange(v, field.onChange)}
                   onSelect={handleStockSelect}
                   onSelectComplete={handleFocusPrice}
+                  initialSelectedName={prefillStock?.name}
                 />
               );
             }}
