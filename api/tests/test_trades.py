@@ -9,7 +9,7 @@ from uuid import uuid4
 import asyncpg
 import pytest
 
-from invest_note_api.schemas.trade import TRADE_FREE_TEXT_MAX_LEN, TradeCreate
+from invest_note_api.schemas.trade import TRADE_FREE_TEXT_MAX_LEN, TradeCreate, TradeUpdate
 from tests.conftest import TEST_USER_ID
 from tests.fake_pool import FakeConnection, make_fake_acquire, make_fake_pool
 
@@ -35,6 +35,7 @@ def _make_trade_row(
     country_code="KR",
     exchange="",
     created_at=None,
+    custom_tags=None,
 ) -> dict:
     now = _dt("2024-01-10T09:00:00+09:00")
     return {
@@ -51,6 +52,7 @@ def _make_trade_row(
         "traded_at": traded_at or now,
         "strategy_type": strategy_type,
         "reasoning_tags": [],
+        "custom_tags": custom_tags or [],
         "buy_reason": None,
         "sell_reason": None,
         "emotion": None,
@@ -586,6 +588,7 @@ class TestImportCommit:
         update_sql = merge_updates[0].lower()
         for forbidden in (
             "strategy_type", "buy_reason", "sell_reason", "emotion", "reasoning_tags",
+            "custom_tags",
             "price", "quantity", "asset_name", "ticker_symbol", "trade_type",
         ):
             assert forbidden not in update_sql, f"머지 UPDATE 에 {forbidden} 포함됨: {update_sql}"
@@ -1120,6 +1123,42 @@ class TestPatchTrade:
         assert resp.status_code == 204
         assert not any("UPDATE trades SET" in q for q in sql_calls)
 
+    def test_patch_sell_custom_tags_only_ignored(self, trades_client, monkeypatch):
+        """SELL의 custom_tags 단독 patch도 무시 — 매수에서 자동 상속되는 필드."""
+        sql_calls = _capture_sql(monkeypatch)
+        sell_row = _make_trade_row(id_="s1", trade_type="SELL", quantity=10)
+        conn = FakeConnection(_to_record(sell_row))
+        with _patch_trades(conn):
+            resp = trades_client.patch("/trades/s1", json={"custom_tags": ["배당"]})
+        assert resp.status_code == 204
+        assert not any("UPDATE trades SET" in q for q in sql_calls)
+
+    def test_patch_buy_custom_tags_recalculates_matched_sell(self, trades_client, monkeypatch):
+        """BUY custom_tags 수정은 매칭 SELL의 자동 상속 custom_tags 재계산을 트리거해야 함."""
+        sql_calls = _capture_sql(monkeypatch)
+        buy_row = _make_trade_row(
+            id_="b1", trade_type="BUY", quantity=10,
+            traded_at=_dt("2024-01-01T09:00:00+09:00"),
+        )
+        sell_row = _make_trade_row(
+            id_="s1", trade_type="SELL", quantity=10,
+            traded_at=_dt("2024-02-01T09:00:00+09:00"),
+        )
+        conn = FakeConnection(
+            _to_record(buy_row),                          # existing fetchrow
+            [_to_record(buy_row), _to_record(sell_row)],  # list_trades (PNL 분기)
+            "UPDATE 1",                                   # patch_trade
+        )
+        with _patch_trades(conn):
+            resp = trades_client.patch("/trades/b1", json={"custom_tags": ["테마주"]})
+        assert resp.status_code == 204
+        _assert_lock_before_list(sql_calls)
+        # recalc UPDATE 에 custom_tags = $6 컬럼이 포함되어야 함(SELL 자동 상속).
+        assert any(
+            "custom_tags = $6" in q and "UPDATE trades SET profit_loss" in q
+            for q in sql_calls
+        )
+
     def test_patch_sell_emotion_with_pnl_field_strips_emotion(self, trades_client, monkeypatch):
         """SELL의 emotion과 price를 함께 patch하면 emotion만 빠지고 price는 처리되어야 한다."""
         sql_calls = _capture_sql(monkeypatch)
@@ -1234,6 +1273,76 @@ class TestPatchTrade:
         with _patch_trades(conn):
             resp = trades_client.patch("/trades/t1", json={"buy_reason": "메모"})
         assert resp.status_code == 204
+
+
+class TestCustomTagsRegistry:
+    def test_list_shape(self, trades_client):
+        """GET /trades/custom-tags 응답은 {tags: [{id, label}]} — FE 계약 잠금."""
+        conn = FakeConnection([
+            {"id": "11111111-1111-1111-1111-111111111111", "label": "배당"},
+            {"id": "22222222-2222-2222-2222-222222222222", "label": "테마주"},
+        ])
+        with _patch_trades(conn):
+            resp = trades_client.get("/trades/custom-tags")
+        assert resp.status_code == 200
+        assert resp.json() == {"tags": [
+            {"id": "11111111-1111-1111-1111-111111111111", "label": "배당"},
+            {"id": "22222222-2222-2222-2222-222222222222", "label": "테마주"},
+        ]}
+
+    def test_list_empty(self, trades_client):
+        conn = FakeConnection([])
+        with _patch_trades(conn):
+            resp = trades_client.get("/trades/custom-tags")
+        assert resp.status_code == 200
+        assert resp.json() == {"tags": []}
+
+    def test_create_returns_id_label(self, trades_client):
+        """POST /trades/custom-tags → {id, label}, 201."""
+        conn = FakeConnection({"id": "33333333-3333-3333-3333-333333333333", "label": "배당"})
+        with _patch_trades(conn):
+            resp = trades_client.post("/trades/custom-tags", json={"label": "  배당 "})
+        assert resp.status_code == 201
+        assert resp.json() == {"id": "33333333-3333-3333-3333-333333333333", "label": "배당"}
+
+    def test_create_blank_label_422(self, trades_client):
+        resp = trades_client.post("/trades/custom-tags", json={"label": "   "})
+        assert resp.status_code == 422
+
+    def test_create_too_long_422(self, trades_client):
+        resp = trades_client.post("/trades/custom-tags", json={"label": "x" * 21})
+        assert resp.status_code == 422
+
+    def test_delete_ok(self, trades_client):
+        conn = FakeConnection("DELETE 1")
+        with _patch_trades(conn):
+            resp = trades_client.delete("/trades/custom-tags/33333333-3333-3333-3333-333333333333")
+        assert resp.status_code == 204
+
+    def test_delete_not_found_404(self, trades_client):
+        conn = FakeConnection("DELETE 0")
+        with _patch_trades(conn):
+            resp = trades_client.delete("/trades/custom-tags/33333333-3333-3333-3333-333333333333")
+        assert resp.status_code == 404
+
+
+class TestCustomTagsNormalization:
+    """TradeUpdate.custom_tags 정규화 validator — trim/빈값/중복/길이/개수."""
+
+    def test_trim_dedupe_drop_empty(self):
+        u = TradeUpdate(custom_tags=["  배당 ", "배당", "", "테마주", "  "])
+        assert u.custom_tags == ["배당", "테마주"]
+
+    def test_none_passthrough(self):
+        assert TradeUpdate(custom_tags=None).custom_tags is None
+
+    def test_tag_too_long_rejected(self):
+        with pytest.raises(ValueError):
+            TradeUpdate(custom_tags=["x" * 21])
+
+    def test_too_many_tags_rejected(self):
+        with pytest.raises(ValueError):
+            TradeUpdate(custom_tags=[f"태그{i}" for i in range(11)])
 
 
 class TestDeleteTrade:

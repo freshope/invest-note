@@ -42,6 +42,7 @@ export interface Trade {
   // 근거
   strategy_type: StrategyType | null;
   reasoning_tags: ReasoningTag[];
+  custom_tags: string[];
   buy_reason: string | null;
   sell_reason: string | null;
 

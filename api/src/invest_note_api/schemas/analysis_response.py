@@ -29,6 +29,13 @@ class TagStatsResponse(CamelModel):
     sum_pnl: float
 
 
+class CustomTagStatsResponse(CamelModel):
+    tag: str
+    count: int
+    win_rate: float
+    sum_pnl: float
+
+
 class StrategyAdherenceStatsResponse(CamelModel):
     type: str
     count: int
@@ -46,6 +53,7 @@ class AnalysisSummaryResponse(CamelModel):
     by_strategy: list[StrategyStatsResponse]
     by_emotion: list[EmotionStatsResponse]
     by_tag: list[TagStatsResponse]
+    by_custom_tag: list[CustomTagStatsResponse]
     strategy_adherence_rate: float
     by_strategy_adherence: list[StrategyAdherenceStatsResponse]
     missing_tag_rate: float

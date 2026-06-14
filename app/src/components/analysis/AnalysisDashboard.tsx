@@ -8,6 +8,7 @@ import { EmotionBreakdown } from "./EmotionBreakdown";
 import { StrategyBreakdown } from "./StrategyBreakdown";
 import { StrategyAdherencePanel } from "./StrategyAdherencePanel";
 import { ReasoningBreakdown } from "./ReasoningBreakdown";
+import { CustomTagBreakdown } from "./CustomTagBreakdown";
 import { BehaviorRadar } from "./BehaviorRadar";
 import { DiversificationPanel } from "./DiversificationPanel";
 import { ReviewQualityPanel } from "./ReviewQualityPanel";
@@ -125,6 +126,13 @@ export function AnalysisDashboard() {
                   data={summary.byTag}
                   summary={{ feelingRate: summary.feelingRate, missingTagRate: summary.missingTagRate }}
                 />
+              </SectionCard>
+            )}
+
+            {/* 섹션 6-1: 사용자 정의 태그별 성과 */}
+            {summary.byCustomTag.length > 0 && (
+              <SectionCard title="사용자 정의 태그별 성과">
+                <CustomTagBreakdown data={summary.byCustomTag} />
               </SectionCard>
             )}
 

@@ -4,6 +4,19 @@
 
 ---
 
+## 2026-06-14 | 사용자 정의 분석 태그 — 레지스트리 테이블 + 거래엔 라벨 저장(디커플링), reasoning_tags 미러링
+
+- **맥락:** 분석 태그가 고정 ENUM `reasoning_tags` 4종(TECHNICAL/FUNDAMENTAL/NEWS/FEELING)뿐이라 사용자가 자기 분류(배당·테마주 등)를 못 남겼다. 자유 텍스트 사용자 태그를 추가하되, ENUM 구조·SELL 자동상속·분석 집계와 정합을 유지해야 했다.
+- **결정:**
+  - ① **프리셋 ENUM 유지 + 자유텍스트 평행.** 기존 `reasoning_tags reasoning_tag[]` 는 그대로 두고 `trades.custom_tags text[]` 컬럼을 평행 추가(비파괴적). 프리셋은 타입드 집계(`by_tag`/UNTAGGED 버킷)를 보존, 커스텀은 문자열 버킷(`by_custom_tag`, UNTAGGED 없음)으로 분리.
+  - ② **레지스트리 테이블(`custom_tags`) = 선택 카탈로그, 거래엔 라벨(text) 저장.** 사용자가 만든 태그는 별도 테이블(id/user_id/label, RLS)에 영속(거래 부착 없이도). 거래는 id FK 가 아니라 **라벨 문자열**을 저장 → 레지스트리에서 태그를 삭제해도 과거 거래 라벨·분석은 불변. 등록/수정 폼은 프리셋 4종 + 레지스트리 태그를 한 그리드에 노출하고 `+` 바텀시트로 생성/삭제.
+  - ③ **reasoning_tags 파이프라인 전체 미러링.** BUY 입력 → SELL 자동상속(`_meta_from_consumed_latest`·`FifoLot`·`GroupPnLEntry`·`pnl_sync`·`TRADE_FIELD_META.sell_auto_derived`) → 분석 집계(`by_custom_tag`)를 동일 패턴으로 복제. 분석이 SELL 기준 집계라 커스텀 태그도 SELL 에 실려야 하므로 auto-derive 가 필수.
+  - ④ **생성 멱등 + 자동 선택.** `POST /trades/custom-tags` 는 `ON CONFLICT(user_id,label) DO UPDATE…RETURNING` 으로 1쿼리 멱등. 바텀시트에서 새 태그 저장 시 현재 편집 거래에 자동 선택.
+- **이유:** ENUM 은 런타임 확장 불가라 자유 텍스트는 별도 컬럼 필수. 거래에 id 대신 라벨을 저장하면 레지스트리 라이프사이클(삭제/정리)과 과거 데이터·분석을 디커플 — "삭제했더니 과거 거래 분석이 깨졌다"를 원천 차단. 미러링은 검증된 기존 파이프라인 재사용이라 새 join 발명보다 저위험.
+- **트레이드오프:** 컬럼·집계·폼 필드가 reasoning/custom 2벌로 늘어 표면적 증가(3종째 태그가 생기면 3배). 라벨 저장이라 레지스트리 rename 이 과거 거래에 소급 안 됨(의도 — 분석 안정성 우선). 태그 rename/사용건수/미사용 정리 UX 는 이번 범위에서 제외.
+
+---
+
 ## 2026-06-12 | PostHog 제품 분석 도입 — FE 전용·Cloud·정적 export instrumentation-client·민감값 보호
 
 - **맥락:** 사용자가 어떤 화면을 쓰고 어떤 기능에 도달하는지 알 수 있는 analytics 가 전무했다. 제품 의사결정 근거를 위해 PostHog 도입. 핵심 제약은 앱이 순수 웹이 아니라 `next.config output:"export"` 정적 빌드를 Capacitor 웹뷰(iOS `capacitor://localhost`, Android `https://localhost`)로 패키징한 모바일이라는 점.

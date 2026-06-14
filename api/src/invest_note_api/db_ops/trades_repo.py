@@ -207,17 +207,17 @@ INSERT INTO trades (
     trade_type, price, quantity, traded_at, commission, tax,
     country_code, exchange, exchange_rate,
     strategy_type, reasoning_tags, buy_reason, sell_reason,
-    emotion, result
+    emotion, result, custom_tags
 ) VALUES (
     $1, $2, $3, $4, $5,
     $6, $7, $8, $9, $10, $11,
     $12, $13, $14,
     $15, $16, $17, $18,
-    $19, $20
+    $19, $20, $21
 )
 """
 
-_TRADE_INSERT_PARAM_COUNT = 20
+_TRADE_INSERT_PARAM_COUNT = 21
 
 
 def _trade_insert_params(user_id: str, data: dict) -> tuple:
@@ -242,6 +242,7 @@ def _trade_insert_params(user_id: str, data: dict) -> tuple:
         data.get("sell_reason"),
         data.get("emotion"),
         data.get("result"),
+        data.get("custom_tags", []),
     )
 
 
@@ -279,6 +280,7 @@ TRADE_FIELD_META: dict[str, TradeFieldMeta] = {
     "strategy_type":  TradeFieldMeta(patchable=True, pnl_affecting=True),
     "emotion":        TradeFieldMeta(patchable=True, pnl_affecting=True, sell_auto_derived=True),
     "reasoning_tags": TradeFieldMeta(patchable=True, pnl_affecting=True, sell_auto_derived=True),
+    "custom_tags":    TradeFieldMeta(patchable=True, pnl_affecting=True, sell_auto_derived=True),
     "buy_reason":     TradeFieldMeta(patchable=True),
     "sell_reason":    TradeFieldMeta(patchable=True),
     "result":         TradeFieldMeta(patchable=True, sell_auto_derived=True),

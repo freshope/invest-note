@@ -11,8 +11,10 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..domain.trade_types import (
     CURRENCY_KRW,
+    CUSTOM_TAG_MAX_LEN,
     CountryCode,
     EmotionType,
+    MAX_CUSTOM_TAGS,
     MAX_NAME_LEN,
     MarketType,
     ReasoningTag,
@@ -25,6 +27,14 @@ from ..domain.trade_utils import KST_OFFSET
 from ..utils.numbers import strip_comma_number
 
 TRADE_FREE_TEXT_MAX_LEN = 5000
+
+
+def _clean_tag_label(raw: str) -> str:
+    """사용자 정의 태그 라벨 trim + 최대 길이 검증(공통). 빈 값 허용 여부는 호출측 책임."""
+    label = raw.strip()
+    if len(label) > CUSTOM_TAG_MAX_LEN:
+        raise ValueError(f"태그는 {CUSTOM_TAG_MAX_LEN}자 이내여야 합니다.")
+    return label
 
 # 해외(비-KRW) 거래에 거래 시점 환율이 누락(1.0)됐을 때의 에러 메시지.
 # TradeCreate(model_validator)와 PATCH 라우터 가드가 공유 — 계약상 동일 문구 유지.
@@ -168,6 +178,7 @@ class TradeUpdate(BaseModel):
     strategy_type: StrategyType | None = None
     emotion: EmotionType | None = None
     reasoning_tags: list[ReasoningTag] | None = None
+    custom_tags: list[str] | None = None
     buy_reason: str | None = None
     sell_reason: str | None = None
     result: TradeResult | None = None
@@ -178,6 +189,24 @@ class TradeUpdate(BaseModel):
         if v is not None and len(v) > TRADE_FREE_TEXT_MAX_LEN:
             raise ValueError(f"자유 텍스트는 {TRADE_FREE_TEXT_MAX_LEN}자 이내여야 합니다.")
         return v
+
+    @field_validator("custom_tags")
+    @classmethod
+    def _normalize_custom_tags(cls, v: list[str] | None) -> list[str] | None:
+        """trim → 빈 값 제거 → 순서 보존 중복 제거 → 길이/개수 제한."""
+        if v is None:
+            return None
+        seen: set[str] = set()
+        result: list[str] = []
+        for raw in v:
+            tag = _clean_tag_label(raw)
+            if not tag or tag in seen:
+                continue
+            seen.add(tag)
+            result.append(tag)
+        if len(result) > MAX_CUSTOM_TAGS:
+            raise ValueError(f"태그는 최대 {MAX_CUSTOM_TAGS}개까지 가능합니다.")
+        return result
 
     @field_validator("price", "quantity", "exchange_rate", mode="before")
     @classmethod
@@ -198,3 +227,17 @@ class TradeBulkDeleteRequest(BaseModel):
     """기록 탭 다중 선택 일괄 삭제 요청 — 1~200건 제한."""
 
     ids: list[str] = Field(..., min_length=1, max_length=200)
+
+
+class CustomTagCreate(BaseModel):
+    """사용자 정의 태그 레지스트리 생성 요청."""
+
+    label: str
+
+    @field_validator("label")
+    @classmethod
+    def _normalize_label(cls, v: str) -> str:
+        label = _clean_tag_label(v)
+        if not label:
+            raise ValueError("태그를 입력해주세요.")
+        return label

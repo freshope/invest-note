@@ -135,13 +135,14 @@ class TestComputeGroupPnL:
         assert result["s1"].strategy_type == "SWING"
 
     def test_reasoning_tags_emotion_from_latest_consumed_buy(self):
-        # 두 BUY를 모두 소비하면 가장 최근(b2) BUY의 tags/emotion이 SELL에 적용된다.
+        # 두 BUY를 모두 소비하면 가장 최근(b2) BUY의 tags/custom_tags/emotion이 SELL에 적용된다.
         trades = [
             make_trade(
                 id="b1",
                 trade_type="BUY",
                 quantity=5,
                 reasoning_tags=["FUNDAMENTAL"],
+                custom_tags=["배당"],
                 emotion="CALM",
                 traded_at=_dt("2024-01-01T09:00:00+09:00"),
             ),
@@ -150,6 +151,7 @@ class TestComputeGroupPnL:
                 trade_type="BUY",
                 quantity=5,
                 reasoning_tags=["TECHNICAL", "NEWS"],
+                custom_tags=["테마주", "단타"],
                 emotion="CONFIDENT",
                 traded_at=_dt("2024-01-05T09:00:00+09:00"),
             ),
@@ -162,6 +164,7 @@ class TestComputeGroupPnL:
         ]
         result = compute_group_pnl(trades, self._key())
         assert result["s1"].reasoning_tags == ["TECHNICAL", "NEWS"]
+        assert result["s1"].custom_tags == ["테마주", "단타"]
         assert result["s1"].emotion == "CONFIDENT"
 
     def test_partial_sell_uses_only_consumed_buy(self):

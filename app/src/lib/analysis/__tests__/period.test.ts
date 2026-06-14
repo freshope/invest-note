@@ -19,6 +19,7 @@ function makeTrade(id: string, traded_at: string): Trade {
     traded_at,
     strategy_type: null,
     reasoning_tags: [],
+    custom_tags: [],
     buy_reason: null,
     sell_reason: null,
     emotion: null,

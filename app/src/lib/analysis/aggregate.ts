@@ -29,6 +29,13 @@ export interface TagStats {
   sumPnL: number;
 }
 
+export interface CustomTagStats {
+  tag: string;
+  count: number;
+  winRate: number;
+  sumPnL: number;
+}
+
 export interface StrategyAdherenceStats {
   type: StrategyAdherence;
   count: number;
@@ -46,6 +53,7 @@ export interface AnalysisSummary {
   byStrategy: StrategyStats[];
   byEmotion: EmotionStats[];
   byTag: TagStats[];
+  byCustomTag: CustomTagStats[];
   missingTagRate: number;
   feelingRate: number;
   reflectionRate: number;
