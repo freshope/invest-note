@@ -42,18 +42,21 @@ const FLAG_CODES = new Set([
 export function CountryBadge({ countryCode, className }: { countryCode: string; className?: string }) {
   const label = getCountryLabel(countryCode) ?? "기타";
   const code = countryCode.toLowerCase();
-  const [imgError, setImgError] = useState(false);
+  const src = `/flags/4x3/${code}.svg`;
+  // 실패한 src 자체를 기억한다 — boolean 으로 두면 인스턴스 재사용 시(리스트 재정렬)
+  // 다른 정상 국가까지 폴백에 고착된다.
+  const [erroredSrc, setErroredSrc] = useState<string | null>(null);
 
-  if (FLAG_CODES.has(code) && !imgError) {
+  if (FLAG_CODES.has(code) && erroredSrc !== src) {
     return (
       <img
-        src={`/flags/4x3/${code}.svg`}
+        src={src}
         alt={label}
         title={label}
         loading="lazy"
         className={cn("shrink-0 rounded-[3px] object-cover ring-1 ring-black/10", className)}
         style={{ width: 20, height: 15 }}
-        onError={() => setImgError(true)}
+        onError={() => setErroredSrc(src)}
       />
     );
   }
