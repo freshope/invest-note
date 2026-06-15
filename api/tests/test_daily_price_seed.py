@@ -933,6 +933,32 @@ async def test_fetch_yahoo_us_closes_parses_timestamp_close():
     assert {r["ticker"] for r in rows} == {"AAPL"}
 
 
+async def test_fetch_yahoo_us_closes_close_epoch_keeps_et_session_date():
+    """마감(16:00 ET) 타임스탬프 → ET 세션 날짜로 정규화(KST 변환이면 익일 토요일로 어긋남).
+
+    Yahoo 마지막 캔들/라이브는 개장(09:30)이 아닌 마감(16:00 ET) epoch 라, KST 변환 시
+    금요일 세션이 토요일로 밀려 거래일 아닌 날이 자산 추이에 노출되던 회귀의 가드.
+    """
+    from zoneinfo import ZoneInfo
+
+    et = ZoneInfo("America/New_York")
+    # 2026-06-12 은 금요일. 16:00 EDT = 20:00 UTC → KST 2026-06-13(토), ET 2026-06-12.
+    friday_close = int(datetime(2026, 6, 12, 16, 0, tzinfo=et).timestamp())
+    points = [(friday_close, 205.25)]
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_yahoo_us_body("AAPL", points))
+
+    async with _mock_client(handler) as client:
+        rows = await daily_price_seed._fetch_yahoo_us_closes(
+            client, "AAPL", date(2026, 6, 12), date(2026, 6, 12)
+        )
+
+    assert rows == [
+        {"ticker": "AAPL", "close_date": date(2026, 6, 12), "close_price": 205.25},
+    ]
+
+
 async def test_fetch_yahoo_us_closes_skips_null_close():
     """null close(휴장/미체결 캔들)는 스킵, 나머지는 채택."""
     points = [

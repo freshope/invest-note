@@ -8,6 +8,9 @@ if TYPE_CHECKING:
     from invest_note_api.domain.trade_types import Trade
 
 KST = ZoneInfo("Asia/Seoul")
+# US 거래소(NYSE/NASDAQ) 세션 날짜 판정용. epoch→date 를 KST 로 하면 마감(16:00 ET)이
+# KST 익일로 밀려 거래일이 토요일로 어긋난다 → US epoch 는 ET 로 변환해 세션 날짜를 고정한다.
+US_EASTERN = ZoneInfo("America/New_York")
 KST_OFFSET = "+09:00"
 MS_PER_DAY = 1000 * 60 * 60 * 24
 

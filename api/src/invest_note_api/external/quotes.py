@@ -16,6 +16,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TypedDict
+from zoneinfo import ZoneInfo
 
 import httpx
 from cachetools import TTLCache
@@ -23,7 +24,7 @@ from fastapi import Request
 
 from invest_note_api.config import DEFAULT_QUOTE_PROVIDERS, DEFAULT_US_QUOTE_PROVIDERS
 from invest_note_api.domain.trade_types import COUNTRY_US, DEFAULT_COUNTRY, MAX_CODE_LEN
-from invest_note_api.domain.trade_utils import KST, position_key
+from invest_note_api.domain.trade_utils import KST, US_EASTERN, position_key
 from invest_note_api.external.constants import (
     CURRENCY_KRW,
     CURRENCY_USD,
@@ -102,8 +103,12 @@ def _parse_basic_price(data: dict) -> tuple[float, str | None]:
     return (float(raw) if raw else 0.0, None)  # basic 응답엔 체결 일시 필드 없음.
 
 
-def _parse_yahoo_chart_price(data: dict) -> tuple[float, str | None]:
-    """Yahoo chart v8: chart.result[0].meta.regularMarketPrice (+regularMarketTime epoch)."""
+def _parse_yahoo_chart_price(data: dict, tz: ZoneInfo = KST) -> tuple[float, str | None]:
+    """Yahoo chart v8: chart.result[0].meta.regularMarketPrice (+regularMarketTime epoch).
+
+    tz: traded_on 산출 시간대. KR(기본 KST)은 그대로, US 는 ET(US_EASTERN)를 넘긴다 —
+    KST 변환은 마감(16:00 ET) 체결을 익일로 밀어 휴장일 판정(market_open_today)이 어긋난다.
+    """
     result = (data.get("chart") or {}).get("result") or []
     if not result:
         return (0.0, None)
@@ -111,7 +116,7 @@ def _parse_yahoo_chart_price(data: dict) -> tuple[float, str | None]:
     raw = meta.get("regularMarketPrice")
     ts = meta.get("regularMarketTime")
     traded_on = (
-        datetime.fromtimestamp(ts, KST).date().isoformat()
+        datetime.fromtimestamp(ts, tz).date().isoformat()
         if isinstance(ts, (int, float)) and ts > 0
         else None
     )
@@ -207,7 +212,7 @@ async def _fetch_yahoo_us(client: httpx.AsyncClient, code: str) -> QuoteResult |
     if not result:
         return None
     meta = result[0].get("meta") or {}
-    price, traded_on = _parse_yahoo_chart_price(data)
+    price, traded_on = _parse_yahoo_chart_price(data, US_EASTERN)
     if price <= 0:
         return None
     # 다운스트림(merge_quotes/to_krw)은 quote 통화가 아니라 position 통화(country=US→USD)로
