@@ -33,3 +33,5 @@ Key routing rules:
 | 2026-06-07 | spec-current/spec-history → issue-current/issue-history 경로 갱신 | 에이전트 4종 + 워크플로 스킬 | docs 폴더·파일 이름 변경 |
 | 2026-06-08 | issue-current/issue-history → spec-current/spec-history 경로 복원 (2026-06-07 역방향) | docs 폴더·AGENTS.md·참조 | devtools 스킬이 spec-* 네이밍으로 복원됨 |
 | 2026-06-12 | 디렉토리 rename `be`→`api`, `fe`→`app` 경로 갱신 | 에이전트 4종 + 워크플로 스킬·문서·빌드/CI/OTA 설정 | 폴더명을 역할이 명확한 api/app 으로 변경 |
+| 2026-06-14 | 서브에이전트 모드 → 에이전트 팀 모드 재구성 (TeamCreate + 동료 SendMessage + 공유 태스크리스트, frontmatter에 팀 도구 추가) | 에이전트 4종 + 워크플로 스킬 | 환경에 TeamCreate/SendMessage(peer-to-peer) 사용 가능 확인 → 리더 round-trip 없이 be↔fe shape 협상·QA→엔지니어 직접 환류 |
+| 2026-06-14 | 잔존 `issue-current`/`issue-history` → `spec-current`/`spec-history` 경로 정렬(20곳) | 에이전트 4종 + 워크플로 스킬 | 2026-06-08 복원이 누락했던 drift. 실제 docs 디렉토리·AGENTS.md·devtools spec-* 스킬과 핸드오프 정합 |
