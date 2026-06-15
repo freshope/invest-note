@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { isNativePlatform } from "@/lib/platform";
 
-type AppVersion = { version: string; build: string | null };
+type AppVersion = {
+  version: string;
+  build: string | null;
+  // OTA 와 무관한 네이티브 바이너리 마케팅 버전(스토어 라이브 버전). version 이 OTA 번들로
+  // 덮인 경우와 구분해 분석(점유율)에서 따로 집계하기 위해 노출한다.
+  nativeVersion: string;
+};
 
 const FALLBACK_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "";
 
@@ -9,6 +15,7 @@ export function useAppVersion(): AppVersion {
   const [info, setInfo] = useState<AppVersion>({
     version: FALLBACK_VERSION,
     build: null,
+    nativeVersion: FALLBACK_VERSION,
   });
 
   useEffect(() => {
@@ -31,7 +38,7 @@ export function useAppVersion(): AppVersion {
         // 플러그인 미가용/오류 — 네이티브 버전으로 폴백(fail-open).
       }
       if (!cancelled) {
-        setInfo({ version, build: native.build });
+        setInfo({ version, build: native.build, nativeVersion: native.version });
       }
     })();
     return () => {
