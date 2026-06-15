@@ -17,7 +17,7 @@ import httpx
 
 from invest_note_api.db_ops import daily_prices_repo
 from invest_note_api.domain.asset_history import LOOKBACK_DAYS
-from invest_note_api.domain.trade_utils import KST
+from invest_note_api.domain.trade_utils import KST, US_EASTERN
 from invest_note_api.external.constants import (
     KIS_DAILY_CHART_PATH,
     USER_AGENT,
@@ -278,7 +278,7 @@ def _parse_yahoo_us_chart(
 
     quote 파서(_parse_yahoo_chart_price)는 meta.regularMarketPrice 1점만 읽지만, 일별은
     result[0].timestamp[] + indicators.quote[0].close[] 시계열을 zip 한다.
-    - epoch(UTC sec) → KST 기준 close_date(date) 정규화(기존 KR 경로와 동일 date 형식).
+    - epoch(UTC sec) → ET(거래소) 기준 close_date(date) 정규화. KST 변환은 마감 캔들을 익일로 밀어 토요일 거래일이 생긴다.
     - null close 는 skip(휴장/미체결 캔들).
     - 범위 밖 행 가드: begin~min(end, cutoff) 밖(경계일 라이브/미확정 캔들 등)은 제외.
     - US 티커는 bare(suffix 없음) — KR srtnCd 정규화(_normalize_ticker)를 거치지 않는다.
@@ -299,7 +299,8 @@ def _parse_yahoo_us_chart(
     for ts, raw in zip(timestamps, closes):
         if raw is None or not isinstance(ts, (int, float)):
             continue
-        close_date = datetime.fromtimestamp(ts, KST).date()
+        # epoch→ET 세션 날짜. KST 변환은 마감(16:00 ET) 캔들을 익일(토요일)로 밀어 거래일을 어긋낸다.
+        close_date = datetime.fromtimestamp(ts, US_EASTERN).date()
         try:
             close_price = float(raw)
         except (TypeError, ValueError):

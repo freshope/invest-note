@@ -197,11 +197,13 @@ async def test_kis_get_unconfigured_returns_none():
         )
 
 
-# ---- 레이트리밋 페이싱 (실측 2건/초, EGW00201) ----
+# ---- 레이트리밋 페이싱 (윈도우 메커니즘, EGW00201) ----
+# 운영 페이싱은 18건/초지만, 윈도우 메커니즘 검증은 한도를 2로 고정해 단순화한다.
 
 
 async def test_acquire_rate_slot_blocks_third_call_then_releases(monkeypatch):
     monkeypatch.setattr(kis, "_RATE_WINDOW_SECONDS", 0.15)
+    monkeypatch.setattr(kis, "_RATE_MAX_CALLS", 2)
     state = _state()
     t0 = time.monotonic()
     assert await kis._acquire_rate_slot(state, None) is True
@@ -210,15 +212,17 @@ async def test_acquire_rate_slot_blocks_third_call_then_releases(monkeypatch):
     assert time.monotonic() - t0 >= 0.13  # 3번째는 윈도우만큼 대기
 
 
-async def test_acquire_rate_slot_budget_exhausted_returns_false():
+async def test_acquire_rate_slot_budget_exhausted_returns_false(monkeypatch):
+    monkeypatch.setattr(kis, "_RATE_MAX_CALLS", 2)
     state = _state()
     now = time.monotonic()
     state.recent_calls.extend([now, now])  # 윈도우 꽉 참
     assert await kis._acquire_rate_slot(state, 0.0) is False
 
 
-async def test_kis_get_throttle_budget_gives_up_without_request():
+async def test_kis_get_throttle_budget_gives_up_without_request(monkeypatch):
     """슬롯 부족 + 짧은 budget → API 호출 없이 None (시세 경로의 빠른 fallback)."""
+    monkeypatch.setattr(kis, "_RATE_MAX_CALLS", 2)
     api_calls: list[int] = []
 
     def handler(request: httpx.Request) -> httpx.Response:

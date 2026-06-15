@@ -26,10 +26,11 @@ const COLUMN_CLASS: Record<Columns, string> = {
   4: "grid-cols-4",
 };
 
-const CHIP_CLASS =
+// 칩 시각 단일 출처 — 자유 레이아웃(flex)으로 칩을 직접 렌더하는 AnalysisTagsField 등에서 재사용.
+export const CHIP_CLASS =
   "rounded-xl border py-2.5 text-[13px] font-semibold transition-colors";
-const SELECTED_CLASS = "bg-primary text-primary-foreground border-primary";
-const UNSELECTED_CLASS = "border-border bg-muted/50 text-muted-foreground";
+export const CHIP_SELECTED_CLASS = "bg-primary text-primary-foreground border-primary";
+export const CHIP_UNSELECTED_CLASS = "border-border bg-muted/50 text-muted-foreground";
 
 export function ToggleChipGrid<T extends string, E extends "" | null = null>(
   props: SingleProps<T, E> | MultiProps<T>,
@@ -59,7 +60,7 @@ export function ToggleChipGrid<T extends string, E extends "" | null = null>(
             key={opt.value}
             type="button"
             onClick={handleClick}
-            className={`${CHIP_CLASS} ${selected ? SELECTED_CLASS : UNSELECTED_CLASS}`}
+            className={`${CHIP_CLASS} ${selected ? CHIP_SELECTED_CLASS : CHIP_UNSELECTED_CLASS}`}
           >
             {opt.label}
           </button>

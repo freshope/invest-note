@@ -50,6 +50,7 @@ const ROUTES = {
     base: "/trades",
     byId: (id: string) => `/trades/${id}`,
     summary: (id: string) => `/trades/${id}/summary`,
+    customTags: "/trades/custom-tags",
     bulkDelete: "/trades/bulk-delete",
     importPreview: "/trades/import/preview",
     importCommit: "/trades/import/commit",
@@ -168,10 +169,17 @@ export interface TradeCreateInput {
   traded_at: string;
 }
 
+// 사용자 정의 태그 레지스트리 항목. 거래엔 label(string)만 저장된다.
+export interface CustomTag {
+  id: string;
+  label: string;
+}
+
 export interface TradeMetaInput {
   strategy_type?: StrategyType | null;
   emotion?: EmotionType | null;
   reasoning_tags?: ReasoningTag[];
+  custom_tags?: string[];
   buy_reason?: string | null;
   sell_reason?: string | null;
   result?: TradeResult | null;
@@ -233,6 +241,22 @@ export const tradesApi = {
     }),
 
   summary: (id: string) => apiFetch<TradeSummary>(ROUTES.trades.summary(id)),
+
+  // 사용자 정의 태그 레지스트리(가나다순) — 폼 그리드에서 프리셋과 함께 선택용 카탈로그.
+  // 거래엔 라벨(string)만 저장되고, 레지스트리는 id+label 객체를 관리한다.
+  customTags: () =>
+    apiFetch<{ tags: CustomTag[] }>(ROUTES.trades.customTags).then((r) => r.tags),
+
+  // 레지스트리에 태그 추가(멱등 — 동일 라벨이면 기존 반환). 빈값/21자+는 BE 가 422.
+  createCustomTag: (label: string) =>
+    apiFetch<CustomTag>(ROUTES.trades.customTags, {
+      method: "POST",
+      body: JSON.stringify({ label }),
+    }),
+
+  // 레지스트리에서 태그 제거(204). 과거 거래에 저장된 라벨은 BE 가 유지한다.
+  deleteCustomTag: (id: string) =>
+    apiFetch<void>(`${ROUTES.trades.customTags}/${id}`, { method: "DELETE" }),
 };
 
 // ============================================================

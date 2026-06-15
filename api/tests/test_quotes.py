@@ -407,6 +407,30 @@ def test_fetch_yahoo_us_returns_price_and_currency_from_meta():
     assert result["currency"] == "USD"
 
 
+def test_fetch_yahoo_us_traded_on_uses_et_session_date():
+    """US regularMarketTime(마감 epoch) → ET 세션 날짜. KST 변환이면 익일(토)로 어긋남."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    et = ZoneInfo("America/New_York")
+    # 2026-06-12(금) 16:00 EDT = 20:00 UTC → KST 06-13(토), ET 06-12.
+    ts = int(datetime(2026, 6, 12, 16, 0, tzinfo=et).timestamp())
+    routes = {
+        "https://query2.finance.yahoo.com/v8/finance/chart/AAPL": httpx.Response(
+            200,
+            json={"chart": {"result": [{"meta": {"regularMarketPrice": 195.5, "currency": "USD", "regularMarketTime": ts}}]}},
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_yahoo_us(client, "AAPL")
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["traded_on"] == "2026-06-12"
+
+
 def test_fetch_yahoo_us_defaults_currency_to_usd_when_missing():
     routes = {
         "https://query2.finance.yahoo.com/v8/finance/chart/AAPL": httpx.Response(

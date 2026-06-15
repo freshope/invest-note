@@ -86,6 +86,9 @@ export function StockMetaBadges({
 
   const openSheet = (e: SyntheticEvent) => {
     stop(e);
+    // 시트가 열리며 조상에 aria-hidden이 씌워지기 전에 트리거 포커스를 해제한다.
+    // (포커스된 요소가 aria-hidden 조상 아래 남으면 접근성 경고 발생)
+    if (e.currentTarget instanceof HTMLElement) e.currentTarget.blur();
     setOpen(true);
   };
 

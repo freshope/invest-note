@@ -17,6 +17,7 @@ function makeSell(overrides: Partial<Trade> = {}): Trade {
     traded_at: "2024-02-01T09:00:00+09:00",
     strategy_type: null,
     reasoning_tags: [],
+    custom_tags: [],
     buy_reason: null,
     sell_reason: null,
     emotion: null,

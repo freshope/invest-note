@@ -10,6 +10,8 @@ import { ChevronLeftIcon, ChevronDownIcon, ChartSplineIcon } from "lucide-react"
 import { StockMetaBadges } from "@/components/stocks/StockMetaBadges";
 import { useStockMeta, isMetaCode } from "@/hooks/useStockMeta";
 import { Button } from "@/components/base/Button";
+import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
+import { PNL_COLORS } from "@/lib/constants/colors";
 import { AccountFilter } from "@/components/shared/AccountFilter";
 import { EmptyCard } from "@/components/shared/EmptyCard";
 import { useAccountFilter, useEffectiveAccountId } from "@/components/providers/AccountFilterProvider";
@@ -29,13 +31,16 @@ interface StockDetailProps {
   trades: TradeWithAccount[];
   stats: StockStats;
   accounts: Account[];
+  holdingQuantity?: number;
   onBack?: () => void;
   onTradePress?: (trade: TradeWithAccount) => void;
   onAssetHistoryPress?: () => void;
   onSwitchStock?: () => void;
+  onBuy?: () => void;
+  onSell?: () => void;
 }
 
-export function StockDetail({ assetName, ticker, country, trades, stats, accounts, onBack, onTradePress, onAssetHistoryPress, onSwitchStock }: StockDetailProps) {
+export function StockDetail({ assetName, ticker, country, trades, stats, accounts, holdingQuantity = 0, onBack, onTradePress, onAssetHistoryPress, onSwitchStock, onBuy, onSell }: StockDetailProps) {
   const router = useRouter();
   const { setSelectedAccountId } = useAccountFilter();
   const effectiveAccountId = useEffectiveAccountId(accounts);
@@ -103,7 +108,8 @@ export function StockDetail({ assetName, ticker, country, trades, stats, account
         )}
       </div>
 
-      <div className="px-5 pb-8 space-y-5">
+      {/* flex-1: 콘텐츠가 짧아도 아래 액션바를 화면 바닥으로 밀어낸다(부모가 flex flex-col 전체 높이). */}
+      <div className="flex-1 px-5 pb-8 space-y-5">
         {/* 종목 기본 정보 */}
         <div className="rounded-2xl bg-muted/60 p-4">
           <p className="min-w-0 break-words text-[22px] font-bold text-foreground">
@@ -177,6 +183,41 @@ export function StockDetail({ assetName, ticker, country, trades, stats, account
           )}
         </div>
       </div>
+
+      {/* 하단 매수/매도 액션바 — 매도는 보유 수량이 0이면 비활성 */}
+      {(onBuy || onSell) && (
+        <FullScreenPanelFooter>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={onBuy}
+              className={cn(
+                "h-12 flex-1 rounded-xl text-[16px] font-bold text-white transition-transform active:scale-[0.98]",
+                PNL_COLORS.rise.bg,
+              )}
+            >
+              매수
+            </button>
+            <button
+              type="button"
+              onClick={onSell}
+              disabled={holdingQuantity <= 0}
+              className={cn(
+                "h-12 flex-1 rounded-xl text-[16px] font-bold text-white transition-transform active:scale-[0.98]",
+                "disabled:opacity-40 disabled:active:scale-100",
+                PNL_COLORS.fall.bg,
+              )}
+            >
+              매도
+            </button>
+          </div>
+          {holdingQuantity <= 0 && (
+            <p className="mt-2 text-center text-[12px] text-muted-foreground">
+              보유 종목이 없어 매도할 수 없어요
+            </p>
+          )}
+        </FullScreenPanelFooter>
+      )}
     </>
   );
 }

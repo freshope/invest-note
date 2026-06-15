@@ -65,25 +65,23 @@ export function DiversificationPanel({ concentration }: DiversificationPanelProp
         </div>
       )}
 
-      {/* 국가 / 자산군 */}
-      {(byCountry.length > 1 || byMarket.length > 1) && (
-        <div className="grid grid-cols-2 gap-4">
-          {byCountry.length > 1 && (
-            <div className="space-y-2">
-              <p className="text-[12px] font-semibold text-muted-foreground">국가</p>
-              {byCountry.map((c) => (
-                <WeightBar key={c.code} label={isCountryCode(c.code) ? COUNTRY_LABEL[c.code] : c.code} weight={c.weight} />
-              ))}
-            </div>
-          )}
-          {byMarket.length > 1 && (
-            <div className="space-y-2">
-              <p className="text-[12px] font-semibold text-muted-foreground">자산군</p>
-              {byMarket.map((m) => (
-                <WeightBar key={m.type} label={MARKET_LABELS[m.type as keyof typeof MARKET_LABELS] ?? m.type} weight={m.weight} />
-              ))}
-            </div>
-          )}
+      {/* 국가 */}
+      {byCountry.length > 1 && (
+        <div className="space-y-2">
+          <p className="text-[12px] font-semibold text-muted-foreground">국가</p>
+          {byCountry.map((c) => (
+            <WeightBar key={c.code} label={isCountryCode(c.code) ? COUNTRY_LABEL[c.code] : c.code} weight={c.weight} />
+          ))}
+        </div>
+      )}
+
+      {/* 자산군 */}
+      {byMarket.length > 1 && (
+        <div className="space-y-2">
+          <p className="text-[12px] font-semibold text-muted-foreground">자산군</p>
+          {byMarket.map((m) => (
+            <WeightBar key={m.type} label={MARKET_LABELS[m.type as keyof typeof MARKET_LABELS] ?? m.type} weight={m.weight} />
+          ))}
         </div>
       )}
 

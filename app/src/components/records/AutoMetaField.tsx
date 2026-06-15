@@ -52,6 +52,27 @@ export function AutoReasoningTagsField({ tags }: { tags: ReasoningTag[] | null |
   );
 }
 
+export function AutoCustomTagsField({ tags }: { tags: string[] | null | undefined }) {
+  const list = tags ?? [];
+  return (
+    <div className="space-y-2">
+      <Label>
+        사용자 정의 태그
+        <span className="ml-1 text-[12px] font-normal text-muted-foreground">{AUTO_HINT}</span>
+      </Label>
+      {list.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {list.map((tag) => (
+            <Chip key={tag}>{tag}</Chip>
+          ))}
+        </div>
+      ) : (
+        <p className="text-[13px] text-muted-foreground">매수 시점의 사용자 정의 태그로 자동 설정됩니다.</p>
+      )}
+    </div>
+  );
+}
+
 export function AutoBuyReasonField({ reason }: { reason: string | null | undefined }) {
   const text = (reason ?? "").trim();
   return (

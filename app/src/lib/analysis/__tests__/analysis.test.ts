@@ -20,6 +20,7 @@ function makeTrade(overrides: Partial<Trade> & { id: string; trade_type: Trade["
     traded_at: "2024-01-10T09:00:00+09:00",
     strategy_type: null,
     reasoning_tags: [],
+    custom_tags: [],
     buy_reason: null,
     sell_reason: null,
     emotion: null,

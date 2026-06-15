@@ -82,6 +82,7 @@ class GroupPnLEntry:
     holding_days: int | None
     strategy_type: StrategyType | None
     reasoning_tags: list[ReasoningTag]
+    custom_tags: list[str]
     emotion: EmotionType | None
     result: TradeResult
     matched_qty: float
@@ -114,12 +115,12 @@ def _strategy_from_consumed(consumed: Sequence[ConsumedLot]) -> StrategyType | N
 
 def _meta_from_consumed_latest(
     consumed: Sequence[ConsumedLot],
-) -> tuple[list[ReasoningTag], EmotionType | None]:
-    """소비된 BUY lot 중 가장 최근(time_ms 최대, 동률 시 order 최대)의 tags/emotion."""
+) -> tuple[list[ReasoningTag], list[str], EmotionType | None]:
+    """소비된 BUY lot 중 가장 최근(time_ms 최대, 동률 시 order 최대)의 tags/custom_tags/emotion."""
     if not consumed:
-        return [], None
+        return [], [], None
     latest = max(consumed, key=lambda c: (c.lot.time_ms, c.lot.order))
-    return list(latest.lot.reasoning_tags), latest.lot.emotion
+    return list(latest.lot.reasoning_tags), list(latest.lot.custom_tags), latest.lot.emotion
 
 
 def _holding_days_from_consumed(
@@ -151,7 +152,7 @@ def compute_group_pnl(trades: list[Trade], key: TradeGroupKey) -> dict[str, Grou
         sell_time_ms = to_kst_ms(ev.trade.traded_at)
         avg_cost = ev.state_before.avg_cost
         pnl = _sell_pnl(ev.trade, avg_cost, ev.matched_qty)
-        tags, emotion = _meta_from_consumed_latest(ev.consumed)
+        tags, custom_tags, emotion = _meta_from_consumed_latest(ev.consumed)
 
         result[ev.trade.id] = GroupPnLEntry(
             profit_loss=pnl,
@@ -159,6 +160,7 @@ def compute_group_pnl(trades: list[Trade], key: TradeGroupKey) -> dict[str, Grou
             holding_days=_holding_days_from_consumed(ev.consumed, sell_time_ms),
             strategy_type=_strategy_from_consumed(ev.consumed),
             reasoning_tags=tags,
+            custom_tags=custom_tags,
             emotion=emotion,
             result=derive_result_from_pnl(pnl),
             matched_qty=ev.matched_qty,

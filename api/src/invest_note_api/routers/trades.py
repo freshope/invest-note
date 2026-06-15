@@ -17,6 +17,11 @@ from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.db import acquire_for_user, get_pool
 from invest_note_api.db_ops.accounts_repo import list_accounts as repo_list_accounts
+from invest_note_api.db_ops.custom_tags_repo import (
+    create_custom_tag,
+    delete_custom_tag,
+    list_custom_tags,
+)
 from invest_note_api.db_ops.pnl_sync import recalc_group_pnl
 from invest_note_api.db_ops.trades_repo import (
     PNL_AFFECTING_FIELDS,
@@ -69,6 +74,7 @@ from invest_note_api.domain.trade_types import (
 )
 from invest_note_api.errors import ERR_TRADE_NOT_FOUND, APIError
 from invest_note_api.schemas.trade import (
+    CustomTagCreate,
     TradeBulkDeleteRequest,
     TradeCreate,
     TradeUpdate,
@@ -283,6 +289,42 @@ async def list_trades_endpoint(
         accounts = await repo_list_accounts(conn)
 
     return {"trades": [_trade_with_account_dict(t) for t in trades], "accounts": accounts}
+
+
+@router.get("/custom-tags")
+async def list_custom_tags_endpoint(
+    user: AuthenticatedUser = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict:
+    """사용자 정의 태그 레지스트리 목록 — 거래 폼 분석 태그 그리드에 노출."""
+    async with acquire_for_user(pool, user.id) as conn:
+        tags = await list_custom_tags(conn, user.id)
+    return {"tags": tags}
+
+
+@router.post("/custom-tags", status_code=201)
+async def create_custom_tag_endpoint(
+    data: CustomTagCreate,
+    user: AuthenticatedUser = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict:
+    """레지스트리에 태그 추가(멱등). 폼 '+' 바텀시트 저장."""
+    async with acquire_for_user(pool, user.id) as conn:
+        return await create_custom_tag(conn, user.id, data.label)
+
+
+@router.delete("/custom-tags/{tag_id}", status_code=204)
+async def delete_custom_tag_endpoint(
+    tag_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> Response:
+    """레지스트리에서만 제거 — 과거 거래 라벨은 유지."""
+    async with acquire_for_user(pool, user.id) as conn:
+        deleted = await delete_custom_tag(conn, user.id, tag_id)
+    if not deleted:
+        raise APIError("태그를 찾을 수 없습니다.", 404)
+    return Response(status_code=204)
 
 
 @router.post("", status_code=201)

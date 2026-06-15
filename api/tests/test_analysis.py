@@ -31,6 +31,7 @@ def _make_trade_row(
     total_amount=None,
     buy_reason=None,
     exchange_rate=1.0,
+    custom_tags=None,
 ) -> dict:
     now = _dt("2026-04-20T09:00:00+09:00")
     return {
@@ -47,6 +48,7 @@ def _make_trade_row(
         "traded_at": traded_at or now,
         "strategy_type": strategy_type,
         "reasoning_tags": reasoning_tags or [],
+        "custom_tags": custom_tags or [],
         "buy_reason": buy_reason,
         "sell_reason": None,
         "emotion": emotion,
@@ -144,6 +146,48 @@ class TestAnalysisDashboard:
         # PnL 약어 키는 대문자 'L' (FE 타입 호환)
         assert "sumPnL" in summary["byStrategy"][0]
         assert "sumPnL" in summary["byStrategyAdherence"][0]
+
+    def test_by_custom_tag_aggregation(self, trades_client):
+        """SELL의 custom_tags가 byCustomTag 버킷별 거래수/승률/손익으로 집계되고
+        응답 키가 camelCase(byCustomTag, winRate, sumPnL)인지 확인."""
+        buy = _make_trade_row(id_="b1", trade_type="BUY", price=70000.0, quantity=10.0)
+        sell = _make_trade_row(
+            id_="s1",
+            trade_type="SELL",
+            price=75000.0,
+            quantity=10.0,
+            traded_at=_dt("2026-04-22T09:00:00+09:00"),
+            profit_loss=50000.0,
+            avg_buy_price=70000.0,
+            holding_days=2,
+            result="SUCCESS",
+            custom_tags=["배당", "테마주"],  # 매수에서 자동 상속된 상태를 시뮬레이션
+        )
+        conn = FakeConnection([buy, sell])
+        with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
+            resp = _patched_get(trades_client, "/analysis/dashboard")
+        assert resp.status_code == 200
+        summary = resp.json()["summary"]
+        by_custom = {c["tag"]: c for c in summary["byCustomTag"]}
+        assert set(by_custom) == {"배당", "테마주"}
+        for tag in ("배당", "테마주"):
+            assert by_custom[tag]["count"] == 1
+            assert by_custom[tag]["winRate"] == 100.0
+            assert by_custom[tag]["sumPnL"] == pytest.approx(50000.0, rel=1e-6)
+
+    def test_by_custom_tag_empty_when_none(self, trades_client):
+        """custom_tags 미입력이면 byCustomTag는 빈 배열(UNTAGGED 버킷 없음)."""
+        buy = _make_trade_row(id_="b1", trade_type="BUY", price=70000.0, quantity=10.0)
+        sell = _make_trade_row(
+            id_="s1", trade_type="SELL", price=75000.0, quantity=10.0,
+            traded_at=_dt("2026-04-22T09:00:00+09:00"),
+            profit_loss=50000.0, avg_buy_price=70000.0, holding_days=2, result="SUCCESS",
+        )
+        conn = FakeConnection([buy, sell])
+        with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):
+            resp = _patched_get(trades_client, "/analysis/dashboard")
+        assert resp.status_code == 200
+        assert resp.json()["summary"]["byCustomTag"] == []
 
     def test_us_realized_pnl_is_stored_krw(self, trades_client):
         """US SELL 실현손익은 저장값이 이미 KRW(거래시점 환율로 compute_group_pnl 이 고정).

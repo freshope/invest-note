@@ -43,7 +43,12 @@ export function InfoHintSheet({
       <button
         type="button"
         aria-label={ariaLabel}
-        onClick={() => setOpen(true)}
+        onClick={(e) => {
+          // 시트가 열리며 <main>에 aria-hidden이 씌워지기 전에 트리거 포커스를 해제한다.
+          // (포커스된 요소가 aria-hidden 조상 아래 남으면 접근성 경고 발생)
+          e.currentTarget.blur();
+          setOpen(true);
+        }}
         className={cn(
           "shrink-0 text-muted-foreground/70 transition-colors hover:text-muted-foreground",
           className,

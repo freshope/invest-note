@@ -15,7 +15,8 @@ import type { Position } from "@/lib/portfolio";
  * DetailPanelProvider 와 순환 import 가 되므로 인자로 받는다(StockPayload 는 type-only import).
  */
 export function useOpenStock(
-  openStock: (payload: StockPayload) => void,
+  openStock: (payload: StockPayload, source?: string) => void,
+  source?: string,
 ): (position: Position) => Promise<void> {
   // 진행 중 여부는 렌더 트리거가 필요 없는 가드 플래그라 ref 로 보관해 콜백을 stable 하게 유지한다.
   const fetchingRef = useRef(false);
@@ -35,7 +36,7 @@ export function useOpenStock(
           country: pos.country,
           allTrades: trades,
           accounts,
-        });
+        }, source);
       } catch (err) {
         const toastId = "holdings-fetch-error";
         if (err instanceof ApiError) {
@@ -50,6 +51,6 @@ export function useOpenStock(
         fetchingRef.current = false;
       }
     },
-    [openStock],
+    [openStock, source],
   );
 }

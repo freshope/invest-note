@@ -52,6 +52,10 @@ CURRENCY_USD: Currency = "USD"
 MAX_CODE_LEN = 20
 MAX_NAME_LEN = 50
 
+# 사용자 정의 분석 태그(custom_tags) 제약 — BE/FE 동일 적용.
+CUSTOM_TAG_MAX_LEN = 20
+MAX_CUSTOM_TAGS = 10
+
 
 def trade_identifier(trade: "Trade") -> str:
     """ticker_symbol 우선, 없으면 asset_name. lot/포지션 그룹핑의 1차 키."""
@@ -123,6 +127,7 @@ class Trade(BaseModel):
 
     strategy_type: StrategyType | None = None
     reasoning_tags: list[ReasoningTag] = []
+    custom_tags: list[str] = []
     buy_reason: str | None = None
     sell_reason: str | None = None
 

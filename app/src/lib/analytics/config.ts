@@ -11,7 +11,7 @@ export const POSTHOG_ENABLED = POSTHOG_KEY.length > 0;
 export const POSTHOG_ENV =
   process.env.NEXT_PUBLIC_POSTHOG_ENV ??
   (process.env.NODE_ENV === "production" ? "production" : "development");
-export const POSTHOG_PROJECT = "invest-note";
+export const POSTHOG_PROJECT = "invest-note-app";
 
 /**
  * 금융 민감값 차단 키 목록. property_denylist(전송 전 키 제거)와 scrubEvent 양쪽에서 사용.

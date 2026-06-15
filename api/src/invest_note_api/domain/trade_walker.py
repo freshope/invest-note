@@ -25,6 +25,7 @@ class FifoLot:
     time_ms: int
     strategy: StrategyType | None
     reasoning_tags: tuple[ReasoningTag, ...]
+    custom_tags: tuple[str, ...]
     emotion: EmotionType | None
     order: int
     source_trade: Trade
@@ -116,6 +117,7 @@ def walk_trades(
                     time_ms=to_kst_ms(trade.traded_at),
                     strategy=trade.strategy_type,
                     reasoning_tags=tuple(trade.reasoning_tags or ()),
+                    custom_tags=tuple(trade.custom_tags or ()),
                     emotion=trade.emotion,
                     order=buy_order,
                     source_trade=trade,

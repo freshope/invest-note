@@ -11,7 +11,6 @@ import { tradesApi } from "@/lib/api-client";
 import { VALIDATION_LIMITS, TRADE_FREE_TEXT_ERROR } from "@/lib/constants/validation";
 import { queryKeys } from "@/lib/query-keys";
 import {
-  REASONING_TAGS,
   STRATEGIES,
   EMOTIONS,
   STRATEGY_VALUES,
@@ -19,14 +18,16 @@ import {
   REASONING_TAG_VALUES,
 } from "@/lib/constants/trading";
 import { ToggleChipGrid } from "@/components/shared/ToggleChipGrid";
+import { AnalysisTagsField } from "./AnalysisTagsField";
 import { TradeFreeTextField } from "./TradeFreeTextField";
 import { getFirstFormError } from "@/lib/utils";
-import type { ReasoningTag, StrategyType, EmotionType } from "@/types/database";
+import type { StrategyType, EmotionType } from "@/types/database";
 
 const schema = z.object({
   strategy_type: z.enum(STRATEGY_VALUES).nullable(),
   emotion: z.enum(EMOTION_VALUES).nullable(),
   reasoning_tags: z.array(z.enum(REASONING_TAG_VALUES)),
+  custom_tags: z.array(z.string()),
   buy_reason: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, TRADE_FREE_TEXT_ERROR),
 });
 
@@ -52,11 +53,13 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
       strategy_type: null,
       emotion: null,
       reasoning_tags: [],
+      custom_tags: [],
       buy_reason: "",
     },
   });
 
   const tags = useWatch({ control, name: "reasoning_tags" });
+  const customTags = useWatch({ control, name: "custom_tags" });
   const buyReason = useWatch({ control, name: "buy_reason" }) ?? "";
 
   async function onSubmit(values: FormValues) {
@@ -65,6 +68,7 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
         strategy_type: values.strategy_type,
         emotion: values.emotion,
         reasoning_tags: values.reasoning_tags,
+        custom_tags: values.custom_tags,
         buy_reason: values.buy_reason.trim() || null,
       });
       // BUY meta 변경 → BE가 매칭 SELL의 emotion/strategy 자동 산출. trades 리스트 + tradeSummary 모두 stale.
@@ -124,12 +128,11 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
             분석 태그{" "}
             <span className="text-[12px] font-normal text-muted-foreground">(복수 선택)</span>
           </Label>
-          <ToggleChipGrid<ReasoningTag>
-            multi
-            options={REASONING_TAGS}
-            value={tags}
-            onChange={(next) => setValue("reasoning_tags", next)}
-            columns={2}
+          <AnalysisTagsField
+            reasoningTags={tags}
+            customTags={customTags}
+            onReasoningChange={(next) => setValue("reasoning_tags", next)}
+            onCustomChange={(next) => setValue("custom_tags", next)}
           />
         </div>
 
