@@ -92,6 +92,27 @@ def _win_rate(results: list[str]) -> float:
     return _percent(sum(1 for r in results if r == RESULT_SUCCESS), len(results))
 
 
+def _aggregate_tag_buckets(sells, pnl_map, get_tags):
+    """SELL을 태그별 버킷에 모아 (tag, count, win_rate, sum_pnl)을 count 내림차순으로 반환.
+
+    get_tags(sell)이 버킷 키 목록을 결정한다 — reasoning_tags는 미입력 시 UNTAGGED 버킷,
+    custom_tags는 미입력 시 버킷 없음(선택적 태그). 다중 태그 거래의 PnL은 각 버킷에 중복 합산된다.
+    """
+    buckets: dict[str, dict] = {}
+    for sell in sells:
+        for tag in get_tags(sell):
+            b = buckets.setdefault(tag, {"pnls": [], "results": []})
+            b["pnls"].append(pnl_map.get(sell.id, 0.0))
+            if sell.result:
+                b["results"].append(sell.result)
+    rows = [
+        (tag, len(b["pnls"]), _win_rate(b["results"]), sum(b["pnls"]))
+        for tag, b in buckets.items()
+    ]
+    rows.sort(key=lambda x: x[1], reverse=True)
+    return rows
+
+
 def compute_summary(
     trades: list[Trade],
     pnl_map: dict[str, float],
@@ -204,56 +225,21 @@ def compute_summary(
     # byTag — reasoning_tags 미입력 SELL은 TAG_UNTAGGED 단일 버킷으로 모음.
     # 다중 태그 거래는 각 태그 버킷에 PnL이 중복 합산되므로 byTag 합계는
     # totalProfitLoss와 정확히 일치하지 않을 수 있음 (FE에서 안내 제공).
-    tag_map: dict[ReasoningTagBucket, dict] = {}
-    for sell in sells:
-        tags: list[ReasoningTagBucket] = list(sell.reasoning_tags) or [TAG_UNTAGGED]
-        for tag in tags:
-            if tag not in tag_map:
-                tag_map[tag] = {"pnls": [], "results": []}
-            tm = tag_map[tag]
-            tm["pnls"].append(pnl_map.get(sell.id, 0.0))
-            if sell.result:
-                tm["results"].append(sell.result)
-
-    by_tag = sorted(
-        [
-            TagStats(
-                tag=tag,
-                count=len(tm["pnls"]),
-                win_rate=_win_rate(tm["results"]),
-                sum_pnl=sum(tm["pnls"]),
-            )
-            for tag, tm in tag_map.items()
-        ],
-        key=lambda x: x.count,
-        reverse=True,
-    )
+    by_tag = [
+        TagStats(tag=tag, count=count, win_rate=win_rate, sum_pnl=sum_pnl)
+        for tag, count, win_rate, sum_pnl in _aggregate_tag_buckets(
+            sells, pnl_map, lambda s: list(s.reasoning_tags) or [TAG_UNTAGGED]
+        )
+    ]
 
     # byCustomTag — 사용자 정의 태그(자유 텍스트). 미입력 SELL은 버킷을 만들지 않는다
     # (선택적 태그라 UNTAGGED 집계 불필요). 다중 태그 거래의 PnL 중복 합산은 byTag와 동일.
-    custom_tag_map: dict[str, dict] = {}
-    for sell in sells:
-        for tag in sell.custom_tags:
-            if tag not in custom_tag_map:
-                custom_tag_map[tag] = {"pnls": [], "results": []}
-            ctm = custom_tag_map[tag]
-            ctm["pnls"].append(pnl_map.get(sell.id, 0.0))
-            if sell.result:
-                ctm["results"].append(sell.result)
-
-    by_custom_tag = sorted(
-        [
-            CustomTagStats(
-                tag=tag,
-                count=len(ctm["pnls"]),
-                win_rate=_win_rate(ctm["results"]),
-                sum_pnl=sum(ctm["pnls"]),
-            )
-            for tag, ctm in custom_tag_map.items()
-        ],
-        key=lambda x: x.count,
-        reverse=True,
-    )
+    by_custom_tag = [
+        CustomTagStats(tag=tag, count=count, win_rate=win_rate, sum_pnl=sum_pnl)
+        for tag, count, win_rate, sum_pnl in _aggregate_tag_buckets(
+            sells, pnl_map, lambda s: s.custom_tags
+        )
+    ]
 
     # 메타 지표
     missing_tag_rate = _percent(

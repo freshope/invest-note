@@ -7,12 +7,14 @@ import { queryKeys } from "@/lib/query-keys";
 /**
  * 사용자 정의 태그 레지스트리(가나다순) 조회.
  * 폼 그리드에서 프리셋과 함께 선택용 칩으로 노출한다.
- * staleTime 은 기본값(0) — 새 태그를 추가/삭제한 뒤 곧바로 반영되도록 짧게 둔다.
+ * 추가/삭제는 useCreate/DeleteCustomTag 가 invalidate 로 즉시 반영하므로, 변경 없는 동안의
+ * 폼 재진입·앱 resume(focus) 마다의 중복 refetch 를 막도록 staleTime 을 둔다.
  */
 export function useCustomTags() {
   const { data } = useQuery({
     queryKey: queryKeys.customTags,
     queryFn: () => tradesApi.customTags(),
+    staleTime: 5 * 60 * 1000,
   });
   return data ?? [];
 }

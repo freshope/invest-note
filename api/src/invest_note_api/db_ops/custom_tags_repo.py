@@ -30,17 +30,25 @@ async def list_custom_tags(conn: Any, user_id: str) -> list[dict]:
 async def create_custom_tag(conn: Any, user_id: str, label: str) -> dict:
     """레지스트리에 태그 추가 — (user_id, label) 멱등. 이미 있으면 기존 행 반환.
 
-    충돌 시에도 행을 돌려받도록 DO UPDATE(라벨 자기대입)로 1쿼리 처리 — 별도 SELECT 왕복 제거.
+    DO NOTHING + 충돌 시 fallback SELECT 로 처리한다. RLS(032)에 UPDATE 정책이 없어
+    ON CONFLICT DO UPDATE 는 정책상 UPDATE 경로를 타며(멱등 재추가가 바로 그 경로),
+    INSERT/SELECT 정책만 쓰는 이 방식이 안전하다. fallback SELECT 는 충돌 시에만 1회.
     """
     row = await conn.fetchrow(
         """
         INSERT INTO custom_tags (user_id, label) VALUES ($1, $2)
-        ON CONFLICT (user_id, label) DO UPDATE SET label = EXCLUDED.label
+        ON CONFLICT (user_id, label) DO NOTHING
         RETURNING id, label
         """,
         user_id,
         label,
     )
+    if row is None:
+        row = await conn.fetchrow(
+            "SELECT id, label FROM custom_tags WHERE user_id = $1 AND label = $2",
+            user_id,
+            label,
+        )
     return custom_tag_row_to_dict(row)
 
 
