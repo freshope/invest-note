@@ -80,7 +80,9 @@ export function formatTimeKST(iso: string): string | null {
     timeZone: "Asia/Seoul",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    // hour12:false 는 ICU 버전에 따라 h23/h24 로 갈려 자정이 "24:00" 으로 나올 수 있다.
+    // h23 으로 고정해 00–23 범위(자정 = "00:00")를 보장한다.
+    hourCycle: "h23",
   });
 }
 
