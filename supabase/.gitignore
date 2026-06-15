@@ -2,6 +2,7 @@
 .branches
 .temp
 signing_keys.json
+snippets/
 
 # dotenvx
 .env.keys
