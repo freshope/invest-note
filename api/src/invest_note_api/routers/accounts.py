@@ -47,7 +47,7 @@ async def create_account(
     async with acquire_for_user(pool, user.id) as conn:
         row = await conn.fetchrow(
             "INSERT INTO accounts (user_id, name, broker, cash_balance)"
-            " VALUES (auth.uid(), $1, $2, $3)"
+            " VALUES (public.current_user_id(), $1, $2, $3)"
             " RETURNING id, user_id, name, broker, cash_balance, created_at, updated_at",
             data.name,
             data.broker,

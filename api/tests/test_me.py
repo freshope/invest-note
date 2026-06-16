@@ -10,9 +10,11 @@ from invest_note_api.auth.constants import AUTH_ROLE
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.config import Settings, get_settings
+from invest_note_api.db import get_pool
 from invest_note_api.external.http_client import get_http_client
 from invest_note_api.main import create_app
 from tests.conftest import TEST_EMAIL, TEST_SUPABASE_URL, TEST_USER_ID, _kid, _private_key, make_jwt
+from tests.fake_pool import make_fake_pool
 
 
 def test_me_no_header(auth_client: TestClient) -> None:
@@ -72,9 +74,12 @@ def _make_delete_client(
     def override_http_client():
         return mock_http
 
+    fake_pool = make_fake_pool()
+
     app.dependency_overrides[get_current_user] = mock_user
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_http_client] = override_http_client
+    app.dependency_overrides[get_pool] = lambda: fake_pool
     return TestClient(app)
 
 

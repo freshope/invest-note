@@ -1,4 +1,3 @@
-import json
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 from uuid import UUID
@@ -6,7 +5,7 @@ from uuid import UUID
 import asyncpg
 from fastapi import Request
 
-from invest_note_api.auth.constants import AUTH_ROLE, DB_GUC_CLAIMS, DB_GUC_ROLE
+from invest_note_api.auth.constants import DB_APP_ROLE, DB_GUC_USER_ID
 
 
 async def create_pool(database_url: str) -> asyncpg.Pool:
@@ -22,14 +21,16 @@ def get_pool(request: Request) -> asyncpg.Pool:
 async def acquire_for_user(pool: asyncpg.Pool, user_id: UUID) -> AsyncGenerator[asyncpg.Connection, None]:
     """RLS 활성화 connection을 반환하는 context manager.
 
-    transaction 내부에서 role + jwt.claims GUC를 주입해 auth.uid()가
-    Supabase RLS policy에서 올바르게 동작하도록 한다.
+    owner 컨텍스트에서 public.users 를 프로비저닝(FK 타깃 보장)한 뒤, app_authenticated
+    역할로 내려가고 app.current_user_id GUC 를 주입한다. RLS policy 의
+    public.current_user_id() 가 이 GUC 를 읽어 본인 행만 노출한다(표준 PostgreSQL).
     """
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
-                f"SELECT set_config('{DB_GUC_ROLE}', '{AUTH_ROLE}', true),"
-                f"       set_config('{DB_GUC_CLAIMS}', $1, true)",
-                json.dumps({"sub": str(user_id), DB_GUC_ROLE: AUTH_ROLE}),
+                "INSERT INTO public.users (id) VALUES ($1) ON CONFLICT (id) DO NOTHING",
+                user_id,
             )
+            await conn.execute(f"SET LOCAL ROLE {DB_APP_ROLE}")
+            await conn.execute("SELECT set_config($1, $2, true)", DB_GUC_USER_ID, str(user_id))
             yield conn
