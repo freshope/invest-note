@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-06-16 | Supabase DB 종속성 제거 — RLS를 표준 PostgreSQL 객체로 치환 (무중단 expand/contract)
+
+- **맥락:** DB를 다른 PostgreSQL로 바로 교체하면 Supabase 고유 객체(`auth.uid()`, `auth.users`, `authenticated` 역할, `request.jwt.claims` GUC)가 딸려와 지저분해진다. Supabase를 유지한 채 DB 레이어가 이들에 의존하지 않도록 자체 `public` 객체로 옮겨, 이후 DB만 lift-and-shift 하면 깨끗이 이관되게 한다. **DB 종속성 축만** 대상이고 Supabase **Auth(JWT/OAuth)는 유지** — FE `@supabase`·BE JWKS 검증·계정삭제 Admin API 무변경. `2026-04-22 RLS GUC 주입` 결정을 대체.
+- **결정:**
+  - ① **치환 매핑(1:1).** `auth.uid()`→`public.current_user_id()`(= `nullif(current_setting('app.current_user_id',true),'')::uuid`, 미설정 시 NULL→fail-closed) / `request.jwt.claims`·`role` GUC→`app.current_user_id` 단일 GUC / Supabase `authenticated` 역할→자체 `app_authenticated`(nologin, `grant ... to postgres`로 SET ROLE) / `auth.users(id)` FK→`public.users(id)`(id+created_at, 신원은 Auth 소유, `acquire_for_user`가 첫 요청 시 owner로 프로비저닝).
+  - ② **owner-only 테이블 패턴 유지.** `public.users`·`kis_tokens` 는 RLS enable+정책 없음 → `app_authenticated` 전면 차단, owner(postgres)만 통과. 프로비저닝·계정삭제·재백필은 owner 컨텍스트.
+  - ③ **무중단 expand/contract 2단계.** 하드 컷오버 시 마이그레이션~신 BE 배포 사이 구간에서 구 BE가 `app.current_user_id`를 몰라 새 정책에서 fail-closed(읽기 0건·쓰기 500)로 깨진다. expand(`033`, BE와 함께 배포): 역할/함수/`public.users` 추가 + 정책을 `auth.uid() OR current_user_id()` 양쪽 허용 + FK는 `auth.users` 유지 → 구·신 BE 동시 동작·롤백 안전. contract(`migrations_pending/034`, 신 BE 라이브 확인 후 `migrations/`로 이동해 push): FK 재지정 + `auth.uid()` 분기 제거로 디커플 완료.
+- **이유:** 앱은 `WHERE user_id` 없이 RLS로 격리(2026-04-22 설계)하므로 RLS 제거는 ~30 호출부 전 쿼리 감사·데이터 유출 위험. 대신 enforcement 메커니즘만 Supabase 제공→자체 객체로 바꾸면 보안 모델·쿼리 변경 최소. 정책 내 `auth.uid()`는 정책 생성 시점(postgres)에 파싱돼 런타임엔 EXECUTE(public)만 확인 → `auth` 스키마 USAGE 없는 `app_authenticated`도 OR 정책 평가 정상(로컬 실증). expand/contract로 무중단·롤백안전 확보.
+- **트레이드오프:** ① 마이그레이션 2단계·임시 이중 정책(OR)·`migrations_pending/` 수동 이동 절차. contract 적용 후 구 BE 롤백 불가(신 BE 안정이 전제). ② 마이그레이션 도구는 여전히 supabase CLI — DB 실이관·도구 교체는 Phase 2. ③ 운영 적용 시 클라우드에서 `create role`/`grant` 권한 통과 확인 필요(postgres CREATEROLE 보유). ④ `kis_token_store.py` 주석의 "authenticated role" 표현은 이제 `app_authenticated`이나 의미 유효(미수정).
+
+---
+
 ## 2026-06-14 | 사용자 정의 분석 태그 — 레지스트리 테이블 + 거래엔 라벨 저장(디커플링), reasoning_tags 미러링
 
 - **맥락:** 분석 태그가 고정 ENUM `reasoning_tags` 4종(TECHNICAL/FUNDAMENTAL/NEWS/FEELING)뿐이라 사용자가 자기 분류(배당·테마주 등)를 못 남겼다. 자유 텍스트 사용자 태그를 추가하되, ENUM 구조·SELL 자동상속·분석 집계와 정합을 유지해야 했다.
