@@ -1,7 +1,8 @@
--- 포터블 RLS — CONTRACT (무중단 2/2단계). ⚠️ 신 BE 가 운영에 전면 배포·안정 확인된 뒤에만 적용.
+-- 포터블 RLS — CONTRACT (무중단 2/2단계).
 --
--- 적용 방법: 이 파일을 supabase/migrations/ 로 이동(mv)한 뒤 별도 커밋·`supabase db push`.
--- (migrations_pending/ 에 둔 이유 = supabase CLI 가 스캔하지 않아 expand 와 동시에 적용되는 사고 방지.)
+-- expand(033) + 신 BE 운영 배포·스모크 확인 후 적용하는 단계 (2026-06-16). 무중단을 위해
+-- expand 와 동시 적용되지 않도록 migrations_pending/ 에 보류했다가 이 시점에 migrations/ 로
+-- 옮겨 적용한다.
 --
 -- 이 단계는 구 BE 호환 장치를 제거해 Supabase 고유 객체 의존을 끝낸다:
 --   ① auth.uid() OR 분기 제거 → public.current_user_id() 단일
