@@ -13,6 +13,15 @@
 
 - App Store Connect 수출 규정 자동 응답 설정 (`ITSAppUsesNonExemptEncryption=false`)
 
+## [1.3.0] - 2026-06-17
+
+백엔드 보안 릴리즈 (사용자 가시 변경 없음 — DB RLS 메커니즘 전환).
+
+### Changed
+
+- DB Row Level Security 를 Supabase 고유 객체 비의존 표준 PostgreSQL 로 전환 — RLS 정책을 `current_user_id()`(`app.current_user_id` GUC) 단일로 정리(`auth.uid()`/`auth.users` 분기·FK 제거), accounts/trades/custom_tags 에 FORCE ROW LEVEL SECURITY 를 적용해 `app_authenticated` SET ROLE 없이 owner 접속+GUC 만으로 본인 행 격리
+- ⚠️ 마이그레이션 `035_force_rls.sql` 은 BE 배포 전에 prod 선적용 필요 (FORCE 미적용 상태로 새 BE 가 뜨면 owner 가 RLS 우회)
+
 ## [1.2.1] - 2026-06-12
 
 백엔드 패치 릴리즈 (사용자 가시 변경 없음 — 테스트·내부 도구 정리).
