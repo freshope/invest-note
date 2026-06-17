@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-06-17 | Alembic 도입 — 마이그레이션 도구를 supabase CLI → Alembic 으로 교체 (Phase 2 도구 교체)
+
+- **맥락:** `2026-06-16` 결정의 트레이드오프 ②("마이그레이션 도구는 여전히 supabase CLI — DB 실이관·도구 교체는 Phase 2")의 후속. 포터블 RLS(033~036)로 스키마를 표준 PG 객체로 옮기고 DB lift-and-shift(self-hosted PG 컨테이너)도 완료된 상태에서, 남은 supabase 종속(`supabase db push`/`db reset`)을 떼어내고 표준 Postgres 어디서나 동일하게 도는 마이그레이션 도구를 갖춘다. `2026-05-14` 의 "마이그레이션 재적용=`supabase db reset`" 절차를 대체.
+- **결정:**
+  - ① **Alembic 을 raw SQL 러너로 도입.** ORM 미사용(순수 asyncpg)이라 SQLAlchemy 모델·autogenerate 없이 `upgrade()` 에 `op.execute(raw SQL)` 만 쓴다. 위치 `api/alembic.ini` + `api/alembic/{env.py,versions,script.py.mako}`.
+  - ② **드라이버 = psycopg v3 동기.** 앱은 asyncpg(`postgresql://`)지만 alembic 은 동기 연결이라 env.py 가 scheme 을 `postgresql+psycopg://` 로 rewrite. async 템플릿 미채택(마이그레이션은 오프라인·비성능경로라 동기가 단순).
+  - ③ **연결 = `MIGRATION_DATABASE_URL`(없으면 `DATABASE_URL` fallback) + superuser(postgres) + direct 5432.** 앱 role `invest_note_app` 은 NOSUPERUSER 라 baseline 의 `create extension pg_trgm`·role 조작 불가. transaction-mode pooler 뒤에서는 버전테이블 락이 충돌하므로 direct 강제. env.py 는 로컬 편의로 `.env.local` 도 최소 파싱(python-dotenv 의존 없음).
+  - ④ **baseline = pg_dump --schema-only 스냅샷 + stamp.** baseline 적용은 `op.get_bind().exec_driver_sql(<dump 전체>)` 1회(`;` split 금지 — plpgsql `$$` 본문). ⚠️ **PG 18 pg_dump 는 `\restrict`/`\unrestrict` psql 전용 메타커맨드를 덤프 상/하단에 emit** 한다 — `exec_driver_sql`(psycopg)은 이를 못 읽어 깨진다(2026-06-17 ephemeral postgres:18 실증: as-is 적용 시 `syntax error at or near "\"`, `^\` 줄 제거 후 적용 시 전 테이블+pg_trgm 생성 성공). 따라서 리비전 로드 시 `^\` 줄을 제거한 뒤 실행한다(엔진 연결로 적용하므로 psql 복원 보호용인 이 줄 제거는 안전). 036(app_authenticated drop) 적용 **후** 라이브 스키마를 떠 단일 clean baseline 리비전(`0001_baseline`)으로. 기존 운영/개발 DB 는 `alembic stamp 0001_baseline`(재실행 안 함), 신규 DB(local/CI)는 baseline 으로 전체 생성. fresh DB 는 baseline 적용 **전** `invest_note_app` 역할 선행 생성 필요(pg_dump 는 OWNER/GRANT 만 싣고 role 자체는 안 실음 → "alembic=스키마, role=별도" 소유 분리).
+  - ⑤ **supabase 는 Auth 전용.** `supabase/config.toml [db.migrations] enabled=false`, 기존 36개 SQL 은 `supabase/migrations_archive/` 로 이동(history 보존). 로컬도 `supabase start`(Auth) + `alembic upgrade head`(스키마).
+  - ⑥ **CI 검증.** 단위 테스트는 FakePool 기반이라 SQL 미실행 → 마이그레이션이 깨져도 통과한다. `ci-api.yml` 에 `migrate-verify` job(빈 postgres:18 service → 역할 부트스트랩 → `alembic upgrade head` 성공 + 핵심 테이블 존재) 추가가 유일한 실 DB 게이트.
+- **이유:** raw SQL 러너로 한정해 ORM 도입 비용 없이 도구만 교체(기존 SQL 자산 그대로 op.execute). baseline 을 036-after 단일 스냅샷으로 떠 role 의존 GRANT/POLICY 가 박힌 baseline·036 별도 리비전 시퀀싱 함정을 원천 제거. CI 의 pg_dump-diff(fresh==dump) 는 upgrade 가 그 dump 를 실행하는 구조라 **순환·취약**(alembic_version·헤더 noise) → 채택 안 하고, "upgrade 성공 + 테이블 존재"라는 견고한 게이트로 대체. fresh==live 동등성은 baseline 생성 시 로컬 1회 검증.
+- **트레이드오프:** ① baseline 은 036 cleanup 에 의존(그 전까지 Phase 4 보류, 코드/설정/CI 는 선행 가능). ② superuser URL 별도 운용 — 운영은 DB 호스트 포트 미publish 라 `docker exec`/네트워크 one-shot 컨테이너 컨텍스트에서만 마이그레이션 실행(`project_prod_db_access`). ③ Dockerfile 은 `src` 만 COPY·CMD 는 uvicorn 직행이라 운영 마이그레이션은 당분간 수동 ops(배포 자동화는 범위 밖). ④ down-revision 되돌림은 baseline `downgrade()=NotImplementedError` 로 차단(forward-only). ⑤ baseline(dev 산출)은 prod 와 byte-identical 이 **아니다** — 타입 6개·함수 2개 owner(dev=`postgres`/prod=`invest_note_app`) + `GRANT ALL ON SCHEMA public TO invest_note_app`(dev만) 차이(2026-06-17 prod stamp 전 drift diff 로 확인). **비구조적·런타임/마이그레이션 무영향**: 타입은 USAGE·함수는 EXECUTE(PUBLIC 기본)로 쓰고 `current_user_id()`는 SECURITY INVOKER라 owner 무관, 마이그레이션은 superuser 실행이라 owner 무관, RLS FORCE 모델이 요구하는 **테이블** owner=invest_note_app 은 양쪽 동일. dev 의 supabase 생성 잔재(postgres owner) vs prod 의 lift-shift 통일(invest_note_app)의 차이일 뿐.
+- **재평가 트리거:** ① 운영 마이그레이션을 배포 파이프라인에 자동 편입할 필요가 생기면 Dockerfile 에 `alembic/` COPY + entrypoint 마이그레이션 step 추가. ② 스키마 객체가 SQLAlchemy 모델로 표현할 가치가 생기면(다수 신규 테이블) autogenerate 재검토.
+
+---
+
 ## 2026-06-16 | Supabase DB 종속성 제거 — RLS를 표준 PostgreSQL 객체로 치환 (무중단 expand/contract)
 
 - **맥락:** DB를 다른 PostgreSQL로 바로 교체하면 Supabase 고유 객체(`auth.uid()`, `auth.users`, `authenticated` 역할, `request.jwt.claims` GUC)가 딸려와 지저분해진다. Supabase를 유지한 채 DB 레이어가 이들에 의존하지 않도록 자체 `public` 객체로 옮겨, 이후 DB만 lift-and-shift 하면 깨끗이 이관되게 한다. **DB 종속성 축만** 대상이고 Supabase **Auth(JWT/OAuth)는 유지** — FE `@supabase`·BE JWKS 검증·계정삭제 Admin API 무변경. `2026-04-22 RLS GUC 주입` 결정을 대체.
