@@ -1,7 +1,7 @@
 """KIS 접근토큰 DB 영속화 — kis_tokens 테이블 read/write + 발급 직렬화 락.
 
 토큰은 서버 전용 비밀이라 RLS 정책 없는 테이블(owner 접속만 통과)을 plain
-`pool.acquire()` 로 접근한다 (acquire_for_user 금지 — authenticated role 은 차단됨).
+`pool.acquire()` 로 접근한다 (acquire_for_user 금지 — app_authenticated role 은 차단됨).
 발급 직렬화는 트랜잭션 스코프 advisory lock 사용 — session-level 은 Supavisor
 transaction mode 에서 leak (trades_repo.acquire_trade_group_lock 과 동일 패턴).
 

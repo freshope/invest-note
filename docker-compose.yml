@@ -1,0 +1,34 @@
+# 표준 PostgreSQL dev DB (Supabase → 표준 PG 이관 대상).
+# Auth 는 계속 Supabase 로컬 스택(`supabase start`)을 쓰고, 앱 데이터만 이 DB 가 담는다.
+#
+# 기동:   docker compose up -d
+# 중지:   docker compose down       (데이터 유지)
+# 초기화: docker compose down -v    (볼륨 삭제)
+#
+# 이 파일은 컨테이너만 제공한다(self-contained). 데이터·볼륨은 영속되므로 일상 사용은
+# `up`/`down` 으로 충분하다. 빈 볼륨에서 처음 셋업할 때만(=`down -v`/새 머신) 역할
+# (app_authenticated)·pg_trgm·grants 부트스트랩 + 데이터 복원이 필요하다 — 절차는
+# 운영 이관 기록(memory project_portable_rls) 참고.
+
+services:
+  db:
+    image: postgres:18-alpine
+    container_name: invest-note-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: invest_note
+    ports:
+      - "64340:5432"
+    volumes:
+      # PG18-alpine 의 PGDATA = /var/lib/postgresql/18/docker → 상위 디렉토리째 영속.
+      - invest_note_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d invest_note"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  invest_note_pgdata:
