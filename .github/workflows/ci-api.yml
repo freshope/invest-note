@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main, develop]
     paths:
-      - "api/**"
+      - "api/**" # api/alembic/** 마이그레이션 변경 포함
       - "supabase/**" # 마이그레이션은 API 도메인 — 스키마 변경 커밋도 API 테스트를 거친다.
       - ".github/workflows/ci-api.yml"
   push:
@@ -49,3 +49,67 @@ jobs:
 
       - name: Unit tests
         run: poetry run pytest -q
+
+  # 단위 테스트는 FakePool 기반이라 SQL 을 실제로 실행하지 않는다 → 마이그레이션이 깨져도 통과한다.
+  # 이 job 이 유일한 실 DB 검증 게이트: 빈 Postgres 에 alembic upgrade head 가 성공하는지 확인한다.
+  # (fresh==live 스키마 동등성은 baseline 생성 시 로컬에서 검증 — docs/spec 의 Phase 5.1)
+  migrate-verify:
+    name: Migrate verify (real Postgres)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    services:
+      postgres:
+        image: postgres:18 # 운영 DB major 버전과 일치
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: invest_note
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # baseline 은 superuser 로 적용(create extension pg_trgm·OWNER 지정).
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/invest_note
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: api/.python-version
+
+      - uses: snok/install-poetry@v1
+        with:
+          virtualenvs-in-project: true
+
+      - name: Cache Poetry venv
+        uses: actions/cache@v4
+        with:
+          path: api/.venv
+          key: poetry-${{ runner.os }}-${{ hashFiles('api/poetry.lock') }}
+          restore-keys: |
+            poetry-${{ runner.os }}-
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
+
+      # baseline 덤프의 OWNER TO / GRANT invest_note_app 를 위해 역할을 선행 생성(스키마 밖 부트스트랩).
+      - name: Bootstrap app role
+        run: psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE invest_note_app LOGIN NOSUPERUSER PASSWORD 'invest_note_app';"
+
+      - name: Alembic upgrade head
+        run: poetry run alembic upgrade head
+
+      # baseline 리비전이 들어온 뒤(Phase 4)부터 핵심 테이블 생성까지 검증. 그 전엔 upgrade no-op 통과만 확인.
+      - name: Assert core schema built
+        run: |
+          if [ -f alembic/baseline_schema.sql ]; then
+            psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 -tAc "SELECT to_regclass('public.trades') IS NOT NULL;" | grep -qx t
+            poetry run alembic current | grep -q .
+          else
+            echo "baseline_schema.sql 미생성(Phase 4 이전) — upgrade no-op 통과만 확인"
+          fi

@@ -190,6 +190,15 @@ curl -H "Authorization: Bearer $TOKEN" \
 poetry run pytest
 ```
 
+## 마이그레이션 (Alembic)
+
+스키마 마이그레이션은 Alembic(`api/alembic`)이 단일 소유한다. supabase 는 Auth(GoTrue) 전용.
+
+- 적용: `make migrate` (= `poetry run alembic upgrade head`)
+- 새 마이그레이션: `make migrate-new name="add xxx"` → 생성된 `alembic/versions/*.py` 의 `upgrade()` 에 `op.execute("...")` 로 raw SQL 작성 → `make migrate` (ORM/autogenerate 미사용)
+- 연결 URL: `MIGRATION_DATABASE_URL`(없으면 `DATABASE_URL`). **superuser + direct 5432** 필요(`pg_trgm`·role 조작) — `.env.local` 에 설정. 앱 role `invest_note_app` 은 NOSUPERUSER 라 마이그레이션 불가.
+- 신규/빈 DB 는 baseline 적용 **전** `invest_note_app` 역할을 먼저 생성해야 한다(스키마 밖 부트스트랩). 운영 DB 는 호스트 포트 미publish 라 `docker exec` 컨텍스트에서 실행.
+
 ## 배포
 
 Coolify (self-hosted) — `api.invest-note.pixelwave.app`

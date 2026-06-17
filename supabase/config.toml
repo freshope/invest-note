@@ -51,8 +51,10 @@ max_client_conn = 100
 # secret_key = "env(SECRET_VALUE)"
 
 [db.migrations]
+# public 스키마 마이그레이션은 Alembic(api/alembic)이 단일 소유한다. supabase 는 Auth(GoTrue)
+# 전용 — `supabase start` 후 `cd api && poetry run alembic upgrade head` 로 스키마를 생성한다.
 # If disabled, migrations will be skipped during a db push or reset.
-enabled = true
+enabled = false
 # Specifies an ordered list of schema files that describe your database.
 # Supports glob patterns relative to supabase directory: "./schemas/*.sql"
 schema_paths = []
