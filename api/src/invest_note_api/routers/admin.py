@@ -10,7 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response
 from invest_note_api.auth.admin import require_admin, require_admin_token
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.config import Settings, get_settings
-from invest_note_api.db import acquire_admin, get_admin_pool
+from invest_note_api.db import get_pool
 from invest_note_api.db_ops import admin_repo
 from invest_note_api.errors import APIError
 from invest_note_api.schemas.admin import (
@@ -148,9 +148,8 @@ async def trigger_reconcile_nps(
 #
 # 위 트리거(/admin/seed/*, /admin/reconcile/nps)는 머신용 X-Admin-Token 경로로 그대로 둔다.
 # 아래는 운영자 웹 패널용 — Supabase JWT + ADMIN_EMAILS allowlist 게이트(require_admin).
-# 전부 admin pool(invest_note_admin BYPASSRLS)로 cross-user 조회한다(acquire_admin).
+# RLS 제거 후 메인 풀(invest_note_app=owner) plain connection 이 cross-user 무필터 조회한다.
 
-ERR_ADMIN_DB_UNSET = "어드민 DB(ADMIN_DATABASE_URL)가 설정되지 않았습니다."
 ERR_NPS_EXISTS = "이미 존재하는 nps_unmatched 항목입니다."
 ERR_NOT_FOUND = "해당 항목을 찾을 수 없습니다."
 
@@ -165,20 +164,12 @@ _TABLE_PATH = {
 }
 
 
-def _require_admin_pool(pool: asyncpg.Pool | None) -> asyncpg.Pool:
-    """admin pool 미설정(503)을 라우트 진입 시 거부. 부팅은 막지 않는다(lifespan)."""
-    if pool is None:
-        raise APIError(ERR_ADMIN_DB_UNSET, 503)
-    return pool
-
-
 @router.get("/stats", response_model=AdminStats)
 async def admin_stats(
     _: AuthenticatedUser = Depends(require_admin),
-    pool: asyncpg.Pool | None = Depends(get_admin_pool),
+    pool: asyncpg.Pool = Depends(get_pool),
 ) -> AdminStats:
-    pool = _require_admin_pool(pool)
-    async with acquire_admin(pool) as conn:
+    async with pool.acquire() as conn:
         return AdminStats(**await admin_repo.get_stats(conn))
 
 
@@ -186,7 +177,7 @@ async def admin_stats(
 async def admin_list(
     table: str,
     _: AuthenticatedUser = Depends(require_admin),
-    pool: asyncpg.Pool | None = Depends(get_admin_pool),
+    pool: asyncpg.Pool = Depends(get_pool),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=admin_repo.DEFAULT_PAGE_SIZE, ge=1),
     q: str | None = Query(default=None),
@@ -194,8 +185,7 @@ async def admin_list(
     table_key = _TABLE_PATH.get(table)
     if table_key is None:
         raise APIError(ERR_NOT_FOUND, 404)
-    pool = _require_admin_pool(pool)
-    async with acquire_admin(pool) as conn:
+    async with pool.acquire() as conn:
         rows, total = await admin_repo.list_rows(
             conn, table_key, page=page, page_size=page_size, q=q
         )
@@ -208,11 +198,10 @@ async def admin_update_stock(
     ticker: str,
     body: StockUpdate,
     _: AuthenticatedUser = Depends(require_admin),
-    pool: asyncpg.Pool | None = Depends(get_admin_pool),
+    pool: asyncpg.Pool = Depends(get_pool),
 ) -> dict:
-    pool = _require_admin_pool(pool)
     fields = body.model_dump(exclude_unset=True)
-    async with acquire_admin(pool) as conn:
+    async with pool.acquire() as conn:
         row = await admin_repo.update_stock(conn, country_code, ticker, fields)
     if row is None:
         raise APIError(ERR_NOT_FOUND, 404)
@@ -223,10 +212,9 @@ async def admin_update_stock(
 async def admin_create_nps(
     body: NpsUnmatchedCreate,
     _: AuthenticatedUser = Depends(require_admin),
-    pool: asyncpg.Pool | None = Depends(get_admin_pool),
+    pool: asyncpg.Pool = Depends(get_pool),
 ) -> dict:
-    pool = _require_admin_pool(pool)
-    async with acquire_admin(pool) as conn:
+    async with pool.acquire() as conn:
         row = await admin_repo.create_nps_unmatched(
             conn,
             nps_name=body.nps_name,
@@ -245,11 +233,10 @@ async def admin_update_nps(
     nps_name: str = Query(...),
     nps_as_of: date = Query(...),
     _: AuthenticatedUser = Depends(require_admin),
-    pool: asyncpg.Pool | None = Depends(get_admin_pool),
+    pool: asyncpg.Pool = Depends(get_pool),
 ) -> dict:
-    pool = _require_admin_pool(pool)
     fields = body.model_dump(exclude_unset=True)
-    async with acquire_admin(pool) as conn:
+    async with pool.acquire() as conn:
         row = await admin_repo.update_nps_unmatched(
             conn, nps_name=nps_name, nps_as_of=nps_as_of, fields=fields
         )
@@ -263,10 +250,9 @@ async def admin_delete_nps(
     nps_name: str = Query(...),
     nps_as_of: date = Query(...),
     _: AuthenticatedUser = Depends(require_admin),
-    pool: asyncpg.Pool | None = Depends(get_admin_pool),
+    pool: asyncpg.Pool = Depends(get_pool),
 ) -> Response:
-    pool = _require_admin_pool(pool)
-    async with acquire_admin(pool) as conn:
+    async with pool.acquire() as conn:
         deleted = await admin_repo.delete_nps_unmatched_row(
             conn, nps_name=nps_name, nps_as_of=nps_as_of
         )

@@ -4,7 +4,23 @@
 
 ---
 
+## 2026-06-18 | RLS 전면 제거 — 사용자 격리를 앱 레이어 user_id 필터로 단일화 (아래 BYPASSRLS pool 결정 부분 역전)
+
+- **맥락:** 1인 개발 초기 단계에서 RLS(FORCE ROW LEVEL SECURITY)의 운영/개발 복잡도가 보안 이득을 초과. 데이터 backfill 마이그레이션이 FORCE RLS 에 막혀 silent no-op(GUC 미설정 시 `current_user_id()`=NULL→0행), 마이그레이션·어드민에 superuser/BYPASSRLS 별도 연결 운용. 조사 결과 user-scoped 쿼리 대다수가 이미 `WHERE user_id` 명시(중복 방어)라 RLS 제거가 깔끔.
+- **결정:**
+  - ① **RLS 제거.** accounts/trades/custom_tags(+kis_tokens/users)의 RLS 정책·ENABLE·FORCE 와 `public.current_user_id()` 함수를 모두 drop(Alembic `0002_drop_rls`, down=0001_baseline, +downgrade 가역). 격리는 각 쿼리의 명시적 `WHERE user_id=$1`(앱 레이어)가 유일 수단. RLS 의존 6+1곳 메움 + `recalc_group_pnl` UPDATE 도 user_id scope 추가 + 참조 전수 감사.
+  - ② **acquire_for_user 단순화.** GUC `set_config` 제거(트랜잭션 래퍼·users 프로비저닝은 `pg_advisory_xact_lock`·원자성 위해 유지).
+  - ③ **어드민 BYPASSRLS pool 폐기(아래 2026-06-18 어드민 결정 ③ 역전).** RLS 가 사라져 메인 풀(`invest_note_app`=owner) plain acquire 가 cross-user 조회 → `invest_note_admin` 역할(`0002_admin_role` 롤백·삭제)·`ADMIN_DATABASE_URL`·`acquire_admin`·503 게이트 제거. admin 게이트 = `require_admin` allowlist 단일.
+  - ④ **실DB cross-user 격리 회귀 가드** 신설(`tests/test_user_isolation_db.py`, CI migrate-verify env-gated).
+- **이유:** 보안 요구가 아직 낮은 초기 단계·1인 운영에서 RLS 간접 레이어(GUC 주입·정책·BYPASSRLS 이중 풀)의 운영/개발 비용이 더 큼. 대부분 쿼리가 이미 user_id 명시라 제거 후에도 격리 유지.
+- **트레이드오프:** ① **보안 백스톱 상실(비대칭 위험)** — user_id 필터 누락 한 번이 cross-user 금융데이터 유출. 완화: 전수 감사 + 실DB 격리 테스트. ② admin 권한 경계 한 겹 감소(DB GRANT 화이트리스트·config-presence 게이트 사라지고 allowlist 단일). ③ `DROP FUNCTION` owner=postgres 라 마이그레이션은 superuser 필요(app role 거부 실증) — alembic_version 도 동일이라 추가 제약 아님. ④ prod 적용은 api 이미지에 alembic 미포함이라 `psql -U postgres` + alembic_version 수동 갱신(baseline stamp 관행).
+- **재평가 트리거:** 멀티테넌트/규제·민감도 상승·팀 확장 시 RLS(또는 동급 DB 격리) 재도입 검토. 이 경우 0002_drop_rls downgrade 로 복원 가능. 관련 memory: `project_portable_rls`(과거 RLS 설계 history)·`project_admin_panel`·`project_alembic_migrations`.
+
+---
+
 ## 2026-06-18 | 어드민 패널 1차 증분 — 인증 재사용·격리, BYPASSRLS pool, snake_case passthrough
+
+> ⚠️ **부분 역전(2026-06-18, 같은 날 후속):** 아래 ③(invest_note_admin BYPASSRLS pool + ADMIN_DATABASE_URL)·트레이드오프 ④의 503 전제는 RLS 전면 제거로 폐기됨 → admin 은 메인 풀 사용, allowlist 가 유일 게이트. 위 "RLS 전면 제거" 항목 참조.
 
 - **맥락:** 운영자가 DB(사용자·거래·종목·NPS 큐)를 웹에서 확인/관리할 UI가 없었다(기존은 `/admin/seed`·`/admin/reconcile` HTTP 트리거 4개뿐, `X-Admin-Token`). 루트에 별도 Next.js 어드민 앱(`admin/`)을 추가해 Supabase Studio 스타일 대시보드+핵심 테이블 CRUD를 제공한다. 사용자 요구: app과 별도 auth·Supabase Auth 미사용. 단 진행 중인 탈-Supabase(`2026-06-16`/`2026-06-17`) 방향과 충돌하지 않게 종속을 최소·격리.
 - **결정:**

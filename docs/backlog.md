@@ -4,6 +4,8 @@ MVP 이후 구현할 작업 후보 목록.
 
 ---
 
+- [ ] **RLS 제거 후속 — 라우터 인라인 user_id 필터 e2e 회귀 가드 확대 (2026-06-18)** — RLS 제거(`0002_drop_rls`)로 DB 백스톱이 사라져 사용자 격리는 앱 레이어 `WHERE user_id` 가 유일 수단. 현재 회귀 가드 `tests/test_user_isolation_db.py` 는 **repo 함수(accounts/trades/custom_tags repo + pnl_sync)만** 커버하고, 라우터에 인라인된 user_id 필터(`routers/accounts.py` 의 `get_trade_count` 2쿼리·`list_accounts` 의 trades count·`create_account` INSERT)는 미커버. 후속: HTTP 레이어 + 실DB 픽스처로 두 사용자 시드 후 해당 엔드포인트의 cross-user 격리를 검증(인라인 쿼리에서 `AND user_id` 누락 시 실패하도록). 트리거: 라우터 인라인 SQL 추가/수정 시 또는 보안 강화 라운드.
+
 ## 해외주식(US) 지원 — Phase C + 후속 (Phase A·B 완료)
 
 로드맵 v2 "해외 주식 지원". **Phase A(기반 plumbing)·B(정합성 슬라이스) 모두 2026-06-08 완료.**

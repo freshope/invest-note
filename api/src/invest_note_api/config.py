@@ -98,10 +98,6 @@ class Settings(BaseSettings):
     # 정확 비교(admin_email_set property). 빈 값이면 어떤 계정도 require_admin 통과 못 함.
     admin_emails: str = ""
 
-    # 어드민 패널 전용 DB 접속 URL(invest_note_admin BYPASSRLS 역할). 미설정 시 admin CRUD
-    # 라우트는 503 으로 거부(부팅은 막지 않음). 운영 SSOT 는 Coolify env.
-    admin_database_url: str = ""
-
     model_config = SettingsConfigDict(env_file=".env.local", extra="ignore")
 
     # 공급자류 env 는 공백/대소문자를 정규화한다 — 운영 콘솔(Coolify)에서 "none "(후행 공백)·

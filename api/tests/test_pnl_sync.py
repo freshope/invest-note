@@ -64,7 +64,7 @@ class TestRecalcGroupPnLChangedOnly:
         """SELL이 없으면 executemany 미호출."""
         conn = FakeConn()
         trades = [make_trade(id="b1", trade_type="BUY")]
-        await recalc_group_pnl(conn, trades, _key())
+        await recalc_group_pnl(conn, trades, _key(), "u1")
         assert conn.calls == []
 
     async def test_first_recalc_updates_all_new_sells(self) -> None:
@@ -76,12 +76,13 @@ class TestRecalcGroupPnLChangedOnly:
             make_trade(id="s1", trade_type="SELL", price=80000, quantity=10,
                        traded_at=_dt("2024-02-01T09:00:00+09:00")),
         ]
-        await recalc_group_pnl(conn, trades, _key())
+        await recalc_group_pnl(conn, trades, _key(), "u1")
         assert len(conn.calls) == 1
         sql, rows = conn.calls[0]
         assert len(rows) == 1
-        # 마지막 파라미터가 sell_id
-        assert rows[0][-1] == "s1"
+        # 파라미터 끝 2개 = (sell_id, user_id)
+        assert rows[0][-2] == "s1"
+        assert rows[0][-1] == "u1"
 
     async def test_skip_when_existing_values_match(self) -> None:
         """직전 recalc 결과와 동일하면 executemany 미호출."""
@@ -104,7 +105,7 @@ class TestRecalcGroupPnLChangedOnly:
                 result="SUCCESS",
             ),
         ]
-        await recalc_group_pnl(conn, trades, _key())
+        await recalc_group_pnl(conn, trades, _key(), "u1")
         assert conn.calls == []
 
     async def test_only_changed_row_is_updated(self) -> None:
@@ -146,11 +147,11 @@ class TestRecalcGroupPnLChangedOnly:
                 result="SUCCESS",
             ),
         ]
-        await recalc_group_pnl(conn, trades, _key())
+        await recalc_group_pnl(conn, trades, _key(), "u1")
         assert len(conn.calls) == 1
         _, rows = conn.calls[0]
         assert len(rows) == 1
-        assert rows[0][-1] == "s2"
+        assert rows[0][-2] == "s2"
 
     async def test_float_microdiff_does_not_trigger_update(self) -> None:
         """DB round-trip 후 미세 부동소수 오차는 변경으로 보지 않음."""
@@ -173,5 +174,5 @@ class TestRecalcGroupPnLChangedOnly:
                 result="SUCCESS",
             ),
         ]
-        await recalc_group_pnl(conn, trades, _key())
+        await recalc_group_pnl(conn, trades, _key(), "u1")
         assert conn.calls == []

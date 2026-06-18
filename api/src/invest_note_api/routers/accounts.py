@@ -24,7 +24,7 @@ async def list_accounts(
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> list[dict]:
     async with acquire_for_user(pool, user.id) as conn:
-        accounts = await repo_list_accounts(conn)
+        accounts = await repo_list_accounts(conn, user.id)
         counts = await conn.fetch(
             "SELECT account_id, count(*)::int AS c FROM trades"
             " WHERE user_id = $1 GROUP BY account_id",
@@ -47,8 +47,9 @@ async def create_account(
     async with acquire_for_user(pool, user.id) as conn:
         row = await conn.fetchrow(
             "INSERT INTO accounts (user_id, name, broker, cash_balance)"
-            " VALUES (public.current_user_id(), $1, $2, $3)"
+            " VALUES ($1, $2, $3, $4)"
             " RETURNING id, user_id, name, broker, cash_balance, created_at, updated_at",
+            user.id,
             data.name,
             data.broker,
             data.cash_balance,
@@ -71,7 +72,7 @@ async def update_account(
         return Response(status_code=204)
 
     async with acquire_for_user(pool, user.id) as conn:
-        result = await patch_account(conn, account_id, data.model_dump(include=fields))
+        result = await patch_account(conn, account_id, user.id, data.model_dump(include=fields))
 
     if result is None:
         raise APIError(ERR_ACCOUNT_NOT_FOUND, 404)
@@ -117,13 +118,15 @@ async def get_trade_count(
 ) -> dict:
     async with acquire_for_user(pool, user.id) as conn:
         exists = await conn.fetchval(
-            "SELECT id FROM accounts WHERE id = $1", account_id
+            "SELECT id FROM accounts WHERE id = $1 AND user_id = $2", account_id, user.id
         )
         if exists is None:
             raise APIError(ERR_ACCOUNT_NOT_FOUND, 404)
 
         count = await conn.fetchval(
-            "SELECT count(*)::int FROM trades WHERE account_id = $1", account_id
+            "SELECT count(*)::int FROM trades WHERE account_id = $1 AND user_id = $2",
+            account_id,
+            user.id,
         )
 
     return {"count": count or 0}

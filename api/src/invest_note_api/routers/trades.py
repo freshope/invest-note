@@ -145,7 +145,7 @@ async def _validate_import_groups(
 
     now = datetime.now(timezone.utc)
     async with acquire_for_user(pool, user_id) as conn:
-        await assert_account_exists(conn, account_id)
+        await assert_account_exists(conn, account_id, user_id)
         for group_key, group_rows in groups.items():
             group_existing = await list_trades_in_group(conn, user_id, group_key)
             existing_by_sig: dict = {
@@ -286,7 +286,7 @@ async def list_trades_endpoint(
             ticker=ticker,
             country=country if ticker else None,
         )
-        accounts = await repo_list_accounts(conn)
+        accounts = await repo_list_accounts(conn, user.id)
 
     return {"trades": [_trade_with_account_dict(t) for t in trades], "accounts": accounts}
 
@@ -334,7 +334,7 @@ async def create_trade(
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> dict:
     async with acquire_for_user(pool, user.id) as conn:
-        await assert_account_exists(conn, data.account_id)
+        await assert_account_exists(conn, data.account_id, user.id)
 
         now = datetime.now(timezone.utc)
         new_trade = Trade(
@@ -380,7 +380,7 @@ async def create_trade(
         })
 
         fresh_trades = [*group_trades, new_trade.model_copy(update={"id": row["id"]})]
-        await recalc_group_pnl(conn, fresh_trades, group_key)
+        await recalc_group_pnl(conn, fresh_trades, group_key, user.id)
 
     return row
 
@@ -494,7 +494,7 @@ async def update_trade(
                 t.model_copy(update=patch) if t.id == trade_id else t
                 for t in group_trades
             ]
-            await recalc_group_pnl(conn, fresh_trades, key)
+            await recalc_group_pnl(conn, fresh_trades, key, user.id)
         else:
             # 파생 SELL 값에 영향을 주지 않는 메타 필드는 lock/recalc 없이 수정.
             # PNL_AFFECTING_FIELDS에 없는 필드 추가 시 이 분기를 재검토할 것.
@@ -529,7 +529,7 @@ async def delete_trade_endpoint(
         await delete_trade(conn, trade_id, user.id)
 
         remaining = [t for t in group_trades if t.id != trade_id]
-        await recalc_group_pnl(conn, remaining, key)
+        await recalc_group_pnl(conn, remaining, key, user.id)
 
     return Response(status_code=204)
 
@@ -605,7 +605,7 @@ async def bulk_delete_trades(
             delete_ids_by_group[trade_to_group_key(t)].add(t.id)
 
         # 메시지 prefix 용 account_id → name 맵 (1회 fetch).
-        accounts = await repo_list_accounts(conn)
+        accounts = await repo_list_accounts(conn, user.id)
         account_name_by_id: dict[str, str] = {
             str(a["id"]): a.get("name") or "" for a in accounts
         }
@@ -643,7 +643,7 @@ async def bulk_delete_trades(
         # recalc 는 in-memory group_remaining 를 입력으로 쓰므로 delete 와 순서 무관.
         await delete_trades_by_ids(conn, unique_ids, user.id)
         for key in sorted_keys:
-            await recalc_group_pnl(conn, group_remaining[key], key)
+            await recalc_group_pnl(conn, group_remaining[key], key, user.id)
 
     return Response(status_code=204)
 
@@ -832,7 +832,7 @@ async def import_commit(
     skipped_count = 0
 
     async with acquire_for_user(pool, user.id) as conn:
-        await assert_account_exists(conn, body.account_id)
+        await assert_account_exists(conn, body.account_id, user.id)
 
         # staged rows를 (account_id, ticker, country) 그룹으로 분할 후 그룹별로 처리
         groups: dict[TradeGroupKey, list[dict]] = defaultdict(list)
@@ -992,7 +992,7 @@ async def import_commit(
                         + [t for t in group_existing if t.id not in merged_ids]
                         + list(inserted_trades)
                     )
-                    await recalc_group_pnl(conn, fresh_trades, group_key)
+                    await recalc_group_pnl(conn, fresh_trades, group_key, user.id)
 
                     inserted_count += len(inserted_trades)
                     merged_count += len(merged_trades)
