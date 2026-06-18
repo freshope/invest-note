@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-06-18 | 어드민 패널 1차 증분 — 인증 재사용·격리, BYPASSRLS pool, snake_case passthrough
+
+- **맥락:** 운영자가 DB(사용자·거래·종목·NPS 큐)를 웹에서 확인/관리할 UI가 없었다(기존은 `/admin/seed`·`/admin/reconcile` HTTP 트리거 4개뿐, `X-Admin-Token`). 루트에 별도 Next.js 어드민 앱(`admin/`)을 추가해 Supabase Studio 스타일 대시보드+핵심 테이블 CRUD를 제공한다. 사용자 요구: app과 별도 auth·Supabase Auth 미사용. 단 진행 중인 탈-Supabase(`2026-06-16`/`2026-06-17`) 방향과 충돌하지 않게 종속을 최소·격리.
+- **결정:**
+  - ① **인증 = 기존 Supabase JWT 재사용 + allowlist 게이트.** NextAuth·정적 admin 토큰·BFF 도입 안 함. FastAPI는 기존 `get_current_user`(JWKS) 위에 `require_admin`(=`ADMIN_EMAILS` 정규화 set **정확비교**, substring 함정 회피)만 추가. 브라우저가 app처럼 Bearer 로 `/admin/*` 직접 호출(2-tier).
+  - ② **Supabase 종속 격리.** FE의 `@supabase/supabase-js` import는 `admin/src/lib/auth/` 단일 모듈에만(provider-neutral 인터페이스). BE는 새 결합 없이 기존 JWKS 경로 재사용 → 탈-Supabase 시 `auth/jwt.py`(BE)·`lib/auth`(FE) 한 곳씩만 교체, app과 함께 제거.
+  - ③ **cross-user 조회 = `invest_note_admin` BYPASSRLS 역할 + 전용 pool.** trades/accounts/custom_tags는 FORCE RLS라 app 역할 plain acquire 시 0행. Alembic `0002_admin_role`(NOLOGIN·무비밀번호 생성, 시크릿 VCS 비포함, 적용 후 운영자가 `ALTER ROLE ... LOGIN PASSWORD`) + `acquire_admin`(GUC 미주입, `acquire_for_user`와 분리) + `ADMIN_DATABASE_URL`. GRANT 화이트리스트가 범위표를 DB 권한 레벨에서 이중 강제(trades=SELECT only, kis_tokens 제외).
+  - ④ **응답 = snake_case raw passthrough.** 어드민은 Studio류 raw 테이블 뷰어라 app 라우트의 CamelModel(camel)을 끌어오지 않고 DB 컬럼명 그대로 노출. row는 dict, 쓰기 입력만 화이트리스트 스키마(`extra='forbid'`).
+  - ⑤ **가드 = static-export SPA + 클라이언트 가드(middleware 미사용).** app이 localStorage(PKCE)+`output:"export"`라 server/edge middleware가 세션을 못 봄. 실제 시행 경계는 API `require_admin`(403), FE 가드는 UX 리다이렉트.
+  - ⑥ **범위(1차):** users/accounts/trades/custom_tags 읽기, stocks 읽기+수정, nps_unmatched 풀CRUD. 기존 `/admin/seed`·`/admin/reconcile`(X-Admin-Token)은 무수정 유지 → 인증 3종 공존(앱 JWT / 머신 X-Admin-Token / 어드민 JWT+allowlist).
+- **이유:** 어드민이 사람 1~수 명인 내부 도구라 별도 IdP/JWT 체계는 과설계. 기존 Supabase 인증을 재사용하면 신원이 API까지 자연 전달(감사)·코드 최소. "별도 auth" 요구는 격리(②)로 충족 — 사용자 풀은 공유하되 allowlist 게이트, 탈-Supabase 시 단일 지점 교체. BYPASSRLS는 RLS 우회를 라우트마다 흩지 않고 pool 한 곳에 응집하고 GRANT로 범위를 DB까지 강제.
+- **트레이드오프:** ① 어드민이 app과 같은 Supabase user pool 공유(신뢰 도메인 미분리, allowlist로 게이트) — 탈-Supabase 시 함께 정리. ② BYPASSRLS 역할은 allowlist 게이트 뒤에서만 도달해야 하는 강권한 — pool 한정·라우트 require_admin 필수. ③ user-scoped 테이블 **쓰기 보류**(trades 편집은 매칭 SELL 자동 갱신/PnL cascade 위험 → raw row 편집 금지). ④ 동작 전제 5단계(alembic 적용·역할 비밀번호·`ADMIN_DATABASE_URL`·`ADMIN_EMAILS`·Supabase redirect URL) 미충족 시 의도된 503. ⑤ Coolify admin 서비스 배포는 범위 밖(로컬 dev까지).
+- **재평가 트리거:** ① 어드민 다계정·권한 등급이 필요해지면 정적 게이트 → JWT 클레임/role 기반으로(BFF 구조라 FastAPI 검증만 교체). ② user-scoped 안전한 쓰기 필요 시 비즈니스 로직(PnL 재계산) 경유 후속 spec. ③ 기존 운영도구 후속(KIS 키 만료 가시화·`/admin/verify-pnl`·seed 트리거 통합, `docs/backlog.md` "운영/어드민 도구")을 이 패널 위에 구축.
+
+---
+
 ## 2026-06-17 | Alembic 도입 — 마이그레이션 도구를 supabase CLI → Alembic 으로 교체 (Phase 2 도구 교체)
 
 - **맥락:** `2026-06-16` 결정의 트레이드오프 ②("마이그레이션 도구는 여전히 supabase CLI — DB 실이관·도구 교체는 Phase 2")의 후속. 포터블 RLS(033~036)로 스키마를 표준 PG 객체로 옮기고 DB lift-and-shift(self-hosted PG 컨테이너)도 완료된 상태에서, 남은 supabase 종속(`supabase db push`/`db reset`)을 떼어내고 표준 Postgres 어디서나 동일하게 도는 마이그레이션 도구를 갖춘다. `2026-05-14` 의 "마이그레이션 재적용=`supabase db reset`" 절차를 대체.
