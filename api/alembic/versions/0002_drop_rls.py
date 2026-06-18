@@ -74,6 +74,7 @@ def downgrade() -> None:
             AS $$
           select nullif(current_setting('app.current_user_id', true), '')::uuid
         $$;
+        ALTER FUNCTION public.current_user_id() OWNER TO postgres;
 
         ALTER TABLE public.users       ENABLE ROW LEVEL SECURITY;
         ALTER TABLE public.kis_tokens  ENABLE ROW LEVEL SECURITY;

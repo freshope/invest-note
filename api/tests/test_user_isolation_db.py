@@ -46,6 +46,7 @@ async def _seed_user(conn, *, name: str) -> tuple[str, str, str]:
 
 async def test_repos_scope_to_user_after_rls_removed():
     conn = await asyncpg.connect(TEST_DB_URL)
+    ua = ub = None  # _seed_user 가 중간에 던져도 finally 의 cleanup 이 NameError 로 원인을 가리지 않게.
     try:
         ua, aa, ta = await _seed_user(conn, name="userA")
         ub, ab, tb = await _seed_user(conn, name="userB")
@@ -79,8 +80,10 @@ async def test_repos_scope_to_user_after_rls_removed():
         assert await custom_tags_repo.delete_custom_tag(conn, ua, tag_a["id"]) is True
     finally:
         # 시드 정리 (users CASCADE 로 accounts/trades 동반 삭제).
-        await conn.execute(
-            "DELETE FROM public.users WHERE id = ANY($1::uuid[])",
-            [ua, ub],
-        )
+        seeded = [u for u in (ua, ub) if u is not None]
+        if seeded:
+            await conn.execute(
+                "DELETE FROM public.users WHERE id = ANY($1::uuid[])",
+                seeded,
+            )
         await conn.close()

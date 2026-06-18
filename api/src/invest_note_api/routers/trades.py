@@ -380,7 +380,7 @@ async def create_trade(
         })
 
         fresh_trades = [*group_trades, new_trade.model_copy(update={"id": row["id"]})]
-        await recalc_group_pnl(conn, fresh_trades, group_key)
+        await recalc_group_pnl(conn, fresh_trades, group_key, user.id)
 
     return row
 
@@ -494,7 +494,7 @@ async def update_trade(
                 t.model_copy(update=patch) if t.id == trade_id else t
                 for t in group_trades
             ]
-            await recalc_group_pnl(conn, fresh_trades, key)
+            await recalc_group_pnl(conn, fresh_trades, key, user.id)
         else:
             # 파생 SELL 값에 영향을 주지 않는 메타 필드는 lock/recalc 없이 수정.
             # PNL_AFFECTING_FIELDS에 없는 필드 추가 시 이 분기를 재검토할 것.
@@ -529,7 +529,7 @@ async def delete_trade_endpoint(
         await delete_trade(conn, trade_id, user.id)
 
         remaining = [t for t in group_trades if t.id != trade_id]
-        await recalc_group_pnl(conn, remaining, key)
+        await recalc_group_pnl(conn, remaining, key, user.id)
 
     return Response(status_code=204)
 
@@ -643,7 +643,7 @@ async def bulk_delete_trades(
         # recalc 는 in-memory group_remaining 를 입력으로 쓰므로 delete 와 순서 무관.
         await delete_trades_by_ids(conn, unique_ids, user.id)
         for key in sorted_keys:
-            await recalc_group_pnl(conn, group_remaining[key], key)
+            await recalc_group_pnl(conn, group_remaining[key], key, user.id)
 
     return Response(status_code=204)
 
@@ -992,7 +992,7 @@ async def import_commit(
                         + [t for t in group_existing if t.id not in merged_ids]
                         + list(inserted_trades)
                     )
-                    await recalc_group_pnl(conn, fresh_trades, group_key)
+                    await recalc_group_pnl(conn, fresh_trades, group_key, user.id)
 
                     inserted_count += len(inserted_trades)
                     merged_count += len(merged_trades)
