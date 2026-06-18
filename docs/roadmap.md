@@ -17,8 +17,8 @@
 |------|------|
 | 프론트엔드 | Next.js (App Router, 정적 export) + TypeScript |
 | 스타일링 | Tailwind CSS |
-| 백엔드 | FastAPI (Python) — Supabase JWKS(ES256) 인증 + asyncpg + RLS |
-| DB/Auth | self-hosted PostgreSQL (Coolify) + Alembic 마이그레이션 + RLS / Auth는 Supabase (OAuth·JWKS) 전용 |
+| 백엔드 | FastAPI (Python) — Supabase JWKS(ES256) 인증 + asyncpg (사용자 격리=앱 레이어 user_id 필터) |
+| DB/Auth | self-hosted PostgreSQL (Coolify) + Alembic 마이그레이션 (RLS 제거, 2026-06-18) / Auth는 Supabase (OAuth·JWKS) 전용 |
 | 시세 | 네이버 금융(KR) — 비공식 지연 시세 |
 | 분석 | PostHog (제품 분석, FE 전용·Cloud) — 페이지뷰·세션·유저 식별·핵심 이벤트 |
 | 배포 | 모바일 앱 (iOS/Android, Capacitor) 단일 배포, BE는 Coolify (self-hosted) |
