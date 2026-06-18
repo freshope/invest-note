@@ -88,7 +88,7 @@ async def get_portfolio_summary(
     account_id_str = str(account_id) if account_id is not None else None
     async with acquire_for_user(pool, user.id) as conn:
         trades = await list_trades_with_account(conn, user.id, account_id=account_id_str)
-        account_dicts = await list_accounts(conn)
+        account_dicts = await list_accounts(conn, user.id)
 
     # has_accounts 는 글로벌 기준이라 응답 직전 account_dicts 길이로 따로 계산한다 —
     # 필터된 결과가 비어도 "계좌 만드세요" EmptyState 가 잘못 뜨면 안 된다.

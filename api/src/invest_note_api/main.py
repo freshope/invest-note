@@ -47,12 +47,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.pool = await create_pool(settings.database_url)
         else:
             app.state.pool = None
-        # 어드민 패널 전용 pool(invest_note_admin BYPASSRLS) — admin_database_url 설정 시에만.
-        # 미설정이면 None 으로 두고 admin CRUD 라우트가 진입 시 503 으로 거부(부팅은 막지 않음).
-        if settings.admin_database_url:
-            app.state.admin_pool = await create_pool(settings.admin_database_url)
-        else:
-            app.state.admin_pool = None
         # KIS 자격증명/도메인 설정 + 토큰 캐시 리셋 (kis 공급자 미사용 시에도 무해).
         # pool 을 넘겨 토큰을 kis_tokens 테이블에 영속화 (pool=None 이면 메모리 전용).
         configure_kis(settings, pool=app.state.pool)
@@ -64,8 +58,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         await app.state.http_client.aclose()
         if app.state.pool is not None:
             await app.state.pool.close()
-        if app.state.admin_pool is not None:
-            await app.state.admin_pool.close()
 
     application = FastAPI(title="invest-note API", lifespan=lifespan)
 

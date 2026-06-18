@@ -1,8 +1,8 @@
-"""어드민 패널 CRUD 테스트 — require_admin 게이트 / shape / nps CRUD / 503.
+"""어드민 패널 CRUD 테스트 — require_admin 게이트 / shape / nps CRUD.
 
-실DB·실역할 미사용(conftest 와 동일 mock 전략, A1): require_admin allowlist 는 Settings
-override + mock user email 로, repo 호출은 FakePool/FakeConnection 으로 검증한다. 진짜
-BYPASSRLS cross-user 조회는 역할 미생성으로 pytest 불가 → 수동 e2e(Q5).
+실DB 미사용(conftest 와 동일 mock 전략): require_admin allowlist 는 Settings override +
+mock user email 로, repo 호출은 FakePool/FakeConnection 으로 검증한다. RLS 제거 후 admin 은
+메인 풀(owner) 로 cross-user 조회하며, 실제 cross-user 격리/조회는 실DB e2e 에서 검증.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.config import Settings, get_settings
-from invest_note_api.db import get_admin_pool
+from invest_note_api.db import get_pool
 from invest_note_api.main import create_app
 
 from .conftest import TEST_SUPABASE_URL
@@ -36,14 +36,17 @@ def _make_admin_app(admin_emails: str = ADMIN_EMAILS_CSV):
 
 
 def _client(app, *, email: str | None = ADMIN_EMAIL, admin_pool=...) -> TestClient:
-    """get_current_user(email override) + get_admin_pool override 한 클라이언트."""
+    """get_current_user(email override) + get_pool override 한 클라이언트.
+
+    RLS 제거 후 admin 라우트는 메인 풀(get_pool)을 쓰므로 그 의존을 FakePool 로 override 한다.
+    """
 
     async def mock_user() -> AuthenticatedUser:
         return AuthenticatedUser(id=uuid4(), email=email, raw={})
 
     app.dependency_overrides[get_current_user] = mock_user
     if admin_pool is not ...:
-        app.dependency_overrides[get_admin_pool] = lambda: admin_pool
+        app.dependency_overrides[get_pool] = lambda: admin_pool
     return TestClient(app)
 
 
@@ -92,17 +95,6 @@ def test_email_case_insensitive_match():
     conn = FakeConnection({"users": 0, "accounts": 0, "trades": 0, "stocks": 0, "nps_unmatched": 0})
     client = _client(app, email="ADMIN@Example.com", admin_pool=FakePool(conn))
     assert client.get("/admin/stats").status_code == 200
-
-
-# ─────────────────────────── ADMIN_DATABASE_URL 미설정 → 503 ───────────────────────────
-
-
-def test_admin_db_unset_returns_503():
-    """admin_pool=None 이면 게이트 통과해도 라우트 진입 시 503."""
-    app = _make_admin_app()
-    client = _client(app, email=ADMIN_EMAIL, admin_pool=None)
-    resp = client.get("/admin/stats")
-    assert resp.status_code == 503
 
 
 # ─────────────────────────── 리스트 엔벨로프 / shape ───────────────────────────

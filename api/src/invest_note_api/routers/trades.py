@@ -145,7 +145,7 @@ async def _validate_import_groups(
 
     now = datetime.now(timezone.utc)
     async with acquire_for_user(pool, user_id) as conn:
-        await assert_account_exists(conn, account_id)
+        await assert_account_exists(conn, account_id, user_id)
         for group_key, group_rows in groups.items():
             group_existing = await list_trades_in_group(conn, user_id, group_key)
             existing_by_sig: dict = {
@@ -286,7 +286,7 @@ async def list_trades_endpoint(
             ticker=ticker,
             country=country if ticker else None,
         )
-        accounts = await repo_list_accounts(conn)
+        accounts = await repo_list_accounts(conn, user.id)
 
     return {"trades": [_trade_with_account_dict(t) for t in trades], "accounts": accounts}
 
@@ -334,7 +334,7 @@ async def create_trade(
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> dict:
     async with acquire_for_user(pool, user.id) as conn:
-        await assert_account_exists(conn, data.account_id)
+        await assert_account_exists(conn, data.account_id, user.id)
 
         now = datetime.now(timezone.utc)
         new_trade = Trade(
@@ -605,7 +605,7 @@ async def bulk_delete_trades(
             delete_ids_by_group[trade_to_group_key(t)].add(t.id)
 
         # 메시지 prefix 용 account_id → name 맵 (1회 fetch).
-        accounts = await repo_list_accounts(conn)
+        accounts = await repo_list_accounts(conn, user.id)
         account_name_by_id: dict[str, str] = {
             str(a["id"]): a.get("name") or "" for a in accounts
         }
@@ -832,7 +832,7 @@ async def import_commit(
     skipped_count = 0
 
     async with acquire_for_user(pool, user.id) as conn:
-        await assert_account_exists(conn, body.account_id)
+        await assert_account_exists(conn, body.account_id, user.id)
 
         # staged rows를 (account_id, ticker, country) 그룹으로 분할 후 그룹별로 처리
         groups: dict[TradeGroupKey, list[dict]] = defaultdict(list)

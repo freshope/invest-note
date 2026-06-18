@@ -1,8 +1,8 @@
-"""어드민 패널 repo — admin pool(invest_note_admin BYPASSRLS) 기반 read + stocks/nps 쓰기.
+"""어드민 패널 repo — 메인 풀(invest_note_app=owner) 기반 read + stocks/nps 쓰기.
 
-acquire_admin 으로 받은 plain connection 을 쓴다(GUC 미주입). FORCE RLS 테이블도 BYPASSRLS
-역할이라 cross-user 무필터 조회된다. 테이블/컬럼명은 전부 이 모듈의 상수 화이트리스트에서만
-오므로(사용자 입력 미주입) f-string SQL 조립이 안전하다. 값은 항상 $n 파라미터.
+RLS 제거 후 owner connection 이 user_id 필터 없이 cross-user 전 행을 조회한다. 테이블/컬럼명은
+전부 이 모듈의 상수 화이트리스트에서만 오므로(사용자 입력 미주입) f-string SQL 조립이 안전하다.
+값은 항상 $n 파라미터.
 """
 from __future__ import annotations
 
