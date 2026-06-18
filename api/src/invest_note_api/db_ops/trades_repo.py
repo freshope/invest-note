@@ -133,10 +133,10 @@ async def list_trades_with_account(
     return [_row_to_trade_with_account(r) for r in rows]
 
 
-async def assert_account_exists(conn: Any, account_id: str) -> None:
-    """계좌 존재 확인 — 없으면 400 APIError raise."""
+async def assert_account_exists(conn: Any, account_id: str, user_id: str) -> None:
+    """본인 계좌 존재 확인 — 없으면 400 APIError raise."""
     exists = await conn.fetchval(
-        "SELECT id FROM accounts WHERE id = $1", account_id
+        "SELECT id FROM accounts WHERE id = $1 AND user_id = $2", account_id, user_id
     )
     if not exists:
         raise APIError("올바른 계좌를 선택해주세요.", 400)

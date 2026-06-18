@@ -4,6 +4,54 @@
 
 ---
 
+## 2026-06-18 | RLS 전면 제거 — 사용자 격리를 앱 레이어 user_id 필터로 단일화 (아래 BYPASSRLS pool 결정 부분 역전)
+
+- **맥락:** 1인 개발 초기 단계에서 RLS(FORCE ROW LEVEL SECURITY)의 운영/개발 복잡도가 보안 이득을 초과. 데이터 backfill 마이그레이션이 FORCE RLS 에 막혀 silent no-op(GUC 미설정 시 `current_user_id()`=NULL→0행), 마이그레이션·어드민에 superuser/BYPASSRLS 별도 연결 운용. 조사 결과 user-scoped 쿼리 대다수가 이미 `WHERE user_id` 명시(중복 방어)라 RLS 제거가 깔끔.
+- **결정:**
+  - ① **RLS 제거.** accounts/trades/custom_tags(+kis_tokens/users)의 RLS 정책·ENABLE·FORCE 와 `public.current_user_id()` 함수를 모두 drop(Alembic `0002_drop_rls`, down=0001_baseline, +downgrade 가역). 격리는 각 쿼리의 명시적 `WHERE user_id=$1`(앱 레이어)가 유일 수단. RLS 의존 6+1곳 메움 + `recalc_group_pnl` UPDATE 도 user_id scope 추가 + 참조 전수 감사.
+  - ② **acquire_for_user 단순화.** GUC `set_config` 제거(트랜잭션 래퍼·users 프로비저닝은 `pg_advisory_xact_lock`·원자성 위해 유지).
+  - ③ **어드민 BYPASSRLS pool 폐기(아래 2026-06-18 어드민 결정 ③ 역전).** RLS 가 사라져 메인 풀(`invest_note_app`=owner) plain acquire 가 cross-user 조회 → `invest_note_admin` 역할(`0002_admin_role` 롤백·삭제)·`ADMIN_DATABASE_URL`·`acquire_admin`·503 게이트 제거. admin 게이트 = `require_admin` allowlist 단일.
+  - ④ **실DB cross-user 격리 회귀 가드** 신설(`tests/test_user_isolation_db.py`, CI migrate-verify env-gated).
+- **이유:** 보안 요구가 아직 낮은 초기 단계·1인 운영에서 RLS 간접 레이어(GUC 주입·정책·BYPASSRLS 이중 풀)의 운영/개발 비용이 더 큼. 대부분 쿼리가 이미 user_id 명시라 제거 후에도 격리 유지.
+- **트레이드오프:** ① **보안 백스톱 상실(비대칭 위험)** — user_id 필터 누락 한 번이 cross-user 금융데이터 유출. 완화: 전수 감사 + 실DB 격리 테스트. ② admin 권한 경계 한 겹 감소(DB GRANT 화이트리스트·config-presence 게이트 사라지고 allowlist 단일). ③ `DROP FUNCTION` owner=postgres 라 마이그레이션은 superuser 필요(app role 거부 실증) — alembic_version 도 동일이라 추가 제약 아님. ④ prod 적용은 api 이미지에 alembic 미포함이라 `psql -U postgres` + alembic_version 수동 갱신(baseline stamp 관행).
+- **재평가 트리거:** 멀티테넌트/규제·민감도 상승·팀 확장 시 RLS(또는 동급 DB 격리) 재도입 검토. 이 경우 0002_drop_rls downgrade 로 복원 가능. 관련 memory: `project_portable_rls`(과거 RLS 설계 history)·`project_admin_panel`·`project_alembic_migrations`.
+
+---
+
+## 2026-06-18 | 어드민 패널 1차 증분 — 인증 재사용·격리, BYPASSRLS pool, snake_case passthrough
+
+> ⚠️ **부분 역전(2026-06-18, 같은 날 후속):** 아래 ③(invest_note_admin BYPASSRLS pool + ADMIN_DATABASE_URL)·트레이드오프 ④의 503 전제는 RLS 전면 제거로 폐기됨 → admin 은 메인 풀 사용, allowlist 가 유일 게이트. 위 "RLS 전면 제거" 항목 참조.
+
+- **맥락:** 운영자가 DB(사용자·거래·종목·NPS 큐)를 웹에서 확인/관리할 UI가 없었다(기존은 `/admin/seed`·`/admin/reconcile` HTTP 트리거 4개뿐, `X-Admin-Token`). 루트에 별도 Next.js 어드민 앱(`admin/`)을 추가해 Supabase Studio 스타일 대시보드+핵심 테이블 CRUD를 제공한다. 사용자 요구: app과 별도 auth·Supabase Auth 미사용. 단 진행 중인 탈-Supabase(`2026-06-16`/`2026-06-17`) 방향과 충돌하지 않게 종속을 최소·격리.
+- **결정:**
+  - ① **인증 = 기존 Supabase JWT 재사용 + allowlist 게이트.** NextAuth·정적 admin 토큰·BFF 도입 안 함. FastAPI는 기존 `get_current_user`(JWKS) 위에 `require_admin`(=`ADMIN_EMAILS` 정규화 set **정확비교**, substring 함정 회피)만 추가. 브라우저가 app처럼 Bearer 로 `/admin/*` 직접 호출(2-tier).
+  - ② **Supabase 종속 격리.** FE의 `@supabase/supabase-js` import는 `admin/src/lib/auth/` 단일 모듈에만(provider-neutral 인터페이스). BE는 새 결합 없이 기존 JWKS 경로 재사용 → 탈-Supabase 시 `auth/jwt.py`(BE)·`lib/auth`(FE) 한 곳씩만 교체, app과 함께 제거.
+  - ③ **cross-user 조회 = `invest_note_admin` BYPASSRLS 역할 + 전용 pool.** trades/accounts/custom_tags는 FORCE RLS라 app 역할 plain acquire 시 0행. Alembic `0002_admin_role`(NOLOGIN·무비밀번호 생성, 시크릿 VCS 비포함, 적용 후 운영자가 `ALTER ROLE ... LOGIN PASSWORD`) + `acquire_admin`(GUC 미주입, `acquire_for_user`와 분리) + `ADMIN_DATABASE_URL`. GRANT 화이트리스트가 범위표를 DB 권한 레벨에서 이중 강제(trades=SELECT only, kis_tokens 제외).
+  - ④ **응답 = snake_case raw passthrough.** 어드민은 Studio류 raw 테이블 뷰어라 app 라우트의 CamelModel(camel)을 끌어오지 않고 DB 컬럼명 그대로 노출. row는 dict, 쓰기 입력만 화이트리스트 스키마(`extra='forbid'`).
+  - ⑤ **가드 = static-export SPA + 클라이언트 가드(middleware 미사용).** app이 localStorage(PKCE)+`output:"export"`라 server/edge middleware가 세션을 못 봄. 실제 시행 경계는 API `require_admin`(403), FE 가드는 UX 리다이렉트.
+  - ⑥ **범위(1차):** users/accounts/trades/custom_tags 읽기, stocks 읽기+수정, nps_unmatched 풀CRUD. 기존 `/admin/seed`·`/admin/reconcile`(X-Admin-Token)은 무수정 유지 → 인증 3종 공존(앱 JWT / 머신 X-Admin-Token / 어드민 JWT+allowlist).
+- **이유:** 어드민이 사람 1~수 명인 내부 도구라 별도 IdP/JWT 체계는 과설계. 기존 Supabase 인증을 재사용하면 신원이 API까지 자연 전달(감사)·코드 최소. "별도 auth" 요구는 격리(②)로 충족 — 사용자 풀은 공유하되 allowlist 게이트, 탈-Supabase 시 단일 지점 교체. BYPASSRLS는 RLS 우회를 라우트마다 흩지 않고 pool 한 곳에 응집하고 GRANT로 범위를 DB까지 강제.
+- **트레이드오프:** ① 어드민이 app과 같은 Supabase user pool 공유(신뢰 도메인 미분리, allowlist로 게이트) — 탈-Supabase 시 함께 정리. ② BYPASSRLS 역할은 allowlist 게이트 뒤에서만 도달해야 하는 강권한 — pool 한정·라우트 require_admin 필수. ③ user-scoped 테이블 **쓰기 보류**(trades 편집은 매칭 SELL 자동 갱신/PnL cascade 위험 → raw row 편집 금지). ④ 동작 전제 5단계(alembic 적용·역할 비밀번호·`ADMIN_DATABASE_URL`·`ADMIN_EMAILS`·Supabase redirect URL) 미충족 시 의도된 503. ⑤ Coolify admin 서비스 배포는 범위 밖(로컬 dev까지).
+- **재평가 트리거:** ① 어드민 다계정·권한 등급이 필요해지면 정적 게이트 → JWT 클레임/role 기반으로(BFF 구조라 FastAPI 검증만 교체). ② user-scoped 안전한 쓰기 필요 시 비즈니스 로직(PnL 재계산) 경유 후속 spec. ③ 기존 운영도구 후속(KIS 키 만료 가시화·`/admin/verify-pnl`·seed 트리거 통합, `docs/backlog.md` "운영/어드민 도구")을 이 패널 위에 구축.
+
+---
+
+## 2026-06-17 | Alembic 도입 — 마이그레이션 도구를 supabase CLI → Alembic 으로 교체 (Phase 2 도구 교체)
+
+- **맥락:** `2026-06-16` 결정의 트레이드오프 ②("마이그레이션 도구는 여전히 supabase CLI — DB 실이관·도구 교체는 Phase 2")의 후속. 포터블 RLS(033~036)로 스키마를 표준 PG 객체로 옮기고 DB lift-and-shift(self-hosted PG 컨테이너)도 완료된 상태에서, 남은 supabase 종속(`supabase db push`/`db reset`)을 떼어내고 표준 Postgres 어디서나 동일하게 도는 마이그레이션 도구를 갖춘다. `2026-05-14` 의 "마이그레이션 재적용=`supabase db reset`" 절차를 대체.
+- **결정:**
+  - ① **Alembic 을 raw SQL 러너로 도입.** ORM 미사용(순수 asyncpg)이라 SQLAlchemy 모델·autogenerate 없이 `upgrade()` 에 `op.execute(raw SQL)` 만 쓴다. 위치 `api/alembic.ini` + `api/alembic/{env.py,versions,script.py.mako}`.
+  - ② **드라이버 = psycopg v3 동기.** 앱은 asyncpg(`postgresql://`)지만 alembic 은 동기 연결이라 env.py 가 scheme 을 `postgresql+psycopg://` 로 rewrite. async 템플릿 미채택(마이그레이션은 오프라인·비성능경로라 동기가 단순).
+  - ③ **연결 = `MIGRATION_DATABASE_URL`(없으면 `DATABASE_URL` fallback) + superuser(postgres) + direct 5432.** 앱 role `invest_note_app` 은 NOSUPERUSER 라 baseline 의 `create extension pg_trgm`·role 조작 불가. transaction-mode pooler 뒤에서는 버전테이블 락이 충돌하므로 direct 강제. env.py 는 로컬 편의로 `.env.local` 도 최소 파싱(python-dotenv 의존 없음).
+  - ④ **baseline = pg_dump --schema-only 스냅샷 + stamp.** baseline 적용은 `op.get_bind().exec_driver_sql(<dump 전체>)` 1회(`;` split 금지 — plpgsql `$$` 본문). ⚠️ **PG 18 pg_dump 는 `\restrict`/`\unrestrict` psql 전용 메타커맨드를 덤프 상/하단에 emit** 한다 — `exec_driver_sql`(psycopg)은 이를 못 읽어 깨진다(2026-06-17 ephemeral postgres:18 실증: as-is 적용 시 `syntax error at or near "\"`, `^\` 줄 제거 후 적용 시 전 테이블+pg_trgm 생성 성공). 따라서 리비전 로드 시 `^\` 줄을 제거한 뒤 실행한다(엔진 연결로 적용하므로 psql 복원 보호용인 이 줄 제거는 안전). 036(app_authenticated drop) 적용 **후** 라이브 스키마를 떠 단일 clean baseline 리비전(`0001_baseline`)으로. 기존 운영/개발 DB 는 `alembic stamp 0001_baseline`(재실행 안 함), 신규 DB(local/CI)는 baseline 으로 전체 생성. fresh DB 는 baseline 적용 **전** `invest_note_app` 역할 선행 생성 필요(pg_dump 는 OWNER/GRANT 만 싣고 role 자체는 안 실음 → "alembic=스키마, role=별도" 소유 분리).
+  - ⑤ **supabase 는 Auth 전용.** `supabase/config.toml [db.migrations] enabled=false`, 기존 36개 SQL 은 `supabase/migrations_archive/` 로 이동(history 보존). 로컬도 `supabase start`(Auth) + `alembic upgrade head`(스키마).
+  - ⑥ **CI 검증.** 단위 테스트는 FakePool 기반이라 SQL 미실행 → 마이그레이션이 깨져도 통과한다. `ci-api.yml` 에 `migrate-verify` job(빈 postgres:18 service → 역할 부트스트랩 → `alembic upgrade head` 성공 + 핵심 테이블 존재) 추가가 유일한 실 DB 게이트.
+- **이유:** raw SQL 러너로 한정해 ORM 도입 비용 없이 도구만 교체(기존 SQL 자산 그대로 op.execute). baseline 을 036-after 단일 스냅샷으로 떠 role 의존 GRANT/POLICY 가 박힌 baseline·036 별도 리비전 시퀀싱 함정을 원천 제거. CI 의 pg_dump-diff(fresh==dump) 는 upgrade 가 그 dump 를 실행하는 구조라 **순환·취약**(alembic_version·헤더 noise) → 채택 안 하고, "upgrade 성공 + 테이블 존재"라는 견고한 게이트로 대체. fresh==live 동등성은 baseline 생성 시 로컬 1회 검증.
+- **트레이드오프:** ① baseline 은 036 cleanup 에 의존(그 전까지 Phase 4 보류, 코드/설정/CI 는 선행 가능). ② superuser URL 별도 운용 — 운영은 DB 호스트 포트 미publish 라 `docker exec`/네트워크 one-shot 컨테이너 컨텍스트에서만 마이그레이션 실행(`project_prod_db_access`). ③ Dockerfile 은 `src` 만 COPY·CMD 는 uvicorn 직행이라 운영 마이그레이션은 당분간 수동 ops(배포 자동화는 범위 밖). ④ down-revision 되돌림은 baseline `downgrade()=NotImplementedError` 로 차단(forward-only). ⑤ baseline(dev 산출)은 prod 와 byte-identical 이 **아니다** — 타입 6개·함수 2개 owner(dev=`postgres`/prod=`invest_note_app`) + `GRANT ALL ON SCHEMA public TO invest_note_app`(dev만) 차이(2026-06-17 prod stamp 전 drift diff 로 확인). **비구조적·런타임/마이그레이션 무영향**: 타입은 USAGE·함수는 EXECUTE(PUBLIC 기본)로 쓰고 `current_user_id()`는 SECURITY INVOKER라 owner 무관, 마이그레이션은 superuser 실행이라 owner 무관, RLS FORCE 모델이 요구하는 **테이블** owner=invest_note_app 은 양쪽 동일. dev 의 supabase 생성 잔재(postgres owner) vs prod 의 lift-shift 통일(invest_note_app)의 차이일 뿐.
+- **재평가 트리거:** ① 운영 마이그레이션을 배포 파이프라인에 자동 편입할 필요가 생기면 Dockerfile 에 `alembic/` COPY + entrypoint 마이그레이션 step 추가. ② 스키마 객체가 SQLAlchemy 모델로 표현할 가치가 생기면(다수 신규 테이블) autogenerate 재검토.
+
+---
+
 ## 2026-06-16 | Supabase DB 종속성 제거 — RLS를 표준 PostgreSQL 객체로 치환 (무중단 expand/contract)
 
 - **맥락:** DB를 다른 PostgreSQL로 바로 교체하면 Supabase 고유 객체(`auth.uid()`, `auth.users`, `authenticated` 역할, `request.jwt.claims` GUC)가 딸려와 지저분해진다. Supabase를 유지한 채 DB 레이어가 이들에 의존하지 않도록 자체 `public` 객체로 옮겨, 이후 DB만 lift-and-shift 하면 깨끗이 이관되게 한다. **DB 종속성 축만** 대상이고 Supabase **Auth(JWT/OAuth)는 유지** — FE `@supabase`·BE JWKS 검증·계정삭제 Admin API 무변경. `2026-04-22 RLS GUC 주입` 결정을 대체.

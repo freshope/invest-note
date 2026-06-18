@@ -53,8 +53,13 @@ async def recalc_group_pnl(
     conn: Any,
     trades: list[Trade],
     key: TradeGroupKey,
+    user_id: Any,
 ) -> None:
-    """그룹 PnL 재계산 후 변경된 SELL 거래에만 UPDATE 발행."""
+    """그룹 PnL 재계산 후 변경된 SELL 거래에만 UPDATE 발행.
+
+    RLS 제거 후 user 격리는 명시적 user_id 필터가 유일 수단이므로, 이 write 도
+    `AND user_id = $10` 로 본인 거래로 제한한다(타 유저 SELL 행 오염 방지).
+    """
     pnl_map = compute_group_pnl(trades, key)
     if not pnl_map:
         return
@@ -72,6 +77,7 @@ async def recalc_group_pnl(
             entry.emotion,
             entry.result,
             sell_id,
+            user_id,
         )
         for sell_id, entry in pnl_map.items()
         if _is_changed(existing_by_id.get(sell_id), entry)
@@ -84,7 +90,7 @@ async def recalc_group_pnl(
         await conn.executemany(
             "UPDATE trades SET profit_loss = $1, avg_buy_price = $2, holding_days = $3, "
             "strategy_type = $4, reasoning_tags = $5, custom_tags = $6, emotion = $7, "
-            "result = $8 WHERE id = $9",
+            "result = $8 WHERE id = $9 AND user_id = $10",
             rows,
         )
     except Exception as exc:

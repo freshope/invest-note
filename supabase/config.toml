@@ -5,6 +5,7 @@
 project_id = "invest-note"
 
 [api]
+# 필수 — 이 포트(64321)가 SUPABASE_URL 이자 auth(GoTrue) 진입 게이트웨이. 끄면 JWKS/OAuth 끊김.
 enabled = true
 # Port to use for the API URL.
 port = 64321
@@ -51,8 +52,10 @@ max_client_conn = 100
 # secret_key = "env(SECRET_VALUE)"
 
 [db.migrations]
+# public 스키마 마이그레이션은 Alembic(api/alembic)이 단일 소유한다. supabase 는 Auth(GoTrue)
+# 전용 — `supabase start` 후 `cd api && poetry run alembic upgrade head` 로 스키마를 생성한다.
 # If disabled, migrations will be skipped during a db push or reset.
-enabled = true
+enabled = false
 # Specifies an ordered list of schema files that describe your database.
 # Supports glob patterns relative to supabase directory: "./schemas/*.sql"
 schema_paths = []
@@ -75,7 +78,8 @@ allowed_cidrs = ["0.0.0.0/0"]
 allowed_cidrs_v6 = ["::/0"]
 
 [realtime]
-enabled = true
+# 미사용. off.
+enabled = false
 # Bind realtime via either IPv4 or IPv6. (default: IPv4)
 # ip_version = "IPv6"
 # The maximum length in bytes of HTTP request headers. (default: 4096)
@@ -93,7 +97,8 @@ openai_api_key = "env(OPENAI_API_KEY)"
 # Email testing server. Emails sent with the local dev setup are not actually sent - rather, they
 # are monitored, and you can view the emails that would have been sent from the web interface.
 [inbucket]
-enabled = true
+# 이메일 테스트 서버 미사용 (OAuth 전용, 이메일 인증 없음). off.
+enabled = false
 # Port to use for the email testing server web interface.
 port = 64324
 # Uncomment to expose additional ports for testing user applications that send emails.
@@ -103,7 +108,8 @@ port = 64324
 # sender_name = "Admin"
 
 [storage]
-enabled = true
+# 미사용. off.
+enabled = false
 # The maximum file size allowed (e.g. "5MB", "500KB").
 file_size_limit = "50MiB"
 
@@ -147,9 +153,10 @@ max_indexes = 5
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
-site_url = "http://127.0.0.1:3000"
+site_url = "http://127.0.0.1:3100"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+# app=3100, admin=3101 (둘 다 web 콜백 경로 /auth/callback/). localhost·127.0.0.1 양쪽 허용.
+additional_redirect_urls = ["http://localhost:3100/auth/callback/", "http://127.0.0.1:3100/auth/callback/", "http://localhost:3101/auth/callback/", "http://127.0.0.1:3101/auth/callback/"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to the local API URL (http://127.0.0.1:<port>/auth/v1).
@@ -366,7 +373,8 @@ authorization_url_path = "/oauth/consent"
 allow_dynamic_registration = false
 
 [edge_runtime]
-enabled = true
+# Edge Functions 미사용. off.
+enabled = false
 # Supported request policies: `oneshot`, `per_worker`.
 # `per_worker` (default) — enables hot reload during local development.
 # `oneshot` — fallback mode if hot reload causes issues (e.g. in large repos or with symlinks).
@@ -380,7 +388,8 @@ deno_version = 2
 # secret_key = "env(SECRET_VALUE)"
 
 [analytics]
-enabled = true
+# Logflare 분석 미사용. off.
+enabled = false
 port = 64327
 # Configure one of the supported backends: `postgres`, `bigquery`.
 backend = "postgres"

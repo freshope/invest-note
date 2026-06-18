@@ -22,26 +22,28 @@ def account_row_to_dict(row: Any) -> dict:
     return d
 
 
-async def list_accounts(conn: Any) -> list[dict]:
-    """RLS-scoped 사용자 계좌 목록 — 응답 직렬화 가능한 dict 형태로 반환."""
+async def list_accounts(conn: Any, user_id: Any) -> list[dict]:
+    """사용자 계좌 목록 — 응답 직렬화 가능한 dict 형태로 반환."""
     rows = await conn.fetch(
-        f"SELECT {RETURNING_COLS} FROM accounts ORDER BY created_at ASC"
+        f"SELECT {RETURNING_COLS} FROM accounts WHERE user_id = $1 ORDER BY created_at ASC",
+        user_id,
     )
     return [account_row_to_dict(row) for row in rows]
 
 
-async def patch_account(conn: Any, account_id: UUID, patch: dict) -> dict | None:
+async def patch_account(conn: Any, account_id: UUID, user_id: Any, patch: dict) -> dict | None:
     safe_patch = {k: v for k, v in patch.items() if k in UPDATABLE_COLS}
     # 호출자 (routers/accounts.update_account) 가 빈 fields 를 사전 차단하므로 unreachable.
     # 향후 직접 호출자가 생기면 빈 patch 를 ValueError 로 분리해 not-found `None` 과 구분 필요.
     if not safe_patch:
         return None
 
-    set_clause = ", ".join(f"{k} = ${i + 2}" for i, k in enumerate(safe_patch))
+    set_clause = ", ".join(f"{k} = ${i + 3}" for i, k in enumerate(safe_patch))
     row = await conn.fetchrow(
         f"UPDATE accounts SET {set_clause}, updated_at = now()"
-        f" WHERE id = $1 RETURNING {RETURNING_COLS}",
+        f" WHERE id = $1 AND user_id = $2 RETURNING {RETURNING_COLS}",
         account_id,
+        user_id,
         *safe_patch.values(),
     )
     return account_row_to_dict(row) if row else None

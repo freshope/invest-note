@@ -1,5 +1,6 @@
 packages:
   - "app"
+  - "admin"
 
 ignoredBuiltDependencies:
   - sharp

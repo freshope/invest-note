@@ -5,8 +5,6 @@ from uuid import UUID
 import asyncpg
 from fastapi import Request
 
-from invest_note_api.auth.constants import DB_GUC_USER_ID
-
 
 async def create_pool(database_url: str) -> asyncpg.Pool:
     # statement_cache_size=0 required for Supavisor transaction mode
@@ -19,15 +17,13 @@ def get_pool(request: Request) -> asyncpg.Pool:
 
 @asynccontextmanager
 async def acquire_for_user(pool: asyncpg.Pool, user_id: UUID) -> AsyncGenerator[asyncpg.Connection, None]:
-    """RLS 활성화 connection을 반환하는 context manager.
+    """사용자 요청용 connection을 트랜잭션 안에서 반환하는 context manager.
 
-    owner 컨텍스트에서 public.users 를 프로비저닝(FK 타깃 보장)한 뒤 app.current_user_id
-    GUC 를 주입한다. 사용자 데이터 테이블(accounts/trades/custom_tags)은 FORCE ROW LEVEL
-    SECURITY 라 owner 도 정책 대상이 되어, RLS policy 의 public.current_user_id() 가 이 GUC 를
-    읽어 본인 행만 노출한다(표준 PostgreSQL). public.users 는 FORCE 미적용 owner-only 테이블
-    이라 위 INSERT 가 owner 권한으로 통과한다.
+    public.users 를 먼저 프로비저닝(FK 타깃 보장)한다. 사용자 격리는 RLS 가 아니라 각
+    쿼리의 명시적 `WHERE user_id = $1` 로 보장한다(RLS 제거됨).
 
-    ⚠️ 앱 접속 역할은 비-superuser owner 여야 한다 — superuser 는 FORCE 여도 RLS 를 우회한다.
+    트랜잭션 래퍼는 유지한다 — 엔드포인트의 다중 statement 원자성과 pg_advisory_xact_lock
+    (트랜잭션 스코프 락)이 이에 의존한다.
     """
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -35,5 +31,4 @@ async def acquire_for_user(pool: asyncpg.Pool, user_id: UUID) -> AsyncGenerator[
                 "INSERT INTO public.users (id) VALUES ($1) ON CONFLICT (id) DO NOTHING",
                 user_id,
             )
-            await conn.execute("SELECT set_config($1, $2, true)", DB_GUC_USER_ID, str(user_id))
             yield conn
