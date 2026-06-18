@@ -30,10 +30,18 @@ jobs:
 
       - name: Compute image tags
         id: meta
+        env:
+          REGISTRY_URL: ${{ secrets.REGISTRY_URL }}
         run: |
           echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           # ref = admin-v1.2.3 (태그 push) 또는 브랜치명(workflow_dispatch)
           echo "ref=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          # REGISTRY_URL 에 scheme(https://)·trailing slash·대문자가 섞이면 docker 이미지
+          # 참조 형식이 깨진다("invalid reference format"). host 부분만 정규화한 뒤 태그에 쓴다.
+          reg="${REGISTRY_URL#https://}"; reg="${reg#http://}"; reg="${reg%/}"
+          reg="$(printf '%s' "$reg" | tr '[:upper:]' '[:lower:]')"
+          echo "::add-mask::$reg"   # secret 파생값 → 로그 평문 노출 방지
+          echo "registry=${reg}" >> "$GITHUB_OUTPUT"
           # :latest 는 admin-v* 태그에서만 갱신(브랜치 dispatch 가 운영 핸들을 덮지 않게).
           if [[ "${GITHUB_REF}" == refs/tags/admin-v* ]]; then
             echo "latest=true" >> "$GITHUB_OUTPUT"
@@ -55,9 +63,9 @@ jobs:
           outputs: type=registry
           # build-push-action 은 빈 줄을 무시 → latest 가 아닐 때 latest 줄 자동 생략.
           tags: |
-            ${{ secrets.REGISTRY_URL }}/invest-note-admin:${{ steps.meta.outputs.sha }}
-            ${{ secrets.REGISTRY_URL }}/invest-note-admin:${{ steps.meta.outputs.ref }}
-            ${{ steps.meta.outputs.latest == 'true' && format('{0}/invest-note-admin:latest', secrets.REGISTRY_URL) || '' }}
+            ${{ steps.meta.outputs.registry }}/invest-note-admin:${{ steps.meta.outputs.sha }}
+            ${{ steps.meta.outputs.registry }}/invest-note-admin:${{ steps.meta.outputs.ref }}
+            ${{ steps.meta.outputs.latest == 'true' && format('{0}/invest-note-admin:latest', steps.meta.outputs.registry) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
