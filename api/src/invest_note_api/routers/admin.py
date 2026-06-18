@@ -19,6 +19,7 @@ from invest_note_api.schemas.admin import (
     NpsUnmatchedCreate,
     NpsUnmatchedUpdate,
     StockUpdate,
+    UserGrowthPoint,
 )
 from invest_note_api.services.daily_price_seed import seed_daily_prices
 from invest_note_api.services.nps_seed import reconcile_nps_unmatched, seed_nps
@@ -171,6 +172,19 @@ async def admin_stats(
 ) -> AdminStats:
     async with pool.acquire() as conn:
         return AdminStats(**await admin_repo.get_stats(conn))
+
+
+@router.get("/user-growth", response_model=list[UserGrowthPoint])
+async def admin_user_growth(
+    _: AuthenticatedUser = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> list[UserGrowthPoint]:
+    """대시보드 누적 사용자수 차트 — 일별 누적 가입자 시계열(KST 버킷).
+
+    `/{table}` catch-all 보다 먼저 등록해야 table="user-growth" 로 흡수되지 않는다.
+    """
+    async with pool.acquire() as conn:
+        return [UserGrowthPoint(**p) for p in await admin_repo.get_user_growth(conn)]
 
 
 @router.get("/me")
