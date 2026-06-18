@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-06-18 | 어드민 배포 추가 — GHA→registry→Coolify, static-export+nginx → standalone(Node) 전환 (어드민 패널 결정 ⑤ 역전)
+
+- **맥락:** 어드민 패널은 구현·prod 적용(`admin-v0.1.1`)됐으나 정적 SPA 자체 배포 파이프라인은 범위 밖이었다(아래 어드민 패널 결정 트레이드오프 ⑤). pixelwave-web 의 빌드→레지스트리→Coolify 패턴을 참고해 `admin/` 배포를 자동화한다.
+- **결정:**
+  - ① **파이프라인 = `admin-v*` 태그 → GHA 빌드 → private registry(Vultr CR, image `invest-note-admin`) → Coolify API 배포 트리거**(`.github/workflows/deploy-admin.yml`). `workflow_dispatch` 는 빌드 검증 전용 — 브랜치 ref 에서 돌면 `:latest` 갱신·배포는 `refs/tags/admin-v*` 가드로 차단(운영 admin 오염 방지).
+  - ② **static-export+nginx → standalone(Node server.js) 전환**(어드민 패널 결정 ⑤ 역전). `output:"export"` 는 정적 서버(nginx)가 필요했으나, 컨테이너 배포에서는 Node 서버가 직접 서빙하는 게 단순(pixelwave 와 동일). nginx·nginx.conf 제거. monorepo standalone 은 `next.config.outputFileTracingRoot`=워크스페이스 루트 필수. 접근 가드(클라이언트+API 403)는 무변경 — export 가 강제했던 게 아니라 설계 선택이었음.
+  - ③ **Dockerfile = repo 루트 context**(pnpm workspace lockfile 위치) + `pnpm install --frozen-lockfile --filter invest-note-admin`(app/Capacitor 의존성 회피). `.dockerignore` 로 node_modules/.next/`.env*` 제외.
+  - ④ **`NEXT_PUBLIC_*` = GHA repo Variables → build-args**(빌드 타임 베이킹, public 값이라 secrets 아님). admin 은 정적 client env 라 Coolify 런타임 env 가 아니라 **GHA Variables 가 admin public env 의 SSOT**.
+- **이유:** 컨테이너로 배포하는 이상 standalone Node 서버가 export+nginx 2-파트보다 단순하고 pixelwave 와 일관. public 값이라 secrets 대신 Variables 로 코드 변경 없이 GitHub UI 관리. `--filter` 로 app 의 무거운 Capacitor 의존성을 빌드에서 배제.
+- **트레이드오프:** ① repo별 secrets 비상속 — invest-note repo 에 `REGISTRY_*`·`COOLIFY_URL`·`COOLIFY_API_TOKEN`·`COOLIFY_ADMIN_APP_UUID` 별도 설정 필요. ② Coolify admin 앱(UUID)·pull 태그(`:latest`/`admin-v*`)·컨테이너 포트(3000) 사전 구성이 첫 태그 성공의 전제. ③ api 의 git-webhook autodeploy(`project_coolify_autodeploy`)와 달리 admin 은 GHA 가 배포 주체(레지스트리 push 완료 시점을 GHA 가 앎) — 두 방식 혼재.
+- **재평가 트리거:** ① admin 에 SSR/미들웨어가 실제로 필요해지면 standalone 그대로 활용(이미 Node 서버). ② 빌드 시간이 문제되면 GHA 러너 빌드(ci-app 검증 경로 재사용)+산출물 패키징으로 후퇴 가능.
+
+---
+
 ## 2026-06-18 | RLS 전면 제거 — 사용자 격리를 앱 레이어 user_id 필터로 단일화 (아래 BYPASSRLS pool 결정 부분 역전)
 
 - **맥락:** 1인 개발 초기 단계에서 RLS(FORCE ROW LEVEL SECURITY)의 운영/개발 복잡도가 보안 이득을 초과. 데이터 backfill 마이그레이션이 FORCE RLS 에 막혀 silent no-op(GUC 미설정 시 `current_user_id()`=NULL→0행), 마이그레이션·어드민에 superuser/BYPASSRLS 별도 연결 운용. 조사 결과 user-scoped 쿼리 대다수가 이미 `WHERE user_id` 명시(중복 방어)라 RLS 제거가 깔끔.

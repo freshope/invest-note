@@ -1,0 +1,12 @@
+# admin/Dockerfile 은 repo 루트를 context 로 빌드한다. 무거운/stale/비밀 경로 제외.
+**/node_modules
+**/.next
+**/out
+**/*.tsbuildinfo
+**/.env
+**/.env.*
+.git
+.github
+docs
+app/android
+app/ios
