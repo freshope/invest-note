@@ -21,6 +21,9 @@ class Settings(BaseSettings):
         "https://localhost:3000",
         "capacitor://localhost",
         "https://localhost",
+        # 어드민 패널 dev 서버(별도 포트 3001, app 3000 과 분리). 운영 origin 은 Coolify env.
+        "http://localhost:3001",
+        "https://localhost:3001",
     ]
     database_url: str = ""
     supabase_secret_key: str = ""
@@ -91,6 +94,14 @@ class Settings(BaseSettings):
     # 빈 값이면 admin 엔드포인트는 항상 거부(미설정=차단).
     admin_token: str = ""
 
+    # 어드민 패널(신규 /admin CRUD) allowlist — 쉼표구분 이메일. Supabase JWT email 클레임과
+    # 정확 비교(admin_email_set property). 빈 값이면 어떤 계정도 require_admin 통과 못 함.
+    admin_emails: str = ""
+
+    # 어드민 패널 전용 DB 접속 URL(invest_note_admin BYPASSRLS 역할). 미설정 시 admin CRUD
+    # 라우트는 503 으로 거부(부팅은 막지 않음). 운영 SSOT 는 Coolify env.
+    admin_database_url: str = ""
+
     model_config = SettingsConfigDict(env_file=".env.local", extra="ignore")
 
     # 공급자류 env 는 공백/대소문자를 정규화한다 — 운영 콘솔(Coolify)에서 "none "(후행 공백)·
@@ -136,6 +147,12 @@ class Settings(BaseSettings):
     @property
     def jwks_uri(self) -> str:
         return f"{self.supabase_url}/auth/v1/.well-known/jwks.json"
+
+    # admin_emails(쉼표 문자열) → 정규화(소문자/trim) set. require_admin 이 email 클레임을
+    # 동일 정규화 후 `in` 으로 정확 비교한다. raw 문자열 substring 매칭(함정)을 피하기 위해 set 화.
+    @property
+    def admin_email_set(self) -> set[str]:
+        return {e.strip().lower() for e in self.admin_emails.split(",") if e.strip()}
 
     # 콤마 체인 필드는 pydantic list[str](JSON 파싱)이 아니라 str + 파싱 property 로 처리.
     @property

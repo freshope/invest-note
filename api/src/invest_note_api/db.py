@@ -17,6 +17,27 @@ def get_pool(request: Request) -> asyncpg.Pool:
     return request.app.state.pool
 
 
+def get_admin_pool(request: Request) -> asyncpg.Pool | None:
+    """어드민 패널 전용 pool(invest_note_admin BYPASSRLS) 반환. 미설정 시 None.
+
+    None 이면 admin CRUD 라우트가 503 으로 거부한다(부팅은 막지 않음 — lifespan 에서
+    admin_database_url 미설정 시 state.admin_pool=None). 테스트는 이 의존을 override 한다.
+    """
+    return getattr(request.app.state, "admin_pool", None)
+
+
+@asynccontextmanager
+async def acquire_admin(pool: asyncpg.Pool) -> AsyncGenerator[asyncpg.Connection, None]:
+    """admin pool 의 plain connection 을 반환(GUC 미주입·users INSERT 안 함).
+
+    acquire_for_user 와 의도가 정반대다 — invest_note_admin 은 BYPASSRLS 라 GUC 없이도
+    FORCE RLS 테이블을 cross-user 무필터 조회한다. RLS 컨텍스트 주입을 하면 오히려 의미가
+    없으므로(BYPASSRLS 가 정책을 건너뜀) plain acquire 만 한다. acquire_for_user 복붙 금지.
+    """
+    async with pool.acquire() as conn:
+        yield conn
+
+
 @asynccontextmanager
 async def acquire_for_user(pool: asyncpg.Pool, user_id: UUID) -> AsyncGenerator[asyncpg.Connection, None]:
     """RLS 활성화 connection을 반환하는 context manager.
