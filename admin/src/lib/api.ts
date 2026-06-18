@@ -69,6 +69,12 @@ export interface AdminStats {
   nps_unmatched: number;
 }
 
+/** 일별 누적 가입자 수 한 점. date 는 KST 가입일(YYYY-MM-DD), BE UserGrowthPoint 와 정합. */
+export interface UserGrowthPoint {
+  date: string;
+  cumulative: number;
+}
+
 /** 목록 쿼리 파라미터(전 테이블 공통). page 1-base, page_size 기본 50·최대 200(서버 clamp). */
 export interface AdminListParams {
   page?: number;
@@ -169,6 +175,8 @@ export const adminApi = {
   me: () => apiFetch<{ email: string | null }>("/admin/me"),
 
   stats: () => apiFetch<AdminStats>("/admin/stats"),
+
+  userGrowth: () => apiFetch<UserGrowthPoint[]>("/admin/user-growth"),
 
   users: (params?: AdminListParams) =>
     apiFetch<AdminListResponse<UserRow>>(`/admin/users${listQuery(params)}`),

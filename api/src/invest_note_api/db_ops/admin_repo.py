@@ -94,6 +94,30 @@ async def get_stats(conn: Any) -> dict[str, int]:
     return {k: int(row[k]) for k in ("users", "accounts", "trades", "stocks", "nps_unmatched")}
 
 
+async def get_user_growth(conn: Any) -> list[dict[str, Any]]:
+    """일별 누적 가입자 수 시계열 — [{date, cumulative}], 가입일 오름차순.
+
+    created_at 을 KST(Asia/Seoul)로 변환해 날짜 버킷팅한다(단순 ::date 는 UTC 버킷이라
+    KST 가입일이 ±9h 어긋남). 가입 없는 날은 생략 — 누적이라 단조증가가 유지된다.
+    """
+    rows = await conn.fetch(
+        """
+        select
+            day as date,
+            sum(cnt) over (order by day) as cumulative
+        from (
+            select
+                (created_at at time zone 'Asia/Seoul')::date as day,
+                count(*) as cnt
+            from users
+            group by day
+        ) daily
+        order by day
+        """
+    )
+    return [{"date": r["date"], "cumulative": int(r["cumulative"])} for r in rows]
+
+
 # ─────────────────────────── stocks 수정 (PK = country_code, ticker) ───────────────────────────
 
 # StockUpdate 화이트리스트와 1:1. seed 가 덮어쓰지 않는 필드만(스키마 docstring 참조).

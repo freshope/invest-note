@@ -29,6 +29,13 @@ class AdminStats(BaseModel):
     nps_unmatched: int
 
 
+class UserGrowthPoint(BaseModel):
+    """일별 누적 가입자 수 한 점. date 는 KST(Asia/Seoul) 기준 가입일 버킷."""
+
+    date: date
+    cumulative: int
+
+
 class StockUpdate(BaseModel):
     """stocks 수정 입력 — seed 파이프라인이 덮어쓰지 않는 필드만 화이트리스트.
 
