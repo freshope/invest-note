@@ -165,6 +165,9 @@ export interface NpsUnmatchedUpdateInput {
 // ============================================================
 
 export const adminApi = {
+  // 어드민(allowlist) 여부 프로브. 비-admin 은 BE require_admin 이 403 → ApiError(403).
+  me: () => apiFetch<{ email: string | null }>("/admin/me"),
+
   stats: () => apiFetch<AdminStats>("/admin/stats"),
 
   users: (params?: AdminListParams) =>
