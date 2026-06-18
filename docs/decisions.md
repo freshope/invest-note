@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-06-18 | 어드민 대시보드 누적 사용자 차트 — recharts 도입 + base 래퍼, 별도 user-growth 엔드포인트, KST 버킷
+
+- **맥락:** 어드민 대시보드(`admin/src/app/(dash)/page.tsx`)가 사용자/계좌/거래/종목/NPS 큐를 단순 숫자 카드로만 노출 — 사용자 증가 추세를 볼 수단이 없었다. `public.users.created_at` 으로 일별 누적 가입자를 시계열 차트로 표시. 어드민에 차트 라이브러리가 전무한 상태에서 처음 도입.
+- **결정:**
+  - ① **차트 라이브러리 = recharts(v3+).** shadcn `chart` 컴포넌트의 기반이라 일관, React 19.2.4 호환을 위해 v2 아닌 **v3+ 필수**(v2 peer-dep 충돌). `globals.css` 의 기존 `--chart-1~5` 변수 재사용.
+  - ② **base 래퍼 규칙 적용 범위.** AGENTS.md "shadcn 컴포넌트는 base 래퍼 경유" 규칙은 **shadcn 컴포넌트에만** 적용 → shadcn `chart` 의 helper(`ChartContainer` 등)는 `base/Chart.tsx` 로 re-export(`base/Dialog.tsx` 패턴). recharts primitive(`LineChart`/`Line`/`XAxis`…)는 서드파티 lib 이라 래퍼 대상 아님 → 차트 컴포넌트에서 직접 import. CLI 가 끼워 넣은 미사용 `ui/card.tsx` 는 제거.
+  - ③ **별도 `GET /admin/user-growth` 엔드포인트**(기존 `/stats` 확장 안 함). `/stats` 는 flat 카운트 모델 + shape 테스트라 시계열을 섞으면 깨진다. `require_admin` 가드 재사용, 응답은 타입드 `list[UserGrowthPoint]`(`{date, cumulative}`). catch-all `GET /{table}` **앞**에 등록(흡수 방지).
+  - ④ **KST 날짜 버킷팅.** `(created_at at time zone 'Asia/Seoul')::date` 로 그룹핑 후 `SUM() OVER (ORDER BY day)` 누적. 단순 `::date` 는 UTC 버킷이라 KST 가입일이 ±9h 어긋남. 가입 없는 날은 생략(누적이라 단조증가 유지).
+- **이유:** recharts 는 shadcn 생태계 표준이라 차트 helper·CSS 변수를 그대로 재사용. 별도 엔드포인트가 flat stats 모델을 보호하고 응답 타입이 명확. KST 버킷은 한국 사용자 가입일 표시 정확도.
+- **트레이드오프:** ① 단위 테스트(FakePool)는 쿼리 문자열을 버려 SQL 미실행 — shape/게이트만 커버, SQL 정합은 실DB 1회 read-only 검증으로 보강(2 points·monotonic 확인). ② recharts 의존성 추가(번들 증가, admin 한정). ③ 빈/단일 데이터 포인트는 FE 에서 처리(점 1개면 dot 표시).
+- **재평가 트리거:** 차트 종류가 늘면(거래/자산 추세 등) `UserGrowthChart` 패턴 일반화 검토. 데이터 기간이 길어지면 일별→월별 버킷 옵션 추가.
+
+---
+
 ## 2026-06-18 | 어드민 배포 추가 — GHA→registry→Coolify, static-export+nginx → standalone(Node) 전환 (어드민 패널 결정 ⑤ 역전)
 
 - **맥락:** 어드민 패널은 구현·prod 적용(`admin-v0.1.1`)됐으나 정적 SPA 자체 배포 파이프라인은 범위 밖이었다(아래 어드민 패널 결정 트레이드오프 ⑤). pixelwave-web 의 빌드→레지스트리→Coolify 패턴을 참고해 `admin/` 배포를 자동화한다.

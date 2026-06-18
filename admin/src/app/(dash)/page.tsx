@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { adminApi, type AdminStats } from "@/lib/api";
 import { ApiErrorState } from "@/components/ApiErrorState";
+import { UserGrowthChart } from "@/components/UserGrowthChart";
 
 interface StatCard {
   key: keyof AdminStats;
@@ -46,6 +47,8 @@ export default function DashboardPage() {
           ))}
         </div>
       )}
+
+      <UserGrowthChart />
     </div>
   );
 }

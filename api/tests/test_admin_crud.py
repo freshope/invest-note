@@ -113,6 +113,43 @@ def test_email_case_insensitive_match():
     assert client.get("/admin/stats").status_code == 200
 
 
+# ─────────────────────────── user-growth 시계열 ───────────────────────────
+
+
+def test_user_growth_returns_series():
+    """allowlist 면 200 + [{date, cumulative}] 시계열(누적 단조증가)."""
+    app = _make_admin_app()
+    series = [
+        {"date": "2026-06-01", "cumulative": 1},
+        {"date": "2026-06-03", "cumulative": 3},
+    ]
+    conn = FakeConnection(series)
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
+    resp = client.get("/admin/user-growth")
+    assert resp.status_code == 200
+    assert resp.json() == series
+
+
+def test_user_growth_forbidden_for_non_allowlist():
+    """allowlist 외 이메일은 403 — pool 도달 전 게이트 차단."""
+    app = _make_admin_app()
+    client = _client(app, email="intruder@evil.com", admin_pool=FakePool())
+    assert client.get("/admin/user-growth").status_code == 403
+
+
+def test_user_growth_not_swallowed_by_catch_all():
+    """`/{table}` catch-all 보다 먼저 등록 — user-growth 가 테이블 조회로 흡수되지 않는다.
+
+    catch-all 로 흡수됐다면 _TABLE_PATH 에 없는 'user-growth' 라 404 가 났을 것.
+    """
+    app = _make_admin_app()
+    conn = FakeConnection([])
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
+    resp = client.get("/admin/user-growth")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
 # ─────────────────────────── 리스트 엔벨로프 / shape ───────────────────────────
 
 

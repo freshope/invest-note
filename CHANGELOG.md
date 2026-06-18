@@ -13,6 +13,15 @@
 
 - App Store Connect 수출 규정 자동 응답 설정 (`ITSAppUsesNonExemptEncryption=false`)
 
+## [1.3.3] - 2026-06-18
+
+어드민 대시보드 누적 사용자수 차트 (`api-v1.3.3` + `admin-v0.1.5`).
+
+### Added
+
+- `GET /admin/user-growth` — 일별 누적 가입자 시계열(`{date, cumulative}`, KST 버킷, `require_admin` 게이트). 하위호환 — 엔드포인트 추가만
+- 어드민 대시보드: 통계 카드 아래에 누적 사용자수 라인 차트 추가 (recharts 도입, 로딩/에러/빈 상태 처리)
+
 ## [1.3.2] - 2026-06-18
 
 어드민 패널 접근 제어 강화 (`api-v1.3.2` + `admin-v0.1.4`).
