@@ -4,9 +4,12 @@
 앱 런타임은 asyncpg(평문 ``postgresql://``)를 쓰지만 alembic 은 동기 psycopg v3 로
 연결하므로 scheme 을 ``postgresql+psycopg://`` 로 다시 쓴다.
 
-마이그레이션 URL 은 direct 5432 + superuser(postgres) 를 권장한다 — baseline 의
-``create extension pg_trgm`` 과 role 조작은 NOSUPERUSER ``invest_note_app`` 권한으로
-불가하고, transaction-mode pooler 뒤에서는 alembic 의 버전 테이블 락이 충돌한다.
+일상 마이그레이션은 앱 role(``invest_note_app``)로 실행한다 — baseline 리비전이 적용 시
+앱 도메인 객체(alembic_version·ENUM·함수) 소유자를 앱 role 로 통일하기 때문이다(그러지 않으면
+NOSUPERUSER 가 버전 테이블·ENUM `ADD VALUE`·함수 교체에 막힌다). 단 direct 5432 를 쓴다
+(transaction-mode pooler 뒤에서는 alembic 버전 테이블 락이 충돌한다). superuser(postgres)는
+fresh DB bootstrap(``create extension pg_trgm``·role 생성·schema grant·baseline 적용)에만
+필요하고, 일상 마이그레이션에는 쓰지 않는다.
 """
 
 from __future__ import annotations

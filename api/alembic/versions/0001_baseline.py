@@ -33,6 +33,25 @@ def upgrade() -> None:
     # pg_dump 는 search_path 를 '' 로 리셋한다(set_config) — 이후 alembic 의 비-qualified
     # alembic_version 접근이 깨지므로(이 트랜잭션 내내 지속) 복원한다.
     bind.exec_driver_sql("SET search_path TO public")
+    # 소유자 통일 — 일상 마이그레이션을 앱 role(invest_note_app)로 실행하기 위함.
+    # baseline_schema.sql(pg_dump)은 ENUM·함수를 postgres 소유로 만들고, 이 리비전을 superuser 로
+    # 적용하면 alembic_version 도 postgres 소유로 생긴다. 그러면 NOSUPERUSER 인 invest_note_app 은
+    # 버전 테이블 접근·ENUM `ADD VALUE`·함수 교체가 막힌다. 앱 도메인 객체 소유자를 앱 role 로 넘긴다.
+    # (이 리비전 자체는 extension 생성 때문에 여전히 superuser 로 적용한다.) pg_trgm extension 함수
+    # (gtrgm_*/similarity 등)는 extension 소유라 제외한다.
+    bind.exec_driver_sql(
+        """
+        ALTER TABLE public.alembic_version OWNER TO invest_note_app;
+        ALTER TYPE  public.emotion_type    OWNER TO invest_note_app;
+        ALTER TYPE  public.market_type     OWNER TO invest_note_app;
+        ALTER TYPE  public.reasoning_tag   OWNER TO invest_note_app;
+        ALTER TYPE  public.strategy_type   OWNER TO invest_note_app;
+        ALTER TYPE  public.trade_result    OWNER TO invest_note_app;
+        ALTER TYPE  public.trade_type      OWNER TO invest_note_app;
+        ALTER FUNCTION public.current_user_id() OWNER TO invest_note_app;
+        ALTER FUNCTION public.set_updated_at()  OWNER TO invest_note_app;
+        """
+    )
 
 
 def downgrade() -> None:
