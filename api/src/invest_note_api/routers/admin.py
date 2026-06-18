@@ -173,6 +173,18 @@ async def admin_stats(
         return AdminStats(**await admin_repo.get_stats(conn))
 
 
+@router.get("/me")
+async def admin_me(
+    user: AuthenticatedUser = Depends(require_admin),
+) -> dict[str, str | None]:
+    """현재 세션이 어드민(allowlist)인지 확인하는 경량 프로브 — 비-admin 은 require_admin 이 403.
+
+    FE 라우트 가드가 셸 진입 전 admin 여부를 판정하는 용도(DB 미접근).
+    `/{table}` 보다 먼저 등록해야 `table="me"` 로 흡수되지 않는다.
+    """
+    return {"email": user.email}
+
+
 @router.get("/{table}", response_model=AdminListResponse)
 async def admin_list(
     table: str,

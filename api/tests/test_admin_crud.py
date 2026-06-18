@@ -78,6 +78,22 @@ def test_missing_email_forbidden():
     assert client.get("/admin/stats").status_code == 403
 
 
+def test_admin_me_returns_email_for_allowlist():
+    """/admin/me: allowlist 면 200 + email(클라이언트 가드용 프로브, DB 미접근)."""
+    app = _make_admin_app()
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool())
+    resp = client.get("/admin/me")
+    assert resp.status_code == 200
+    assert resp.json() == {"email": ADMIN_EMAIL}
+
+
+def test_admin_me_forbidden_for_non_allowlist():
+    """/admin/me: allowlist 외는 403 — FE 가 이를 보고 셸 진입을 막는다."""
+    app = _make_admin_app()
+    client = _client(app, email="intruder@evil.com", admin_pool=FakePool())
+    assert client.get("/admin/me").status_code == 403
+
+
 def test_substring_email_does_not_match():
     """substring 함정 회귀: allowlist 가 'admin@example.com' 일 때 'example.com'(부분문자열)은 403.
 
