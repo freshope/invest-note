@@ -148,6 +148,14 @@ def test_stock_update_rejects_unknown_field():
     assert resp.status_code == 422
 
 
+def test_stock_update_rejects_explicit_null():
+    """NOT NULL 컬럼(asset_name/market)에 명시적 null 은 제약위반(500) 대신 422."""
+    app = _make_admin_app()
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool())
+    assert client.patch("/admin/stocks/KR/005930", json={"asset_name": None}).status_code == 422
+    assert client.patch("/admin/stocks/KR/005930", json={"market": None}).status_code == 422
+
+
 def test_stock_update_returns_row():
     app = _make_admin_app()
     updated = {"country_code": "KR", "ticker": "005930", "asset_name": "삼성전자우"}
@@ -218,6 +226,18 @@ def test_nps_update_by_query_params():
     )
     assert resp.status_code == 200
     assert resp.json()["resolved_ticker"] == "005930"
+
+
+def test_nps_update_rejects_explicit_null():
+    """holding_level(NOT NULL)에 명시적 null 은 제약위반(500) 대신 422."""
+    app = _make_admin_app()
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool())
+    resp = client.patch(
+        "/admin/nps-unmatched",
+        params={"nps_name": "테스트종목", "nps_as_of": "2026-06-01"},
+        json={"holding_level": None},
+    )
+    assert resp.status_code == 422
 
 
 def test_nps_update_not_found_404():

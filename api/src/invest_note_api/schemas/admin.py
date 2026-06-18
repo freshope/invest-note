@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class AdminListResponse(BaseModel):
@@ -48,6 +48,16 @@ class StockUpdate(BaseModel):
     is_active: bool | None = None
     us_index: str | None = None
 
+    # asset_name·market 은 DB NOT NULL. 부분수정에서 명시적 null 을 보내면 UPDATE ...=NULL 로
+    # 제약 위반(500)이 난다. 미전달(omit)은 기본값 None 으로 validate 되지 않으니 그대로 두고,
+    # 명시적 null 만 422 로 거부한다(omit=무수정 / null=거부).
+    @field_validator("asset_name", "market")
+    @classmethod
+    def _reject_explicit_null(cls, v: str | None) -> str | None:
+        if v is None:
+            raise ValueError("null 로 설정할 수 없습니다 (NOT NULL 컬럼)")
+        return v
+
 
 class NpsUnmatchedCreate(BaseModel):
     """nps_unmatched 생성 입력 — PK(nps_name, nps_as_of) + NOT NULL holding_level 필수."""
@@ -70,3 +80,11 @@ class NpsUnmatchedUpdate(BaseModel):
 
     holding_level: str | None = None
     resolved_ticker: str | None = None
+
+    # holding_level 은 DB NOT NULL — 명시적 null 만 422 로 거부(omit=무수정).
+    @field_validator("holding_level")
+    @classmethod
+    def _reject_explicit_null(cls, v: str | None) -> str | None:
+        if v is None:
+            raise ValueError("null 로 설정할 수 없습니다 (NOT NULL 컬럼)")
+        return v

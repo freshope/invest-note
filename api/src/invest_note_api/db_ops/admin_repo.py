@@ -41,10 +41,6 @@ def _escape_like(term: str) -> str:
     return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def list_table_names() -> list[str]:
-    return list(_LIST_TABLES)
-
-
 async def list_rows(
     conn: Any,
     table_key: str,
