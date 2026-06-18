@@ -13,6 +13,18 @@
 
 - App Store Connect 수출 규정 자동 응답 설정 (`ITSAppUsesNonExemptEncryption=false`)
 
+## [1.3.2] - 2026-06-18
+
+어드민 패널 접근 제어 강화 (`api-v1.3.2` + `admin-v0.1.4`).
+
+### Added
+
+- `GET /admin/me` — Supabase JWT + `ADMIN_EMAILS` allowlist(`require_admin`) 게이트의 경량 프로브. 어드민 패널 FE 라우트 가드가 셸 진입 전 admin 여부를 판정하는 용도(DB 미접근, 하위호환 — 엔드포인트 추가만)
+
+### Fixed
+
+- 어드민 패널: allowlist 밖 계정이 셸에 진입(데이터 호출만 403)하던 문제 수정 — FE 가 `/admin/me` 프로브로 비-admin 을 진입 단계에서 차단("접근 권한 없음" 화면). ⚠️ FE 가 BE 보다 먼저 배포되면 admin 전원 잠김 → **BE 먼저 배포 후 FE** 순서 준수 필요
+
 ## [1.3.0] - 2026-06-17
 
 백엔드 보안 릴리즈 (사용자 가시 변경 없음 — DB RLS 메커니즘 전환).
