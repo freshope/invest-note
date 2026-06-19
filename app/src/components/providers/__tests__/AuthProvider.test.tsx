@@ -117,6 +117,20 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("user").textContent).toBe("null");
   });
 
+  // 네이티브 BE flow: signOut/refresh 실패 시 lib/auth 가 자체 emit(null) 발화(C4/C11).
+  // subscribe 가 supabase onAuthStateChange 가 아니라 자체 listener 라도 동일하게 user=null 전파.
+  it("네이티브 logout emit(subscribe null) → user=null 전파(C4/C11)", async () => {
+    renderProvider();
+    await act(async () => {
+      mockGetUserResolve?.({ id: "u1", email: "native@example.com" });
+    });
+    expect(screen.getByTestId("user").textContent).toBe("native@example.com");
+    await act(async () => {
+      mockSubscribeCallback(null);
+    });
+    expect(screen.getByTestId("user").textContent).toBe("null");
+  });
+
   it("언마운트 시 unsubscribe() 호출", async () => {
     const { unmount } = renderProvider();
     await act(async () => {

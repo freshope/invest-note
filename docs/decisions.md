@@ -4,6 +4,28 @@
 
 ---
 
+## 2026-06-19 | 탈-Supabase Auth Phase 2b-2 — FE 전환(네이티브 BE flow) + refresh 흡수
+
+- **맥락:** 2b-1 이 BE 에 OAuth 중개·BE 토큰 발급·refresh·profile 인프라를 깔았다(dormant — env 미주입). 2b-2 는 **신 앱(FE)이 Supabase SDK 대신 BE OAuth flow 를 쓰도록 전환**한다. supabase-js 가 자동 처리하던 세션 영속·토큰 갱신·상태 구독을 FE 가 떠안는다. FE only(`app/`), 2b-1 BE 계약([[_workspace/02_be_changes.md]]) 소비.
+- **B12 enforce-always 정정(stale 텍스트 폐기):** 직전 spec/design 의 "code_verifier 예약/미사용" 은 **stale**. 2b-1 실제 구현은 **PKCE enforce-always** — `/auth/login` code_challenge(S256) 필수, `/auth/token` code_verifier 필수, BE plain 폴백 없음. → 2b-2 FE 는 반드시 verifier 생성→S256 challenge 전달→딥링크 code→verifier 제출. 생략 시 전 네이티브 로그인 거부.
+- **결정:**
+  - ① **웹/네이티브 분기(lib/auth 7함수 `isNativePlatform()` 이중화).** FE 는 Capacitor 네이티브 단일 배포([[project_deploy_targets]], 웹은 dev 서버뿐)이고 2b-1 BE flow 는 네이티브 전용(callback=custom scheme, web origin 반환 불가). → **네이티브만 BE flow, 웹은 expand 동안 Supabase 유지.** 웹 가지는 기존 supabase-client 호출 무변경(C8 무회귀 hard gate).
+  - ② **secure storage 플러그인 = `@aparajita/capacitor-secure-storage@8.0.0`.** iOS Keychain + Android Keystore 백킹, Capacitor 8+ 명시 호환. access/refresh/PKCE verifier 평문 localStorage 금지(금융 앱, C5). ⚠️ **신규 네이티브 플러그인 = OTA 불가·스토어 빌드 필수**(`npx cap sync` + 재빌드).
+  - ③ **getAccessToken proactive refresh + 모듈 single-flight(C3).** access JWT exp 디코드 후 60s skew 내 만료면 refresh. 동시 호출은 모듈 스코프 단일 in-flight promise 공유(`.finally` 로 클리어 → 다음 만료 주기엔 새 promise) → 스타트업 다발 호출의 N개 refresh 폭주·"이미 회전" 401 폭사 차단. refresh 가 self-contained JWT 검증이라 반응형 401-retry 불요 → **api-client.ts 콜사이트 무변경**.
+  - ④ **refresh 실패 = clear + logout emit + null(C4 무한루프 차단).** doRefresh 내부 catch 가 throw 를 전파 안 함 → 동시 awaiter 전원 null, clearTokens 로 raw 비워져 후속 getAccessToken 은 refresh 재시도 없이 즉시 null.
+  - ⑤ **getUser = access claim 로컬 디코드(검증 미도입, D-D).** base64url payload → sub/email(BE 가 서명 검증, 앱은 claim 읽기만). 한글 email UTF-8 안전(TextDecoder, C10). 만료 시 getAccessToken(refresh-aware) 경유(C9).
+  - ⑥ **subscribe = 자체 listener registry**(supabase-js onAuthStateChange 상실 대체). 해제 함수가 registry 에서 제거(누수 차단). emit 발화 = saveTokens 후(exchange/refresh 성공)·clearTokens 후(signOut/refresh 실패).
+  - ⑦ **PKCE verifier secure storage 영속(C2 cold-start 생존).** 메모리 only 금지 — login 시 저장, 딥링크 교환 직전 읽기, 성공/실패 후 삭제. `App.getLaunchUrl` 콜드스타트 경로도 verifier 읽음.
+  - ⑧ **딥링크 implicit fragment 분기 제거(C6).** 네이티브 딥링크엔 일회용 code 만 옴(B4). 기존 access_token/refresh_token fragment→setSession 분기 제거 → code→exchangeCodeForSession 단일 경로. 이로 인해 무참조가 된 `setSession`(웹 콜백도 미사용 — supabase detectSessionInUrl 자동 처리) 제거.
+  - ⑨ **signOut 네이티브 = 로컬 store clear + logout emit, 서버 미호출(C11).** 2b-1 계약에 revoke 엔드포인트 없음. 웹은 기존 `signOut({scope:"local"})` 유지(parity).
+- **supabase-js 제거 = 2c 이연(F-10 assess 결론).** supabase-js 실제 import 는 `lib/auth/supabase-client.ts` 단 1파일(types.ts/index.ts 는 주석 언급만). 웹 분기가 expand 동안 이를 계속 호출하므로 **2b-2 에서 물리 제거 불가**. 제거 시 깨질 웹 경로: login(웹 OAuth redirect)·auth/callback(supabase 자동 세션 detect)·AuthProvider(웹 getUser/subscribe)·api-client(웹 getAccessToken). → 2c(웹 폐기/BE flow 전환 + [[project_force_update]] 양 스토어 승인)로 이연.
+- **이유:** "API 중심 — IdP 교체를 백엔드 배포만으로"(사용자 목표). 네이티브가 supabase-js 결합을 벗으면 IdP 교체 시 스토어 재심사 없이 BE 배포만으로 전환 가능. expand 전략(웹 잔존)으로 점진 전환 — 한 번에 다 끊지 않아 무회귀 안전.
+- **트레이드오프:** ① lib/auth 이중화 복잡도↑ vs 점진 expand 안전. ② FE 가 세션/refresh/구독을 직접 관리 → single-flight·cold-start·exp 디코드 등 supabase-js 가 숨겨주던 엣지를 떠안음. ③ secure storage 신규 플러그인 = OTA 불가, 스토어 빌드 필수.
+- **⚠️ 디바이스 carry-forward(코드로 해결 불가):** `crypto.subtle.digest`(S256 challenge)·secure storage Keychain/Keystore 는 jsdom/node unit test 가 항상 green 이라 부재를 못 잡는다. BE plain 폴백 없음 → WebView(특히 custom scheme origin) 부재 시 전 네이티브 로그인 사망. **iOS·Android 디바이스 실측 1회 필수.** 참고: 현 supabase-js PKCE 가 동일 WebView 에서 S256 성공 중이면 안전 신호.
+- **외부 절차(코드 아님):** 2b 활성화 = BE env 주입(provider secret·Apple .p8·ES256 키·be_token_audience·redirect_base) + IdP 콘솔 BE callback redirect_uri + 마이그레이션(0004+0005+0006) 적용(2b-1 confirm 대기, dormant 면 FE OAuth 503 우아 처리 C7). FE 출시 = Capacitor 빌드/스토어 제출(force-update 는 2c).
+
+---
+
 ## 2026-06-19 | 탈-Supabase Auth Phase 1 — 결합 국소화 + iss 핀 fail-safe 기본값(검증 스킵)
 
 - **맥락:** 탈-Supabase의 마지막 축인 Auth(JWT/OAuth)를 "교체 시 어댑터만 갈아끼우면 되는" 구조로 국소화. DB(RLS 제거)·마이그레이션(Alembic)은 완료, Supabase는 이제 Auth(GoTrue) 전용([[project_supabase_oauth_only]]). Phase 1은 동작 변경 0 + iss 검증 추가가 전부인 리팩토링(신규 라이브러리 0, Supabase 존속). Phase 2(BE 토큰 발급)는 범위 밖.

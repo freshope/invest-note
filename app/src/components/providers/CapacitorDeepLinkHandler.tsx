@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { setSession, exchangeCodeForSession } from "@/lib/auth";
+import { exchangeCodeForSession } from "@/lib/auth";
 import { isNativePlatform } from "@/lib/platform";
 import { NATIVE_URL_SCHEME, NATIVE_CALLBACK_HOST } from "@/lib/auth/oauth-config";
 import { LOGIN_OAUTH_FAILED_PATH_WITH_SLASH } from "@/lib/auth/errors";
@@ -45,25 +45,8 @@ export function CapacitorDeepLinkHandler() {
         return;
       }
 
-      // Implicit flow: fragment에 access_token/refresh_token 이 담겨 돌아옴
-      const hash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
-      if (hash) {
-        const hashParams = new URLSearchParams(hash);
-        const accessToken = hashParams.get("access_token");
-        const refreshToken = hashParams.get("refresh_token");
-        if (accessToken && refreshToken) {
-          try {
-            await setSession(accessToken, refreshToken);
-            router.replace("/");
-            return;
-          } catch {
-            router.replace(LOGIN_OAUTH_FAILED_PATH_WITH_SLASH);
-            return;
-          }
-        }
-      }
-
-      // PKCE flow: ?code=... 로 돌아옴
+      // BE flow: 딥링크엔 일회용 code 만 온다(access/refresh 직접 미노출, C6/B4).
+      // exchangeCodeForSession 이 BE /auth/token 에 code+PKCE verifier 를 제출한다.
       const code = url.searchParams.get("code");
       if (!code) {
         router.replace(LOGIN_OAUTH_FAILED_PATH_WITH_SLASH);
