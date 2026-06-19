@@ -18,6 +18,22 @@
 
 ---
 
+## 2026-06-19 | 탈-Supabase Auth Phase 2a — issuer registry(expand 토대) + BE 토큰 ES256/JWKS + identity import (prod dormant)
+
+- **맥락:** Auth 를 "BE 가 토큰 발급 주체"가 되는 token-broker 로 옮기는 Phase 2 의 첫 sub-phase. 위험(전면 재설계+구 앱 호환+데이터 손실)이 커서 sub-phase 로 격리 — **2a 는 expand 토대만**: BE 토큰의 *검증 경로*와 identity 매핑 인프라만 추가하고 **클라이언트는 BE 토큰을 발급받지 않는다(prod dormant, 유닛테스트로만 가동)**. 실사용 발급(OAuth 중개·refresh·FE 전환)은 2b, Supabase 검증 제거(contract)는 2c([[project_force_update]] 양 스토어 승인 후).
+- **결정:**
+  - ① **issuer registry = Supabase(default 분기) / BE(명시 매칭)** — `decode_oidc_jwt` 가 미검증 iss peek 후 registry(=BE issuer)에 있으면 BE entry, 아니면 Supabase entry 로 검증. ⚠️ **dict-lookup-reject 금지** — 그러면 dormant prod(`oidc_issuer=""`, BE 키 빈값)에서 Supabase 토큰이 iss-miss 로 거부돼 **전원 lockout**. Supabase 를 default 로 둬 expand-safe 보장. unknown iss 거부는 `oidc_issuer` 핀 활성 후에만(Supabase 분기 iss 강제).
+  - ② **per-issuer audience(P6).** registry 항목별 `{jwks_uri, issuer, audience}`. Supabase aud=`authenticated`(`oidc_audience`), BE aud=별도(`be_token_audience`). 단일 글로벌 aud 금지 — aud 교차(Supabase iss+BE aud 등)는 401.
+  - ③ **BE 토큰 = ES256(EC P-256) 비대칭 + BE 자체 JWKS 서빙.** `be_token.py`(`mint_be_token`/`build_be_jwks`), 무인증 JWKS 엔드포인트 `/auth/.well-known/jwks.json`(health 라우터, `get_current_user` 의존 없음 — 자기-검증 순환 방지 P8). **HS256 금지**(verifier 분기 방지 P5 — registry 가 Supabase 와 동일 JWKS 경로로 검증). 키는 env PEM 단일 키(`be_token_signing_key`/`be_token_kid`), 회전(kid 다중화)은 2b. signing key 빈 값이면 빈 JWKS·발급 비활성(dormant, fail-fast 는 2b).
+  - ④ **identity import = `auth.identities` export 매핑(email 매칭 금지).** `auth_identities(provider, provider_id, user_id)` 테이블(0004 마이그레이션) + 적재 스크립트. BE 토큰 `sub` = **원래 public.users UUID**(IdP sub 아님 — P2 데이터 고아화 방지). `provider_id` 는 Supabase 컬럼 그대로(Google=OIDC sub, Kakao=숫자 id, Apple=Service ID 재사용으로 sub 보존). email 매칭은 fragile(Kakao email optional, 금융 데이터 손실 위험)이라 미사용.
+  - ⑤ **적재 rollback guard — 동수(==) 비교 금지(P3 false rollback).** `auth.identities` 는 user 당 다행, `public.users` 는 lazy provisioning 이라 동수 비교가 정상 데이터를 거부한다. 가드 3종: **① anti-orphaning(load-bearing)** = `public.users.id ⊆ export user_id`(방향 주의 — export 초과분=미접속 가입자는 정상, 무시) / **② 완전성** = 파싱 행수 = export 원시 레코드 수 / **③ 유니크** = `(provider, provider_id)` 중복 없음(Python 직접 체크, dry-run 도 검출). 위반 시 트랜잭션 rollback. dry-run 기본.
+  - ⑥ **Supabase iss 핀(`oidc_issuer`) 은 여전히 prod default `""`(검증 스킵).** 실제 iss 정확 문자열을 운영 access token 디코드로 **경험적 확인(A1, BLOCKING)** 하기 전엔 활성화 금지(trailing slash 하나만 틀려도 전원 lockout). 코드/fixture 는 파생 추정값 `{supabase_url}/auth/v1` 로 작성·테스트.
+- **이유:** expand/contract 패턴([[project_portable_rls]] RLS 이관 때와 동일)으로 token-broker 전환 위험을 단계로 격리. 2a 가 무해(dormant)해야 2b 가 안전하게 올라탄다 — Supabase 검증 무회귀가 expand-safe gate(BE 전체 716 테스트 green). identity 매핑을 먼저 깔아야 2b 의 BE 토큰 발급이 기존 데이터를 고아화하지 않는다.
+- **트레이드오프:** ① **registry 가 Supabase 를 default 로 신뢰** — unknown iss 자동 거부는 `oidc_issuer` 핀 활성 후에만 작동(그 전엔 iss 검증 스킵으로 fail-safe, 보안 이득은 핀 후). ② **2a 는 prod dormant** — BE 토큰 경로가 실사용 없이 코드만 존재(유닛으로만 가동). 실 발급은 2b 까지 보류. ③ ES256 단일 키(회전 미지원, kid 다중화는 2b). ④ 적재의 anti-orphaning 은 export 완전성을 전제(운영자 export 누락 시 거짓 통과 가능 — 완전성 가드 ②가 파싱 drop 만 잡고 export 자체 누락은 못 잡음).
+- **재평가 트리거:** A1(운영 토큰 iss 실측) 확정 시 `oidc_issuer` prod 핀 활성 + JWT_ALGORITHMS 가 Supabase 광고 alg 포함 재확인. 2b 착수 시 OAuth 중개(Authlib)·refresh DB 이관·FE `lib/auth` BE 전환·`be_token_signing_key` fail-fast. 마이그레이션(0004)·적재 스크립트는 **사용자 confirm 후** 운영 적용(현재 미적용). ⚠️ **`be_jwks_uri` 는 supabase_url 파생 placeholder** — 2a 는 dormant 라 무해하나 2b self-fetch 활성 시 틀린 호스트로 fetch 하므로 BE 공개 호스트 config 신설 또는 self-fetch 대신 in-process public key 직접 주입(P8 self-HTTP fragility 회피) 필요.
+
+---
+
 ## 2026-06-19 | 멀티 게시판 구조 — 단일 board_posts + board_type discriminator + metadata jsonb, 첨부 스토리지 연기
 
 - **맥락:** 공지사항·사용자의견·오류신고·거래내역서 제공(미지원 증권사 거래내역 사용자 제출) 등 여러 "게시판"이 예정. 각 기능을 개별 테이블로 만들면 중복(작성자·타임스탬프·댓글·첨부)이 과다. 어드민에 먼저 구조를 만들고 개별 기능은 후속 스펙으로 진행하는 순서.

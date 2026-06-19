@@ -108,6 +108,19 @@ class Settings(BaseSettings):
     # oidc_audience: 토큰 aud 클레임 기대값. 기본은 Supabase 컨벤션(authenticated).
     oidc_audience: str = AUTH_ROLE
 
+    # BE 자체 토큰(Phase 2a) — token-broker 모델의 BE 발급 토큰 검증/서명 설정.
+    # 2a 는 dormant: 클라이언트가 BE 토큰을 발급받지 않으며, 검증 경로만 추가(유닛 전용).
+    # be_token_signing_key 가 빈 값이면 BE 토큰 발급/검증이 비활성(빈 JWKS) → Supabase 경로
+    # 무영향. 실사용 발급(fail-fast)은 2b.
+    # be_token_issuer: BE 발급 토큰 iss(Supabase iss 와 충돌하지 않는 고유 안정 문자열).
+    be_token_issuer: str = ""
+    # be_token_audience: BE 토큰 aud. Supabase(authenticated)와 반드시 구분(per-issuer aud).
+    be_token_audience: str = ""
+    # be_token_signing_key: ES256(EC P-256) private key PEM. env 로드(DB 저장 아님, 단일 키).
+    be_token_signing_key: str = ""
+    # be_token_kid: BE JWKS 의 kid(서명 토큰 header.kid 와 JWKS 항목을 잇는다).
+    be_token_kid: str = ""
+
     model_config = SettingsConfigDict(env_file=".env.local", extra="ignore")
 
     # 공급자류 env 는 공백/대소문자를 정규화한다 — 운영 콘솔(Coolify)에서 "none "(후행 공백)·
@@ -153,6 +166,43 @@ class Settings(BaseSettings):
     @property
     def jwks_uri(self) -> str:
         return f"{self.supabase_url}/auth/v1/.well-known/jwks.json"
+
+    # BE 자체 토큰 검증용 JWKS URI(BE 가 스스로 서빙하는 /auth/.well-known/jwks.json).
+    # registry 빌드 시 BE entry 의 jwks_uri 로 쓰인다. dormant 라 prod 도달성은 nominal.
+    @property
+    def be_jwks_uri(self) -> str:
+        return f"{self.supabase_url}/auth/.well-known/jwks.json"
+
+    # BE 토큰 발급/검증 활성 여부 — signing key 가 있어야만 활성(없으면 dormant).
+    @property
+    def be_token_enabled(self) -> bool:
+        return bool(self.be_token_signing_key)
+
+    # issuer registry — iss discriminator 기반 검증 설정.
+    # ⚠️ dict-lookup-reject 아님(그건 dormant prod 에서 Supabase 토큰을 iss-miss 로 거부 →
+    # 전원 lockout). 검증 분기(decode_oidc_jwt)는 **Supabase=default / BE=명시 매칭** 으로
+    # 구현한다. 이 property 는 BE entry(있을 때만)를 iss→{jwks_uri,issuer,audience} 로 노출 →
+    # decode_oidc_jwt 가 peek 한 iss 가 BE iss 와 정확히 일치하면 BE entry 선택, 아니면 Supabase.
+    # Supabase entry 의 issuer 는 oidc_issuer(빈 값이면 iss 검증 스킵, Phase 1 동일).
+    @property
+    def oidc_issuer_registry(self) -> dict[str, dict[str, str]]:
+        registry: dict[str, dict[str, str]] = {}
+        if self.be_token_enabled and self.be_token_issuer:
+            registry[self.be_token_issuer] = {
+                "jwks_uri": self.be_jwks_uri,
+                "issuer": self.be_token_issuer,
+                "audience": self.be_token_audience or AUTH_ROLE,
+            }
+        return registry
+
+    # Supabase(default) issuer entry — registry 에서 BE iss 가 매칭되지 않은 모든 토큰의 검증 설정.
+    @property
+    def supabase_issuer_entry(self) -> dict[str, str | None]:
+        return {
+            "jwks_uri": self.jwks_uri,
+            "issuer": self.oidc_issuer or None,
+            "audience": self.oidc_audience or AUTH_ROLE,
+        }
 
     # admin_emails(쉼표 문자열) → 정규화(소문자/trim) set. require_admin 이 email 클레임을
     # 동일 정규화 후 `in` 으로 정확 비교한다. raw 문자열 substring 매칭(함정)을 피하기 위해 set 화.
