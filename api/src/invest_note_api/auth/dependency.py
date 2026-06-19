@@ -22,7 +22,7 @@ async def get_current_user(
             token,
             jwks_uri=settings.jwks_uri,
             audience=settings.oidc_audience,
-            issuer=settings.oidc_issuer or None,
+            issuer=settings.oidc_issuer,
         )
     except (jwt.InvalidTokenError, jwt.exceptions.PyJWKClientError, ValueError):
         raise APIError(ERR_UNAUTHORIZED, 401)
