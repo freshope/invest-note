@@ -88,12 +88,13 @@ def test_google_authorize_url_has_pkce_and_state():
     assert "client_id=gid" in url
 
 
-@pytest.mark.asyncio
-async def test_google_extract_sub_and_userinfo():
-    # Google id_token claims → sub(OIDC) + userinfo 정규화(B6).
-    id_token = jwt.encode(
+def _google_id_token(*, sub="google-sub-123", aud="gid",
+                     iss="https://accounts.google.com"):
+    return jwt.encode(
         {
-            "sub": "google-sub-123",
+            "sub": sub,
+            "aud": aud,
+            "iss": iss,
             "email": "u@gmail.com",
             "email_verified": True,
             "name": "구글유저",
@@ -102,13 +103,48 @@ async def test_google_extract_sub_and_userinfo():
         "secret",
         algorithm="HS256",
     )
+
+
+@pytest.mark.asyncio
+async def test_google_extract_sub_and_userinfo():
+    # Google id_token claims → sub(OIDC) + userinfo 정규화(B6).
     p = GoogleProvider(_settings(google_client_id="gid", google_client_secret="gsec"))
-    http = _FakeHttp({"oauth2.googleapis.com/token": {"id_token": id_token}})
+    http = _FakeHttp({"oauth2.googleapis.com/token": {"id_token": _google_id_token()}})
     sub, info = await p.fetch_identity(
         code="c", idp_verifier="v", redirect_uri=REDIRECT_URI, http=http
     )
     assert sub == "google-sub-123"  # str(OIDC sub)
     assert info == UserInfo("u@gmail.com", "구글유저", "https://g/a.png", True)
+
+
+@pytest.mark.asyncio
+async def test_google_id_token_wrong_aud_rejected():
+    # F3: aud 가 우리 client_id 아니면 다른 앱 토큰 주입 → 거부(Apple 과 대칭).
+    p = GoogleProvider(_settings(google_client_id="gid", google_client_secret="gsec"))
+    http = _FakeHttp({"oauth2.googleapis.com/token": {"id_token": _google_id_token(aud="other")}})
+    with pytest.raises(jwt.InvalidAudienceError):
+        await p.fetch_identity(code="c", idp_verifier="v", redirect_uri=REDIRECT_URI, http=http)
+
+
+@pytest.mark.asyncio
+async def test_google_id_token_wrong_iss_rejected():
+    p = GoogleProvider(_settings(google_client_id="gid", google_client_secret="gsec"))
+    http = _FakeHttp({"oauth2.googleapis.com/token": {"id_token": _google_id_token(iss="https://evil")}})
+    with pytest.raises(jwt.InvalidIssuerError):
+        await p.fetch_identity(code="c", idp_verifier="v", redirect_uri=REDIRECT_URI, http=http)
+
+
+@pytest.mark.asyncio
+async def test_google_id_token_bare_issuer_accepted():
+    # Google 은 iss 를 'accounts.google.com'(스킴 없음)으로도 보낸다 — 둘 다 허용.
+    p = GoogleProvider(_settings(google_client_id="gid", google_client_secret="gsec"))
+    http = _FakeHttp(
+        {"oauth2.googleapis.com/token": {"id_token": _google_id_token(iss="accounts.google.com")}}
+    )
+    sub, _ = await p.fetch_identity(
+        code="c", idp_verifier="v", redirect_uri=REDIRECT_URI, http=http
+    )
+    assert sub == "google-sub-123"
 
 
 # --- Kakao (B10: 숫자 id → str) ---

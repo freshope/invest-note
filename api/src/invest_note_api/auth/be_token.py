@@ -12,6 +12,7 @@ registry 가 BE 토큰을 Supabase 와 동일 경로로 검증한다.
 
 import json
 import time
+from functools import lru_cache
 from uuid import UUID
 
 import jwt
@@ -19,6 +20,14 @@ from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from jwt.algorithms import ECAlgorithm
 
 from invest_note_api.config import Settings
+
+
+@lru_cache(maxsize=8)
+def _public_key_from_pem(pem: str):
+    """PEM private key → public key 객체(F6 메모이즈). PEM 문자열로 캐시한다 — Settings 는
+    pydantic v2 라 unhashable 이고 매 /v1/* 요청마다 새 인스턴스라 lru_cache 키로 못 쓴다.
+    """
+    return load_pem_private_key(pem.encode(), password=None).public_key()
 
 
 def mint_be_token(
@@ -68,10 +77,7 @@ def be_verify_key(settings: Settings):
     """
     if not settings.be_token_signing_key:
         return None
-    private_key = load_pem_private_key(
-        settings.be_token_signing_key.encode(), password=None
-    )
-    return private_key.public_key()
+    return _public_key_from_pem(settings.be_token_signing_key)
 
 
 def build_be_jwks(settings: Settings) -> dict:

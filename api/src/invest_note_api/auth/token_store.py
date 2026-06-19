@@ -45,14 +45,23 @@ _PUT_TRANSIENT_SQL = """
     VALUES ($1, $2, $3::jsonb, $4)
 """
 
-# single-use consume: 미소비·미만료 행을 consumed 로 표시하며 payload 반환(원자적).
-# 이미 소비됐거나(consumed_at NOT NULL) 만료됐으면(now > expires_at) 매칭 0행 → None(B3 replay 거부).
+# 미소비·미만료 행의 payload 를 mutation 없이 조회(F1) — PKCE 검증을 consume **전에** 하기 위해.
+# consume 이 아니므로 single-use 를 소진하지 않는다(검증 실패 시 code 가 살아남아 정당 교환 가능).
+_PEEK_TRANSIENT_SQL = """
+    SELECT payload
+      FROM oauth_transient
+     WHERE key = $1
+       AND kind = $2
+       AND expires_at > $3
+"""
+
+# single-use consume(F2): 미만료 행을 즉시 DELETE 하며 payload 반환(원자적).
+# UPDATE...SET consumed_at 대신 DELETE 로 바꾼 이유 — consumed 행이 TTL 까지 평문 access/refresh 를
+# 잔존시키던 것을 제거(F2). 이미 소비(행 부재)·만료면 매칭 0행 → None(B3 replay 거부).
 _CONSUME_TRANSIENT_SQL = """
-    UPDATE oauth_transient
-       SET consumed_at = $2
+    DELETE FROM oauth_transient
      WHERE key = $1
        AND kind = $3
-       AND consumed_at IS NULL
        AND expires_at > $2
     RETURNING payload
 """
@@ -67,17 +76,30 @@ async def put_transient(
     await conn.execute(_PUT_TRANSIENT_SQL, key, kind, json.dumps(payload), expires_at)
 
 
-async def consume_transient(conn: Any, key: str, kind: str) -> dict | None:
-    """single-use 소비(B3) — 미소비·미만료면 payload 반환 후 consumed 표시. 아니면 None.
-
-    원자적 UPDATE...RETURNING 이라 동시 2회 소비 시 1회만 payload 를 얻는다(replay 거부).
-    """
-    row = await conn.fetchrow(_CONSUME_TRANSIENT_SQL, key, _now(), kind)
-    if row is None:
-        return None
-    payload = row["payload"]
+def _normalize_payload(payload: Any) -> dict:
     # asyncpg jsonb 는 str 로 올 수 있어 dict 로 정규화.
     return json.loads(payload) if isinstance(payload, str) else dict(payload)
+
+
+async def peek_transient(conn: Any, key: str, kind: str) -> dict | None:
+    """미만료 transient 의 payload 를 mutation 없이 조회(F1). 부재/만료면 None.
+
+    consume 과 달리 single-use 를 소진하지 않는다 — /auth/token 이 PKCE 를 code consume **전에**
+    검증하기 위해 쓴다(틀린 verifier 가 code 를 태우지 않도록). 검증 통과 후 consume_transient 가
+    원자적으로 단일 소비한다.
+    """
+    row = await conn.fetchrow(_PEEK_TRANSIENT_SQL, key, kind, _now())
+    return _normalize_payload(row["payload"]) if row is not None else None
+
+
+async def consume_transient(conn: Any, key: str, kind: str) -> dict | None:
+    """single-use 소비(B3/F2) — 미만료면 payload 반환 후 행을 즉시 DELETE. 아니면 None.
+
+    원자적 DELETE...RETURNING 이라 동시 2회 소비 시 1회만 payload 를 얻는다(replay 거부) +
+    소비 즉시 평문 payload 가 DB 에서 사라진다(F2 — consumed 잔존 제거).
+    """
+    row = await conn.fetchrow(_CONSUME_TRANSIENT_SQL, key, _now(), kind)
+    return _normalize_payload(row["payload"]) if row is not None else None
 
 
 async def cleanup_transient(conn: Any) -> int:
@@ -95,24 +117,6 @@ async def cleanup_transient(conn: Any) -> int:
 _SAVE_REFRESH_SQL = """
     INSERT INTO auth_refresh_tokens (user_id, token_hash, expires_at)
     VALUES ($1, $2, $3)
-"""
-
-# 유효 refresh 조회: 해시 일치 + 미revoke + 미만료. 매칭 시 user_id 반환.
-_LOOKUP_REFRESH_SQL = """
-    SELECT user_id
-      FROM auth_refresh_tokens
-     WHERE token_hash = $1
-       AND revoked_at IS NULL
-       AND expires_at > $2
-"""
-
-# revoke: 미revoke 행을 무효화(만료 여부 무관 — 명시적 폐기/로그아웃 경로).
-_REVOKE_REFRESH_SQL = """
-    UPDATE auth_refresh_tokens
-       SET revoked_at = $2
-     WHERE token_hash = $1
-       AND revoked_at IS NULL
-    RETURNING user_id
 """
 
 # 회전용 revoke: 미revoke **그리고 미만료** 인 행만 무효화(만료 토큰으로 회전 금지).
@@ -134,26 +138,15 @@ async def save_refresh(
     await conn.execute(_SAVE_REFRESH_SQL, user_id, hash_token(token), expires_at)
 
 
-async def lookup_refresh(conn: Any, token: str) -> UUID | None:
-    """유효 refresh(미revoke·미만료)면 user_id, 아니면 None. 해시로 대조."""
-    row = await conn.fetchrow(_LOOKUP_REFRESH_SQL, hash_token(token), _now())
-    return row["user_id"] if row else None
-
-
-async def revoke_refresh(conn: Any, token: str) -> UUID | None:
-    """refresh 무효화(회전 시 구 토큰). 무효화된 user_id 반환(이미 revoked/없으면 None)."""
-    row = await conn.fetchrow(_REVOKE_REFRESH_SQL, hash_token(token), _now())
-    return row["user_id"] if row else None
-
-
 async def rotate_refresh(
     conn: Any, old_token: str, new_token: str, expires_at: datetime
 ) -> UUID | None:
     """refresh 회전(B5) — old 를 revoke 하고 new 를 저장. old 가 유효했으면 user_id 반환.
 
-    old 가 무효(이미 revoked/만료/없음)면 None 반환하고 new 를 저장하지 않는다(재사용 탐지).
-    회전 revoke 는 미만료 조건을 포함하므로 만료 토큰으로는 회전되지 않는다(원자적 UPDATE).
-    호출부(B-6 /auth/refresh)가 conn.transaction() 안에서 호출해 revoke+save 원자성을 보장한다.
+    old 가 무효(이미 revoked/만료/없음)면 None 반환하고 new 를 저장하지 않는다 — stale refresh
+    거부만 한다(token-family 재사용 감지·전체 revoke 는 없음, D1 backlog). 회전 revoke 는 미만료
+    조건을 포함하므로 만료 토큰으로는 회전되지 않는다(원자적 UPDATE). 호출부(B-6 /auth/refresh)가
+    conn.transaction() 안에서 호출해 revoke+save 원자성을 보장한다.
     """
     row = await conn.fetchrow(_ROTATE_REVOKE_SQL, hash_token(old_token), _now())
     if row is None:

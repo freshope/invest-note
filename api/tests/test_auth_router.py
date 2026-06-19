@@ -32,6 +32,7 @@ from fastapi.testclient import TestClient
 from invest_note_api.auth.oauth_providers import UserInfo
 from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import get_pool
+from invest_note_api.external.http_client import get_http_client
 from invest_note_api.main import create_app
 
 TEST_SUPABASE_URL = "https://test.supabase.co"
@@ -75,13 +76,20 @@ class _FakeConn:
             provider, sub = args
             uid = self.s["identities"].get((provider, sub))
             return {"user_id": uid} if uid else None
-        if "UPDATE oauth_transient" in sql:
-            key, now, kind = args  # $1 key, $2 now, $3 kind
+        if "SELECT payload" in sql and "oauth_transient" in sql:
+            # _PEEK_TRANSIENT_SQL(F1): $1 key, $2 kind, $3 now — mutation 없는 조회.
+            key, kind, now = args
             row = self.s["transient"].get(key)
-            if (row is None or row["kind"] != kind or row["consumed"]
-                    or row["expires_at"] <= now):
+            if row is None or row["kind"] != kind or row["expires_at"] <= now:
                 return None
-            row["consumed"] = True
+            return {"payload": row["payload"]}  # 소비하지 않음
+        if "DELETE FROM oauth_transient" in sql and "RETURNING" in sql:
+            # _CONSUME_TRANSIENT_SQL(F2): $1 key, $2 now, $3 kind — 즉시 DELETE.
+            key, now, kind = args
+            row = self.s["transient"].get(key)
+            if row is None or row["kind"] != kind or row["expires_at"] <= now:
+                return None
+            del self.s["transient"][key]
             return {"payload": row["payload"]}
         if "UPDATE auth_refresh_tokens" in sql and "expires_at > $2" in sql:
             token_hash, now = args
@@ -151,6 +159,9 @@ def _client(store):
     app = create_app(settings)
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_pool] = lambda: _FakePool(store)
+    # callback 이 get_http_client 를 주입받지만 mock provider 가 http 를 무시하므로 None 로 대체
+    # (lifespan 미기동 TestClient 에서 app.state.http_client 부재 회피).
+    app.dependency_overrides[get_http_client] = lambda: None
     return TestClient(app)
 
 
@@ -279,9 +290,10 @@ def test_b12_wrong_verifier_rejected(patch_provider):
     assert r.status_code == 401
 
 
-def test_b12_code_consumed_even_on_pkce_mismatch(patch_provider):
-    # 가로챈 code + 오 verifier → 거부. ⚠️ 그래도 code 는 소진(single-use) — 이후 정상
-    # verifier 로도 재교환 불가(공격자가 verifier 를 brute-force 재시도 못 함).
+def test_f1_wrong_verifier_does_not_burn_code(patch_provider):
+    # ⚠️ F1(HINGE 역전): 가로챈 code + 틀린 verifier → 401 이지만 code 를 **소진하지 않는다**.
+    # 그래서 정당 앱이 이후 올바른 verifier 로 같은 code 를 교환할 수 있다(DoS 방지).
+    # (구 구현은 PKCE 대조 전에 consume 해 정당 교환이 401 되던 버그 — 본 fix 로 역전.)
     correct = "correct-verifier-987"
     store = _new_store()
     client = _client(store)
@@ -291,9 +303,13 @@ def test_b12_code_consumed_even_on_pkce_mismatch(patch_provider):
 
     bad = client.post("/auth/token", json={"code": code, "code_verifier": "WRONG"})
     assert bad.status_code == 401
-    # code 이미 소진 → 정상 verifier 로도 401(소진 후 재교환 불가).
-    retry = client.post("/auth/token", json={"code": code, "code_verifier": correct})
-    assert retry.status_code == 401
+    # code 미소진 → 정상 verifier 로 교환 성공(F1 핵심).
+    ok = client.post("/auth/token", json={"code": code, "code_verifier": correct})
+    assert ok.status_code == 200
+    assert "access_token" in ok.json()
+    # 정상 교환 후엔 single-use 소진 → 재교환 401.
+    again = client.post("/auth/token", json={"code": code, "code_verifier": correct})
+    assert again.status_code == 401
 
 
 def test_b12_missing_verifier_rejected(patch_provider):
@@ -427,6 +443,40 @@ def test_apple_callback_post_without_user_field(patch_apple_provider):
     )
     assert cb.status_code == 302
     assert store["profiles"][ORIGINAL_UID]["display_name"] is None
+
+
+# --- F15: dormant(BE 토큰 미활성) 시 OAuth 엔드포인트 503(500 금지) ---
+
+
+def _dormant_client(store):
+    # be_token_signing_key 없음 = dormant. callback/refresh 가 mint_be_token RuntimeError→500
+    # 대신 503 을 명시해야 한다(F15).
+    settings = Settings(
+        supabase_url=TEST_SUPABASE_URL,
+        be_oauth_redirect_base="https://api.invest-note.example",
+        google_client_id="gid",
+        google_client_secret="gsec",
+    )
+    app = create_app(settings)
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_pool] = lambda: _FakePool(store)
+    app.dependency_overrides[get_http_client] = lambda: None
+    return TestClient(app)
+
+
+def test_f15_callback_dormant_returns_503(patch_provider):
+    store = _new_store()
+    client = _dormant_client(store)
+    state = _do_login(client, "v-dormant-12345678")
+    cb = _do_callback(client, state)
+    assert cb.status_code == 503  # 500 아님
+
+
+def test_f15_refresh_dormant_returns_503(patch_provider):
+    store = _new_store()
+    client = _dormant_client(store)
+    r = client.post("/auth/refresh", json={"refresh_token": "anything"})
+    assert r.status_code == 503  # 500 아님
 
 
 def test_login_rejects_non_s256(patch_provider):

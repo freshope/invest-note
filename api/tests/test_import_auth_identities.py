@@ -86,6 +86,20 @@ def test_parse_csv(tmp_path):
     assert rows[1] == IdentityRow("kakao", "1234567", U2)
 
 
+def test_f14_provider_lowercased_on_parse(tmp_path):
+    # ⚠️ F14: provider 를 소문자 정규화 — 런타임 _resolve_user_id 가 소문자로 조회하므로
+    # 대소문자 drift 가 매핑 miss → 전 사용자 lockout 되는 것을 적재 시점에 못박는다.
+    p = tmp_path / "export.csv"
+    p.write_text(
+        "provider,provider_id,user_id\n"
+        f"Google,google-sub-1,{U1}\n"
+        f"KAKAO,1234567,{U2}\n"
+    )
+    rows, _ = parse_export(p)
+    assert rows[0].provider == "google"
+    assert rows[1].provider == "kakao"
+
+
 def test_parse_json_identity_data_sub_fallback(tmp_path):
     # provider_id 컬럼이 없고 identity_data.sub 만 있는 export 변형 대응.
     p = tmp_path / "export.json"

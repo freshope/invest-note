@@ -27,6 +27,7 @@ from fastapi.testclient import TestClient
 from invest_note_api.auth.oauth_providers import UserInfo
 from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import get_pool
+from invest_note_api.external.http_client import get_http_client
 from invest_note_api.main import create_app
 
 TEST_SUPABASE_URL = "https://test.supabase.co"
@@ -74,12 +75,20 @@ class _FakeConn:
             provider, sub = args
             uid = self.s["identities"].get((provider, sub))
             return {"user_id": uid} if uid else None
-        if "UPDATE oauth_transient" in sql:
+        if "SELECT payload" in sql and "oauth_transient" in sql:
+            # _PEEK_TRANSIENT_SQL(F1): $1 key, $2 kind, $3 now — 소비하지 않음.
+            key, kind, now = args
+            row = self.s["transient"].get(key)
+            if row is None or row["kind"] != kind or row["expires_at"] <= now:
+                return None
+            return {"payload": row["payload"]}
+        if "DELETE FROM oauth_transient" in sql and "RETURNING" in sql:
+            # _CONSUME_TRANSIENT_SQL(F2): $1 key, $2 now, $3 kind — 즉시 DELETE.
             key, now, kind = args
             row = self.s["transient"].get(key)
-            if row is None or row["kind"] != kind or row["consumed"] or row["expires_at"] <= now:
+            if row is None or row["kind"] != kind or row["expires_at"] <= now:
                 return None
-            row["consumed"] = True
+            del self.s["transient"][key]
             return {"payload": row["payload"]}
         if "UPDATE auth_refresh_tokens" in sql and "expires_at > $2" in sql:
             token_hash, now = args
@@ -168,6 +177,7 @@ def _client(store, userinfo_by_provider, monkeypatch):
     app = create_app(settings)
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_pool] = lambda: _FakePool(store)
+    app.dependency_overrides[get_http_client] = lambda: None  # mock provider 가 http 무시
     monkeypatch.setattr(
         "invest_note_api.routers.auth.get_provider",
         lambda name, s: _MockProvider(name, userinfo_by_provider[name]),

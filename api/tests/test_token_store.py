@@ -19,9 +19,8 @@ from invest_note_api.auth.token_store import (
     consume_transient,
     generate_token,
     hash_token,
-    lookup_refresh,
+    peek_transient,
     put_transient,
-    revoke_refresh,
     rotate_refresh,
     save_refresh,
 )
@@ -85,40 +84,38 @@ class _FakeConn:
         raise AssertionError(f"unhandled execute SQL: {sql[:40]}")
 
     async def fetchrow(self, sql, *args):
-        if "UPDATE oauth_transient" in sql:
-            key, now, kind = args  # _CONSUME_TRANSIENT_SQL: $1 key, $2 now, $3 kind
+        if "SELECT payload" in sql and "oauth_transient" in sql:
+            # _PEEK_TRANSIENT_SQL: $1 key, $2 kind, $3 now — mutation 없는 조회.
+            key, kind, now = args
             row = self.store.transient.get(key)
-            if (row is None or row["kind"] != kind or row["consumed_at"] is not None
-                    or row["expires_at"] <= now):
+            if row is None or row["kind"] != kind or row["expires_at"] <= now:
                 return None
-            row["consumed_at"] = now  # single-use 표시
+            return {"payload": row["payload"]}  # 소비하지 않음
+        if "DELETE FROM oauth_transient" in sql and "RETURNING" in sql:
+            # _CONSUME_TRANSIENT_SQL(F2): $1 key, $2 now, $3 kind — 즉시 DELETE.
+            key, now, kind = args
+            row = self.store.transient.get(key)
+            if row is None or row["kind"] != kind or row["expires_at"] <= now:
+                return None
+            del self.store.transient[key]  # single-use — 행 즉시 삭제(평문 잔존 제거)
             return {"payload": row["payload"]}
         if "UPDATE auth_refresh_tokens" in sql and "expires_at > $2" in sql:
-            # 회전 revoke: 미revoke + 미만료
+            # 회전 revoke: 미revoke + 미만료(_ROTATE_REVOKE_SQL).
             token_hash, now = args
             for r in self.store.refresh:
                 if (r["token_hash"] == token_hash and r["revoked_at"] is None
                         and r["expires_at"] > now):
                     r["revoked_at"] = now
-                    return {"user_id": r["user_id"]}
-            return None
-        if "UPDATE auth_refresh_tokens" in sql:
-            # 일반 revoke: 미revoke (만료 무관)
-            token_hash, now = args
-            for r in self.store.refresh:
-                if r["token_hash"] == token_hash and r["revoked_at"] is None:
-                    r["revoked_at"] = now
-                    return {"user_id": r["user_id"]}
-            return None
-        if "SELECT user_id" in sql and "auth_refresh_tokens" in sql:
-            # lookup: 미revoke + 미만료
-            token_hash, now = args
-            for r in self.store.refresh:
-                if (r["token_hash"] == token_hash and r["revoked_at"] is None
-                        and r["expires_at"] > now):
                     return {"user_id": r["user_id"]}
             return None
         raise AssertionError(f"unhandled fetchrow SQL: {sql[:40]}")
+
+    def _refresh_valid(self, token_hash, now) -> bool:
+        # 테스트 probe(과거 lookup_refresh 대체) — 미revoke·미만료면 유효.
+        return any(
+            r["token_hash"] == token_hash and r["revoked_at"] is None and r["expires_at"] > now
+            for r in self.store.refresh
+        )
 
 
 # --- B2: transient 인스턴스 무관(다른 conn 소비) ---
@@ -152,6 +149,43 @@ async def test_b3_transient_single_use_replay_rejected():
 
 
 @pytest.mark.asyncio
+async def test_f2_consume_deletes_row_no_plaintext_lingering():
+    # F2: 소비 시 row 즉시 삭제 — consumed 평문 access/refresh 가 TTL 까지 잔존하지 않는다.
+    store = _FakeStore()
+    conn = _FakeConn(store)
+    await put_transient(conn, "code-f2", "code",
+                        {"access_token": "AAA", "refresh_token": "RRR"}, _future())
+    assert "code-f2" in store.transient
+    payload = await consume_transient(conn, "code-f2", "code")
+    assert payload == {"access_token": "AAA", "refresh_token": "RRR"}
+    # 소비 후 행 자체가 사라진다(평문 잔존 0).
+    assert "code-f2" not in store.transient
+
+
+@pytest.mark.asyncio
+async def test_f1_peek_does_not_consume():
+    # F1: peek 은 single-use 를 소진하지 않는다 — 이후 consume 이 정상 동작.
+    store = _FakeStore()
+    conn = _FakeConn(store)
+    await put_transient(conn, "code-f1", "code", {"x": 1}, _future())
+    # peek 2회 모두 payload 반환(소진 없음).
+    assert await peek_transient(conn, "code-f1", "code") == {"x": 1}
+    assert await peek_transient(conn, "code-f1", "code") == {"x": 1}
+    # peek 후에도 consume 가능.
+    assert await consume_transient(conn, "code-f1", "code") == {"x": 1}
+    # consume 후엔 peek 도 None.
+    assert await peek_transient(conn, "code-f1", "code") is None
+
+
+@pytest.mark.asyncio
+async def test_f1_peek_expired_returns_none():
+    store = _FakeStore()
+    conn = _FakeConn(store)
+    await put_transient(conn, "code-exp", "code", {"x": 1}, _past())
+    assert await peek_transient(conn, "code-exp", "code") is None
+
+
+@pytest.mark.asyncio
 async def test_transient_expired_returns_none():
     store = _FakeStore()
     conn = _FakeConn(store)
@@ -181,7 +215,7 @@ def test_b5_refresh_stored_as_hash_not_plaintext():
 
 
 @pytest.mark.asyncio
-async def test_b5_refresh_save_lookup_no_plaintext_in_store():
+async def test_b5_refresh_saved_as_hash_no_plaintext_in_store():
     store = _FakeStore()
     conn = _FakeConn(store)
     token = generate_token()
@@ -189,8 +223,8 @@ async def test_b5_refresh_save_lookup_no_plaintext_in_store():
     # DB(store)에 평문 토큰이 없어야 한다(해시만).
     assert all(r["token_hash"] != token for r in store.refresh)
     assert store.refresh[0]["token_hash"] == hash_token(token)
-    # 유효 lookup → user_id.
-    assert await lookup_refresh(conn, token) == U1
+    # 저장 직후 유효(probe — 미revoke·미만료).
+    assert conn._refresh_valid(hash_token(token), datetime.now(timezone.utc))
 
 
 @pytest.mark.asyncio
@@ -203,14 +237,14 @@ async def test_b5_refresh_rotation_invalidates_old():
 
     rotated_uid = await rotate_refresh(conn, old, new, _future(3600))
     assert rotated_uid == U1
-    # 회전 후 구 refresh → 무효(None), 신 refresh → 유효.
-    assert await lookup_refresh(conn, old) is None
-    assert await lookup_refresh(conn, new) == U1
+    # 회전 후 구 refresh 재회전 → None(무효), 신 refresh 재회전 → 유효(user_id).
+    assert await rotate_refresh(conn, old, generate_token(), _future(3600)) is None
+    assert await rotate_refresh(conn, new, generate_token(), _future(3600)) == U1
 
 
 @pytest.mark.asyncio
 async def test_b5_refresh_rotation_rejects_already_rotated():
-    # 이미 회전된(revoked) refresh 재사용 시 회전 거부(None, 재사용 탐지).
+    # 이미 회전된(revoked) refresh 재사용 시 회전 거부(None, stale refresh 거부).
     store = _FakeStore()
     conn = _FakeConn(store)
     old = generate_token()
@@ -226,16 +260,5 @@ async def test_b5_expired_refresh_rejected():
     conn = _FakeConn(store)
     expired = generate_token()
     await save_refresh(conn, U1, expired, _past())
-    # 만료 refresh → lookup None, 회전 None.
-    assert await lookup_refresh(conn, expired) is None
+    # 만료 refresh → 회전 None(미만료 조건 불충족).
     assert await rotate_refresh(conn, expired, generate_token(), _future()) is None
-
-
-@pytest.mark.asyncio
-async def test_revoke_refresh_marks_revoked():
-    store = _FakeStore()
-    conn = _FakeConn(store)
-    token = generate_token()
-    await save_refresh(conn, U1, token, _future(3600))
-    assert await revoke_refresh(conn, token) == U1
-    assert await lookup_refresh(conn, token) is None

@@ -48,7 +48,9 @@ def parse_export(path: str | Path) -> tuple[list[IdentityRow], int]:
 
     rows: list[IdentityRow] = []
     for rec in raw:
-        provider = (rec.get("provider") or "").strip()
+        # ⚠️ F14(HINGE): provider 를 소문자 정규화. _resolve_user_id 가 소문자 {google,kakao,apple}
+        # 로 조회하므로 적재값이 대소문자 다르면 매핑 miss → callback 401 → 전 사용자 lockout(B1).
+        provider = (rec.get("provider") or "").strip().lower()
         # provider_id 우선, 없으면 identity_data.sub 폴백(Supabase export 변형 대응).
         provider_id = (rec.get("provider_id") or "").strip()
         if not provider_id:

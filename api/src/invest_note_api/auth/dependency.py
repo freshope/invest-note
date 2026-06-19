@@ -22,8 +22,13 @@ def _registry_with_be_key(settings: Settings) -> dict[str, dict]:
     verify_key = be_verify_key(settings)
     if verify_key is None:
         return registry
+    # ⚠️ F6②: verify_key 는 **BE issuer entry 에만** 주입한다. 무차별 주입하면 비-BE issuer 가
+    # registry 에 추가될 때 그 entry 까지 BE 공개키로 검증돼 lockout(latent). 현재 registry 는
+    # BE-only 라 동작 동일하나, 미래 안전을 위해 명시 매칭.
+    be_iss = settings.be_token_issuer
     return {
-        iss: {**entry, "verify_key": verify_key} for iss, entry in registry.items()
+        iss: ({**entry, "verify_key": verify_key} if iss == be_iss else entry)
+        for iss, entry in registry.items()
     }
 
 

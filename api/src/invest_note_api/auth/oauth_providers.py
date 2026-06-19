@@ -32,7 +32,11 @@ from urllib.parse import urlencode
 import httpx
 import jwt
 
+from invest_note_api.auth.pkce import pkce_s256
 from invest_note_api.config import Settings
+
+# Google OIDC id_token iss(둘 다 유효 — Google 이 둘을 혼용).
+GOOGLE_ISSUERS = ("accounts.google.com", "https://accounts.google.com")
 
 # IdP 고정 엔드포인트.
 GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
@@ -72,15 +76,6 @@ class OAuthProvider(Protocol):
     ) -> tuple[str, UserInfo]: ...
 
 
-def _pkce_challenge(verifier: str) -> str:
-    """S256 challenge — Layer1(BE↔IdP) PKCE. authorize 요청에 싣는다."""
-    import base64
-    import hashlib
-
-    digest = hashlib.sha256(verifier.encode()).digest()
-    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
-
-
 # --- Google (OIDC) ------------------------------------------------------------
 
 
@@ -100,7 +95,7 @@ class GoogleProvider:
             "response_type": "code",
             "scope": "openid email profile",
             "state": state,
-            "code_challenge": _pkce_challenge(idp_verifier),
+            "code_challenge": pkce_s256(idp_verifier),
             "code_challenge_method": "S256",
         }
         return f"{GOOGLE_AUTHORIZE_URL}?{urlencode(params)}"
@@ -124,6 +119,13 @@ class GoogleProvider:
         # Google id_token 검증은 Google JWKS 가 필요하나, BE 는 직접 교환한 토큰이라(코드↔토큰
         # 1:1, TLS 채널) 클레임 추출에 집중한다. sub = OIDC sub. (서명 검증 강화는 후속.)
         claims = jwt.decode(id_token, options={"verify_signature": False})
+        # F3: aud/iss 강제(Apple 과 대칭) — aud 가 우리 client_id 아니면 다른 앱 토큰 주입.
+        if claims.get("iss") not in GOOGLE_ISSUERS:
+            raise jwt.InvalidIssuerError(f"Google id_token iss 불일치: {claims.get('iss')}")
+        if claims.get("aud") != self._client_id:
+            raise jwt.InvalidAudienceError(
+                f"Google id_token aud 불일치: {claims.get('aud')} ≠ {self._client_id}"
+            )
         sub = str(claims["sub"])
         userinfo = UserInfo(
             email=claims.get("email"),
@@ -152,7 +154,7 @@ class KakaoProvider:
             "redirect_uri": redirect_uri,
             "response_type": "code",
             "state": state,
-            "code_challenge": _pkce_challenge(idp_verifier),
+            "code_challenge": pkce_s256(idp_verifier),
             "code_challenge_method": "S256",
         }
         return f"{KAKAO_AUTHORIZE_URL}?{urlencode(params)}"
@@ -238,7 +240,7 @@ class AppleProvider:
             "response_mode": "form_post",
             "scope": "name email",
             "state": state,
-            "code_challenge": _pkce_challenge(idp_verifier),
+            "code_challenge": pkce_s256(idp_verifier),
             "code_challenge_method": "S256",
         }
         return f"{APPLE_AUTHORIZE_URL}?{urlencode(params)}"
