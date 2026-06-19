@@ -16,7 +16,7 @@ import type { BehaviorProfile, ProfileInputRates } from "@/lib/analysis/profile"
 import type { ConcentrationData } from "@/lib/analysis/concentration";
 import type { Suggestion } from "@/lib/analysis/rules";
 import type { DashboardTotals, Position, AccountSnapshot, QuoteMap } from "@/lib/portfolio";
-import { createClient } from "@/lib/supabase/client";
+import { getAccessToken } from "@/lib/auth";
 
 // ============================================================
 // 공통 유틸
@@ -76,20 +76,12 @@ const ROUTES = {
   },
 } as const;
 
-// 지연 초기화 싱글턴 — SSR import 시 createBrowserClient 실행을 피하기 위해
-// 첫 실제 호출(클라이언트 측) 시점까지 초기화를 미룬다.
-let _supabase: ReturnType<typeof createClient> | undefined;
-function getSupabase() {
-  if (!_supabase) _supabase = createClient();
-  return _supabase;
-}
-
 async function getBearerHeader(): Promise<Record<string, string>> {
   if (!API_BASE) return {};
   try {
-    const { data: { session } } = await getSupabase().auth.getSession();
-    if (!session?.access_token) return {};
-    return { Authorization: `Bearer ${session.access_token}` };
+    const token = await getAccessToken();
+    if (!token) return {};
+    return { Authorization: `Bearer ${token}` };
   } catch {
     return {};
   }

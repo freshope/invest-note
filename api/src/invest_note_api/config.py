@@ -3,6 +3,8 @@ from functools import lru_cache
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from invest_note_api.auth.constants import AUTH_ROLE
+
 # 공급자 체인 기본값 — 단일 출처. 도메인 모듈(quotes/stock_seed)의 함수 기본 인자도
 # 이 상수를 import 해 사용한다(Settings 기본 문자열과의 drift 방지).
 DEFAULT_QUOTE_PROVIDERS = ("naver", "yahoo")
@@ -97,6 +99,14 @@ class Settings(BaseSettings):
     # 어드민 패널(신규 /admin CRUD) allowlist — 쉼표구분 이메일. Supabase JWT email 클레임과
     # 정확 비교(admin_email_set property). 빈 값이면 어떤 계정도 require_admin 통과 못 함.
     admin_emails: str = ""
+
+    # OIDC 토큰 검증 — IdP 교체 시 어댑터 seam. 현재 IdP=Supabase.
+    # oidc_issuer: 빈 값이면 iss 검증을 스킵한다(fail-safe). 실제 Supabase iss 는
+    # f"{supabase_url}/auth/v1" — 정확한 문자열 검증 후 prod 에서만 활성화한다.
+    # 잘못 설정하면 전체 인증이 붕괴하므로 기본은 비활성(빈 값).
+    oidc_issuer: str = ""
+    # oidc_audience: 토큰 aud 클레임 기대값. 기본은 Supabase 컨벤션(authenticated).
+    oidc_audience: str = AUTH_ROLE
 
     model_config = SettingsConfigDict(env_file=".env.local", extra="ignore")
 

@@ -13,6 +13,22 @@
 
 - App Store Connect 수출 규정 자동 응답 설정 (`ITSAppUsesNonExemptEncryption=false`)
 
+## [1.3.4] - 2026-06-19
+
+탈-Supabase Auth Phase 1 + 멀티 게시판 어드민 구조 (`app-v1.2.6_29` OTA web-only + `api-v1.3.4` + `admin-v0.1.6`). 사용자 가시 변경 없음.
+
+### Changed
+
+- 탈-Supabase Auth Phase 1 — 결합 국소화(동작 변경 없는 리팩토링). BE `jwt.py` 일반 OIDC verifier 어댑터화(`decode_oidc_jwt`) + `IdentityProvider`(GoTrue deleteUser) 격리, FE `lib/auth/` 3계층으로 `@supabase/supabase-js` 단일 파일 격리. `iss` 핀 검증 토글 추가(기본 비활성 = 검증 스킵, prod 활성화는 범위 밖). 하위호환 — 토큰 형식 불변
+
+### Added
+
+- 멀티 게시판 어드민 구조(공지/의견/오류신고/거래내역서) — `board_posts` + `board_type` + `metadata jsonb`, 어드민 전용(`require_admin`). ⚠️ **DB 마이그레이션 `0003_board_tables` 필요 — main push 전 운영 DB 선행 적용**
+
+### Fixed
+
+- `OIDC_AUDIENCE` 빈 값(present-but-empty)으로 인한 전체 인증 401 방지 — `decode_oidc_jwt` 가 audience/issuer 를 자체 정규화
+
 ## [1.3.3] - 2026-06-18
 
 어드민 대시보드 누적 사용자수 차트 (`api-v1.3.3` + `admin-v0.1.5`).

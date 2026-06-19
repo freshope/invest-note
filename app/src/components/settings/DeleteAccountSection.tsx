@@ -9,7 +9,7 @@ import { Button } from "@/components/base/Button";
 import { ConfirmDeleteDialog } from "@/components/shared/ConfirmDeleteDialog";
 import { useDialogState } from "@/hooks/useDialogState";
 import { meApi } from "@/lib/api-client";
-import { createClient } from "@/lib/supabase/client";
+import { signOut } from "@/lib/auth";
 
 export function DeleteAccountSection() {
   const router = useRouter();
@@ -28,10 +28,9 @@ export function DeleteAccountSection() {
   async function handleConfirm() {
     await dialog.run(async () => {
       await meApi.deleteAccount();
-      const supabase = createClient();
-      // 서버 호출 실패해도 로컬 세션은 비우도록 scope: "local"
+      // 서버 호출 실패해도 로컬 세션은 비우도록 scope: "local"(signOut 내부 고정)
       try {
-        await supabase.auth.signOut({ scope: "local" });
+        await signOut();
       } catch (error) {
         console.error("[deleteAccount] signOut after delete", error);
       }

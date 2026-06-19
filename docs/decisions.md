@@ -4,6 +4,36 @@
 
 ---
 
+## 2026-06-19 | 탈-Supabase Auth Phase 1 — 결합 국소화 + iss 핀 fail-safe 기본값(검증 스킵)
+
+- **맥락:** 탈-Supabase의 마지막 축인 Auth(JWT/OAuth)를 "교체 시 어댑터만 갈아끼우면 되는" 구조로 국소화. DB(RLS 제거)·마이그레이션(Alembic)은 완료, Supabase는 이제 Auth(GoTrue) 전용([[project_supabase_oauth_only]]). Phase 1은 동작 변경 0 + iss 검증 추가가 전부인 리팩토링(신규 라이브러리 0, Supabase 존속). Phase 2(BE 토큰 발급)는 범위 밖.
+- **결정:**
+  - ① **iss 핀 기본값 = 검증 스킵(`oidc_issuer=""` → `jwt.decode`에 `issuer=` 미전달).** 값이 있으면 일치/존재 강제(불일치=InvalidIssuerError, 누락=MissingRequiredClaimError → 둘 다 InvalidTokenError → 401). 실제 Supabase iss = `{supabase_url}/auth/v1` 이나 코드/토글만 추가하고 **prod 활성화는 정확한 iss 문자열 검증 후 별도 config 단계**로 미룬다.
+  - ② **BE auth 어댑터화(jwt.py 한 곳이 결합 격리 지점).** `decode_supabase_jwt` → `decode_oidc_jwt(token, *, jwks_uri, audience, issuer=None)` 일반 OIDC verifier. config 에 `oidc_issuer`/`oidc_audience`(기본 AUTH_ROLE=authenticated, 하위호환) 추가. dependency 가 settings 주입.
+  - ③ **IdP 관리 호출 어댑터(`auth/identity_provider.py` 단일 함수).** GoTrue deleteUser(`/auth/v1/admin/users/{id}`)를 `delete_user(user_id, *, http_client, settings)` 로 격리. 503(secret 미설정)·DB delete·204 응답은 라우터(me.py)에 유지(http 0회 보장). Protocol/클래스 없이 함수 seam(Phase 1 simplicity).
+  - ④ **FE app 3계층 미러링([[project_admin_panel]] 모델).** SDK import 를 `lib/auth/supabase-client.ts` 한 파일에 가두고 neutral 타입/함수(`lib/auth/`)만 소비. 구 `lib/supabase/client.ts` 삭제.
+- **이유:** 앱은 스토어 배포 네이티브 앱이라 IdP 가 FE 에 결합하면 교체 시 스토어 심사/OTA 재배포 필요 — "API 중심"의 진짜 동기. iss 핀은 보안 하드닝(현재 미검증)이나, 테스트 JWT·기존 토큰에 iss 보장이 없어 기본 활성화 시 전체 인증 붕괴 → skip-when-empty 가 무회귀 hinge.
+- **트레이드오프:** ① **iss 보안 하드닝 vs 점진 배포 안전** — 기본 off 라 당장의 보안 이득은 0(코드 준비만), 켤 때 토큰 iss 클레임 정합 검증 책임이 남음. ② Phase 1 은 IdP 교체 시 여전히 **앱 재배포 필요**(FE 가 OAuth flow 주관) — 완전한 "API 중심"은 Phase 2(BE 토큰 발급, refresh BE 이관, Apple 네이티브 충돌)에서. ③ `oidc_jwks_uri` 설정 오버라이드는 Supabase 존속이라 speculative → 미도입(deferred).
+- **재평가 트리거:** IdP 실제 교체 시점이 정해지면 Phase 2 진행 판단. prod iss 활성화는 운영 토큰의 iss 클레임을 실측 확인한 뒤. JWKS URL 형태가 비-Supabase 로 바뀌면 `jwks_uri` property 를 설정 가능 필드로 승격.
+
+---
+
+## 2026-06-19 | 멀티 게시판 구조 — 단일 board_posts + board_type discriminator + metadata jsonb, 첨부 스토리지 연기
+
+- **맥락:** 공지사항·사용자의견·오류신고·거래내역서 제공(미지원 증권사 거래내역 사용자 제출) 등 여러 "게시판"이 예정. 각 기능을 개별 테이블로 만들면 중복(작성자·타임스탬프·댓글·첨부)이 과다. 어드민에 먼저 구조를 만들고 개별 기능은 후속 스펙으로 진행하는 순서.
+- **결정:**
+  - ① **단일 `board_posts` + `board_type` discriminator + `metadata jsonb`** 로 멀티 게시판 흡수(관계: `board_comments`·`board_attachments`). board별 가변 필드(증권사명·앱버전 등)는 `metadata jsonb` 로 흡수해 테이블 분리 회피("최소한의 테이블" 충족).
+  - ② **board_type = text + CHECK (PG enum 금지).** 후속 스펙마다 새 type 추가 → enum 의 `ALTER TYPE ADD VALUE` owner/superuser 마찰([[project_alembic_migrations]])을 피한다. 초기 4종(notice/feedback/bug_report/broker_statement), 확장은 CHECK 교체 마이그레이션. BE pydantic `Literal` 로 이중 검증.
+  - ③ **첨부 스토리지 백엔드 미결정(테이블 shape 만 정의).** 사용자 업로드는 app-side(후속)라 이번 스펙엔 첨부 0건. `storage_key`/`bucket`/`content_type`/`size_bytes`/`original_name` 만 두고 업로드/다운로드는 후속 스펙에서 객체 스토리지(Vultr 등)와 함께 결정 — Supabase Storage 반사 선택 금지(탈-Supabase 방향).
+  - ④ **어드민 우선 vertical slice**(목록·board_type 필터·상세·관리자 댓글·상태/고정), app 사용자 화면은 후속.
+  - ⑤ **전용 board router/repo**(`routers/admin_board.py`) — 상세 조인(post+댓글+첨부)·관리자 댓글 mutation·상태 변경은 기존 admin catch-all `GET /admin/{table}` 평면 CRUD 로 불가. 단 목록 엔벨로프(`AdminListResponse`)·FE `DataTablePage` 는 재사용. ⚠️ catch-all 이 `/admin/boards` 를 흡수하므로 `main.py` 에서 admin.router **보다 먼저** include(테스트 가드).
+  - ⑥ **격리:** RLS 미사용([[project_portable_rls]]) — user-scoped 아닌 운영 테이블, 어드민 게이트(`require_admin` allowlist)가 유일 접근 경계. 응답은 어드민 관례 snake_case raw passthrough([[project_admin_panel]]).
+- **이유:** 최소 테이블로 멀티 게시판 + 후속 type 확장 마찰 회피. 스토리지는 영속 파일 인프라가 전무한 상태라 객체 스토리지와 함께 의식적으로 결정하는 게 옳아 보류. 어드민 먼저 = 운영자가 들어온 글을 즉시 관리.
+- **트레이드오프:** ① **status 가 자유 텍스트**(DB CHECK/Literal 없음) — board_type별 유효 status 를 강제 못 함. 어드민 FE Select(open/closed/resolved)는 미지값 fallback 으로 graceful 처리하나, app 작성자 도입 시 어휘 정렬 필요. ② **metadata 가 앱 최초 jsonb 컬럼** — 풀(db.py)에 json codec 미등록 전제로 repo 가 `json.loads`(읽기)/`json.dumps`+`::jsonb`(쓰기) 처리. 나중에 풀에 jsonb codec 을 등록하면 repo 의 json.loads 가 dict 에 호출돼 500 → codec 도입 시 board_repo 디코드 제거 필요. ③ board별 가변 필드를 jsonb 로 흡수해 타입 안정성 일부 포기.
+- **재평가 트리거:** board_type별 유효 status/필드가 복잡해지면 평면 jsonb 구조 재검토. 첨부 업로드 스펙에서 스토리지 백엔드 확정. board가 user-scoped(사용자 본인 글만) 조회로 확장되면 app-side router 에 user_id 필터 추가.
+
+---
+
 ## 2026-06-18 | 어드민 대시보드 누적 사용자 차트 — recharts 도입 + base 래퍼, 별도 user-growth 엔드포인트, KST 버킷
 
 - **맥락:** 어드민 대시보드(`admin/src/app/(dash)/page.tsx`)가 사용자/계좌/거래/종목/NPS 큐를 단순 숫자 카드로만 노출 — 사용자 증가 추세를 볼 수단이 없었다. `public.users.created_at` 으로 일별 누적 가입자를 시계열 차트로 표시. 어드민에 차트 라이브러리가 전무한 상태에서 처음 도입.
