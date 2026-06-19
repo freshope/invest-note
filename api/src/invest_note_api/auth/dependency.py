@@ -3,7 +3,7 @@ from typing import Annotated
 import jwt
 from fastapi import Depends, Header
 
-from invest_note_api.auth.jwt import AuthenticatedUser, decode_supabase_jwt
+from invest_note_api.auth.jwt import AuthenticatedUser, decode_oidc_jwt
 from invest_note_api.config import Settings, get_settings
 from invest_note_api.errors import ERR_UNAUTHORIZED, APIError
 
@@ -18,6 +18,11 @@ async def get_current_user(
 
     token = authorization.removeprefix("Bearer ")
     try:
-        return decode_supabase_jwt(token, settings.jwks_uri)
+        return decode_oidc_jwt(
+            token,
+            jwks_uri=settings.jwks_uri,
+            audience=settings.oidc_audience,
+            issuer=settings.oidc_issuer or None,
+        )
     except (jwt.InvalidTokenError, jwt.exceptions.PyJWKClientError, ValueError):
         raise APIError(ERR_UNAUTHORIZED, 401)

@@ -54,6 +54,7 @@ def make_jwt(
     user_id: str = TEST_USER_ID,
     email: str = TEST_EMAIL,
     expires_delta: int = 3600,
+    iss: str | None = None,
 ) -> str:
     payload = {
         "sub": user_id,
@@ -62,6 +63,8 @@ def make_jwt(
         "iat": int(time.time()),
         "exp": int(time.time()) + expires_delta,
     }
+    if iss is not None:
+        payload["iss"] = iss
     return jwt.encode(payload, _private_key, algorithm="ES256", headers={"kid": _kid})
 
 

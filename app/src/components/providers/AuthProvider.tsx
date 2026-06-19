@@ -1,25 +1,23 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import type { User } from "@supabase/supabase-js";
-import { createClient } from "@/lib/supabase/client";
+import { getUser, subscribe, type AuthUser } from "@/lib/auth";
 
 interface AuthContextValue {
-  user: User | null;
+  user: AuthUser | null;
   loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue>({ user: null, loading: true });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const supabase = createClient();
     let mounted = true;
 
-    const applyUser = (next: User | null) => {
+    const applyUser = (next: AuthUser | null) => {
       // TOKEN_REFRESHED 등 같은 사용자 이벤트가 반복될 때 불필요한 re-render 방지
       setUser((prev) => {
         if (!prev || !next) return next;
@@ -27,10 +25,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
     };
 
-    supabase.auth.getSession()
-      .then(({ data: { session } }) => {
+    getUser()
+      .then((u) => {
         if (!mounted) return;
-        applyUser(session?.user ?? null);
+        applyUser(u);
         setLoading(false);
       })
       .catch(() => {
@@ -39,16 +37,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      applyUser(session?.user ?? null);
+    const unsubscribe = subscribe((u) => {
+      applyUser(u);
       setLoading(false);
     });
 
     return () => {
       mounted = false;
-      subscription.unsubscribe();
+      unsubscribe();
     };
   }, []);
 

@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-06-19 | 탈-Supabase Auth Phase 1 — 결합 국소화 + iss 핀 fail-safe 기본값(검증 스킵)
+
+- **맥락:** 탈-Supabase의 마지막 축인 Auth(JWT/OAuth)를 "교체 시 어댑터만 갈아끼우면 되는" 구조로 국소화. DB(RLS 제거)·마이그레이션(Alembic)은 완료, Supabase는 이제 Auth(GoTrue) 전용([[project_supabase_oauth_only]]). Phase 1은 동작 변경 0 + iss 검증 추가가 전부인 리팩토링(신규 라이브러리 0, Supabase 존속). Phase 2(BE 토큰 발급)는 범위 밖.
+- **결정:**
+  - ① **iss 핀 기본값 = 검증 스킵(`oidc_issuer=""` → `jwt.decode`에 `issuer=` 미전달).** 값이 있으면 일치/존재 강제(불일치=InvalidIssuerError, 누락=MissingRequiredClaimError → 둘 다 InvalidTokenError → 401). 실제 Supabase iss = `{supabase_url}/auth/v1` 이나 코드/토글만 추가하고 **prod 활성화는 정확한 iss 문자열 검증 후 별도 config 단계**로 미룬다.
+  - ② **BE auth 어댑터화(jwt.py 한 곳이 결합 격리 지점).** `decode_supabase_jwt` → `decode_oidc_jwt(token, *, jwks_uri, audience, issuer=None)` 일반 OIDC verifier. config 에 `oidc_issuer`/`oidc_audience`(기본 AUTH_ROLE=authenticated, 하위호환) 추가. dependency 가 settings 주입.
+  - ③ **IdP 관리 호출 어댑터(`auth/identity_provider.py` 단일 함수).** GoTrue deleteUser(`/auth/v1/admin/users/{id}`)를 `delete_user(user_id, *, http_client, settings)` 로 격리. 503(secret 미설정)·DB delete·204 응답은 라우터(me.py)에 유지(http 0회 보장). Protocol/클래스 없이 함수 seam(Phase 1 simplicity).
+  - ④ **FE app 3계층 미러링([[project_admin_panel]] 모델).** SDK import 를 `lib/auth/supabase-client.ts` 한 파일에 가두고 neutral 타입/함수(`lib/auth/`)만 소비. 구 `lib/supabase/client.ts` 삭제.
+- **이유:** 앱은 스토어 배포 네이티브 앱이라 IdP 가 FE 에 결합하면 교체 시 스토어 심사/OTA 재배포 필요 — "API 중심"의 진짜 동기. iss 핀은 보안 하드닝(현재 미검증)이나, 테스트 JWT·기존 토큰에 iss 보장이 없어 기본 활성화 시 전체 인증 붕괴 → skip-when-empty 가 무회귀 hinge.
+- **트레이드오프:** ① **iss 보안 하드닝 vs 점진 배포 안전** — 기본 off 라 당장의 보안 이득은 0(코드 준비만), 켤 때 토큰 iss 클레임 정합 검증 책임이 남음. ② Phase 1 은 IdP 교체 시 여전히 **앱 재배포 필요**(FE 가 OAuth flow 주관) — 완전한 "API 중심"은 Phase 2(BE 토큰 발급, refresh BE 이관, Apple 네이티브 충돌)에서. ③ `oidc_jwks_uri` 설정 오버라이드는 Supabase 존속이라 speculative → 미도입(deferred).
+- **재평가 트리거:** IdP 실제 교체 시점이 정해지면 Phase 2 진행 판단. prod iss 활성화는 운영 토큰의 iss 클레임을 실측 확인한 뒤. JWKS URL 형태가 비-Supabase 로 바뀌면 `jwks_uri` property 를 설정 가능 필드로 승격.
+
+---
+
 ## 2026-06-19 | 멀티 게시판 구조 — 단일 board_posts + board_type discriminator + metadata jsonb, 첨부 스토리지 연기
 
 - **맥락:** 공지사항·사용자의견·오류신고·거래내역서 제공(미지원 증권사 거래내역 사용자 제출) 등 여러 "게시판"이 예정. 각 기능을 개별 테이블로 만들면 중복(작성자·타임스탬프·댓글·첨부)이 과다. 어드민에 먼저 구조를 만들고 개별 기능은 후속 스펙으로 진행하는 순서.
