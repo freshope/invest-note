@@ -167,14 +167,84 @@ def test_be_token_registry_entry_when_enabled():
     assert be["audience"] == "invest-note-app"
 
 
-def test_be_audience_defaults_to_auth_role_when_empty():
-    # BE aud 빈 값이면 AUTH_ROLE 로 정규화(빈 aud 가 PyJWT InvalidAudience 거부 방지).
+def test_be_token_enabled_empty_audience_fails_fast():
+    # B7: BE 활성(signing key 있음)인데 be_token_audience 빈 값이면 기동 실패.
+    # (Phase 2a 의 "빈 aud → authenticated 폴백" 은 per-issuer aud 격리를 격하하므로 제거됨.)
+    import pytest
+
+    with pytest.raises(ValueError, match="be_token_audience"):
+        Settings(
+            supabase_url=TEST_SUPABASE_URL,
+            be_token_signing_key="-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----",
+            be_token_issuer="https://api.invest-note.example/be",
+        )
+
+
+def test_be_token_dormant_empty_audience_ok():
+    # dormant(signing key 빈 값)는 be_token_audience 빈 값이어도 무영향 — fail-fast 대상 아님.
+    s = Settings(supabase_url=TEST_SUPABASE_URL, be_token_audience="")
+    assert s.be_token_enabled is False
+    assert s.oidc_issuer_registry == {}
+
+
+# --- Phase 2b-1: OAuth provider 설정 + redirect/딥링크 + TTL (B-1) ---
+
+
+def test_oauth_provider_credentials_default_empty():
+    # provider 자격증명 미설정 → 빈 값(부분 활성 허용). 미설정 provider 는 라우터에서
+    # 명시 에러(B-6) — Settings 단계는 빈 값 허용.
+    s = Settings(supabase_url=TEST_SUPABASE_URL)
+    assert s.google_client_id == ""
+    assert s.google_client_secret == ""
+    assert s.kakao_client_id == ""
+    assert s.kakao_client_secret == ""
+    assert s.apple_client_id == ""
+    assert s.apple_team_id == ""
+    assert s.apple_key_id == ""
+    assert s.apple_private_key == ""
+
+
+def test_oauth_provider_credentials_load():
     s = Settings(
         supabase_url=TEST_SUPABASE_URL,
-        be_token_signing_key="-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----",
-        be_token_issuer="https://api.invest-note.example/be",
+        google_client_id="g-id",
+        google_client_secret="g-secret",
+        kakao_client_id="k-rest-key",
+        kakao_client_secret="k-secret",
+        apple_client_id="com.pixelwave.investnote.service",
+        apple_team_id="TEAM123",
+        apple_key_id="KEY123",
+        apple_private_key="-----BEGIN PRIVATE KEY-----\napple\n-----END PRIVATE KEY-----",
     )
-    assert s.oidc_issuer_registry["https://api.invest-note.example/be"]["audience"] == "authenticated"
+    assert s.google_client_id == "g-id"
+    assert s.kakao_client_id == "k-rest-key"
+    assert s.apple_client_id == "com.pixelwave.investnote.service"
+    assert s.apple_team_id == "TEAM123"
+    assert s.apple_key_id == "KEY123"
+
+
+def test_oauth_redirect_and_deeplink_defaults():
+    s = Settings(supabase_url=TEST_SUPABASE_URL)
+    assert s.be_oauth_redirect_base == ""
+    # 딥링크 스킴은 고정 기본값(앱 custom scheme).
+    assert s.be_deeplink_scheme == "app.pixelwave.investnote://auth/callback"
+
+
+def test_oauth_ttl_defaults_and_override():
+    s = Settings(supabase_url=TEST_SUPABASE_URL)
+    assert s.be_refresh_token_ttl == 60 * 60 * 24 * 30  # 30d
+    assert s.oauth_code_ttl == 60  # 일회용 code 단명
+    assert s.oauth_state_ttl == 600  # state/PKCE challenge
+
+    s2 = Settings(
+        supabase_url=TEST_SUPABASE_URL,
+        be_refresh_token_ttl=3600,
+        oauth_code_ttl=30,
+        oauth_state_ttl=300,
+    )
+    assert s2.be_refresh_token_ttl == 3600
+    assert s2.oauth_code_ttl == 30
+    assert s2.oauth_state_ttl == 300
 
 
 def test_jwt_algorithms_covers_supabase_and_be_alg():

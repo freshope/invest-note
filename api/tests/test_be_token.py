@@ -17,7 +17,7 @@ from cryptography.hazmat.primitives.serialization import (
 from fastapi.testclient import TestClient
 from jwt import PyJWK
 
-from invest_note_api.auth.be_token import build_be_jwks, mint_be_token
+from invest_note_api.auth.be_token import be_verify_key, build_be_jwks, mint_be_token
 from invest_note_api.config import Settings, get_settings
 from invest_note_api.main import create_app
 
@@ -113,3 +113,44 @@ def test_jwks_endpoint_empty_when_dormant():
     r = client.get("/auth/.well-known/jwks.json")
     assert r.status_code == 200
     assert r.json() == {"keys": []}
+
+
+# --- Phase 2b-1: in-process 자기검증(B8) + B7 fail-fast ---
+
+
+def test_be_verify_key_in_process_round_trip():
+    # B8: mint → be_verify_key(in-process public key)로 직접 검증. self-fetch(JWKS HTTP) 미사용.
+    # be_jwks_uri(placeholder 호스트)가 자기검증 경로에서 load-bearing 이 아님을 입증한다.
+    settings = _be_settings()
+    sub = uuid4()
+    token = mint_be_token(sub, "user@example.com", settings=settings)
+
+    public_key = be_verify_key(settings)
+    assert public_key is not None
+    payload = jwt.decode(
+        token,
+        public_key,  # in-process key 직접 주입(네트워크/JWKS URI 무관)
+        algorithms=["ES256"],
+        audience=BE_AUDIENCE,
+        issuer=BE_ISSUER,
+    )
+    assert payload["sub"] == str(sub)
+    assert payload["aud"] == BE_AUDIENCE
+
+
+def test_be_verify_key_none_when_dormant():
+    # dormant(빈 signing key) → None. registry 에 BE entry 가 없어 jwt.py 가 호출하지 않는다.
+    settings = Settings(supabase_url=TEST_SUPABASE_URL)
+    assert be_verify_key(settings) is None
+
+
+def test_be_token_audience_fail_fast_when_enabled():
+    # B7: signing key 있는데 aud 빈 값이면 Settings 생성 시 기동 실패(per-issuer aud 격리 보호).
+    with pytest.raises(ValueError, match="be_token_audience"):
+        Settings(
+            supabase_url=TEST_SUPABASE_URL,
+            be_token_signing_key=_ec_private_pem(),
+            be_token_issuer=BE_ISSUER,
+            be_token_kid=BE_KID,
+            # be_token_audience 미설정(빈 값) → fail-fast
+        )

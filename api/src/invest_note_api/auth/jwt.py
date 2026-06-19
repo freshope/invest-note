@@ -22,18 +22,29 @@ def _get_jwks_client(jwks_uri: str) -> PyJWKClient:
 
 
 def _verify_with_entry(token: str, entry: dict) -> AuthenticatedUser:
-    """선택된 issuer entry({jwks_uri, issuer, audience})로 JWKS 서명 검증.
+    """선택된 issuer entry 로 서명 검증.
 
-    issuer 가 None(또는 빈 값)이면 iss 검증을 스킵한다(fail-safe). 값이 있으면
-    jwt.decode 에 issuer 를 전달해 iss 클레임 일치/존재를 강제한다.
-    audience 가 빈 값이면 기본 AUTH_ROLE 로 정규화한다 — 빈 문자열을 그대로
-    넘기면 PyJWT 가 모든 토큰을 InvalidAudience 로 거부하기 때문(설정 누락 방어).
+    검증 키 선택(B8):
+      - entry 에 `verify_key`(in-process public key 객체)가 있으면 그것으로 직접 검증한다 —
+        BE 토큰 자기검증 경로. be_jwks_uri self-fetch(틀린 호스트 placeholder + P8 self-HTTP
+        fragility)를 회피한다.
+      - 없으면(Supabase entry) 기존 JWKS HTTP fetch 경로(PyJWKClient). ⚠️ 이 분기는
+        Supabase 검증을 한 줄도 바꾸지 않는다(B9 expand 무회귀).
+
+    issuer 가 None(또는 빈 값)이면 iss 검증을 스킵한다(fail-safe). 값이 있으면 jwt.decode 에
+    issuer 를 전달해 iss 클레임 일치/존재를 강제한다. audience 가 빈 값이면 기본 AUTH_ROLE 로
+    정규화한다 — 빈 문자열을 그대로 넘기면 PyJWT 가 모든 토큰을 InvalidAudience 로 거부하기
+    때문(Supabase 설정 누락 방어). BE entry 는 B7 가 빈 aud 를 기동 단계에서 차단한다.
     """
-    client = _get_jwks_client(entry["jwks_uri"])
-    signing_key = client.get_signing_key_from_jwt(token)
+    verify_key = entry.get("verify_key")
+    if verify_key is not None:
+        signing_key = verify_key
+    else:
+        client = _get_jwks_client(entry["jwks_uri"])
+        signing_key = client.get_signing_key_from_jwt(token).key
     payload = jwt.decode(
         token,
-        signing_key.key,
+        signing_key,
         algorithms=JWT_ALGORITHMS,
         audience=entry.get("audience") or AUTH_ROLE,
         issuer=entry.get("issuer") or None,

@@ -41,7 +41,9 @@ def mint_be_token(
         "sub": str(sub),
         "email": email,
         "iss": settings.be_token_issuer,
-        "aud": settings.be_token_audience or "authenticated",
+        # B7: be_token_signing_key 가 있으면(위 가드 통과) be_token_audience 는 model_validator
+        # 가 비어있지 않음을 보장한다. per-issuer aud 격리를 위해 "authenticated" 폴백 제거.
+        "aud": settings.be_token_audience,
         "iat": now,
         "exp": now + expires_delta,
     }
@@ -51,6 +53,25 @@ def mint_be_token(
         algorithm="ES256",
         headers={"kid": settings.be_token_kid},
     )
+
+
+def be_verify_key(settings: Settings):
+    """BE 토큰 검증용 public key 객체(in-process 직접 주입, B8).
+
+    ⚠️ be_jwks_uri(=supabase_url 파생 placeholder) self-fetch 를 **하지 않는다**(P8 self-HTTP
+    fragility + 호스트 placeholder 동시 회피). signing key 로부터 메모리에서 public key 를 도출해
+    issuer registry 의 BE entry 검증에 직접 주입한다. dormant(빈 키)면 None — registry 에 BE entry
+    자체가 없어 호출되지 않는다(jwt.py 가 None 가드).
+
+    외부 JWKS 엔드포인트(/auth/.well-known/jwks.json, build_be_jwks)는 별개로 유지된다
+    (미래 외부 검증자용) — 자기검증만 이 in-process 경로를 쓴다.
+    """
+    if not settings.be_token_signing_key:
+        return None
+    private_key = load_pem_private_key(
+        settings.be_token_signing_key.encode(), password=None
+    )
+    return private_key.public_key()
 
 
 def build_be_jwks(settings: Settings) -> dict:

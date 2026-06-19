@@ -176,3 +176,57 @@ def test_case5_missing_iss_rejected_when_pinned():
         token = _supabase_jwt(iss=None)
         r = client.get("/me", headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 401
+
+
+# --- Phase 2b-1: B8 in-process 자기검증 + B9 expand 무회귀 ---
+
+
+@contextmanager
+def _be_active_client_no_jwks_mock():
+    """BE 활성 Settings + Supabase 핀 — _get_jwks_client 를 **BE URI 에 대해 깨뜨려서**
+    BE 검증이 self-fetch 를 안 함을 입증한다(B8). Supabase URI 만 정상 mock.
+    """
+    settings = Settings(
+        supabase_url=TEST_SUPABASE_URL,
+        oidc_issuer=SUPABASE_ISSUER,
+        be_token_signing_key=_be_private_pem,
+        be_token_issuer=BE_ISSUER,
+        be_token_audience=BE_AUDIENCE,
+        be_token_kid=BE_KID,
+    )
+    app = create_app(settings)
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    def factory(uri: str):
+        # BE JWKS URI 로 fetch 가 일어나면 self-fetch 가 살아있다는 뜻 → 즉시 실패시킨다.
+        if uri == BE_JWKS_URI:
+            raise AssertionError(
+                "BE 검증이 be_jwks_uri 를 self-fetch 했다 — in-process key 직접 주입 위배(B8)"
+            )
+        client = MagicMock()
+        client.get_signing_key_from_jwt.return_value = _supabase_jwk()
+        return client
+
+    with patch("invest_note_api.auth.jwt._get_jwks_client", MagicMock(side_effect=factory)):
+        with TestClient(app) as client:
+            yield client
+
+
+def test_b8_be_token_verified_in_process_without_self_fetch():
+    # B8: BE 토큰이 self-fetch(BE_JWKS_URI) 없이 in-process public key 로 검증돼 200.
+    # (factory 가 BE URI fetch 시 AssertionError 라 self-fetch 가 일어나면 500/에러로 드러난다.)
+    with _be_active_client_no_jwks_mock() as client:
+        token = _be_jwt()
+        r = client.get("/me", headers={"Authorization": f"Bearer {token}"})
+        assert r.status_code == 200
+        assert r.json()["user_id"] == TEST_USER_ID
+
+
+def test_b9_supabase_token_still_valid_when_be_active():
+    # B9 (expand hard gate): BE 활성 Settings 에서도 Supabase 토큰은 여전히 200(fallback 무회귀,
+    # 구 앱 lockout 0). Supabase 검증은 in-process 분기를 안 타고 기존 JWKS fetch 경로 유지.
+    with _be_active_client_no_jwks_mock() as client:
+        token = _supabase_jwt()
+        r = client.get("/me", headers={"Authorization": f"Bearer {token}"})
+        assert r.status_code == 200
+        assert r.json()["user_id"] == TEST_USER_ID
