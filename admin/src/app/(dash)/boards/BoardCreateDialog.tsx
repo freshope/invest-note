@@ -69,7 +69,13 @@ export function BoardCreateDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) setErrorMsg(null); // 닫을 때 이전 실패 메시지 초기화(재오픈 시 stale 방지)
+      }}
+    >
       <DialogTrigger asChild>
         <Button size="sm">글 작성</Button>
       </DialogTrigger>

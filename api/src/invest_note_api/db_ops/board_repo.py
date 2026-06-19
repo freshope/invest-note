@@ -13,11 +13,10 @@ import json
 from typing import Any
 from uuid import UUID
 
+import asyncpg
+
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 200
-
-# board_type CHECK 와 1:1 — 라우터 Literal 통과분만 들어오지만 화이트리스트로 이중 가드.
-ALLOWED_BOARD_TYPES = ("notice", "feedback", "bug_report", "broker_statement")
 
 # PATCH 편집 가능 컬럼(board_type 은 수정 불가). 명시적 null 은 스키마가 사전 거부.
 _POST_UPDATABLE = ("title", "body", "status", "is_pinned")
@@ -173,19 +172,25 @@ async def delete_post(conn: Any, post_id: Any) -> bool:
 async def create_comment(
     conn: Any, *, post_id: Any, body: str, user_id: Any, is_admin: bool = True
 ) -> dict | None:
-    """관리자 댓글 작성. post 부재 시 None(라우터가 404) — FakeConnection 이 예외를 못 던지므로
-    FK 예외 catch 대신 선검증으로 테스트 가능 경로 유지."""
+    """관리자 댓글 작성. post 부재 시 None(라우터가 404).
+
+    선검증(select 1)으로 일반적 not-found 를 잡되, 선검증과 insert 사이에 post 가 삭제되는
+    race 는 FK 위반으로 나타나므로 ForeignKeyViolationError 도 None(404)으로 환원한다 —
+    그렇지 않으면 동시 삭제 시 의도한 404 대신 500 이 난다."""
     exists = await conn.fetchval("select 1 from board_posts where id = $1", post_id)
     if not exists:
         return None
-    row = await conn.fetchrow(
-        "insert into board_comments (post_id, body, user_id, is_admin) "
-        "values ($1, $2, $3, $4) returning *",
-        post_id,
-        body,
-        user_id,
-        is_admin,
-    )
+    try:
+        row = await conn.fetchrow(
+            "insert into board_comments (post_id, body, user_id, is_admin) "
+            "values ($1, $2, $3, $4) returning *",
+            post_id,
+            body,
+            user_id,
+            is_admin,
+        )
+    except asyncpg.ForeignKeyViolationError:
+        return None
     return _comment_row_to_dict(row)
 
 

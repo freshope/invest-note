@@ -29,15 +29,21 @@ function CommentDeleteButton({
     },
   });
   return (
-    <Button
-      variant="ghost"
-      size="xs"
-      disabled={mutation.isPending}
-      onClick={() => mutation.mutate()}
-      title={mutation.isError && mutation.error instanceof ApiError ? mutation.error.message : undefined}
-    >
-      삭제
-    </Button>
+    <div className="flex items-center gap-2">
+      {mutation.isError && (
+        <span className="text-[12px] text-destructive">
+          {mutation.error instanceof ApiError ? mutation.error.message : "삭제 실패"}
+        </span>
+      )}
+      <Button
+        variant="ghost"
+        size="xs"
+        disabled={mutation.isPending}
+        onClick={() => mutation.mutate()}
+      >
+        삭제
+      </Button>
+    </div>
   );
 }
 

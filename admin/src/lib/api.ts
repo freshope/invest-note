@@ -82,12 +82,17 @@ export interface AdminListParams {
   q?: string;
 }
 
-function listQuery(params?: AdminListParams): string {
-  if (!params) return "";
+function listQuery(
+  params?: AdminListParams,
+  extra?: Record<string, string | undefined>,
+): string {
   const sp = new URLSearchParams();
-  if (params.page != null) sp.set("page", String(params.page));
-  if (params.page_size != null) sp.set("page_size", String(params.page_size));
-  if (params.q) sp.set("q", params.q);
+  if (params?.page != null) sp.set("page", String(params.page));
+  if (params?.page_size != null) sp.set("page_size", String(params.page_size));
+  if (params?.q) sp.set("q", params.q);
+  if (extra) {
+    for (const [k, v] of Object.entries(extra)) if (v) sp.set(k, v);
+  }
   const qs = sp.toString();
   return qs ? `?${qs}` : "";
 }
@@ -243,16 +248,6 @@ export interface BoardListParams extends AdminListParams {
   board_type?: BoardType;
 }
 
-function boardListQuery(params?: BoardListParams): string {
-  const sp = new URLSearchParams();
-  if (params?.board_type) sp.set("board_type", params.board_type);
-  if (params?.page != null) sp.set("page", String(params.page));
-  if (params?.page_size != null) sp.set("page_size", String(params.page_size));
-  if (params?.q) sp.set("q", params.q);
-  const qs = sp.toString();
-  return qs ? `?${qs}` : "";
-}
-
 // ============================================================
 // API
 // ============================================================
@@ -324,7 +319,7 @@ export const adminApi = {
   boards: {
     list: (params?: BoardListParams) =>
       apiFetch<AdminListResponse<BoardRow>>(
-        `/admin/boards${boardListQuery(params)}`,
+        `/admin/boards${listQuery(params, { board_type: params?.board_type })}`,
       ),
     get: (postId: string) =>
       apiFetch<BoardDetail>(`/admin/boards/${encodeURIComponent(postId)}`),

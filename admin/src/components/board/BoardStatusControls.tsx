@@ -56,6 +56,11 @@ export function BoardStatusControls({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            {/* BE status 는 자유 텍스트 — BOARD_STATUSES 밖 값(향후 app-side 작성 등)도
+                트리거에 보이도록 fallback 항목으로 노출(공백 트리거 방지). */}
+            {!BOARD_STATUSES.some((s) => s.value === status) && (
+              <SelectItem value={status}>{status}</SelectItem>
+            )}
             {BOARD_STATUSES.map((s) => (
               <SelectItem key={s.value} value={s.value}>
                 {s.label}
