@@ -38,4 +38,8 @@ export function registerAppVersion(props: {
   if (props.native_version) toRegister.native_version = props.native_version;
   if (props.native_build) toRegister.native_build = props.native_build;
   if (Object.keys(toRegister).length > 0) posthog.register(toRegister);
+  // 네이티브 버전 미확정(웹/getInfo 실패) 시, 과거 잘못 저장(persist)된 super property 를
+  // 제거한다. register 는 기존 키를 덮어쓰지 않으므로 빈 값만으론 오염값이 남는다.
+  if (!props.native_version) posthog.unregister("native_version");
+  if (!props.native_build) posthog.unregister("native_build");
 }

@@ -117,6 +117,11 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("user").textContent).toBe("null");
   });
 
+  // G7: 기존 "네이티브 logout emit" 테스트는 @/lib/auth 통째 mock 이라 native emit 경로를
+  // 실행하지 않아 위 "subscribe 콜백 SIGNED_OUT" 과 동작이 동일(검증 0, false confidence) →
+  // 삭제. native emit 의 실제 검증(positive 로그인/refresh→user·logout→null)은 real emit 을
+  // 실행하는 lib/auth/__tests__/index.test.ts(single-flight positive emit·signOut·C4)에 위치.
+
   it("언마운트 시 unsubscribe() 호출", async () => {
     const { unmount } = renderProvider();
     await act(async () => {

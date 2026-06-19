@@ -4,6 +4,28 @@
 
 ---
 
+## 2026-06-19 | 탈-Supabase Auth Phase 2b-2 — FE 전환(네이티브 BE flow) + refresh 흡수
+
+- **맥락:** 2b-1 이 BE 에 OAuth 중개·BE 토큰 발급·refresh·profile 인프라를 깔았다(dormant — env 미주입). 2b-2 는 **신 앱(FE)이 Supabase SDK 대신 BE OAuth flow 를 쓰도록 전환**한다. supabase-js 가 자동 처리하던 세션 영속·토큰 갱신·상태 구독을 FE 가 떠안는다. FE only(`app/`), 2b-1 BE 계약([[_workspace/02_be_changes.md]]) 소비.
+- **B12 enforce-always 정정(stale 텍스트 폐기):** 직전 spec/design 의 "code_verifier 예약/미사용" 은 **stale**. 2b-1 실제 구현은 **PKCE enforce-always** — `/auth/login` code_challenge(S256) 필수, `/auth/token` code_verifier 필수, BE plain 폴백 없음. → 2b-2 FE 는 반드시 verifier 생성→S256 challenge 전달→딥링크 code→verifier 제출. 생략 시 전 네이티브 로그인 거부.
+- **결정:**
+  - ① **웹/네이티브 분기(lib/auth 7함수 `isNativePlatform()` 이중화).** FE 는 Capacitor 네이티브 단일 배포([[project_deploy_targets]], 웹은 dev 서버뿐)이고 2b-1 BE flow 는 네이티브 전용(callback=custom scheme, web origin 반환 불가). → **네이티브만 BE flow, 웹은 expand 동안 Supabase 유지.** 웹 가지는 기존 supabase-client 호출 무변경(C8 무회귀 hard gate).
+  - ② **secure storage 플러그인 = `@aparajita/capacitor-secure-storage@8.0.0`.** iOS Keychain + Android Keystore 백킹, Capacitor 8+ 명시 호환. access/refresh/PKCE verifier 평문 localStorage 금지(금융 앱, C5). ⚠️ **신규 네이티브 플러그인 = OTA 불가·스토어 빌드 필수**(`npx cap sync` + 재빌드).
+  - ③ **getAccessToken proactive refresh + 모듈 single-flight(C3).** access JWT exp 디코드 후 60s skew 내 만료면 refresh. 동시 호출은 모듈 스코프 단일 in-flight promise 공유(`.finally` 로 클리어 → 다음 만료 주기엔 새 promise) → 스타트업 다발 호출의 N개 refresh 폭주·"이미 회전" 401 폭사 차단. refresh 가 self-contained JWT 검증이라 반응형 401-retry 불요 → **api-client.ts 콜사이트 무변경**.
+  - ④ **refresh 실패 = clear + logout emit + null(C4 무한루프 차단).** doRefresh 내부 catch 가 throw 를 전파 안 함 → 동시 awaiter 전원 null, clearTokens 로 raw 비워져 후속 getAccessToken 은 refresh 재시도 없이 즉시 null.
+  - ⑤ **getUser = access claim 로컬 디코드(검증 미도입, D-D).** base64url payload → sub/email(BE 가 서명 검증, 앱은 claim 읽기만). 한글 email UTF-8 안전(TextDecoder, C10). 만료 시 getAccessToken(refresh-aware) 경유(C9).
+  - ⑥ **subscribe = 자체 listener registry**(supabase-js onAuthStateChange 상실 대체). 해제 함수가 registry 에서 제거(누수 차단). emit 발화 = saveTokens 후(exchange/refresh 성공)·clearTokens 후(signOut/refresh 실패).
+  - ⑦ **PKCE verifier secure storage 영속(C2 cold-start 생존).** 메모리 only 금지 — login 시 저장, 딥링크 교환 직전 읽기, 성공/실패 후 삭제. `App.getLaunchUrl` 콜드스타트 경로도 verifier 읽음.
+  - ⑧ **딥링크 implicit fragment 분기 제거(C6).** 네이티브 딥링크엔 일회용 code 만 옴(B4). 기존 access_token/refresh_token fragment→setSession 분기 제거 → code→exchangeCodeForSession 단일 경로. 이로 인해 무참조가 된 `setSession`(웹 콜백도 미사용 — supabase detectSessionInUrl 자동 처리) 제거.
+  - ⑨ **signOut 네이티브 = 로컬 store clear + logout emit, 서버 미호출(C11).** 2b-1 계약에 revoke 엔드포인트 없음. 웹은 기존 `signOut({scope:"local"})` 유지(parity).
+- **supabase-js 제거 = 2c 이연(F-10 assess 결론).** supabase-js 실제 import 는 `lib/auth/supabase-client.ts` 단 1파일(types.ts/index.ts 는 주석 언급만). 웹 분기가 expand 동안 이를 계속 호출하므로 **2b-2 에서 물리 제거 불가**. 제거 시 깨질 웹 경로: login(웹 OAuth redirect)·auth/callback(supabase 자동 세션 detect)·AuthProvider(웹 getUser/subscribe)·api-client(웹 getAccessToken). → 2c(웹 폐기/BE flow 전환 + [[project_force_update]] 양 스토어 승인)로 이연.
+- **이유:** "API 중심 — IdP 교체를 백엔드 배포만으로"(사용자 목표). 네이티브가 supabase-js 결합을 벗으면 IdP 교체 시 스토어 재심사 없이 BE 배포만으로 전환 가능. expand 전략(웹 잔존)으로 점진 전환 — 한 번에 다 끊지 않아 무회귀 안전.
+- **트레이드오프:** ① lib/auth 이중화 복잡도↑ vs 점진 expand 안전. ② FE 가 세션/refresh/구독을 직접 관리 → single-flight·cold-start·exp 디코드 등 supabase-js 가 숨겨주던 엣지를 떠안음. ③ secure storage 신규 플러그인 = OTA 불가, 스토어 빌드 필수.
+- **⚠️ 디바이스 carry-forward(코드로 해결 불가):** `crypto.subtle.digest`(S256 challenge)·secure storage Keychain/Keystore 는 jsdom/node unit test 가 항상 green 이라 부재를 못 잡는다. BE plain 폴백 없음 → WebView(특히 custom scheme origin) 부재 시 전 네이티브 로그인 사망. **iOS·Android 디바이스 실측 1회 필수.** 참고: 현 supabase-js PKCE 가 동일 WebView 에서 S256 성공 중이면 안전 신호.
+- **외부 절차(코드 아님):** 2b 활성화 = BE env 주입(provider secret·Apple .p8·ES256 키·be_token_audience·redirect_base) + IdP 콘솔 BE callback redirect_uri + 마이그레이션(0004+0005+0006) 적용(2b-1 confirm 대기, dormant 면 FE OAuth 503 우아 처리 C7). FE 출시 = Capacitor 빌드/스토어 제출(force-update 는 2c).
+
+---
+
 ## 2026-06-19 | 탈-Supabase Auth Phase 1 — 결합 국소화 + iss 핀 fail-safe 기본값(검증 스킵)
 
 - **맥락:** 탈-Supabase의 마지막 축인 Auth(JWT/OAuth)를 "교체 시 어댑터만 갈아끼우면 되는" 구조로 국소화. DB(RLS 제거)·마이그레이션(Alembic)은 완료, Supabase는 이제 Auth(GoTrue) 전용([[project_supabase_oauth_only]]). Phase 1은 동작 변경 0 + iss 검증 추가가 전부인 리팩토링(신규 라이브러리 0, Supabase 존속). Phase 2(BE 토큰 발급)는 범위 밖.
@@ -15,6 +37,41 @@
 - **이유:** 앱은 스토어 배포 네이티브 앱이라 IdP 가 FE 에 결합하면 교체 시 스토어 심사/OTA 재배포 필요 — "API 중심"의 진짜 동기. iss 핀은 보안 하드닝(현재 미검증)이나, 테스트 JWT·기존 토큰에 iss 보장이 없어 기본 활성화 시 전체 인증 붕괴 → skip-when-empty 가 무회귀 hinge.
 - **트레이드오프:** ① **iss 보안 하드닝 vs 점진 배포 안전** — 기본 off 라 당장의 보안 이득은 0(코드 준비만), 켤 때 토큰 iss 클레임 정합 검증 책임이 남음. ② Phase 1 은 IdP 교체 시 여전히 **앱 재배포 필요**(FE 가 OAuth flow 주관) — 완전한 "API 중심"은 Phase 2(BE 토큰 발급, refresh BE 이관, Apple 네이티브 충돌)에서. ③ `oidc_jwks_uri` 설정 오버라이드는 Supabase 존속이라 speculative → 미도입(deferred).
 - **재평가 트리거:** IdP 실제 교체 시점이 정해지면 Phase 2 진행 판단. prod iss 활성화는 운영 토큰의 iss 클레임을 실측 확인한 뒤. JWKS URL 형태가 비-Supabase 로 바뀌면 `jwks_uri` property 를 설정 가능 필드로 승격.
+
+---
+
+## 2026-06-19 | 탈-Supabase Auth Phase 2b-1 — OAuth 중개 + BE 토큰 발급 + refresh + profile (BE, dormant 해제 토대)
+
+- **맥락:** 2a 가 깐 expand 토대(issuer registry 검증 + BE 토큰 mint/JWKS + auth_identities 매핑) 위에서 **BE 가 실제 OAuth 를 중개하고 자체 토큰을 발급**한다. 2b 가 거대(OAuth+refresh+FE+profile)해 **2b-1(BE) / 2b-2(FE)** 로 분할 — 2b-1 은 BE only(라우터·발급·store·profile). **expand 유지가 hard gate**: BE 발급을 켜도 Supabase fallback(2a default) 검증 무회귀 = 구 앱 lockout 0. FE 전환·supabase-js 제거 검토는 2b-2, Supabase 검증 제거는 2c([[project_force_update]] 양 스토어 승인 후).
+- **결정:**
+  - ① **OAuth 중개 flow = redirect_uri 는 BE callback 고정, 딥링크엔 일회용 code 만(토큰 직접 미노출, B4).** `GET /auth/login?provider=&code_challenge=` → state+IdP verifier+앱 PKCE challenge 를 transient 저장 → IdP authorize. `GET /auth/callback` → IdP code 교환+sub 추출 → **(provider,sub)→auth_identities.user_id 해석(B1)** → BE access+refresh 발급 → 일회용 code 딥링크. `POST /auth/token {code, code_verifier}` → code consume + 앱 PKCE 대조 → 토큰 반환. `POST /auth/refresh {refresh_token}` → 회전. 4개 모두 무인증(로그인 진입점, health 다음·/v1 앞 mount).
+  - ② **B1(HINGE) 데이터 고아화 방지 = callback 이 반드시 (provider, IdP sub)→원래 UUID 해석, miss=401(새 user 생성·email 매칭 금지).** BE 토큰 sub=원래 public.users UUID. `_resolve_user_id` 가 auth_identities 단일 조회만 — email 폴백 코드 부재(grep 불변식).
+  - ③ **transient store = DB short-TTL 테이블(in-process 아님, B2 HINGE).** `oauth_transient(key, kind, payload jsonb, expires_at, consumed_at)` — state/PKCE challenge(kind 'state') + 일회용 code(kind 'code'). login(생성)과 callback/token(소비)이 다른 워커·replica 일 수 있어(uvicorn --workers↑/Coolify replica↑) in-process 면 즉시 lockout. payload jsonb 라 B12(PKCE) 결정과 무관하게 스키마 불변. single-use = `UPDATE...RETURNING`(미소비·미만료만 매칭, consumed 표시) → replay 거부(B3).
+  - ④ **refresh = 해시 저장(평문 금지, B5) + 회전 + 만료.** `auth_refresh_tokens(token_hash unique, revoked_at, expires_at)` — sha256 해시만 저장(평문 부재, grep). 회전 = `UPDATE...RETURNING`(미revoke+미만료만 무효화) 후 신 refresh save(atomic, advisory lock 불요). 만료/재사용(이미 revoked) refresh → 401. kis_token_store 패턴(plain pool, RLS 없음) 준용.
+  - ⑤ **B7 be_token_audience fail-fast.** `be_token_enabled`(signing key 있음)인데 `be_token_audience` 빈 값이면 Settings 기동 실패(`@model_validator(after)`). 2a 의 "빈 aud→authenticated 폴백"(be_token.py·BE entry)을 **제거** — 폴백이 per-issuer aud 격리를 iss-only 로 격하시키기 때문. dormant(키 없음)는 무영향.
+  - ⑥ **B8 be_jwks_uri 자기검증 = in-process public key 직접 주입(self-fetch 폐기).** 2a 인수노트#2(be_jwks_uri 가 supabase_url 파생 placeholder→틀린 호스트 self-fetch)를 정정. `be_verify_key(settings)` 가 signing key 에서 메모리 public key 도출 → dependency 가 registry BE entry 에 주입 → `_verify_with_entry` 가 verify_key 있으면 직접 검증, 없으면(Supabase) 기존 JWKS fetch(**Supabase 경로 무변경, B9**). 외부 JWKS 엔드포인트(`/auth/.well-known/jwks.json`)는 미래 외부 검증자용으로 유지.
+  - ⑦ **B12 app↔BE PKCE = enforce-always(잔여 위험 수용X).** 악성 앱의 custom scheme 일회용 code 탈취 차단 — `/auth/login` 이 code_challenge(S256) 필수, callback 이 challenge 를 code payload 에 이월, `/auth/token` 이 code_verifier 와 S256 대조(누락/불일치=401). 2b-1 엔 broker flow 소비 클라이언트가 0(FE swap=2b-2)이라 필수화가 expand 를 위배하지 않음(B9 게이트는 Supabase 토큰 /me 검증에만 걸림). ⚠️ **PKCE 두 층 구분**: Layer1=BE↔IdP(idp_verifier, callback 소비) / Layer2=앱↔BE(B12) — 별개(합치면 보안 버그).
+  - ⑧ **profile = 별도 user_profiles 테이블(named 컬럼·PIPA) + COALESCE upsert(B6).** `user_profiles(user_id PK FK users cascade, email, display_name, avatar_url, email_verified, providers text[], last_sign_in)` — raw_meta 통째 복사 금지. upsert COALESCE: last_sign_in 항상 갱신, 나머지는 IdP null 이면 기존값 유지(Apple 재로그인·Kakao email optional 의 null clobber 차단). providers distinct union. 기존 사용자 export 백필(import_user_profiles.py, rollback guard 3종) — ⚠️ **2c 전 비가역 마감**(Apple/Kakao 재로그인 시 프로필 미제공이 유일 출처 소실).
+  - ⑨ **Authlib 비균일(B10).** Google=OIDC discovery(id_token sub), Kakao=OAuth2+`/v2/user/me`(숫자 id→**str**, 2a provider_id text 매칭), Apple=JWT-client-secret(BE 동적 서명 ES256, Service ID 재사용으로 sub 보존)+id_token aud/iss 검증.
+- **이유:** 2a 의 dormant parity 위에 OAuth 발급을 올리되, Supabase fallback 무회귀(BE 전체 775 테스트 green, B9 canary)로 expand-safe 보장. transient/refresh DB 영속은 스케일아웃 lockout(B2) 차단 — 단일 인스턴스인 지금도 미래 replica 증설 대비. in-process key 자기검증은 self-HTTP fragility(P8)+호스트 placeholder(2a 인수노트#2)를 동시 제거.
+- **트레이드오프:** ① **transient/refresh DB 라운드트립** — code 60s·state 600s 단명이라 부담 작지만 in-process 대비 복잡도↑(B2 안전과 교환). ② **token_store DML·0006 은 real PG 에서 미실행**(CI no-PG — fake conn + offline `--sql` 만 검증) → 첫 실 실행 = 운영 적용 시점이 risk point. ③ Google/Apple id_token **서명 검증은 클레임 추출에 집중**(BE↔IdP TLS 채널 + code↔token 1:1 전제, IdP JWKS 서명 강화는 후속). ④ refresh 회전이 atomic UPDATE 라 advisory lock 생략(동시 회전 시 1회만 성공 — 의도). ⑤ **be_oauth_redirect_base/provider secret/BE 키 = 작성만, env 주입은 운영**(미주입 시 dormant 유지).
+- **재평가 트리거:** 2b-1 머지 후 2b-2(FE lib/auth BE 전환·getAccessToken refresh 흡수·딥링크 code 교환·토큰 store·supabase-js 제거 검토). ⚠️ **마이그레이션 0004+0005+0006 한 배치·identity 적재·profile 백필·env 키 = 전부 사용자 confirm 후 운영 적용**(현재 미적용). IdP 콘솔 redirect_uri 에 BE callback 추가(Supabase 와 둘 다)+OAuth client secret BE 이전+Apple client secret 은 라우터 활성 전 외부 절차. PIPA: profile PII 저장 확대 → 개인정보처리방침/Play Data Safety/App Store 라벨 갱신 backlog([[project_posthog_analytics]] 고지와 연동). Google/Apple id_token 서명 검증 강화(IdP JWKS) 검토.
+
+---
+
+## 2026-06-19 | 탈-Supabase Auth Phase 2a — issuer registry(expand 토대) + BE 토큰 ES256/JWKS + identity import (prod dormant)
+
+- **맥락:** Auth 를 "BE 가 토큰 발급 주체"가 되는 token-broker 로 옮기는 Phase 2 의 첫 sub-phase. 위험(전면 재설계+구 앱 호환+데이터 손실)이 커서 sub-phase 로 격리 — **2a 는 expand 토대만**: BE 토큰의 *검증 경로*와 identity 매핑 인프라만 추가하고 **클라이언트는 BE 토큰을 발급받지 않는다(prod dormant, 유닛테스트로만 가동)**. 실사용 발급(OAuth 중개·refresh·FE 전환)은 2b, Supabase 검증 제거(contract)는 2c([[project_force_update]] 양 스토어 승인 후).
+- **결정:**
+  - ① **issuer registry = Supabase(default 분기) / BE(명시 매칭)** — `decode_oidc_jwt` 가 미검증 iss peek 후 registry(=BE issuer)에 있으면 BE entry, 아니면 Supabase entry 로 검증. ⚠️ **dict-lookup-reject 금지** — 그러면 dormant prod(`oidc_issuer=""`, BE 키 빈값)에서 Supabase 토큰이 iss-miss 로 거부돼 **전원 lockout**. Supabase 를 default 로 둬 expand-safe 보장. unknown iss 거부는 `oidc_issuer` 핀 활성 후에만(Supabase 분기 iss 강제).
+  - ② **per-issuer audience(P6).** registry 항목별 `{jwks_uri, issuer, audience}`. Supabase aud=`authenticated`(`oidc_audience`), BE aud=별도(`be_token_audience`). 단일 글로벌 aud 금지 — aud 교차(Supabase iss+BE aud 등)는 401.
+  - ③ **BE 토큰 = ES256(EC P-256) 비대칭 + BE 자체 JWKS 서빙.** `be_token.py`(`mint_be_token`/`build_be_jwks`), 무인증 JWKS 엔드포인트 `/auth/.well-known/jwks.json`(health 라우터, `get_current_user` 의존 없음 — 자기-검증 순환 방지 P8). **HS256 금지**(verifier 분기 방지 P5 — registry 가 Supabase 와 동일 JWKS 경로로 검증). 키는 env PEM 단일 키(`be_token_signing_key`/`be_token_kid`), 회전(kid 다중화)은 2b. signing key 빈 값이면 빈 JWKS·발급 비활성(dormant, fail-fast 는 2b).
+  - ④ **identity import = `auth.identities` export 매핑(email 매칭 금지).** `auth_identities(provider, provider_id, user_id)` 테이블(0004 마이그레이션) + 적재 스크립트. BE 토큰 `sub` = **원래 public.users UUID**(IdP sub 아님 — P2 데이터 고아화 방지). `provider_id` 는 Supabase 컬럼 그대로(Google=OIDC sub, Kakao=숫자 id, Apple=Service ID 재사용으로 sub 보존). email 매칭은 fragile(Kakao email optional, 금융 데이터 손실 위험)이라 미사용.
+  - ⑤ **적재 rollback guard — 동수(==) 비교 금지(P3 false rollback).** `auth.identities` 는 user 당 다행, `public.users` 는 lazy provisioning 이라 동수 비교가 정상 데이터를 거부한다. 가드 3종: **① anti-orphaning(load-bearing)** = `public.users.id ⊆ export user_id`(방향 주의 — export 초과분=미접속 가입자는 정상, 무시) / **② 완전성** = 파싱 행수 = export 원시 레코드 수 / **③ 유니크** = `(provider, provider_id)` 중복 없음(Python 직접 체크, dry-run 도 검출). 위반 시 트랜잭션 rollback. dry-run 기본.
+  - ⑥ **Supabase iss 핀(`oidc_issuer`) 은 여전히 prod default `""`(검증 스킵).** 실제 iss 정확 문자열을 운영 access token 디코드로 **경험적 확인(A1, BLOCKING)** 하기 전엔 활성화 금지(trailing slash 하나만 틀려도 전원 lockout). 코드/fixture 는 파생 추정값 `{supabase_url}/auth/v1` 로 작성·테스트.
+- **이유:** expand/contract 패턴([[project_portable_rls]] RLS 이관 때와 동일)으로 token-broker 전환 위험을 단계로 격리. 2a 가 무해(dormant)해야 2b 가 안전하게 올라탄다 — Supabase 검증 무회귀가 expand-safe gate(BE 전체 716 테스트 green). identity 매핑을 먼저 깔아야 2b 의 BE 토큰 발급이 기존 데이터를 고아화하지 않는다.
+- **트레이드오프:** ① **registry 가 Supabase 를 default 로 신뢰** — unknown iss 자동 거부는 `oidc_issuer` 핀 활성 후에만 작동(그 전엔 iss 검증 스킵으로 fail-safe, 보안 이득은 핀 후). ② **2a 는 prod dormant** — BE 토큰 경로가 실사용 없이 코드만 존재(유닛으로만 가동). 실 발급은 2b 까지 보류. ③ ES256 단일 키(회전 미지원, kid 다중화는 2b). ④ 적재의 anti-orphaning 은 export 완전성을 전제(운영자 export 누락 시 거짓 통과 가능 — 완전성 가드 ②가 파싱 drop 만 잡고 export 자체 누락은 못 잡음).
+- **재평가 트리거:** A1(운영 토큰 iss 실측) 확정 시 `oidc_issuer` prod 핀 활성 + JWT_ALGORITHMS 가 Supabase 광고 alg 포함 재확인. 2b 착수 시 OAuth 중개(Authlib)·refresh DB 이관·FE `lib/auth` BE 전환·`be_token_signing_key` fail-fast. 마이그레이션(0004)·적재 스크립트는 **사용자 confirm 후** 운영 적용(현재 미적용). ⚠️ **`be_jwks_uri` 는 supabase_url 파생 placeholder** — 2a 는 dormant 라 무해하나 2b self-fetch 활성 시 틀린 호스트로 fetch 하므로 BE 공개 호스트 config 신설 또는 self-fetch 대신 in-process public key 직접 주입(P8 self-HTTP fragility 회피) 필요.
 
 ---
 

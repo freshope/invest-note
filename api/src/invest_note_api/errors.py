@@ -8,6 +8,7 @@ ERR_UNAUTHORIZED = "Unauthorized"
 ERR_FORBIDDEN = "Forbidden"
 ERR_REQUEST_FALLBACK = "올바르지 않은 요청입니다."
 ERR_LOCK_BUSY = "처리 중 다른 요청과 충돌이 발생했습니다. 잠시 후 다시 시도해주세요."
+ERR_SERVICE_UNAVAILABLE = "지원하지 않는 로그인 수단입니다."
 
 
 class APIError(Exception):
