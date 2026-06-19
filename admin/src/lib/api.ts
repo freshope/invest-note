@@ -141,6 +141,57 @@ export interface NpsUnmatchedRow extends BaseRow {
 }
 
 // ============================================================
+// 게시판(board) — 멀티 게시판(board_type discriminator). snake_case passthrough.
+// ============================================================
+
+export type BoardType = "notice" | "feedback" | "bug_report" | "broker_statement";
+
+// board_posts row(10키). status 는 BE 에서 자유 텍스트(Literal 아님).
+export interface BoardRow extends BaseRow {
+  id: string;
+  board_type: BoardType;
+  user_id: string | null;
+  title: string;
+  body: string;
+  status: string;
+  is_pinned: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+// board_comments row(7키). is_admin 으로 관리자 댓글 구분.
+export interface BoardComment extends BaseRow {
+  id: string;
+  post_id: string;
+  user_id: string | null;
+  is_admin: boolean;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// board_attachments row(10키). 이번 스펙은 메타 뷰어뿐(다운로드/업로드 없음).
+export interface BoardAttachment extends BaseRow {
+  id: string;
+  post_id: string | null;
+  comment_id: string | null;
+  user_id: string | null;
+  original_name: string;
+  content_type: string | null;
+  size_bytes: number | null;
+  storage_key: string | null;
+  bucket: string | null;
+  created_at: string;
+}
+
+// 상세 = post 10키 + 조인된 댓글/첨부.
+export type BoardDetail = BoardRow & {
+  comments: BoardComment[];
+  attachments: BoardAttachment[];
+};
+
+// ============================================================
 // 쓰기 입력 (BE 화이트리스트와 정합 — extra='forbid')
 // ============================================================
 
@@ -164,6 +215,42 @@ export interface NpsUnmatchedCreateInput {
 export interface NpsUnmatchedUpdateInput {
   holding_level?: string | null;
   resolved_ticker?: string | null;
+}
+
+// board 쓰기 입력(BE schemas/board.py extra='forbid' 와 정합).
+export interface BoardPostCreateInput {
+  board_type: BoardType;
+  title: string;
+  body?: string;
+  metadata?: Record<string, unknown>;
+  is_pinned?: boolean;
+}
+
+// board_type 수정 불가(생략).
+export interface BoardPostUpdateInput {
+  title?: string;
+  body?: string;
+  status?: string;
+  is_pinned?: boolean;
+}
+
+export interface BoardCommentCreateInput {
+  body: string;
+}
+
+// board 목록 파라미터(공통 + board_type 필터).
+export interface BoardListParams extends AdminListParams {
+  board_type?: BoardType;
+}
+
+function boardListQuery(params?: BoardListParams): string {
+  const sp = new URLSearchParams();
+  if (params?.board_type) sp.set("board_type", params.board_type);
+  if (params?.page != null) sp.set("page", String(params.page));
+  if (params?.page_size != null) sp.set("page_size", String(params.page_size));
+  if (params?.q) sp.set("q", params.q);
+  const qs = sp.toString();
+  return qs ? `?${qs}` : "";
 }
 
 // ============================================================
@@ -230,6 +317,39 @@ export const adminApi = {
     remove: (key: { nps_name: string; nps_as_of: string }) =>
       apiFetch<void>(
         `/admin/nps-unmatched?${new URLSearchParams({ nps_name: key.nps_name, nps_as_of: key.nps_as_of })}`,
+        { method: "DELETE" },
+      ),
+  },
+
+  boards: {
+    list: (params?: BoardListParams) =>
+      apiFetch<AdminListResponse<BoardRow>>(
+        `/admin/boards${boardListQuery(params)}`,
+      ),
+    get: (postId: string) =>
+      apiFetch<BoardDetail>(`/admin/boards/${encodeURIComponent(postId)}`),
+    create: (input: BoardPostCreateInput) =>
+      apiFetch<BoardRow>("/admin/boards", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    update: (postId: string, input: BoardPostUpdateInput) =>
+      apiFetch<BoardRow>(`/admin/boards/${encodeURIComponent(postId)}`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      }),
+    remove: (postId: string) =>
+      apiFetch<void>(`/admin/boards/${encodeURIComponent(postId)}`, {
+        method: "DELETE",
+      }),
+    addComment: (postId: string, input: BoardCommentCreateInput) =>
+      apiFetch<BoardComment>(
+        `/admin/boards/${encodeURIComponent(postId)}/comments`,
+        { method: "POST", body: JSON.stringify(input) },
+      ),
+    removeComment: (commentId: string) =>
+      apiFetch<void>(
+        `/admin/boards/comments/${encodeURIComponent(commentId)}`,
         { method: "DELETE" },
       ),
   },

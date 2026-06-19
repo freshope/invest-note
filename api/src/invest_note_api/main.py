@@ -13,7 +13,7 @@ from invest_note_api.external.http_client import create_http_client
 from invest_note_api.external.kis import configure_kis
 from invest_note_api.external.fx import FxCacheState, validate_fx_providers
 from invest_note_api.external.quotes import QuoteCacheState, validate_quote_providers
-from invest_note_api.routers import accounts, admin, app_config, health, live_update, me
+from invest_note_api.routers import accounts, admin, admin_board, app_config, health, live_update, me
 from invest_note_api.routers import trades, portfolio, stocks, analysis, assets
 from invest_note_api.routers.trades import TradeStagingState
 from invest_note_api.services.daily_price_seed import validate_daily_price_providers
@@ -85,6 +85,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # 정식: /v1/* (스키마 노출)
     for app_router in app_routers:
         application.include_router(app_router, prefix="/v1")
+
+    # admin 게시판 라우터 — admin.router 의 catch-all GET /admin/{table} 이 /admin/boards 를
+    # table="boards" 로 흡수하므로 반드시 admin.router 보다 **먼저** include 한다(테스트로 가드).
+    application.include_router(admin_board.router)
 
     # admin 트리거 라우터 — 정식 `/admin/*`(관리용). 앱 alias 들과 무관.
     application.include_router(admin.router)
