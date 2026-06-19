@@ -14,6 +14,19 @@ function base64UrlEncode(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+/**
+ * WebCrypto SHA-256(subtle.digest) 가용 여부(G3). Capacitor WebView 의 non-secure
+ * context(custom scheme origin)에서 부재 시 전 네이티브 로그인이 silent 사망하므로,
+ * signInWithOAuth 가 시작 전에 호출해 명시적/라우팅 가능한 실패로 전환한다.
+ */
+export function isWebCryptoAvailable(): boolean {
+  return (
+    typeof crypto !== "undefined" &&
+    typeof crypto.subtle?.digest === "function" &&
+    typeof crypto.getRandomValues === "function"
+  );
+}
+
 /** 고엔트로피 crypto random verifier(43 char base64url, unreserved). */
 export function generateVerifier(): string {
   const bytes = new Uint8Array(VERIFIER_BYTES);

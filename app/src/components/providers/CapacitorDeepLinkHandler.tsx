@@ -18,6 +18,9 @@ export function CapacitorDeepLinkHandler() {
     let cancelled = false;
     let appRemove: (() => void) | undefined;
     let browserRemove: (() => void) | undefined;
+    // G4: getLaunchUrl(cold start)+appUrlOpen 이중 발화 dedup. code 는 일회용이라
+    // 같은 URL 을 두 번 처리하면 두 번째가 실패 페이지로 덮어쓴다(OS 미중복 시 무해).
+    const handledUrls = new Set<string>();
 
     const handleUrl = async (
       urlStr: string,
@@ -36,6 +39,9 @@ export function CapacitorDeepLinkHandler() {
       ) {
         return;
       }
+
+      if (handledUrls.has(urlStr)) return;
+      handledUrls.add(urlStr);
 
       await closeBrowser().catch(() => {});
 

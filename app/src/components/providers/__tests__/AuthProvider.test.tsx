@@ -117,19 +117,10 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("user").textContent).toBe("null");
   });
 
-  // 네이티브 BE flow: signOut/refresh 실패 시 lib/auth 가 자체 emit(null) 발화(C4/C11).
-  // subscribe 가 supabase onAuthStateChange 가 아니라 자체 listener 라도 동일하게 user=null 전파.
-  it("네이티브 logout emit(subscribe null) → user=null 전파(C4/C11)", async () => {
-    renderProvider();
-    await act(async () => {
-      mockGetUserResolve?.({ id: "u1", email: "native@example.com" });
-    });
-    expect(screen.getByTestId("user").textContent).toBe("native@example.com");
-    await act(async () => {
-      mockSubscribeCallback(null);
-    });
-    expect(screen.getByTestId("user").textContent).toBe("null");
-  });
+  // G7: 기존 "네이티브 logout emit" 테스트는 @/lib/auth 통째 mock 이라 native emit 경로를
+  // 실행하지 않아 위 "subscribe 콜백 SIGNED_OUT" 과 동작이 동일(검증 0, false confidence) →
+  // 삭제. native emit 의 실제 검증(positive 로그인/refresh→user·logout→null)은 real emit 을
+  // 실행하는 lib/auth/__tests__/index.test.ts(single-flight positive emit·signOut·C4)에 위치.
 
   it("언마운트 시 unsubscribe() 호출", async () => {
     const { unmount } = renderProvider();

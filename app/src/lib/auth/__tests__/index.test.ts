@@ -9,6 +9,7 @@ vi.mock("@/lib/platform", () => ({
 vi.mock("../pkce", () => ({
   generateVerifier: vi.fn(() => "verifier-fixed"),
   challengeFromVerifier: vi.fn(async () => "challenge-fixed"),
+  isWebCryptoAvailable: vi.fn(() => true),
 }));
 
 const beClient = {
@@ -35,12 +36,18 @@ const tokenStore = {
   refresh: null as string | null,
   verifier: null as string | null,
 };
+// getAccessTokenRaw 를 OS getItem 처럼 "호출 시점 값을 스냅샷"하는 read seam 으로 둔다.
+// 기본은 즉시 resolve(tokenStore.access). cold-start race 테스트는 이 핸들을 deferred 로 덮어
+// read in-flight 중 signOut 을 끼워넣는다.
+const storeMock = {
+  getAccessTokenRaw: vi.fn(async () => tokenStore.access),
+};
 vi.mock("../token-store", () => ({
   saveTokens: vi.fn(async (t: { access: string; refresh: string }) => {
     tokenStore.access = t.access;
     tokenStore.refresh = t.refresh;
   }),
-  getAccessTokenRaw: vi.fn(async () => tokenStore.access),
+  getAccessTokenRaw: () => storeMock.getAccessTokenRaw(),
   getRefreshToken: vi.fn(async () => tokenStore.refresh),
   clearTokens: vi.fn(async () => {
     tokenStore.access = null;
@@ -82,8 +89,12 @@ describe("lib/auth index — 네이티브 BE flow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStore();
+    // 모듈 스코프 캐시/epoch/listeners 누수 차단(G1).
+    auth.__resetNativeSessionForTest();
     mockIsNative.mockReturnValue(true);
     beClient.isExpiringSoon.mockReturnValue(false);
+    // clearAllMocks 가 구현을 지우므로 기본 read 동작 복원.
+    storeMock.getAccessTokenRaw.mockImplementation(async () => tokenStore.access);
   });
 
   it("signInWithOAuth: verifier 저장 + BE login url(C1/C2)", async () => {
@@ -109,6 +120,16 @@ describe("lib/auth index — 네이티브 BE flow", () => {
     expect(received).toEqual([{ id: "id-acc", email: "acc@x.com" }]);
   });
 
+  it("exchangeCodeForSession: transient 실패 시 verifier 보존(G2 — 재교환 가능)", async () => {
+    tokenStore.verifier = "verifier-fixed";
+    beClient.exchangeToken.mockRejectedValue(new Error("503 dormant"));
+
+    await expect(auth.exchangeCodeForSession("code-1")).rejects.toThrow();
+    // 성공 시에만 clearVerifier → 실패 시 보존(BE 는 code 미소진, 재교환용).
+    expect(tokenStore.verifier).toBe("verifier-fixed");
+    expect(tokenStore.access).toBeNull();
+  });
+
   it("exchangeCodeForSession: verifier 없으면 throw", async () => {
     tokenStore.verifier = null;
     await expect(auth.exchangeCodeForSession("code")).rejects.toThrow();
@@ -126,7 +147,7 @@ describe("lib/auth index — 네이티브 BE flow", () => {
     expect(await auth.getAccessToken()).toBeNull();
   });
 
-  it("single-flight: 동시 N회 만료 호출 → refresh fetch 1회, 전원 같은 신 토큰(C3)", async () => {
+  it("single-flight: 동시 N회 만료 호출 → refresh fetch 1회, 전원 같은 신 토큰 + positive emit(C3/G7)", async () => {
     tokenStore.access = "expired";
     tokenStore.refresh = "ref-old";
     beClient.isExpiringSoon.mockReturnValue(true);
@@ -136,6 +157,8 @@ describe("lib/auth index — 네이티브 BE flow", () => {
         resolveRefresh = r;
       }),
     );
+    const received: unknown[] = [];
+    auth.subscribe((u) => received.push(u));
 
     const calls = [auth.getAccessToken(), auth.getAccessToken(), auth.getAccessToken()];
     resolveRefresh({ access: "new-acc", refresh: "new-ref" });
@@ -144,6 +167,8 @@ describe("lib/auth index — 네이티브 BE flow", () => {
     expect(beClient.refreshToken).toHaveBeenCalledTimes(1);
     expect(results).toEqual(["new-acc", "new-acc", "new-acc"]);
     expect(tokenStore.access).toBe("new-acc");
+    // refresh 성공 → 디코드된 user 를 1회 emit(positive 경로 회귀 가드 B#3).
+    expect(received).toEqual([{ id: "id-new-acc", email: "new-acc@x.com" }]);
   });
 
   it("single-flight 클리어: 첫 refresh 후 다음 만료 주기에 재-refresh 발생(C3 .finally)", async () => {
@@ -176,6 +201,73 @@ describe("lib/auth index — 네이티브 BE flow", () => {
     beClient.refreshToken.mockClear();
     expect(await auth.getAccessToken()).toBeNull();
     expect(beClient.refreshToken).not.toHaveBeenCalled();
+  });
+
+  it("logout-during-refresh: refresh in-flight 중 signOut → 로그아웃 유지, 토큰 부활 없음(G1/C#1)", async () => {
+    tokenStore.access = "expired";
+    tokenStore.refresh = "ref-old";
+    beClient.isExpiringSoon.mockReturnValue(true);
+    let resolveRefresh!: (v: { access: string; refresh: string }) => void;
+    beClient.refreshToken.mockReturnValue(
+      new Promise((r) => {
+        resolveRefresh = r;
+      }),
+    );
+    const received: unknown[] = [];
+    auth.subscribe((u) => received.push(u));
+
+    // refresh 네트워크 in-flight 시작. getRefreshToken(non-null) 통과 후 refreshToken 호출까지
+    // 대기해야 실제 race 경로(b: 네트워크 in-flight 중 logout)에 닿는다(epoch 가드가 도는 경로).
+    const tokenPromise = auth.getAccessToken();
+    await vi.waitFor(() => expect(beClient.refreshToken).toHaveBeenCalled());
+    // 네트워크 응답 도착 전에 로그아웃(epoch 0→1 + clearTokens + emit null)
+    await auth.signOut();
+    // 그 다음 refresh 가 신 토큰으로 resolve — persistAndEmit(epoch=0) 이 logoutEpoch(1) 과
+    // 불일치를 보고 저장/emit 금지(부활 차단).
+    resolveRefresh({ access: "resurrected-acc", refresh: "resurrected-ref" });
+
+    expect(await tokenPromise).toBeNull();
+    // secure storage(mock) 양쪽 비움 — 토큰 부활 없음
+    expect(tokenStore.access).toBeNull();
+    expect(tokenStore.refresh).toBeNull();
+    // 마지막 emit 은 logout(null), resurrected user emit 없음
+    expect(received[received.length - 1]).toBeNull();
+    expect(received).not.toContainEqual({
+      id: "id-resurrected-acc",
+      email: "resurrected-acc@x.com",
+    });
+    // 후속 getAccessToken: 캐시·storage 모두 비어 즉시 null(부활 재시도 없음)
+    beClient.refreshToken.mockClear();
+    expect(await auth.getAccessToken()).toBeNull();
+  });
+
+  it("logout-during-cold-start: storage read in-flight 중 signOut → stale 토큰 부활 없음(G1 cold-start seam)", async () => {
+    // cold start(캐시 비어있음). storage 에는 아직 유효한 토큰이 있다.
+    tokenStore.access = "stale-acc";
+    beClient.isExpiringSoon.mockReturnValue(false);
+    // getAccessTokenRaw 를 deferred 로: 호출 시점에 "stale-acc"를 스냅샷하지만 resolve 는 지연.
+    // signOut 이 read await 도중 완주(epoch++, clearTokens)한 뒤에 stale 값을 resolve 한다.
+    let resolveRead!: (v: string | null) => void;
+    const snapshot = tokenStore.access;
+    storeMock.getAccessTokenRaw.mockImplementation(
+      () =>
+        new Promise<string | null>((r) => {
+          resolveRead = () => r(snapshot);
+        }),
+    );
+
+    const tokenPromise = auth.getAccessToken();
+    await vi.waitFor(() => expect(storeMock.getAccessTokenRaw).toHaveBeenCalled());
+    // read in-flight 중 로그아웃(epoch 0→1, clearTokens, emit null) — 동기 구간에서 epoch 즉시 증가.
+    await auth.signOut();
+    // pre-clear stale 토큰이 뒤늦게 resolve — cold-start epoch 가드가 불일치를 보고 null 반환.
+    resolveRead("stale-acc");
+
+    expect(await tokenPromise).toBeNull();
+    // 캐시 부활 없음: storage 도 비었으니(signOut 의 clearTokens) 후속 read 는 default 동작으로 복원해
+    // null 을 반환 → getUser 도 null. (deferred 를 유지하면 두 번째 read 가 새 미해결 promise 로 멈춤)
+    storeMock.getAccessTokenRaw.mockImplementation(async () => tokenStore.access);
+    expect(await auth.getUser()).toBeNull();
   });
 
   it("getUser: refresh-aware 토큰 디코드(C9)", async () => {
