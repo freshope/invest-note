@@ -2,31 +2,30 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, act, cleanup } from "@testing-library/react";
 import { AuthProvider, useAuth } from "../AuthProvider";
+import type { AuthUser } from "@/lib/auth";
 
-// ─── supabase 클라이언트 모킹 ────────────────────────────────────────────────
+// ─── neutral auth API 모킹 ───────────────────────────────────────────────────
 const mockUnsubscribe = vi.fn();
-let mockOnAuthStateChange: (event: string, session: unknown) => void = () => {};
-let mockGetSessionResolve: ((value: unknown) => void) | null = null;
-let mockGetSessionReject: ((reason: unknown) => void) | null = null;
+let mockSubscribeCallback: (user: AuthUser | null) => void = () => {};
+let mockGetUserResolve: ((value: AuthUser | null) => void) | null = null;
+let mockGetUserReject: ((reason: unknown) => void) | null = null;
 
-const mockSupabase = {
-  auth: {
-    getSession: vi.fn(
-      () =>
-        new Promise((resolve, reject) => {
-          mockGetSessionResolve = resolve;
-          mockGetSessionReject = reject;
-        }),
-    ),
-    onAuthStateChange: vi.fn((cb: (event: string, session: unknown) => void) => {
-      mockOnAuthStateChange = cb;
-      return { data: { subscription: { unsubscribe: mockUnsubscribe } } };
+const mockGetUser = vi.fn(
+  () =>
+    new Promise<AuthUser | null>((resolve, reject) => {
+      mockGetUserResolve = resolve;
+      mockGetUserReject = reject;
     }),
-  },
-};
+);
 
-vi.mock("@/lib/supabase/client", () => ({
-  createClient: () => mockSupabase,
+const mockSubscribe = vi.fn((cb: (user: AuthUser | null) => void) => {
+  mockSubscribeCallback = cb;
+  return mockUnsubscribe;
+});
+
+vi.mock("@/lib/auth", () => ({
+  getUser: () => mockGetUser(),
+  subscribe: (cb: (user: AuthUser | null) => void) => mockSubscribe(cb),
 }));
 
 // ─── 헬퍼 ────────────────────────────────────────────────────────────────────
@@ -52,9 +51,9 @@ function renderProvider() {
 describe("AuthProvider", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetSessionResolve = null;
-    mockGetSessionReject = null;
-    mockOnAuthStateChange = () => {};
+    mockGetUserResolve = null;
+    mockGetUserReject = null;
+    mockSubscribeCallback = () => {};
   });
 
   afterEach(() => {
@@ -67,65 +66,61 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("user").textContent).toBe("null");
   });
 
-  it("getSession이 유효한 세션을 반환하면 user가 설정되고 loading=false", async () => {
+  it("getUser가 유효한 사용자를 반환하면 user가 설정되고 loading=false", async () => {
     renderProvider();
     await act(async () => {
-      mockGetSessionResolve?.({
-        data: { session: { user: { email: "test@example.com" } } },
-      });
+      mockGetUserResolve?.({ id: "u1", email: "test@example.com" });
     });
     expect(screen.getByTestId("loading").textContent).toBe("done");
     expect(screen.getByTestId("user").textContent).toBe("test@example.com");
   });
 
-  it("getSession이 null 세션을 반환하면 user=null이고 loading=false", async () => {
+  it("getUser가 null을 반환하면 user=null이고 loading=false", async () => {
     renderProvider();
     await act(async () => {
-      mockGetSessionResolve?.({ data: { session: null } });
+      mockGetUserResolve?.(null);
     });
     expect(screen.getByTestId("loading").textContent).toBe("done");
     expect(screen.getByTestId("user").textContent).toBe("null");
   });
 
-  it("getSession이 실패(reject)해도 user=null, loading=false로 안전하게 처리", async () => {
+  it("getUser가 실패(reject)해도 user=null, loading=false로 안전하게 처리", async () => {
     renderProvider();
     await act(async () => {
-      mockGetSessionReject?.(new Error("network error"));
+      mockGetUserReject?.(new Error("network error"));
     });
     expect(screen.getByTestId("loading").textContent).toBe("done");
     expect(screen.getByTestId("user").textContent).toBe("null");
   });
 
-  it("onAuthStateChange SIGNED_IN 이벤트로 user가 갱신됨", async () => {
+  it("subscribe 콜백 SIGNED_IN 으로 user가 갱신됨", async () => {
     renderProvider();
-    // getSession 완료 (null)
+    // 초기 로드 완료 (null)
     await act(async () => {
-      mockGetSessionResolve?.({ data: { session: null } });
+      mockGetUserResolve?.(null);
     });
-    // onAuthStateChange 이벤트 발생
+    // 인증 상태 변화 발생
     await act(async () => {
-      mockOnAuthStateChange("SIGNED_IN", { user: { email: "oauth@example.com" } });
+      mockSubscribeCallback({ id: "u2", email: "oauth@example.com" });
     });
     expect(screen.getByTestId("user").textContent).toBe("oauth@example.com");
   });
 
-  it("onAuthStateChange SIGNED_OUT 이벤트로 user=null", async () => {
+  it("subscribe 콜백 SIGNED_OUT 으로 user=null", async () => {
     renderProvider();
     await act(async () => {
-      mockGetSessionResolve?.({
-        data: { session: { user: { email: "test@example.com" } } },
-      });
+      mockGetUserResolve?.({ id: "u1", email: "test@example.com" });
     });
     await act(async () => {
-      mockOnAuthStateChange("SIGNED_OUT", null);
+      mockSubscribeCallback(null);
     });
     expect(screen.getByTestId("user").textContent).toBe("null");
   });
 
-  it("언마운트 시 subscription.unsubscribe() 호출", async () => {
+  it("언마운트 시 unsubscribe() 호출", async () => {
     const { unmount } = renderProvider();
     await act(async () => {
-      mockGetSessionResolve?.({ data: { session: null } });
+      mockGetUserResolve?.(null);
     });
     unmount();
     expect(mockUnsubscribe).toHaveBeenCalledOnce();

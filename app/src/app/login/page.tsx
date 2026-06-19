@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { signInWithOAuth } from "@/lib/auth";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { OAUTH_BROWSER_FINISHED_EVENT } from "@/components/providers/CapacitorDeepLinkHandler";
 import { getPlatform, isNativePlatform } from "@/lib/platform";
@@ -63,24 +63,19 @@ function LoginForm() {
     setError(null);
     setPending(provider);
     try {
-      const supabase = createClient();
       const native = isNativePlatform();
       const redirectTo = native
         ? NATIVE_REDIRECT_URL
         : `${window.location.origin}${WEB_CALLBACK_PATH}`;
 
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo,
-          skipBrowserRedirect: native,
-        },
+      const { url } = await signInWithOAuth(provider, {
+        redirectTo,
+        skipBrowserRedirect: native,
       });
-      if (error) throw error;
 
-      if (native && data?.url) {
+      if (native && url) {
         const { Browser } = await import("@capacitor/browser");
-        await Browser.open({ url: data.url, presentationStyle: "popover" });
+        await Browser.open({ url, presentationStyle: "popover" });
         // pending 해제는 딥링크 핸들러(성공)나 browserFinished 이벤트(취소)에서 처리
       }
     } catch {

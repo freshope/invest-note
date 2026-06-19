@@ -1,17 +1,14 @@
-import logging
-
 import asyncpg
 import httpx
 from fastapi import APIRouter, Depends, Response, status
 
 from invest_note_api.auth.dependency import get_current_user
+from invest_note_api.auth.identity_provider import delete_user as idp_delete_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import get_pool
 from invest_note_api.errors import APIError
 from invest_note_api.external.http_client import get_http_client
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/me")
 
@@ -41,24 +38,6 @@ async def delete_me(
     async with pool.acquire() as conn:
         await conn.execute("DELETE FROM public.users WHERE id = $1", user.id)
 
-    url = f"{settings.supabase_url}/auth/v1/admin/users/{user.id}"
-    headers = {
-        "apikey": settings.supabase_secret_key,
-        "Authorization": f"Bearer {settings.supabase_secret_key}",
-    }
-    try:
-        response = await http_client.delete(url, headers=headers)
-    except httpx.HTTPError:
-        logger.exception("Supabase admin deleteUser 호출 실패 user_id=%s", user.id)
-        raise APIError("계정 삭제에 실패했습니다. 잠시 후 다시 시도해주세요.", 502)
-
-    if response.status_code not in (200, 204):
-        logger.error(
-            "Supabase admin deleteUser 응답 비정상 user_id=%s status=%s body=%s",
-            user.id,
-            response.status_code,
-            response.text,
-        )
-        raise APIError("계정 삭제에 실패했습니다. 잠시 후 다시 시도해주세요.", 502)
+    await idp_delete_user(str(user.id), http_client=http_client, settings=settings)
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)

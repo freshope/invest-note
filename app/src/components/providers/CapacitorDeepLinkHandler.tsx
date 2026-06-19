@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { setSession, exchangeCodeForSession } from "@/lib/auth";
 import { isNativePlatform } from "@/lib/platform";
 import { NATIVE_URL_SCHEME, NATIVE_CALLBACK_HOST } from "@/lib/auth/oauth-config";
 import { LOGIN_OAUTH_FAILED_PATH_WITH_SLASH } from "@/lib/auth/errors";
@@ -45,8 +45,6 @@ export function CapacitorDeepLinkHandler() {
         return;
       }
 
-      const supabase = createClient();
-
       // Implicit flow: fragment에 access_token/refresh_token 이 담겨 돌아옴
       const hash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
       if (hash) {
@@ -55,14 +53,7 @@ export function CapacitorDeepLinkHandler() {
         const refreshToken = hashParams.get("refresh_token");
         if (accessToken && refreshToken) {
           try {
-            const { error } = await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken,
-            });
-            if (error) {
-              router.replace(LOGIN_OAUTH_FAILED_PATH_WITH_SLASH);
-              return;
-            }
+            await setSession(accessToken, refreshToken);
             router.replace("/");
             return;
           } catch {
@@ -80,11 +71,7 @@ export function CapacitorDeepLinkHandler() {
       }
 
       try {
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
-        if (error) {
-          router.replace(LOGIN_OAUTH_FAILED_PATH_WITH_SLASH);
-          return;
-        }
+        await exchangeCodeForSession(code);
         router.replace("/");
       } catch {
         router.replace(LOGIN_OAUTH_FAILED_PATH_WITH_SLASH);

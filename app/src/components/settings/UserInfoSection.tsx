@@ -6,7 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { Button } from "@/components/base/Button";
-import { createClient } from "@/lib/supabase/client";
+import { signOut } from "@/lib/auth";
 
 interface UserInfoSectionProps {
   email: string;
@@ -19,10 +19,9 @@ export function UserInfoSection({ email }: UserInfoSectionProps) {
 
   async function handleSignOut() {
     setPending(true);
-    const supabase = createClient();
     try {
-      // 서버 호출 실패에도 로컬 세션은 무조건 비우도록 scope: "local"
-      await supabase.auth.signOut({ scope: "local" });
+      // 서버 호출 실패에도 로컬 세션은 무조건 비우도록 scope: "local"(signOut 내부 고정)
+      await signOut();
     } catch (error) {
       console.error("[signOut]", error);
       toast.error("로그아웃 중 문제가 발생했어요. 다시 시도해주세요.");
