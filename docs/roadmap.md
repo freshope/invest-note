@@ -18,7 +18,7 @@
 | 프론트엔드 | Next.js (App Router, 정적 export) + TypeScript |
 | 스타일링 | Tailwind CSS |
 | 백엔드 | FastAPI (Python) — OIDC issuer registry verifier(Supabase + BE 자체 토큰, ES256) + Authlib OAuth 중개 + asyncpg (사용자 격리=앱 레이어 user_id 필터) |
-| DB/Auth | self-hosted PostgreSQL (Coolify) + Alembic 마이그레이션 (RLS 제거, 2026-06-18) / Auth는 **BE token-broker 로 이행 중** — Phase 1 결합 격리 + Phase 2 코드 완료(BE OAuth 중개·자체 토큰 발급·refresh·profile / FE 네이티브 BE flow), 2026-06-19 **dormant**(env 미주입·활성화/2c contract 대기). 현재 실사용 IdP=Supabase(OAuth·JWKS) |
+| DB/Auth | self-hosted PostgreSQL (Coolify) + Alembic 마이그레이션 (RLS 제거, 2026-06-18) / Auth는 **BE token-broker 로 이행 중** — Phase 1 결합 격리 + Phase 2 코드 완료(BE OAuth 중개·자체 토큰 발급·refresh·profile / FE 네이티브 BE flow / 2b-3 신규가입 경로 / 2b-4 BE flow 서버 플래그=B안 cutover flip), 2026-06-20 **dormant**(env 미주입·플래그 default OFF → 활성화는 secure-storage shell 출시 후 `BE_AUTH_ENABLED` flip / 2c contract 대기). 현재 실사용 IdP=Supabase(OAuth·JWKS) |
 | 시세 | 네이버 금융(KR) — 비공식 지연 시세 |
 | 분석 | PostHog (제품 분석, FE 전용·Cloud) — 페이지뷰·세션·유저 식별·핵심 이벤트 |
 | 배포 | 모바일 앱 (iOS/Android, Capacitor) 단일 배포, BE는 Coolify (self-hosted) |
