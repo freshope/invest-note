@@ -16,7 +16,6 @@ import json
 import time
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
-from uuid import UUID, uuid4
 
 import jwt
 from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, generate_private_key

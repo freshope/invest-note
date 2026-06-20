@@ -155,7 +155,7 @@ async def test_run_import_dry_run_skips_insert():
 async def test_run_import_commit_inserts():
     conn = _FakeConn({U1, U2})
     rows = _rows()
-    summary = await run_import(conn, rows, len(rows), dry_run=False)
+    await run_import(conn, rows, len(rows), dry_run=False)
     assert conn.executemany_called is True
 
 

@@ -122,7 +122,10 @@ class _FakeConn:
         if "INSERT INTO public.user_profiles" in sql:
             user_id, email, display_name, avatar_url, email_verified, provider, last = args
             ex = self.s["profiles"].get(user_id)
-            co = lambda new, old: new if new is not None else old
+
+            def co(new, old):
+                return new if new is not None else old
+
             if ex is None:
                 self.s["profiles"][user_id] = {
                     "email": email, "display_name": display_name, "avatar_url": avatar_url,

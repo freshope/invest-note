@@ -14,7 +14,6 @@ from uuid import uuid4
 
 import pytest
 
-from invest_note_api.auth import token_store
 from invest_note_api.auth.token_store import (
     consume_transient,
     generate_token,
@@ -54,7 +53,6 @@ class _FakeConn:
         self.store = store
 
     async def execute(self, sql, *args):
-        import json
 
         if "INSERT INTO oauth_transient" in sql:
             key, kind, payload, expires_at = args
@@ -206,7 +204,6 @@ async def test_transient_wrong_kind_returns_none():
 
 
 def test_b5_refresh_stored_as_hash_not_plaintext():
-    store = _FakeStore()
     token = generate_token()
     # save_refresh 가 저장하는 값에 평문이 없어야 한다.
     h = hash_token(token)
