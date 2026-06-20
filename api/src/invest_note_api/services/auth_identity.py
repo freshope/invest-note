@@ -4,7 +4,8 @@ batch 적재(`auth_identity_import.run_import`)와 분리. callback 의 매핑 m
 
 ⚠️ gapless 전제: cutover 시 Supabase 신규가입을 동결한 뒤 최종 백필로 `auth_identities` 가
 완전·확정되므로, "매핑에 없는 sub = 진짜 신규"가 항상 참이다(기존자 오판→고아화 없음).
-따라서 **BE 활성화는 반드시 완전한 백필 이후**여야 한다(운영 runbook 가드). 사양: 2b-3.
+따라서 **클라이언트 BE flow 노출(B안: 서버 플래그 flip)은 반드시 완전한 백필 이후**여야 한다
+(운영 runbook 가드 — flip 시점이 신규 생성 시작점). 사양: 2b-3.
 """
 from __future__ import annotations
 

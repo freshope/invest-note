@@ -206,7 +206,8 @@ async def _handle_callback(
         # 매핑 해석. hit = 기존자 → 원래 UUID 재사용(데이터 보존, B1). miss = 진짜 신규 가입
         # → user + auth_identities 매핑 생성(2b-3, race-safe). email 매칭 안 함(B1 정책 유지).
         # ⚠️ gapless 전제: cutover 시 Supabase 신규가입 동결 후 최종 백필로 매핑 완전·확정 →
-        # 미매핑 sub 는 기존자가 아님(고아화 없음). BE 활성화는 백필 완료 후(운영 runbook 가드).
+        # 미매핑 sub 는 기존자가 아님(고아화 없음). 클라이언트 BE flow 노출(B안: 서버 플래그
+        # flip)은 백필 완료 후(운영 runbook 가드 — flip 시점이 신규 생성 시작점).
         user_id = await resolve_user_id(conn, provider, sub)
         if user_id is None:
             user_id = await create_user_identity(conn, provider, sub)
