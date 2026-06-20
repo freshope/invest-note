@@ -6,12 +6,18 @@ from invest_note_api.main import create_app
 TEST_SUPABASE_URL = "https://test.supabase.co"
 
 
-def _client(min_v: str = "", ios: str = "", android: str = "") -> TestClient:
+def _client(
+    min_v: str = "",
+    ios: str = "",
+    android: str = "",
+    be_auth_enabled: bool = False,
+) -> TestClient:
     settings = Settings(
         supabase_url=TEST_SUPABASE_URL,
         min_supported_version=min_v,
         store_url_ios=ios,
         store_url_android=android,
+        be_auth_enabled=be_auth_enabled,
     )
     app = create_app(settings)
     # 라우터는 Depends(get_settings)(lru_cache 싱글톤)로 해석하므로 override 필요.
@@ -31,6 +37,8 @@ def test_app_config_maps_settings_to_response():
     assert body["minSupportedVersion"] == "1.1.13"
     assert body["storeUrl"]["ios"] == "https://apps.apple.com/app/id123"
     assert body["storeUrl"]["android"] == "https://play.google.com/store/apps/details?id=app.pixelwave.investnote"
+    # ① 응답에 beAuthEnabled(camelCase) 키가 항상 포함된다(FE 공유 캐시 seam).
+    assert "beAuthEnabled" in body
 
 
 def test_app_config_unset_env_means_no_force():
@@ -41,6 +49,16 @@ def test_app_config_unset_env_means_no_force():
     body = r.json()
     assert body["minSupportedVersion"] == ""
     assert body["storeUrl"] == {"ios": "", "android": ""}
+    # ② be_auth_enabled default False → cutover dormant(네이티브도 Supabase flow 폴백).
+    assert body["beAuthEnabled"] is False
+
+
+def test_app_config_be_auth_enabled_toggle():
+    # ③ env/Settings 로 토글하면 응답에 그대로 passthrough 된다(Coolify flip → cutover ON).
+    client = _client(be_auth_enabled=True)
+    r = client.get("/app-config")
+    assert r.status_code == 200
+    assert r.json()["beAuthEnabled"] is True
 
 
 def test_app_config_requires_no_auth():

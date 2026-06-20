@@ -21,7 +21,6 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
-from uuid import UUID
 
 import asyncpg
 import httpx
@@ -42,6 +41,7 @@ from invest_note_api.errors import (
     APIError,
 )
 from invest_note_api.external.http_client import get_http_client
+from invest_note_api.services.auth_identity import create_user_identity, resolve_user_id
 from invest_note_api.services.user_profile import upsert_profile
 
 router = APIRouter(prefix="/auth")
@@ -70,21 +70,6 @@ def _deeplink_with_code(scheme: str, code: str) -> str:
     q = "&" if "?" in base else "?"
     qs = urlencode({"code": code})
     return f"{base}{q}{qs}" + (f"#{fragment}" if sep else "")
-
-
-async def _resolve_user_id(conn: asyncpg.Connection, provider: str, sub: str) -> UUID | None:
-    """⚠️ B1(HINGE): (provider, IdP sub) → 원래 public.users UUID 해석.
-
-    2a auth_identities 매핑 조회. miss = None → 라우터가 명시 에러(새 user 생성/email 매칭 금지).
-    BE 토큰 sub 는 반드시 이 원래 UUID(IdP sub 아님) — 데이터 고아화 방지.
-    """
-    # F14: 적재기(auth_identity_import)가 provider 를 소문자로 정규화하므로 조회도 소문자로
-    # 정합시킨다(양쪽 일관 — 대소문자 drift 로 인한 매핑 miss → lockout 방지).
-    row = await conn.fetchrow(
-        "SELECT user_id FROM auth_identities WHERE provider = $1 AND provider_id = $2",
-        provider.lower(), sub,
-    )
-    return row["user_id"] if row else None
 
 
 @router.get("/login", include_in_schema=False)
@@ -218,12 +203,16 @@ async def _handle_callback(
     display_name = userinfo.display_name or apple_display_name
 
     async with pool.acquire() as conn:
-        # ⚠️ B1: 매핑 해석. miss = 명시 에러(새 user 생성 금지 — 데이터 고아화 방지).
-        user_id = await _resolve_user_id(conn, provider, sub)
+        # 매핑 해석. hit = 기존자 → 원래 UUID 재사용(데이터 보존, B1). miss = 진짜 신규 가입
+        # → user + auth_identities 매핑 생성(2b-3, race-safe). email 매칭 안 함(B1 정책 유지).
+        # ⚠️ gapless 전제: cutover 시 Supabase 신규가입 동결 후 최종 백필로 매핑 완전·확정 →
+        # 미매핑 sub 는 기존자가 아님(고아화 없음). 클라이언트 BE flow 노출(B안: 서버 플래그
+        # flip)은 백필 완료 후(운영 runbook 가드 — flip 시점이 신규 생성 시작점).
+        user_id = await resolve_user_id(conn, provider, sub)
         if user_id is None:
-            raise APIError(ERR_UNAUTHORIZED, 401)
+            user_id = await create_user_identity(conn, provider, sub)
 
-        # BE access(sub=원래 UUID) + refresh 발급. refresh 는 해시 저장(B5).
+        # BE access(sub=기존자 원래 UUID 또는 신규 가입 UUID) + refresh 발급. refresh 는 해시 저장(B5).
         access = mint_be_token(user_id, userinfo.email, settings=settings)
         refresh = token_store.generate_token()
         one_time = token_store.generate_token()

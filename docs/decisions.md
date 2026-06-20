@@ -4,6 +4,38 @@
 
 ---
 
+## 2026-06-20 | 탈-Supabase Auth Phase 2b-4 — BE flow 서버 플래그(cutover flip 메커니즘)
+
+- **맥락:** 2b-3 cutover runbook 4단계 "서버 플래그 flip ON" 이 의존하는 실제 메커니즘. 2b-2 까지 네이티브는 `isNativePlatform()` 만으로 **무조건 BE flow** 라 서버에서 끌 방법이 없었다. B안(심사-cutover 디커플)은 secure-storage 포함 shell 을 BE flow OFF 로 먼저 일반 출시해 두고, 실제 cutover 를 서버 플래그 flip(OFF→ON)으로 수행한다.
+- **결정 — BE flow 플래그를 신규 엔드포인트가 아닌 기존 무인증 public `GET /app-config` 에 `beAuthEnabled` 필드로 추가.** force-update 플래그(`minSupportedVersion`)를 이미 나르는 엔드포인트라 startup-fetch·env 토글 운영 모델이 동일하고, 신규 엔드포인트·신규 마이그레이션이 필요 없다. `config.py be_auth_enabled: bool = False`(dormant 안전 default) → `AppConfigResponse`(CamelModel) → wire 키 `beAuthEnabled`(boolean) passthrough.
+- **FE — 동기 분기 vs async fetch 정합:** 플래그는 app-config **async fetch** 로 오는데 auth 분기는 여러 시점에 **동기** 발생(`lib/auth` 6함수). → 모듈 싱글톤 캐시(`app-config.ts` `getBeAuthEnabled`/`setBeAuthEnabled`, default false)로 분기 시점 동기 가용성 확보. `fetchAppConfig()` 성공 시에만 `setBeAuthEnabled(config.beAuthEnabled ?? false)` 로 채운다(ForceUpdateGate 가 startup 1회 호출하는 유일 seam). 분기는 단일 predicate seam `isBeAuthFlow() = isNativePlatform() && getBeAuthEnabled()` 로 집약 — 6함수만 게이트하고 `&& 플래그` 를 흩뿌리지 않는다.
+- **과게이팅 금지(코드 확인):** 딥링크 핸들러·`login/page.tsx` 는 BE/Supabase **분기를 자체적으로 하지 않으므로**(양 flow 공통 동작, 실제 분기는 6함수가 담당) 플래그를 넣지 않는다. 웹은 `isNativePlatform()===false` 라 플래그 값 무관 항상 Supabase.
+- **fail-safe = OFF:** fetch 실패·미완·필드 부재 → 캐시 default false 유지 → Supabase flow(= 현재 라이브). 플래그는 startup 1회 fetch 후 **세션 내 불변**(mid-flow 변동 시 `signInWithOAuth`↔`exchangeCodeForSession` cross-flow 불일치로 로그인 깨짐을 차단). 성공 시에만 set 하므로 자연히 보장.
+- **이유:** B안 cutover 의 flip 메커니즘. **default OFF 라 이 변경 배포 즉시 동작 변화 0**(현재 라이브와 100% 동일) — 무회귀 게이트가 핵심.
+- **flip 운영:** Coolify env `BE_AUTH_ENABLED=true`(force-update·다른 운영 토글과 동일 모델). runbook 4단계 = **백필 완료 후 hard precondition**, 이상 시 flip OFF 즉시 롤백.
+- **트레이드오프:** ① **startup config-resolve 전 짧은 창** — fetch 완료 전 네이티브 auth 분기가 일어나면 OFF 폴백(Supabase flow). cutover 맥락에선 무해(기존자 Supabase 로그인은 여전히 동작, 신규는 config 로드 후 재진입/재탭으로 ON 경로 진입). 코드로 풀 문제가 아니라 fail-safe 의 의도된 동작. ② wire 경계 런타임 미검증(`fetchAppConfig` 가 `res.json() as AppConfig`, 스키마 검증 없음) — 필드 부재 시 `?? false` 로 OFF 폴백해 안전. ③ Gate→fetch→cache 체인은 unit test 가 직접 커버 못 함(코드 inspection 으로 확정) → 디바이스 실측 권장.
+- **carry-forward:** secure storage·WebCrypto S256 디바이스 실측은 flip ON 전 iOS·Android 1회 여전히 필수(2b-2 carry-forward 유지, 이 변경이 추가하는 항목 없음). 산출물 `_workspace/2b4_*`.
+
+---
+
+## 2026-06-20 | 탈-Supabase Auth Phase 2b-3 — 신규 가입 경로 + gapless cutover(동결)
+
+- **맥락:** 운영 적용 직전 검토에서 2b-1 callback 의 결함을 발견했다 — `auth_identities` 매핑 miss 시 **무조건 401**이고 런타임에 신규 user/매핑을 만드는 경로가 없다(`auth_identities` write 는 batch 적재 스크립트뿐). 원래 B1 은 "기존자 고아화 방지"가 목적이었으나, "고아 위험(기존자 매핑 누락)"과 "정상 신규 가입"을 구분 못 하고 둘 다 막았다. → 신 앱(BE flow)에서 **진짜 신규 가입자**와 **백필 스냅샷 이후 Supabase 가입자**가 모두 잠겨 스토어 출시 차단.
+- **핵심 난제:** expand 기간엔 신원 발급 소스가 둘(Supabase 웹/구앱 + BE 신앱)이라, callback 이 매핑 miss 를 만났을 때 "진짜 신규"와 "기존인데 미백필"을 구분할 수 없다. 오판 시 중복 계정·데이터 분리. 게다가 앱 DB 는 Supabase DB 와 분리돼([[project_env_production_drift]], 자체 호스팅 PG) 런타임 SQL 로 Supabase auth 를 조회할 수 없고, GoTrue Admin API 는 sub 조회가 빈약.
+- **결정 — gapless 를 "신원 소스 동결"로 달성(옵션 1):**
+  - ① **cutover 시 Supabase 신규가입 동결(`GOTRUE_DISABLE_SIGNUP`).** 동결 후 최종 백필 → `auth_identities` 완전·확정 → **"매핑에 없는 sub = 무조건 진짜 신규"가 항상 참.** 기존자 로그인은 모든 surface 유지(신규 신원 생성만 거부). 서버 스위치 하나라 웹·구앱·신앱을 즉시·원자적으로 덮는다.
+  - ② **email 매칭 안 함(B1 정책 유지).** delta 동기화·Supabase Auth Hook 도 불필요. 동결이 race 의 원천(움직이는 두 번째 소스)을 제거하므로 보완책이 필요 없다.
+  - ③ **신규 생성 = `services/auth_identity.create_user_identity`(런타임 단건).** callback miss → 새 UUID 를 sub 로 BE 토큰 발급 + `auth_identities` 매핑 write + `user_profiles` 첫 upsert(기존 COALESCE 재사용). `public.users` 는 `acquire_for_user`(db.py) 와 동일 `ON CONFLICT DO NOTHING` 으로 프로비저닝 — 데이터레이어 신규 거의 없음.
+  - ④ **동시 첫 로그인 race = (provider, sub) advisory xact lock**(`trades_repo.acquire_trade_group_lock` 패턴, `pg_advisory_xact_lock(hashtextextended(...))` + `lock_timeout`). 락 안에서 재조회 후 없을 때만 생성 → 중복 user/매핑 0. provider 소문자 정규화(적재기·`_resolve_user_id` 와 일관).
+- **gapless 의 핵심은 force-update 가 아니라 "동결":** force-update(구앱 sunset)는 양 스토어 승인·출시 타이밍이 비원자적·전파 지연이 있어 gap 차단 수단으로 부적합(전파 창 동안 구앱 Supabase 신규가입 가능). → **동결이 gap 을 닫고, force-update 는 신앱 안정 후 2c 로 분리.**
+- **운영 cutover 순서(runbook, gapless 보장) — 개정(B안, 2026-06-20: 심사-cutover 디커플):** secure-storage 네이티브 플러그인 신규 도입으로 스토어 심사가 필요한데, 심사 타이밍에 동결 창을 묶지 않기 위해 **심사와 cutover를 분리**한다. → **사전(심사)** secure-storage 포함 shell 바이너리를 BE flow OFF(서버 플래그)로 일반 출시·점진 보급. → **cutover(전부 서버·플래그)** (0) dormant 코드 배포 + 마이그레이션 0004/0005/0006 적용 → (1) Supabase 신규가입 동결 → (2) 최종 백필(identity→profile, dry-run→commit, confirm) → (3) BE 활성화(env) → (4) **서버 플래그 flip ON**(shell 기기가 BE flow로 즉시·원자적 전환, 백필 완료 후 hard precondition, 이상 시 flip OFF 롤백). IdP redirect_uri 는 (3) 이전.
+  - *대체된 원안(A):* 단일 바이너리 + 신앱 **수동 출시**로 동결 창을 분~시간 압축. 수동 출시도 심사 승인 타이밍에 의존(승인 전 동결 불가)이라 gap 위험 잔존 → B안이 flip(즉시)으로 동결 창을 심사에서 완전 분리.
+- **이유:** "API 중심" 목표를 지키면서, 금융 앱에 부적합한 email 매칭을 피하고, 출시 후 며칠~몇 주의 점진 업데이트 기간에도 데이터 고아화 0 을 보장. 신규 네이티브 델타는 secure-storage 하나뿐(딥링크 scheme은 기존 바이너리 재사용)이라, 나머지 auth 로직과 cutover flip을 심사 밖(서버 플래그)에서 통제할 수 있다.
+- **트레이드오프:** ① 동결 창 동안 신규가입 차단 — 플래그 flip이 즉시·원자적이라 동결 창을 분 단위로 압축(심사 타이밍 무관). 모바일 단일 제품([[project_deploy_targets]])이라 신규 설치=신앱=BE flow, 실제 영향 미미. ② **flip 전 백필 미완 시 기존자 중복 생성** — 코드가 아닌 runbook 순서로 가드(flip은 백필 완료 후, hard precondition). ③ 신규 생성이 자체 트랜잭션이라, 후속 refresh/profile 트랜잭션 실패 시 user+매핑은 남고 profile 만 누락 — 다음 로그인이 기존자로 해소(데이터 손실 아님). ④ 구 바이너리(플러그인·플래그 없음)는 flip 무영향·Supabase 유지 → 동결 후 신규가입 불가, force-update(2c)로 전환 유도.
+- **범위 밖(2c):** force-update(구앱 sunset)·Supabase 검증 제거·supabase-js 물리 제거·Supabase 세션 잔여물 cleanup(신 앱이 구 supabase-js localStorage 미정리 — 2c 일괄).
+
+---
+
 ## 2026-06-19 | 탈-Supabase Auth Phase 2b-2 — FE 전환(네이티브 BE flow) + refresh 흡수
 
 - **맥락:** 2b-1 이 BE 에 OAuth 중개·BE 토큰 발급·refresh·profile 인프라를 깔았다(dormant — env 미주입). 2b-2 는 **신 앱(FE)이 Supabase SDK 대신 BE OAuth flow 를 쓰도록 전환**한다. supabase-js 가 자동 처리하던 세션 영속·토큰 갱신·상태 구독을 FE 가 떠안는다. FE only(`app/`), 2b-1 BE 계약([[_workspace/02_be_changes.md]]) 소비.
