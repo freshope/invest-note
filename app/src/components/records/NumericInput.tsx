@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Input } from "@/components/base/Input";
 import { fmtNumberInput, formatNumberInput, parseNumberInput } from "@/lib/format";
 
@@ -18,10 +18,16 @@ interface NumericInputProps {
 // 로컬 문자열 상태를 source 로 둔다. 외부에서 value 가 바뀌면(수수료 자동계산·전량 버튼) 동기화.
 export function NumericInput({ value, onValueChange, id, inputMode = "numeric", placeholder = "0", inputRef }: NumericInputProps) {
   const [text, setText] = useState(() => fmtNumberInput(value));
-  useEffect(() => {
-    // 타이핑 중인 값과 숫자상 동일하면 덮어쓰지 않는다(소수점/후행 0 입력 보존).
-    setText((prev) => (parseNumberInput(prev) === value ? prev : fmtNumberInput(value)));
-  }, [value]);
+  const [prevValue, setPrevValue] = useState(value);
+  // 외부 value 가 바뀌면(수수료 자동계산·전량 버튼) 동기화. render 중 파생 상태 갱신으로
+  // effect 의 cascading render 를 피한다(react-hooks/set-state-in-effect).
+  // 타이핑 중인 값과 숫자상 동일하면 덮어쓰지 않는다(소수점/후행 0 입력 보존).
+  if (value !== prevValue) {
+    setPrevValue(value);
+    if (parseNumberInput(text) !== value) {
+      setText(fmtNumberInput(value));
+    }
+  }
   return (
     <Input
       ref={inputRef}

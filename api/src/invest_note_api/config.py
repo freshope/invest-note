@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from invest_note_api.auth.constants import AUTH_ROLE
@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     min_supported_version: str = ""
     store_url_ios: str = ""
     store_url_android: str = ""
+
+    # BE auth flow 서버 플래그(Phase 2b-4 cutover). default False = dormant(네이티브도 Supabase
+    # flow 로 폴백 = 현재 라이브 동작). Coolify env 로 ON 으로 flip 하면 secure-storage 플러그인
+    # 보유 기기가 BE OAuth flow 로 전환된다(force-update 와 동일 운영 토글, 신규 마이그레이션 없음).
+    be_auth_enabled: bool = False
 
     # Capacitor OTA 라이브 업데이트: R2 의 발행 매니페스트 JSON 절대 URL.
     # 빈 값이면 /live-update/manifest 가 fail-open(no-update) 한다(앱 부팅 차단 금지).
@@ -108,6 +113,51 @@ class Settings(BaseSettings):
     # oidc_audience: 토큰 aud 클레임 기대값. 기본은 Supabase 컨벤션(authenticated).
     oidc_audience: str = AUTH_ROLE
 
+    # BE 자체 토큰(Phase 2a) — token-broker 모델의 BE 발급 토큰 검증/서명 설정.
+    # 2a 는 dormant: 클라이언트가 BE 토큰을 발급받지 않으며, 검증 경로만 추가(유닛 전용).
+    # be_token_signing_key 가 빈 값이면 BE 토큰 발급/검증이 비활성(빈 JWKS) → Supabase 경로
+    # 무영향. 실사용 발급(fail-fast)은 2b.
+    # be_token_issuer: BE 발급 토큰 iss(Supabase iss 와 충돌하지 않는 고유 안정 문자열).
+    be_token_issuer: str = ""
+    # be_token_audience: BE 토큰 aud. Supabase(authenticated)와 반드시 구분(per-issuer aud).
+    be_token_audience: str = ""
+    # be_token_signing_key: ES256(EC P-256) private key PEM. env 로드(DB 저장 아님, 단일 키).
+    be_token_signing_key: str = ""
+    # be_token_kid: BE JWKS 의 kid(서명 토큰 header.kid 와 JWKS 항목을 잇는다).
+    be_token_kid: str = ""
+
+    # OAuth 중개(Phase 2b) — BE 가 IdP 와 직접 대화하기 위한 provider 별 client 자격증명.
+    # 빈 값이면 해당 provider 는 /auth/login 시 명시 에러(부분 활성 허용 — 일부 provider 만 설정 가능).
+    # Google: OIDC discovery. client_id/secret 한 쌍.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    # Kakao: full OIDC 아님 → REST API key(=client_id) + admin/secret. /v2/user/me 로 userinfo.
+    kakao_client_id: str = ""
+    kakao_client_secret: str = ""
+    # Apple: Service ID(=client_id) 재사용(sub 보존). client secret 은 team_id/key_id/private_key 로
+    # 서명 JWT 를 BE 가 동적 생성한다(Authlib Apple 특정 — 범용 secret 아님).
+    apple_client_id: str = ""
+    apple_team_id: str = ""
+    apple_key_id: str = ""
+    apple_private_key: str = ""
+
+    # OAuth 중개 redirect/딥링크 설정.
+    # be_oauth_redirect_base: BE 공개 호스트(https://api...) — IdP redirect_uri 는
+    # {be_oauth_redirect_base}/auth/callback. ⚠️ be_jwks_uri 호스트 정정의 출처(B8): BE 자기
+    # 검증은 in-process key 직접 주입이라 self-fetch 안 하지만, 외부 JWKS 엔드포인트 절대 URL 도
+    # 이 호스트 기준이어야 한다(현재 be_jwks_uri 가 supabase_url 파생이라 placeholder).
+    be_oauth_redirect_base: str = ""
+    # be_deeplink_scheme: callback 이 일회용 code 를 실어 앱으로 돌려보내는 딥링크 URL.
+    # IdP redirect_uri 가 아니라 BE→앱 최종 단계 전용(스킴 고정, 바뀌는 건 BE 뿐).
+    be_deeplink_scheme: str = "app.pixelwave.investnote://auth/callback"
+
+    # OAuth/refresh transient TTL(초). token_store 가 settings 에서 읽는다.
+    # be_refresh_token_ttl: refresh token 수명(기본 30d). oauth_code_ttl: 일회용 code(딥링크↔
+    # /auth/token, 기본 60s 단명). oauth_state_ttl: state/PKCE challenge(login↔callback, 기본 600s).
+    be_refresh_token_ttl: int = 60 * 60 * 24 * 30
+    oauth_code_ttl: int = 60
+    oauth_state_ttl: int = 600
+
     model_config = SettingsConfigDict(env_file=".env.local", extra="ignore")
 
     # 공급자류 env 는 공백/대소문자를 정규화한다 — 운영 콘솔(Coolify)에서 "none "(후행 공백)·
@@ -150,9 +200,62 @@ class Settings(BaseSettings):
             raise ValueError(f"kis_env 는 'real' 또는 'mock' 이어야 합니다 (입력: {v!r})")
         return v
 
+    # B7 fail-fast: BE 토큰이 활성(signing key 있음)인데 be_token_audience 가 빈 값이면
+    # per-issuer aud 격리가 Supabase authenticated 로 조용히 폴백돼 격하된다(인수노트#1).
+    # → 활성 시 빈 aud 는 기동 실패. dormant(키 없음)는 무영향. field_validator 가 아니라
+    # model_validator(after) 인 이유: 필드 정의 순서상 audience 검증 시점에 signing_key 가
+    # 아직 info.data 에 없어 field 단위로는 교차 참조가 불가능하다.
+    @model_validator(mode="after")
+    def _validate_be_token_audience(self) -> "Settings":
+        if self.be_token_enabled and not self.be_token_audience:
+            raise ValueError(
+                "be_token_signing_key 설정 시 be_token_audience 는 필수입니다 "
+                "(빈 값이면 per-issuer aud 격리가 Supabase 'authenticated' 로 격하됨, B7)"
+            )
+        return self
+
     @property
     def jwks_uri(self) -> str:
         return f"{self.supabase_url}/auth/v1/.well-known/jwks.json"
+
+    # BE 자체 토큰 검증용 JWKS URI(BE 가 스스로 서빙하는 /auth/.well-known/jwks.json).
+    # registry 빌드 시 BE entry 의 jwks_uri 로 쓰인다. dormant 라 prod 도달성은 nominal.
+    @property
+    def be_jwks_uri(self) -> str:
+        return f"{self.supabase_url}/auth/.well-known/jwks.json"
+
+    # BE 토큰 발급/검증 활성 여부 — signing key 가 있어야만 활성(없으면 dormant).
+    @property
+    def be_token_enabled(self) -> bool:
+        return bool(self.be_token_signing_key)
+
+    # issuer registry — iss discriminator 기반 검증 설정.
+    # ⚠️ dict-lookup-reject 아님(그건 dormant prod 에서 Supabase 토큰을 iss-miss 로 거부 →
+    # 전원 lockout). 검증 분기(decode_oidc_jwt)는 **Supabase=default / BE=명시 매칭** 으로
+    # 구현한다. 이 property 는 BE entry(있을 때만)를 iss→{jwks_uri,issuer,audience} 로 노출 →
+    # decode_oidc_jwt 가 peek 한 iss 가 BE iss 와 정확히 일치하면 BE entry 선택, 아니면 Supabase.
+    # Supabase entry 의 issuer 는 oidc_issuer(빈 값이면 iss 검증 스킵, Phase 1 동일).
+    @property
+    def oidc_issuer_registry(self) -> dict[str, dict[str, str]]:
+        registry: dict[str, dict[str, str]] = {}
+        if self.be_token_enabled and self.be_token_issuer:
+            registry[self.be_token_issuer] = {
+                "jwks_uri": self.be_jwks_uri,
+                "issuer": self.be_token_issuer,
+                # B7: be_token_enabled 면 be_token_audience 는 비어있을 수 없다(model_validator
+                # 가 강제). per-issuer aud 격리를 위해 AUTH_ROLE 폴백을 두지 않는다.
+                "audience": self.be_token_audience,
+            }
+        return registry
+
+    # Supabase(default) issuer entry — registry 에서 BE iss 가 매칭되지 않은 모든 토큰의 검증 설정.
+    @property
+    def supabase_issuer_entry(self) -> dict[str, str | None]:
+        return {
+            "jwks_uri": self.jwks_uri,
+            "issuer": self.oidc_issuer or None,
+            "audience": self.oidc_audience or AUTH_ROLE,
+        }
 
     # admin_emails(쉼표 문자열) → 정규화(소문자/trim) set. require_admin 이 email 클레임을
     # 동일 정규화 후 `in` 으로 정확 비교한다. raw 문자열 substring 매칭(함정)을 피하기 위해 set 화.

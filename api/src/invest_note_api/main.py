@@ -13,7 +13,7 @@ from invest_note_api.external.http_client import create_http_client
 from invest_note_api.external.kis import configure_kis
 from invest_note_api.external.fx import FxCacheState, validate_fx_providers
 from invest_note_api.external.quotes import QuoteCacheState, validate_quote_providers
-from invest_note_api.routers import accounts, admin, admin_board, app_config, health, live_update, me
+from invest_note_api.routers import accounts, admin, admin_board, app_config, auth, health, live_update, me
 from invest_note_api.routers import trades, portfolio, stocks, analysis, assets
 from invest_note_api.routers.trades import TradeStagingState
 from invest_note_api.services.daily_price_seed import validate_daily_price_providers
@@ -77,6 +77,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app_routers = (me.router, accounts.router, trades.router, portfolio.router, stocks.router, analysis.router, assets.router)
 
     application.include_router(health.router)
+    # OAuth 중개 라우터(/auth/login·callback·token·refresh) — 모두 무인증(로그인 진입점).
+    # health(JWKS) 다음, 인증 보호 라우터(/v1·/me) 앞에 mount.
+    application.include_router(auth.router)
     application.include_router(app_config.router)
     # OTA 매니페스트 — public(인증 없음). app_config 처럼 legacy `/api` alias 미등록
     # (FE 플러그인이 절대경로 `/live-update/manifest` 를 굽는다 — _workspace/03_fe_changes.md).
