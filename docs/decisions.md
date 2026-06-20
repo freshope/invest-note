@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-06-20 | 탈-Supabase Auth Phase 2b-4 — BE flow 서버 플래그(cutover flip 메커니즘)
+
+- **맥락:** 2b-3 cutover runbook 4단계 "서버 플래그 flip ON" 이 의존하는 실제 메커니즘. 2b-2 까지 네이티브는 `isNativePlatform()` 만으로 **무조건 BE flow** 라 서버에서 끌 방법이 없었다. B안(심사-cutover 디커플)은 secure-storage 포함 shell 을 BE flow OFF 로 먼저 일반 출시해 두고, 실제 cutover 를 서버 플래그 flip(OFF→ON)으로 수행한다.
+- **결정 — BE flow 플래그를 신규 엔드포인트가 아닌 기존 무인증 public `GET /app-config` 에 `beAuthEnabled` 필드로 추가.** force-update 플래그(`minSupportedVersion`)를 이미 나르는 엔드포인트라 startup-fetch·env 토글 운영 모델이 동일하고, 신규 엔드포인트·신규 마이그레이션이 필요 없다. `config.py be_auth_enabled: bool = False`(dormant 안전 default) → `AppConfigResponse`(CamelModel) → wire 키 `beAuthEnabled`(boolean) passthrough.
+- **FE — 동기 분기 vs async fetch 정합:** 플래그는 app-config **async fetch** 로 오는데 auth 분기는 여러 시점에 **동기** 발생(`lib/auth` 6함수). → 모듈 싱글톤 캐시(`app-config.ts` `getBeAuthEnabled`/`setBeAuthEnabled`, default false)로 분기 시점 동기 가용성 확보. `fetchAppConfig()` 성공 시에만 `setBeAuthEnabled(config.beAuthEnabled ?? false)` 로 채운다(ForceUpdateGate 가 startup 1회 호출하는 유일 seam). 분기는 단일 predicate seam `isBeAuthFlow() = isNativePlatform() && getBeAuthEnabled()` 로 집약 — 6함수만 게이트하고 `&& 플래그` 를 흩뿌리지 않는다.
+- **과게이팅 금지(코드 확인):** 딥링크 핸들러·`login/page.tsx` 는 BE/Supabase **분기를 자체적으로 하지 않으므로**(양 flow 공통 동작, 실제 분기는 6함수가 담당) 플래그를 넣지 않는다. 웹은 `isNativePlatform()===false` 라 플래그 값 무관 항상 Supabase.
+- **fail-safe = OFF:** fetch 실패·미완·필드 부재 → 캐시 default false 유지 → Supabase flow(= 현재 라이브). 플래그는 startup 1회 fetch 후 **세션 내 불변**(mid-flow 변동 시 `signInWithOAuth`↔`exchangeCodeForSession` cross-flow 불일치로 로그인 깨짐을 차단). 성공 시에만 set 하므로 자연히 보장.
+- **이유:** B안 cutover 의 flip 메커니즘. **default OFF 라 이 변경 배포 즉시 동작 변화 0**(현재 라이브와 100% 동일) — 무회귀 게이트가 핵심.
+- **flip 운영:** Coolify env `BE_AUTH_ENABLED=true`(force-update·다른 운영 토글과 동일 모델). runbook 4단계 = **백필 완료 후 hard precondition**, 이상 시 flip OFF 즉시 롤백.
+- **트레이드오프:** ① **startup config-resolve 전 짧은 창** — fetch 완료 전 네이티브 auth 분기가 일어나면 OFF 폴백(Supabase flow). cutover 맥락에선 무해(기존자 Supabase 로그인은 여전히 동작, 신규는 config 로드 후 재진입/재탭으로 ON 경로 진입). 코드로 풀 문제가 아니라 fail-safe 의 의도된 동작. ② wire 경계 런타임 미검증(`fetchAppConfig` 가 `res.json() as AppConfig`, 스키마 검증 없음) — 필드 부재 시 `?? false` 로 OFF 폴백해 안전. ③ Gate→fetch→cache 체인은 unit test 가 직접 커버 못 함(코드 inspection 으로 확정) → 디바이스 실측 권장.
+- **carry-forward:** secure storage·WebCrypto S256 디바이스 실측은 flip ON 전 iOS·Android 1회 여전히 필수(2b-2 carry-forward 유지, 이 변경이 추가하는 항목 없음). 산출물 `_workspace/2b4_*`.
+
+---
+
 ## 2026-06-20 | 탈-Supabase Auth Phase 2b-3 — 신규 가입 경로 + gapless cutover(동결)
 
 - **맥락:** 운영 적용 직전 검토에서 2b-1 callback 의 결함을 발견했다 — `auth_identities` 매핑 miss 시 **무조건 401**이고 런타임에 신규 user/매핑을 만드는 경로가 없다(`auth_identities` write 는 batch 적재 스크립트뿐). 원래 B1 은 "기존자 고아화 방지"가 목적이었으나, "고아 위험(기존자 매핑 누락)"과 "정상 신규 가입"을 구분 못 하고 둘 다 막았다. → 신 앱(BE flow)에서 **진짜 신규 가입자**와 **백필 스냅샷 이후 Supabase 가입자**가 모두 잠겨 스토어 출시 차단.

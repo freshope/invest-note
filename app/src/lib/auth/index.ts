@@ -4,6 +4,7 @@
 import { getSupabaseClient } from "./supabase-client";
 import type { AuthUser, AuthChangeCallback } from "./types";
 import { isNativePlatform } from "@/lib/platform";
+import { getBeAuthEnabled } from "@/lib/api/app-config";
 import {
   generateVerifier,
   challengeFromVerifier,
@@ -36,6 +37,13 @@ function toAuthUser(
 }
 
 type OAuthProvider = "google" | "kakao" | "apple";
+
+// BE OAuth flow 분기 단일 seam. 네이티브 + 서버 플래그 ON 일 때만 BE flow.
+// 플래그 미수신/OFF(default false) 면 네이티브도 Supabase flow 로 폴백(현재 라이브 무회귀).
+// 6함수가 이 한 곳만 보므로 && 흩뿌림 없이 분기 의미를 단일화한다.
+function isBeAuthFlow(): boolean {
+  return isNativePlatform() && getBeAuthEnabled();
+}
 
 // access token 만료 판정 skew(초). exp - skew 이내면 proactive refresh(C3).
 const REFRESH_SKEW_SEC = 60;
@@ -120,7 +128,7 @@ export async function signInWithOAuth(
   provider: OAuthProvider,
   options: { redirectTo: string; skipBrowserRedirect: boolean },
 ): Promise<{ url: string | null }> {
-  if (isNativePlatform()) {
+  if (isBeAuthFlow()) {
     // G3: WebCrypto(S256) 부재면 silent 사망 대신 명시적 throw → 호출부(login)가 에러 라우팅.
     if (!isWebCryptoAvailable()) {
       throw new Error("WebCrypto unavailable: PKCE S256 not supported");
@@ -144,7 +152,7 @@ export async function signInWithOAuth(
 
 /** 현재 세션의 access token(Bearer 주입용). 없으면 null. */
 export async function getAccessToken(): Promise<string | null> {
-  if (isNativePlatform()) {
+  if (isBeAuthFlow()) {
     // hot path: 캐시 우선(F#1). 캐시 유효(만료 임박 아님)면 storage·디코드 생략.
     if (cachedAccess && !isExpiringSoon(cachedAccess, REFRESH_SKEW_SEC)) {
       return cachedAccess;
@@ -181,7 +189,7 @@ export async function getAccessToken(): Promise<string | null> {
 
 /** 현재 로그인 사용자(provider-neutral). 없으면 null. */
 export async function getUser(): Promise<AuthUser | null> {
-  if (isNativePlatform()) {
+  if (isBeAuthFlow()) {
     // refresh-aware 토큰 확보(C9). getAccessToken 이 캐시 claims 도 채우므로 재사용(F#2 이중 디코드 해소).
     const token = await getAccessToken();
     if (!token) return null;
@@ -201,7 +209,7 @@ export async function getUser(): Promise<AuthUser | null> {
 
 /** 로그아웃. 네이티브는 store clear + logout emit(서버 미호출, C11). */
 export async function signOut(): Promise<void> {
-  if (isNativePlatform()) {
+  if (isBeAuthFlow()) {
     // 동기 구간에서 먼저 세션 상태 전부 무효화(C#1). epoch 증가는 clearTokens await 전에 일어나
     // in-flight doRefresh 가 persist 직전 epoch 불일치를 보고 토큰을 부활시키지 못하게 한다.
     logoutEpoch++;
@@ -217,7 +225,7 @@ export async function signOut(): Promise<void> {
 
 /** 인증 상태 변화 구독. 해제 함수를 반환한다. */
 export function subscribe(callback: AuthChangeCallback): () => void {
-  if (isNativePlatform()) {
+  if (isBeAuthFlow()) {
     listeners.add(callback);
     return () => {
       listeners.delete(callback);
@@ -236,7 +244,7 @@ export function subscribe(callback: AuthChangeCallback): () => void {
  * 네이티브는 BE /auth/token(code + PKCE verifier), 웹은 supabase PKCE.
  */
 export async function exchangeCodeForSession(code: string): Promise<void> {
-  if (isNativePlatform()) {
+  if (isBeAuthFlow()) {
     const verifier = await getVerifier();
     if (!verifier) throw new Error("missing PKCE verifier");
     const epoch = logoutEpoch;

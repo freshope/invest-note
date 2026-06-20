@@ -78,6 +78,9 @@ vi.mock("../supabase-client", () => ({
 }));
 
 import * as auth from "../index";
+// 실제 app-config 모듈의 sync 캐시 setter(seam). mock 하지 않고 setter 로만 플래그를 제어해
+// "필드 부재→OFF"·"fetch 실패→OFF" 가 검증하는 실제 ?? false 경로를 보존한다.
+import { setBeAuthEnabled } from "@/lib/api/app-config";
 
 function resetStore() {
   tokenStore.access = null;
@@ -92,6 +95,8 @@ describe("lib/auth index — 네이티브 BE flow", () => {
     // 모듈 스코프 캐시/epoch/listeners 누수 차단(G1).
     auth.__resetNativeSessionForTest();
     mockIsNative.mockReturnValue(true);
+    // 2b-4: BE flow 는 네이티브 + 플래그 ON. 이 describe 는 BE flow 분기를 검증하므로 ON 고정.
+    setBeAuthEnabled(true);
     beClient.isExpiringSoon.mockReturnValue(false);
     // clearAllMocks 가 구현을 지우므로 기본 read 동작 복원.
     storeMock.getAccessTokenRaw.mockImplementation(async () => tokenStore.access);
@@ -307,6 +312,9 @@ describe("lib/auth index — 웹 무회귀(C8)", () => {
     vi.clearAllMocks();
     resetStore();
     mockIsNative.mockReturnValue(false);
+    // 플래그 캐시는 auth 모듈 밖(app-config 싱글톤)이라 케이스 간 누수됨 → 명시 리셋.
+    // 웹은 isNativePlatform=false 라 값과 무관히 Supabase 지만 누수 차단 위해 OFF 고정.
+    setBeAuthEnabled(false);
   });
 
   it("signInWithOAuth: 기존 supabase signInWithOAuth 호출", async () => {
@@ -339,6 +347,53 @@ describe("lib/auth index — 웹 무회귀(C8)", () => {
   });
 
   it("subscribe: 기존 supabase onAuthStateChange", () => {
+    auth.subscribe(() => {});
+    expect(supabaseAuth.onAuthStateChange).toHaveBeenCalled();
+  });
+});
+
+// 2b-4 fail-safe 본체: 네이티브이지만 플래그 OFF(미수신/fetch 실패/필드 부재 포함) →
+// BE flow 미진입, Supabase flow 로 폴백(현재 라이브 무회귀). isBeAuthFlow seam 의 핵심 보증.
+describe("lib/auth index — 네이티브 + 플래그 OFF fail-safe(2b-4)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetStore();
+    auth.__resetNativeSessionForTest();
+    mockIsNative.mockReturnValue(true); // 네이티브 환경
+    setBeAuthEnabled(false); // 플래그 OFF(default = fetch 미완/실패/필드 부재와 동치)
+  });
+
+  it("signInWithOAuth: BE 미진입 → supabase 호출, verifier 미저장", async () => {
+    const { url } = await auth.signInWithOAuth("google", {
+      redirectTo: "r",
+      skipBrowserRedirect: true,
+    });
+    expect(supabaseAuth.signInWithOAuth).toHaveBeenCalled();
+    expect(url).toBe("https://supabase/oauth");
+    expect(tokenStore.verifier).toBeNull();
+    expect(beClient.buildLoginUrl).not.toHaveBeenCalled();
+  });
+
+  it("getAccessToken: supabase getSession 폴백", async () => {
+    expect(await auth.getAccessToken()).toBe("sb-access");
+  });
+
+  it("getUser: supabase session.user 폴백", async () => {
+    expect(await auth.getUser()).toEqual({ id: "sb-id", email: "sb@x.com" });
+  });
+
+  it("signOut: supabase signOut({scope:local}) 폴백", async () => {
+    await auth.signOut();
+    expect(supabaseAuth.signOut).toHaveBeenCalledWith({ scope: "local" });
+  });
+
+  it("exchangeCodeForSession: supabase 교환 폴백, BE 미호출", async () => {
+    await auth.exchangeCodeForSession("code");
+    expect(supabaseAuth.exchangeCodeForSession).toHaveBeenCalledWith("code");
+    expect(beClient.exchangeToken).not.toHaveBeenCalled();
+  });
+
+  it("subscribe: supabase onAuthStateChange 폴백", () => {
     auth.subscribe(() => {});
     expect(supabaseAuth.onAuthStateChange).toHaveBeenCalled();
   });

@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     store_url_ios: str = ""
     store_url_android: str = ""
 
+    # BE auth flow 서버 플래그(Phase 2b-4 cutover). default False = dormant(네이티브도 Supabase
+    # flow 로 폴백 = 현재 라이브 동작). Coolify env 로 ON 으로 flip 하면 secure-storage 플러그인
+    # 보유 기기가 BE OAuth flow 로 전환된다(force-update 와 동일 운영 토글, 신규 마이그레이션 없음).
+    be_auth_enabled: bool = False
+
     # Capacitor OTA 라이브 업데이트: R2 의 발행 매니페스트 JSON 절대 URL.
     # 빈 값이면 /live-update/manifest 가 fail-open(no-update) 한다(앱 부팅 차단 금지).
     live_update_manifest_url: str = ""

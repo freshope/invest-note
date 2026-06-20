@@ -12,3 +12,5 @@ class StoreUrls(CamelModel):
 class AppConfigResponse(CamelModel):
     min_supported_version: str
     store_url: StoreUrls
+    # Phase 2b-4 cutover 플래그. CamelModel → wire 키 beAuthEnabled.
+    be_auth_enabled: bool
