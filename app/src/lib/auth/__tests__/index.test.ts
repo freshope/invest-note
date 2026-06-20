@@ -80,7 +80,7 @@ vi.mock("../supabase-client", () => ({
 import * as auth from "../index";
 // 실제 app-config 모듈의 sync 캐시 setter(seam). mock 하지 않고 setter 로만 플래그를 제어해
 // "필드 부재→OFF"·"fetch 실패→OFF" 가 검증하는 실제 ?? false 경로를 보존한다.
-import { setBeAuthEnabled } from "@/lib/api/app-config";
+import { __setBeAuthEnabledForTest } from "@/lib/api/app-config";
 
 function resetStore() {
   tokenStore.access = null;
@@ -96,7 +96,7 @@ describe("lib/auth index — 네이티브 BE flow", () => {
     auth.__resetNativeSessionForTest();
     mockIsNative.mockReturnValue(true);
     // 2b-4: BE flow 는 네이티브 + 플래그 ON. 이 describe 는 BE flow 분기를 검증하므로 ON 고정.
-    setBeAuthEnabled(true);
+    __setBeAuthEnabledForTest(true);
     beClient.isExpiringSoon.mockReturnValue(false);
     // clearAllMocks 가 구현을 지우므로 기본 read 동작 복원.
     storeMock.getAccessTokenRaw.mockImplementation(async () => tokenStore.access);
@@ -314,7 +314,7 @@ describe("lib/auth index — 웹 무회귀(C8)", () => {
     mockIsNative.mockReturnValue(false);
     // 플래그 캐시는 auth 모듈 밖(app-config 싱글톤)이라 케이스 간 누수됨 → 명시 리셋.
     // 웹은 isNativePlatform=false 라 값과 무관히 Supabase 지만 누수 차단 위해 OFF 고정.
-    setBeAuthEnabled(false);
+    __setBeAuthEnabledForTest(false);
   });
 
   it("signInWithOAuth: 기존 supabase signInWithOAuth 호출", async () => {
@@ -360,7 +360,7 @@ describe("lib/auth index — 네이티브 + 플래그 OFF fail-safe(2b-4)", () =
     resetStore();
     auth.__resetNativeSessionForTest();
     mockIsNative.mockReturnValue(true); // 네이티브 환경
-    setBeAuthEnabled(false); // 플래그 OFF(default = fetch 미완/실패/필드 부재와 동치)
+    __setBeAuthEnabledForTest(false); // 플래그 OFF(default = fetch 미완/실패/필드 부재와 동치)
   });
 
   it("signInWithOAuth: BE 미진입 → supabase 호출, verifier 미저장", async () => {
