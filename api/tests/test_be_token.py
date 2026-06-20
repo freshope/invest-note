@@ -4,7 +4,7 @@ mint_be_token → build_be_jwks 의 public key 로 검증이 성립하는지(비
 dormant(빈 키) 안전, JWKS 엔드포인트 무인증 접근(P8)을 검증한다.
 """
 
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import jwt
 import pytest

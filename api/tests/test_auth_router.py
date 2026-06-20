@@ -15,9 +15,8 @@ IdP 는 B-5 provider 를 mock(get_provider patch). DB 는 라우터가 치는 SQ
 import base64
 import hashlib
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlparse
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import jwt
 import pytest

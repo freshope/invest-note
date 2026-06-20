@@ -46,7 +46,9 @@ class _FakeProfileTable:
             }
             return
         # ON CONFLICT DO UPDATE — COALESCE(EXCLUDED, existing), last_sign_in 항상 갱신.
-        coalesce = lambda new, old: new if new is not None else old
+        def coalesce(new, old):
+            return new if new is not None else old
+
         merged_providers = list(existing["providers"])
         if provider and provider not in merged_providers:
             merged_providers.append(provider)
