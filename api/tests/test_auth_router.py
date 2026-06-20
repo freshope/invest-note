@@ -4,7 +4,7 @@ IdP 는 B-5 provider 를 mock(get_provider patch). DB 는 라우터가 치는 SQ
 (공유 store)로 대체 — auth_identities 매핑·oauth_transient·auth_refresh_tokens·user_profiles.
 
 핵심 검증:
-  B1  매핑 hit → 원래 UUID sub 토큰 / 매핑 miss → 401(새 user row 생성 0, email 매칭 부재)
+  B1  매핑 hit → 원래 UUID sub 토큰(데이터 보존) / 매핑 miss → 신규 가입(user+매핑 생성, 토큰 sub=새 UUID, email 매칭 부재, 2b-3)
   B3  일회용 code single-use(2회 교환 시 2회차 reject)
   B4  딥링크 리다이렉트 URL 에 access/refresh 문자열 부재(code 만)
   B5  refresh 회전(구 refresh 401)
@@ -129,7 +129,23 @@ class _FakeConn:
                 "email_verified": args[4],
             }
             return
+        if sql.startswith("SET LOCAL"):
+            return  # lock_timeout — fake no-op
+        if "INSERT INTO public.users" in sql:
+            # 신규 가입(2b-3): public.users 프로비저닝.
+            self.s["users"].add(args[0])
+            return
+        if "INSERT INTO public.auth_identities" in sql:
+            # 신규 가입(2b-3): (provider, sub) → 새 UUID 매핑.
+            provider, sub, uid = args
+            self.s["identities"][(provider, sub)] = uid
+            return
         raise AssertionError(f"unhandled execute: {sql[:50]}")
+
+    async def fetchval(self, sql, *args):
+        if "pg_advisory_xact_lock" in sql:
+            return 1  # 신규 가입 직렬화 락 — fake 는 단일 스레드라 no-op
+        raise AssertionError(f"unhandled fetchval: {sql[:50]}")
 
     @asynccontextmanager
     async def transaction(self):
@@ -151,6 +167,7 @@ def _new_store(*, with_mapping=True):
         "transient": {},
         "refresh": [],
         "profiles": {},
+        "users": set(),  # 신규 가입(2b-3)에서 생성된 public.users id 추적
     }
 
 
@@ -228,15 +245,31 @@ def test_b1_mapping_hit_mints_original_uuid_token(patch_provider):
     assert claims["sub"] == str(ORIGINAL_UID)
 
 
-def test_b1_mapping_miss_rejects_no_user_created(patch_provider):
-    # 매핑 없는 IdP sub → 401. 새 user row 생성 0(profiles/refresh 비어야 함).
+def test_b1_mapping_miss_creates_new_user(patch_provider):
+    # 매핑 없는 sub = 진짜 신규 가입(2b-3). user+매핑 생성, 토큰 sub=새 UUID, profile 생성.
+    # (email 매칭 안 함 — B1 정책 유지. gapless 는 cutover 동결+백필이 보장.)
     store = _new_store(with_mapping=False)
     client = _client(store)
-    state = _do_login(client, "v123456789012")
+    verifier = "app-verifier-new-0001"
+    state = _do_login(client, verifier)
     cb = _do_callback(client, state)
-    assert cb.status_code == 401
-    assert store["profiles"] == {}  # 고아 user 생성 0
-    assert store["refresh"] == []  # 토큰 발급 0
+    assert cb.status_code == 302
+
+    # 신규 user + 매핑 생성(단일).
+    assert len(store["users"]) == 1
+    new_uid = next(iter(store["users"]))
+    assert store["identities"][("google", PROVIDER_SUB)] == new_uid
+
+    # 토큰 sub == 새 UUID(IdP sub 아님).
+    code = parse_qs(urlparse(cb.headers["location"]).query)["code"][0]
+    r = client.post("/auth/token", json={"code": code, "code_verifier": verifier})
+    assert r.status_code == 200
+    claims = jwt.decode(r.json()["access_token"], _be_key.public_key(),
+                        algorithms=["ES256"], audience=BE_AUDIENCE, issuer=BE_ISSUER)
+    assert claims["sub"] == str(new_uid)
+
+    # profile 첫 레코드 생성.
+    assert new_uid in store["profiles"]
 
 
 # --- B4: 딥링크에 토큰 직접 미노출 ---

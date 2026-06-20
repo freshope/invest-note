@@ -42,6 +42,7 @@ from invest_note_api.errors import (
     APIError,
 )
 from invest_note_api.external.http_client import get_http_client
+from invest_note_api.services.auth_identity import create_user_identity
 from invest_note_api.services.user_profile import upsert_profile
 
 router = APIRouter(prefix="/auth")
@@ -218,10 +219,13 @@ async def _handle_callback(
     display_name = userinfo.display_name or apple_display_name
 
     async with pool.acquire() as conn:
-        # ⚠️ B1: 매핑 해석. miss = 명시 에러(새 user 생성 금지 — 데이터 고아화 방지).
+        # 매핑 해석. hit = 기존자 → 원래 UUID 재사용(데이터 보존, B1). miss = 진짜 신규 가입
+        # → user + auth_identities 매핑 생성(2b-3, race-safe). email 매칭 안 함(B1 정책 유지).
+        # ⚠️ gapless 전제: cutover 시 Supabase 신규가입 동결 후 최종 백필로 매핑 완전·확정 →
+        # 미매핑 sub 는 기존자가 아님(고아화 없음). BE 활성화는 백필 완료 후(운영 runbook 가드).
         user_id = await _resolve_user_id(conn, provider, sub)
         if user_id is None:
-            raise APIError(ERR_UNAUTHORIZED, 401)
+            user_id = await create_user_identity(conn, provider, sub)
 
         # BE access(sub=원래 UUID) + refresh 발급. refresh 는 해시 저장(B5).
         access = mint_be_token(user_id, userinfo.email, settings=settings)
