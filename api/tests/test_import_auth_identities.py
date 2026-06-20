@@ -87,7 +87,7 @@ def test_parse_csv(tmp_path):
 
 
 def test_f14_provider_lowercased_on_parse(tmp_path):
-    # ⚠️ F14: provider 를 소문자 정규화 — 런타임 _resolve_user_id 가 소문자로 조회하므로
+    # ⚠️ F14: provider 를 소문자 정규화 — 런타임 resolve_user_id 가 소문자로 조회하므로
     # 대소문자 drift 가 매핑 miss → 전 사용자 lockout 되는 것을 적재 시점에 못박는다.
     p = tmp_path / "export.csv"
     p.write_text(

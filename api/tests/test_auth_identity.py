@@ -26,6 +26,13 @@ class _Conn:
         return 1
 
     async def fetchrow(self, sql, *args):
+        if "INSERT INTO public.auth_identities" in sql:
+            # ON CONFLICT DO NOTHING RETURNING: 이미 있으면 None, 없으면 삽입 후 {user_id}.
+            provider, sub, uid = args
+            if (provider, sub) in self.identities:
+                return None
+            self.identities[(provider, sub)] = uid
+            return {"user_id": uid}
         assert "FROM auth_identities" in sql
         uid = self.identities.get((args[0], args[1]))
         return {"user_id": uid} if uid else None
@@ -35,9 +42,6 @@ class _Conn:
             return
         if "INSERT INTO public.users" in sql:
             self.users.add(args[0])
-            return
-        if "INSERT INTO public.auth_identities" in sql:
-            self.identities[(args[0], args[1])] = args[2]
             return
         raise AssertionError(sql)
 

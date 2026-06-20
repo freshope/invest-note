@@ -72,6 +72,14 @@ class _FakeConn:
         self.s = store
 
     async def fetchrow(self, sql, *args):
+        if "INSERT INTO public.auth_identities" in sql:
+            # 신규 가입(2b-3): (provider, sub) → 새 UUID 매핑. ON CONFLICT DO NOTHING RETURNING:
+            # 이미 있으면 None(충돌), 없으면 삽입 후 {user_id}.
+            provider, sub, uid = args
+            if (provider, sub) in self.s["identities"]:
+                return None
+            self.s["identities"][(provider, sub)] = uid
+            return {"user_id": uid}
         if "FROM auth_identities" in sql:
             provider, sub = args
             uid = self.s["identities"].get((provider, sub))
@@ -134,11 +142,6 @@ class _FakeConn:
         if "INSERT INTO public.users" in sql:
             # 신규 가입(2b-3): public.users 프로비저닝.
             self.s["users"].add(args[0])
-            return
-        if "INSERT INTO public.auth_identities" in sql:
-            # 신규 가입(2b-3): (provider, sub) → 새 UUID 매핑.
-            provider, sub, uid = args
-            self.s["identities"][(provider, sub)] = uid
             return
         raise AssertionError(f"unhandled execute: {sql[:50]}")
 
