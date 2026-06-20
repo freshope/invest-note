@@ -43,6 +43,9 @@ class _Conn:
         if "INSERT INTO public.users" in sql:
             self.users.add(args[0])
             return
+        if "DELETE FROM public.users" in sql:
+            self.users.discard(args[0])
+            return
         raise AssertionError(sql)
 
 
@@ -68,3 +71,33 @@ async def test_provider_lowercased():
     conn = _Conn()
     await create_user_identity(conn, "GOOGLE", "sub-x")
     assert ("google", "sub-x") in conn.identities
+
+
+class _RaceConn(_Conn):
+    """락 미보유 동시 writer(backfill batch) 가 재조회 직후 매핑을 선점한 상황 시뮬.
+
+    resolve#1(락 내 재조회)=miss → users INSERT → auth_identities INSERT=ON CONFLICT(None)
+    → resolve#2(패배 후 재조회)=winner. 이 경로에서 방금 만든 users(new_id) 고아가 정리되는지 검증.
+    """
+
+    def __init__(self, winner: UUID):
+        super().__init__()
+        self._winner = winner
+        self._select_calls = 0
+
+    async def fetchrow(self, sql, *args):
+        if "INSERT INTO public.auth_identities" in sql:
+            return None  # 경쟁자가 이미 선점 → ON CONFLICT DO NOTHING → row 없음
+        assert "FROM auth_identities" in sql
+        self._select_calls += 1
+        return None if self._select_calls == 1 else {"user_id": self._winner}
+
+
+async def test_backfill_race_no_orphan_user():
+    from uuid import uuid4
+
+    winner = uuid4()
+    conn = _RaceConn(winner)
+    uid = await create_user_identity(conn, "google", "sub-r")
+    assert uid == winner  # 승자 UUID 채택(중복 user 생성 안 함)
+    assert conn.users == set()  # 방금 INSERT 한 new_id 고아가 DELETE 로 정리됨

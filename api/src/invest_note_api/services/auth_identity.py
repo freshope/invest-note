@@ -66,6 +66,9 @@ async def create_user_identity(conn: asyncpg.Connection, provider: str, sub: str
         )
         if row is not None:
             return row["user_id"]
+        # 경쟁 writer(락 미보유 backfill batch)가 매핑을 선점 → 방금 만든 users(new_id) 는
+        # 어떤 auth_identities 도 가리키지 않는 고아. uuid4 라 우리 행만 정리(고아 방지) 후 승자 채택.
+        await conn.execute("DELETE FROM public.users WHERE id = $1", new_id)
         winner = await resolve_user_id(conn, provider, sub)
         if winner is None:
             # ON CONFLICT 발생 = 행 존재 의미(런타임에 auth_identities 삭제 경로 없음 → 도달 불가).
