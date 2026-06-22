@@ -74,6 +74,10 @@ const ROUTES = {
   me: {
     base: "/me",
   },
+  board: {
+    presign: "/board/broker-statement/presign",
+    submit: "/board/broker-statement",
+  },
 } as const;
 
 async function getBearerHeader(): Promise<Record<string, string>> {
@@ -517,4 +521,78 @@ export const assetsApi = {
 
 export const meApi = {
   deleteAccount: () => apiFetch<void>(ROUTES.me.base, { method: "DELETE" }),
+};
+
+// ============================================================
+// Broker statement (거래내역서 제보)
+// ⚠️ 이 feature 의 wire 포맷은 다른 /v1 엔드포인트와 달리 전부 snake_case 다.
+// snake 로 보내고 snake 로 읽는다(camel 로 보내면 BE 가 422).
+// ============================================================
+
+/** presign·submit 에 공통으로 흘리는 첨부 메타. content_type 은 presign·PUT·submit 세 곳에서 동일해야 한다. */
+export interface BrokerStatementAttachmentMeta {
+  original_name: string;
+  content_type: string;
+  size_bytes: number;
+}
+
+export interface BrokerStatementPresignResponse {
+  upload_url: string;
+  storage_key: string;
+  bucket: string;
+  expires_in: number;
+}
+
+export type BrokerStatementType = "unsupported_broker" | "overseas_trade";
+
+export interface BrokerStatementSubmitInput {
+  type: BrokerStatementType;
+  broker: string;
+  country?: string | null;
+  note?: string | null;
+  consent: boolean;
+  attachment: BrokerStatementAttachmentMeta & { storage_key: string };
+}
+
+export interface BrokerStatementSubmitResponse {
+  post_id: string;
+  attachment: {
+    id: string;
+    post_id: string;
+    comment_id: string | null;
+    user_id: string;
+    original_name: string;
+    content_type: string;
+    size_bytes: number;
+    storage_key: string;
+    bucket: string;
+    created_at: string;
+  };
+}
+
+export const brokerStatementApi = {
+  presign: (body: BrokerStatementAttachmentMeta) =>
+    apiFetch<BrokerStatementPresignResponse>(ROUTES.board.presign, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  submit: (body: BrokerStatementSubmitInput) =>
+    apiFetch<BrokerStatementSubmitResponse>(ROUTES.board.submit, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  // R2 직접 업로드. apiFetch 우회 — Bearer/JSON 헤더 금지(raw fetch PUT).
+  // Content-Type 은 presign 에 보낸 content_type 과 바이트 단위로 동일해야 R2 서명이 통과한다.
+  uploadToR2: async (uploadUrl: string, file: File, contentType: string): Promise<void> => {
+    const res = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      body: file,
+    });
+    if (!res.ok) {
+      throw new ApiError(`업로드에 실패했습니다 (${res.status})`, res.status);
+    }
+  },
 };

@@ -347,5 +347,10 @@ export const adminApi = {
         `/admin/boards/comments/${encodeURIComponent(commentId)}`,
         { method: "DELETE" },
       ),
+    // 첨부 다운로드 — presigned GET URL(JSON). SPA 가 window.open 으로 새 탭 열기.
+    attachmentDownloadUrl: (attachmentId: string) =>
+      apiFetch<{ download_url: string }>(
+        `/admin/boards/attachments/${encodeURIComponent(attachmentId)}/download`,
+      ),
   },
 };

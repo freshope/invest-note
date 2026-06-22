@@ -13,6 +13,8 @@ interface Props {
   account: Account;
   onCommit: () => void;
   onBack?: () => void;
+  /** 해외 거래내역서 제보 진입. */
+  onReportOverseas: () => void;
   isLoading: boolean;
 }
 
@@ -45,7 +47,7 @@ function CountCard({ label, value, variant = "default" }: {
   );
 }
 
-export function PreviewStep({ preview, account, onCommit, onBack, isLoading }: Props) {
+export function PreviewStep({ preview, account, onCommit, onBack, onReportOverseas, isLoading }: Props) {
   const [showErrors, setShowErrors] = useState(false);
   const hasErrors = preview.errors.length > 0;
   const hint = preview.account_hint;
@@ -77,12 +79,21 @@ export function PreviewStep({ preview, account, onCommit, onBack, isLoading }: P
 
         {/* 해외 거래는 아직 일괄 등록 미지원. 감지 여부와 무관하게 상시 고지해
             해외 행이 조용히 누락되는 것(silent loss)을 사용자가 인지하도록 한다. */}
-        <div className="flex items-start gap-2 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
-          <InfoIcon className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
-            해외(미국 등) 거래는 아직 일괄 등록을 지원하지 않습니다. 이 결과에는 국내 거래만
-            포함되어 있으니, 해외 거래가 있다면 직접 입력해 주세요.
-          </span>
+        <div className="rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+          <div className="flex items-start gap-2">
+            <InfoIcon className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              해외(미국 등) 거래는 아직 일괄 등록을 지원하지 않습니다. 이 결과에는 국내 거래만
+              포함되어 있으니, 해외 거래가 있다면 직접 입력해 주세요.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={onReportOverseas}
+            className="mt-2 w-full rounded-md border border-primary/40 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/5"
+          >
+            해외 거래내역서 제보
+          </button>
         </div>
         {preview.duplicate_count > 0 && (
           <div className="flex items-start gap-2 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">

@@ -18,6 +18,11 @@ import { PreviewStep } from "./PreviewStep";
 import { ResultStep } from "./ResultStep";
 import { BROKER_OPTIONS, findBrokerKeyByAccountBroker } from "./brokers";
 import { capture } from "@/lib/analytics";
+import {
+  BrokerStatementPanel,
+  type BrokerSource,
+} from "@/components/broker-statement/BrokerStatementPanel";
+import type { BrokerStatementType } from "@/lib/api-client";
 import type { Account } from "@/types/database";
 
 type Step = "account" | "file" | "preview" | "result";
@@ -46,6 +51,11 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
   const [preview, setPreview] = useState<ImportPreviewResponse | null>(null);
   const [result, setResult] = useState<ImportCommitResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  // 거래내역서 제보 패널(dual-entry: 미지원 계좌 + 해외거래). null=닫힘.
+  const [reportPayload, setReportPayload] = useState<{
+    type: BrokerStatementType;
+    brokerSource: BrokerSource;
+  } | null>(null);
 
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId) ?? null;
   const effectiveBrokerKey = findBrokerKeyByAccountBroker(selectedAccount?.broker);
@@ -116,6 +126,12 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
               selectedAccountId={selectedAccountId}
               onSelect={setSelectedAccountId}
               onNext={() => setStep("file")}
+              onReportUnsupported={(account) =>
+                setReportPayload({
+                  type: "unsupported_broker",
+                  brokerSource: { mode: "fixed", label: account.broker ?? "" },
+                })
+              }
             />
           )}
           {step === "file" && (
@@ -137,14 +153,43 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
                 setPreview(null);
                 setStep("file");
               }}
+              onReportOverseas={() =>
+                setReportPayload({
+                  type: "overseas_trade",
+                  brokerSource: { mode: "fixed", label: selectedAccount.broker ?? "" },
+                })
+              }
               isLoading={isLoading}
             />
           )}
           {step === "result" && result && (
-            <ResultStep result={result} onClose={handleClose} />
+            <ResultStep
+              result={result}
+              onClose={handleClose}
+              onReportOverseas={
+                selectedAccount
+                  ? () =>
+                      setReportPayload({
+                        type: "overseas_trade",
+                        brokerSource: { mode: "fixed", label: selectedAccount.broker ?? "" },
+                      })
+                  : undefined
+              }
+            />
           )}
         </FullScreenPanelBody>
       </FullScreenPanelContent>
+
+      {reportPayload && (
+        <BrokerStatementPanel
+          open
+          onOpenChange={(o) => {
+            if (!o) setReportPayload(null);
+          }}
+          defaultType={reportPayload.type}
+          brokerSource={reportPayload.brokerSource}
+        />
+      )}
     </FullScreenPanel>
   );
 }

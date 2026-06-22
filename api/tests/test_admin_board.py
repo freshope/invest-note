@@ -23,8 +23,18 @@ ADMIN_EMAIL = "admin@example.com"
 ADMIN_EMAILS_CSV = "admin@example.com, second@example.com"
 
 
-def _make_admin_app(admin_emails: str = ADMIN_EMAILS_CSV):
-    settings = Settings(supabase_url=TEST_SUPABASE_URL, admin_emails=admin_emails)
+def _make_admin_app(admin_emails: str = ADMIN_EMAILS_CSV, *, r2: bool = False):
+    extra = (
+        dict(
+            r2_endpoint_url="https://accountid.r2.cloudflarestorage.com",
+            r2_bucket="statements",
+            r2_access_key_id="dummy-access-key",
+            r2_secret_access_key="dummy-secret-key",
+        )
+        if r2
+        else {}
+    )
+    settings = Settings(supabase_url=TEST_SUPABASE_URL, admin_emails=admin_emails, **extra)
     app = create_app(settings)
     app.dependency_overrides[get_settings] = lambda: settings
     return app
@@ -293,3 +303,65 @@ def test_comment_delete_not_found_404():
     conn = FakeConnection("DELETE 0")
     client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
     assert client.delete(f"/admin/boards/comments/{uuid4()}").status_code == 404
+
+
+# ─────────────────────────── 첨부 다운로드(presigned GET) ───────────────────────────
+
+
+def _attachment_row(**over) -> dict:
+    row = {
+        "id": str(uuid4()),
+        "post_id": str(uuid4()),
+        "comment_id": None,
+        "user_id": None,
+        "original_name": "statement.xlsx",
+        "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "size_bytes": 2048,
+        "storage_key": "broker_statement/abc/file.xlsx",
+        "bucket": "statements",
+        "created_at": "2026-06-22T00:00:00Z",
+    }
+    row.update(over)
+    return row
+
+
+def test_attachment_download_forbidden_for_non_allowlist():
+    """require_admin 게이트 — allowlist 외 403(pool 도달 전)."""
+    app = _make_admin_app(r2=True)
+    client = _client(app, email="intruder@evil.com", admin_pool=FakePool())
+    assert client.get(f"/admin/boards/attachments/{uuid4()}/download").status_code == 403
+
+
+def test_attachment_download_returns_presigned_url():
+    """정상 → {download_url} presigned GET(attachment disposition)."""
+    app = _make_admin_app(r2=True)
+    conn = FakeConnection(_attachment_row())
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
+    resp = client.get(f"/admin/boards/attachments/{uuid4()}/download")
+    assert resp.status_code == 200
+    url = resp.json()["download_url"]
+    assert "r2.cloudflarestorage.com" in url
+    assert "X-Amz-Signature" in url
+
+
+def test_attachment_download_not_found_404():
+    app = _make_admin_app(r2=True)
+    conn = FakeConnection(None)  # get_attachment fetchrow → None
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
+    assert client.get(f"/admin/boards/attachments/{uuid4()}/download").status_code == 404
+
+
+def test_attachment_download_null_storage_key_404():
+    """행은 있으나 storage_key 가 null(코멘트 첨부 등) → presign 불가 → 404."""
+    app = _make_admin_app(r2=True)
+    conn = FakeConnection(_attachment_row(storage_key=None))
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
+    assert client.get(f"/admin/boards/attachments/{uuid4()}/download").status_code == 404
+
+
+def test_attachment_download_dormant_503():
+    """R2 미설정(자격증명 없음) → generate_get_url 이 503(dormant)."""
+    app = _make_admin_app(r2=False)
+    conn = FakeConnection(_attachment_row())
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
+    assert client.get(f"/admin/boards/attachments/{uuid4()}/download").status_code == 503
