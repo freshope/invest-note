@@ -3,9 +3,47 @@ import { POSTHOG_ENABLED } from "./config";
 
 /** PostHog 헬퍼. 비활성(key 없음) 시 전부 no-op — 호출부는 활성 여부를 신경 쓰지 않는다. */
 
+type AppVersionProps = {
+  app_version: string;
+  native_version: string;
+  native_build: string | null;
+  ready?: boolean;
+};
+
+type PendingCapture = {
+  event: string;
+  props?: Record<string, unknown>;
+};
+
+const MAX_PENDING_CAPTURES = 50;
+const latestAppVersionProps: Record<string, string> = {};
+const pendingCaptures: PendingCapture[] = [];
+let appVersionResolved = false;
+
+function registerLatestAppVersionProps() {
+  if (Object.keys(latestAppVersionProps).length > 0) {
+    posthog.register(latestAppVersionProps);
+  }
+}
+
+function captureNow(event: string, props?: Record<string, unknown>) {
+  posthog.capture(event, props);
+}
+
+function flushPendingCaptures() {
+  if (pendingCaptures.length === 0) return;
+  const captures = pendingCaptures.splice(0);
+  captures.forEach(({ event, props }) => captureNow(event, props));
+}
+
 export function capture(event: string, props?: Record<string, unknown>) {
   if (!POSTHOG_ENABLED) return;
-  posthog.capture(event, props);
+  if (!appVersionResolved) {
+    if (pendingCaptures.length >= MAX_PENDING_CAPTURES) pendingCaptures.shift();
+    pendingCaptures.push({ event, props });
+    return;
+  }
+  captureNow(event, props);
 }
 
 export function identifyUser(id: string) {
@@ -16,30 +54,39 @@ export function identifyUser(id: string) {
 export function resetUser() {
   if (!POSTHOG_ENABLED) return;
   posthog.reset();
+  registerLatestAppVersionProps();
 }
 
 export function capturePageview(pathname: string) {
   if (!POSTHOG_ENABLED) return;
-  posthog.capture("$pageview", { $current_url: pathname });
+  capture("$pageview", { $current_url: pathname });
 }
 
 /**
  * 앱 버전을 super property 로 등록 → 이후 모든 이벤트에 부착되어 PostHog 에서 버전별 점유율 집계.
  * 빈 값은 보내지 않는다(웹/초기 부팅 시 미상 값으로 차원 오염 방지).
  */
-export function registerAppVersion(props: {
-  app_version: string;
-  native_version: string;
-  native_build: string | null;
-}) {
+export function registerAppVersion(props: AppVersionProps) {
   if (!POSTHOG_ENABLED) return;
-  const toRegister: Record<string, string> = {};
-  if (props.app_version) toRegister.app_version = props.app_version;
-  if (props.native_version) toRegister.native_version = props.native_version;
-  if (props.native_build) toRegister.native_build = props.native_build;
-  if (Object.keys(toRegister).length > 0) posthog.register(toRegister);
-  // 네이티브 버전 미확정(웹/getInfo 실패) 시, 과거 잘못 저장(persist)된 super property 를
-  // 제거한다. register 는 기존 키를 덮어쓰지 않으므로 빈 값만으론 오염값이 남는다.
-  if (!props.native_version) posthog.unregister("native_version");
-  if (!props.native_build) posthog.unregister("native_build");
+  const ready = props.ready ?? true;
+
+  if (props.app_version) latestAppVersionProps.app_version = props.app_version;
+  if (props.native_version) latestAppVersionProps.native_version = props.native_version;
+  if (props.native_build) latestAppVersionProps.native_build = props.native_build;
+
+  // 초기 부팅 중 빈 네이티브 값은 "미확정"이지 "없음"이 아니다. 확정 전에는 기존 값을 지우지 않는다.
+  if (ready) {
+    if (!props.native_version) delete latestAppVersionProps.native_version;
+    if (!props.native_build) delete latestAppVersionProps.native_build;
+  }
+
+  registerLatestAppVersionProps();
+
+  // 네이티브 버전 조회가 끝난 뒤에만 과거 persist 오염값을 제거한다.
+  if (ready) {
+    if (!props.native_version) posthog.unregister("native_version");
+    if (!props.native_build) posthog.unregister("native_build");
+    appVersionResolved = true;
+    flushPendingCaptures();
+  }
 }
