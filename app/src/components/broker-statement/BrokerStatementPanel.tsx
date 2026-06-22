@@ -45,10 +45,12 @@ const TITLE: Record<BrokerStatementType, string> = {
   overseas_trade: "해외 거래내역서 제보",
 };
 
-// status 코드별 사용자 친화 메시지. apiFetch 는 FastAPI {detail} 을 메시지로 못 읽으므로 status 로 분기한다.
+// status 코드별 사용자 친화 메시지(BE 원문 대신 일관된 안내 문구로 분기).
 function errorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     switch (err.status) {
+      case 400:
+        return "업로드가 완료되지 않았습니다. 다시 시도해주세요.";
       case 413:
         return "파일이 너무 큽니다. 20MB 이하로 업로드해주세요.";
       case 415:
@@ -71,9 +73,11 @@ export function BrokerStatementPanel({
   brokerSource,
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [broker, setBroker] = useState(
-    brokerSource.mode === "fixed" ? brokerSource.label : "",
-  );
+  // fixed 모드라도 라벨이 비어 있으면(예: 증권사 미설정 계좌, broker=null) freetext 로
+  // 폴백해 사용자가 직접 입력하게 한다 — 빈 라벨 read-only 면 제출이 영구 불가해진다.
+  const fixedLabel = brokerSource.mode === "fixed" ? brokerSource.label.trim() : "";
+  const isFixedBroker = fixedLabel.length > 0;
+  const [broker, setBroker] = useState(fixedLabel);
   const [consent, setConsent] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -136,9 +140,9 @@ export function BrokerStatementPanel({
             {/* 증권사 */}
             <div className="space-y-2">
               <Label htmlFor="bs-broker">증권사</Label>
-              {brokerSource.mode === "fixed" ? (
+              {isFixedBroker ? (
                 <div className="flex h-12 items-center rounded-xl bg-muted px-4 text-[15px] font-medium">
-                  {brokerSource.label}
+                  {fixedLabel}
                 </div>
               ) : (
                 <>

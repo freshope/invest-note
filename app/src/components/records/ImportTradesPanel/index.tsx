@@ -115,6 +115,10 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
     onOpenChange(false);
   };
 
+  // 거래내역서 제보 패널 오픈(dual-entry 공통). brokerLabel null/빈 값이면 패널이 freetext 폴백.
+  const openReport = (type: BrokerStatementType, brokerLabel: string | null) =>
+    setReportPayload({ type, brokerSource: { mode: "fixed", label: brokerLabel ?? "" } });
+
   return (
     <FullScreenPanel open={open} onOpenChange={onOpenChange}>
       <FullScreenPanelContent>
@@ -127,10 +131,7 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
               onSelect={setSelectedAccountId}
               onNext={() => setStep("file")}
               onReportUnsupported={(account) =>
-                setReportPayload({
-                  type: "unsupported_broker",
-                  brokerSource: { mode: "fixed", label: account.broker ?? "" },
-                })
+                openReport("unsupported_broker", account.broker)
               }
             />
           )}
@@ -154,10 +155,7 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
                 setStep("file");
               }}
               onReportOverseas={() =>
-                setReportPayload({
-                  type: "overseas_trade",
-                  brokerSource: { mode: "fixed", label: selectedAccount.broker ?? "" },
-                })
+                openReport("overseas_trade", selectedAccount.broker)
               }
               isLoading={isLoading}
             />
@@ -168,11 +166,7 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
               onClose={handleClose}
               onReportOverseas={
                 selectedAccount
-                  ? () =>
-                      setReportPayload({
-                        type: "overseas_trade",
-                        brokerSource: { mode: "fixed", label: selectedAccount.broker ?? "" },
-                      })
+                  ? () => openReport("overseas_trade", selectedAccount.broker)
                   : undefined
               }
             />

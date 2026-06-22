@@ -206,8 +206,8 @@ def test_submit_rejects_oversize_on_register():
 
 
 def test_submit_spam_over_limit_429():
-    """최근 1시간 11건째(>10)면 429 — count_recent_submissions 가 11 반환."""
-    conn = FakeConnection(11)  # count fetchval → 11
+    """기존 10건이면 11번째 제보는 429(recent>=_SPAM_MAX). count_recent_submissions → 10."""
+    conn = FakeConnection(10)  # count fetchval → 기존 10건
     client = _client(_r2_settings(), pool=FakePool(conn))
     resp = client.post("/v1/board/broker-statement", json=_submit_body(_key()))
     assert resp.status_code == 429
@@ -254,12 +254,12 @@ def test_submit_dormant_503():
 
 
 def test_submit_at_limit_passes(monkeypatch):
-    """정확히 10건(=_SPAM_MAX)이면 통과(11번째부터 거부). count → 10 → 201."""
+    """기존 9건이면 10번째 제보는 통과(10건까지 허용, 11번째부터 거부). count → 9 → 201."""
     _stub_r2_move(monkeypatch)
     temp_key = _key()
     final_key = r2.promote_key(temp_key)
     post_id = str(uuid4())
-    conn = FakeConnection(10, _post_row(post_id), _attachment_row(final_key, post_id))
+    conn = FakeConnection(9, _post_row(post_id), _attachment_row(final_key, post_id))
     client = _client(_r2_settings(), pool=FakePool(conn))
     resp = client.post("/v1/board/broker-statement", json=_submit_body(temp_key))
     assert resp.status_code == 201

@@ -64,6 +64,7 @@ async def download_attachment(
         settings,
         attachment["storage_key"],
         filename=attachment["original_name"],
+        bucket=attachment.get("bucket"),
     )
     return {"download_url": download_url}
 

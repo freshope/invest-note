@@ -8,7 +8,7 @@ board 는 기본적으로 require_admin 이지만, 이 한 흐름만 get_current
   - user_id 는 토큰(get_current_user)에서, body 무시.
   - content_type/size 는 register(submit) 시점 재검증(PUT presign 은 size 강제 불가).
   - storage_key 가 temp/{user_id}/ prefix 미시작 → 403(남 user key 차단).
-  - 스팸 = 최근 1시간 10건 초과 → 429.
+  - 스팸 = 최근 1시간 10건까지 허용, 11번째부터 429.
 
 검증 순서(submit): consent·extra-forbid 는 스키마(Pydantic) 단계라 라우터 본문 진입 전에
 422. 본문은 R2 enabled(503) → key-prefix(403) → content_type/size 재검증(415/413) → spam(429)
@@ -45,7 +45,7 @@ _ALLOWED_CONTENT_TYPES = {
     "application/octet-stream",  # 모바일 파일피커 fallback
     "",  # 일부 피커가 빈 content-type 전송
 }
-# 스팸 가드 — 최근 1시간 동안 이 건수를 **초과**하면 거부(11번째부터 429).
+# 스팸 가드 — 최근 1시간 기존 제보가 이 건수 이상이면 거부(10건까지 허용, 11번째부터 429).
 _SPAM_WINDOW = timedelta(hours=1)
 _SPAM_MAX = 10
 
@@ -125,14 +125,16 @@ async def submit_broker_statement(
     since = datetime.now(timezone.utc) - _SPAM_WINDOW
     async with pool.acquire() as conn:
         recent = await board_repo.count_recent_submissions(conn, user.id, since)
-        if recent > _SPAM_MAX:
-            raise APIError(ERR_RATE_LIMITED, 429)
+    if recent >= _SPAM_MAX:
+        raise APIError(ERR_RATE_LIMITED, 429)
 
-        # rate-check 통과 후에만 temp→정식 copy(동기 R2 호출 → threadpool). 소스 부재(업로드
-        # 미완료) → 400. temp 원본은 R2 lifecycle 이 청소하므로 명시 삭제하지 않는다.
-        await run_in_threadpool(r2.copy_object, settings, att.storage_key, final_key)
+    # rate-check 통과 후에만 temp→정식 copy(동기 R2 호출 → threadpool). 소스 부재(업로드
+    # 미완료) → 400. temp 원본은 R2 lifecycle 이 청소하므로 명시 삭제하지 않는다.
+    # copy(R2 왕복)는 DB 커넥션 점유 밖에서 수행 — 풀 고갈 방지.
+    await run_in_threadpool(r2.copy_object, settings, att.storage_key, final_key)
 
-        try:
+    try:
+        async with pool.acquire() as conn:
             async with conn.transaction():
                 post = await board_repo.create_post(
                     conn,
@@ -159,8 +161,8 @@ async def submit_broker_statement(
                     storage_key=final_key,
                     bucket=settings.r2_bucket,
                 )
-        except Exception:
-            # DB 실패 시 정식 위치 객체는 lifecycle 청소 대상이 아니므로 보상 삭제.
-            await run_in_threadpool(r2.delete_object, settings, final_key)
-            raise
+    except Exception:
+        # DB 실패 시 정식 위치 객체는 lifecycle 청소 대상이 아니므로 보상 삭제.
+        await run_in_threadpool(r2.delete_object, settings, final_key)
+        raise
     return {"post_id": post["id"], "attachment": attachment}

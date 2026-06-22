@@ -19,6 +19,8 @@ env/IMDS 를 네트워크로 뒤져 hang 할 수 있다.
 """
 from __future__ import annotations
 
+from functools import lru_cache
+from urllib.parse import quote
 from uuid import uuid4
 
 import boto3
@@ -41,16 +43,33 @@ def _ensure_enabled(settings: Settings) -> None:
         raise APIError(ERR_R2_DISABLED, 503)
 
 
+@lru_cache(maxsize=4)
+def _build_client(
+    endpoint_url: str, region: str, access_key_id: str, secret_access_key: str
+):
+    """자격증명 조합당 boto3 S3 client 1회 생성(재사용). client 는 thread-safe.
+
+    설정은 lru_cache get_settings 싱글톤에서 오므로 자격증명 튜플로 캐시한다 —
+    매 요청마다 service 모델 로딩 비용을 반복하지 않는다.
+    """
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint_url,
+        region_name=region,
+        aws_access_key_id=access_key_id,
+        aws_secret_access_key=secret_access_key,
+        config=Config(signature_version="s3v4"),
+    )
+
+
 def make_client(settings: Settings):
     """R2 용 boto3 S3 client. 자격증명·endpoint 를 명시 전달하고 SigV4 를 고정한다."""
     _ensure_enabled(settings)
-    return boto3.client(
-        "s3",
-        endpoint_url=settings.r2_endpoint_url,
-        region_name=settings.r2_region,
-        aws_access_key_id=settings.r2_access_key_id,
-        aws_secret_access_key=settings.r2_secret_access_key,
-        config=Config(signature_version="s3v4"),
+    return _build_client(
+        settings.r2_endpoint_url,
+        settings.r2_region,
+        settings.r2_access_key_id,
+        settings.r2_secret_access_key,
     )
 
 
@@ -120,16 +139,24 @@ def generate_put_url(settings: Settings, storage_key: str, content_type: str) ->
     )
 
 
-def generate_get_url(settings: Settings, storage_key: str, *, filename: str) -> str:
+def generate_get_url(
+    settings: Settings, storage_key: str, *, filename: str, bucket: str | None = None
+) -> str:
     """presigned GET URL(어드민 다운로드). ResponseContentDisposition 으로 원본
-    파일명 첨부 다운로드를 강제한다."""
+    파일명 첨부 다운로드를 강제한다.
+
+    filename 은 사용자 제어(파일피커) — 한글·따옴표가 들어가도 안전하도록 RFC 5987
+    `filename*=UTF-8''<percent-encoded>` 로 인코딩한다(raw 삽입 시 헤더 깨짐/파일명 garble).
+    bucket 은 행별 저장값을 우선 사용(버킷 마이그레이션 후에도 옛 객체 다운로드 유지),
+    없으면 현재 설정 버킷.
+    """
     client = make_client(settings)
     return client.generate_presigned_url(
         "get_object",
         Params={
-            "Bucket": settings.r2_bucket,
+            "Bucket": bucket or settings.r2_bucket,
             "Key": storage_key,
-            "ResponseContentDisposition": f'attachment; filename="{filename}"',
+            "ResponseContentDisposition": f"attachment; filename*=UTF-8''{quote(filename)}",
         },
         ExpiresIn=settings.r2_presign_expiry,
     )
