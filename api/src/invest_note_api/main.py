@@ -13,7 +13,7 @@ from invest_note_api.external.http_client import create_http_client
 from invest_note_api.external.kis import configure_kis
 from invest_note_api.external.fx import FxCacheState, validate_fx_providers
 from invest_note_api.external.quotes import QuoteCacheState, validate_quote_providers
-from invest_note_api.routers import accounts, admin, admin_board, app_config, auth, health, live_update, me
+from invest_note_api.routers import accounts, admin, admin_board, app_config, auth, board, health, live_update, me
 from invest_note_api.routers import trades, portfolio, stocks, analysis, assets
 from invest_note_api.routers.trades import TradeStagingState
 from invest_note_api.services.daily_price_seed import validate_daily_price_providers
@@ -74,7 +74,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.add_exception_handler(LockNotAvailableError, lock_not_available_handler)
 
     # 앱(인증) 라우터 — 정식 경로는 /v1/*, 기존 경로는 하위호환 숨김 alias.
-    app_routers = (me.router, accounts.router, trades.router, portfolio.router, stocks.router, analysis.router, assets.router)
+    app_routers = (me.router, accounts.router, trades.router, portfolio.router, stocks.router, analysis.router, assets.router, board.router)
 
     application.include_router(health.router)
     # OAuth 중개 라우터(/auth/login·callback·token·refresh) — 모두 무인증(로그인 진입점).

@@ -4,6 +4,37 @@
 
 ---
 
+## 2026-06-22 | 거래내역서 제보 — 연기 두 건 개봉(첨부 스토리지=R2 + app-side board write)
+
+- **맥락:** 일괄등록(거래내역서 업로드)이 삼성·토스만 지원하고, 새 증권사 파서·해외(USD) 거래 파싱을 만들려면 실제 거래내역서 샘플이 필요하다. 사용자에게서 샘플을 수집해 어드민 게시판(`board_posts`, `board_type='broker_statement'`)에 저장·검토한다. 이 작업이 [[2026-06-19 멀티 게시판 구조]]가 의도적으로 연기했던 두 결정(③ 첨부 스토리지 백엔드, app-side board write 경로)을 연다.
+- **결정 ① 첨부 스토리지 = Cloudflare R2 (S3 호환, presigned PUT 직접 업로드, BE 무연결 SigV4).**
+  - R2 는 이미 OTA 매니페스트 호스팅에 사용 중([[project_ota_required_native]] 인접) — 신규 인프라가 아니라 **자격증명(`R2_*`)만 추가**. Supabase Storage 반사 선택 금지(탈-Supabase 방향, 2026-06-19 연기 결정 ③의 제약 그대로 준수).
+  - 업로드는 **presigned PUT 직접 업로드** — 앱이 R2 에 직접 PUT, BE 는 파일 바이트를 경유하지 않는다(boto3 SigV4 서명은 로컬 계산, 네트워크 I/O 없음). 다운로드(어드민)는 presigned GET URL 을 JSON 으로 반환.
+  - **2단계 staging(2026-06-22 갱신):** presign 은 `temp/{user_id}/{uuid}.{ext}` 로만 서명하고, 앱은 temp 에 PUT 한다. submit(등록) 시 BE 가 `temp/...` → `broker_statement/...` 로 **서버측 copy(promote)** 한다. 단일 버킷(`invest-note-uploads`) 안에서 prefix 만 이동. ⚠️ copy/delete 는 presign 과 달리 **실제 R2 왕복(동기)** 이라 async 핸들러에서 `run_in_threadpool` 로 감싼다.
+  - 미설정(R2 자격증명 빈 값) 환경은 **dormant** — presign 이 503(`live_update_manifest_url` 의 dormant 패턴과 동일). 기존 동작 무회귀.
+- **결정 ② app-side board write 경로 도입(user-scoped write only, read history 미도입).**
+  - 2026-06-19 연기 결정은 board 전부 `require_admin` 이었다. 이번엔 **앱 사용자가 `get_current_user` 로 board_posts/board_attachments 에 write 만** 할 수 있는 전용 라우터(`routers/board.py`, prefix `/board` → `/v1/board/*`)를 연다. read(본인 글 목록·상세)는 이번 스펙 범위 밖(후속).
+  - 전용 스키마(`schemas/broker_statement.py`, `extra='forbid'`) — `BoardPostCreate` 재사용 금지. **board_type 필드를 받지 않는다.**
+- **핵심 보안 불변식(서버 강제, 4개):**
+  1. **`board_type='broker_statement'` 서버 하드코딩** — body 로 받지 않음(전용 스키마에 필드 없음).
+  2. **`storage_key`/`bucket` 서버 생성** — presign 은 `temp/{user_id}/{uuid}.{ext}` 로만 서명. submit 은 `storage_key` 가 `temp/{user.id}/` 로 시작하지 않으면 403(임의 객체 덮어쓰기·타인 prefix 차단), 통과 시 `broker_statement/{user_id}/...` 로 promote 해 등록(클라이언트가 정식 위치를 지정 불가).
+  3. **`user_id` 는 토큰에서**(`get_current_user`), body 무시.
+  4. **content_type/size 는 register(submit) 시점 재검증** — PUT presign 은 실제 업로드 크기를 강제하지 못하므로 submit 에서 화이트리스트·20MB 재검증. consent False 는 422.
+- **트레이드오프:**
+  - **PUT presign size 미강제 → register 재검증으로 보완.** submit 재검증은 클라이언트가 *주장하는* size/content_type 의 화이트리스트 체크일 뿐(R2 HEAD 조회로 실측 크기 확인은 범위 밖) — spec 이 수용한 트레이드오프.
+  - **orphan 객체**(presign 후 submit 안 한 temp PUT) → R2 lifecycle 이 `temp/` prefix 를 N일(예: 1일) 후 자동 삭제. 등록된 파일만 `broker_statement/` 로 promote 되므로 정식 위치엔 orphan 이 안 남는다. DB insert 실패 시 promote 한 정식 객체는 lifecycle 대상이 아니므로 **보상 삭제**(best-effort).
+  - **presign content_type ≠ PUT 의 Content-Type 이면 SigV4 서명 실패** — 양쪽 동일 강제(presign 응답이 못박은 content_type 으로만 PUT). FE 는 raw `fetch` PUT(Bearer 금지, `Content-Type=file.type`).
+  - **PII = 동의 체크박스만**(강한 마스킹/redaction 없음) — 수집·이용 동의 미체크 시 제출 disabled(FE)+422(BE).
+  - **RLS 미사용**([[project_portable_rls]] RLS 전면 제거됨) → user_id 격리는 앱 레이어(토큰 user_id + storage_key prefix 검증). plain `pool.acquire()` + create_post 에 명시적 user_id 전달(admin_board.py 와 동일 패턴).
+- **운영(repo 밖, 작동 필수):**
+  1. Coolify env(SSOT, [[project_env_production_drift]]): `R2_ENDPOINT_URL`/`R2_BUCKET`/`R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY`. 미설정 시 dormant(503).
+  2. **R2 버킷 CORS**(앱 PUT 이 browser fetch): `AllowedOrigins`=`http://127.0.0.1:3100`,`http://localhost:3100`,`capacitor://localhost`(iOS),`https://localhost`(Android) / `AllowedMethods`=`PUT` / `AllowedHeaders`=`content-type`. 없으면 PUT preflight 차단. ⚠️ dev 는 127.0.0.1 바인딩 — 브라우저는 127.0.0.1≠localhost 라 둘 다 필요.
+  3. **R2 lifecycle: prefix `temp/` N일(예: 1일) 후 자동 삭제** — 미등록 업로드 청소(대시보드 설정, repo 밖). 버킷명은 `invest-note-uploads`.
+- **마이그레이션 불필요:** `board_attachments` 스키마가 R2 에 그대로 충분(storage_key/bucket/content_type/size_bytes/original_name/user_id), `board_posts` CHECK 에 `broker_statement` 이미 포함(0003_board_tables).
+- **재평가 트리거:** 제보량이 많아져 어드민 검토가 병목이면 status 워크플로(자유텍스트 status 유지 중)·자동 파서 후보 추출 검토. board 가 user-scoped read(본인 제보 이력) 로 확장되면 `routers/board.py` 에 user_id 필터 GET 추가.
+
+---
+
 ## 2026-06-20 | 탈-Supabase Auth Phase 2b-4 — BE flow 서버 플래그(cutover flip 메커니즘)
 
 - **맥락:** 2b-3 cutover runbook 4단계 "서버 플래그 flip ON" 이 의존하는 실제 메커니즘. 2b-2 까지 네이티브는 `isNativePlatform()` 만으로 **무조건 BE flow** 라 서버에서 끌 방법이 없었다. B안(심사-cutover 디커플)은 secure-storage 포함 shell 을 BE flow OFF 로 먼저 일반 출시해 두고, 실제 cutover 를 서버 플래그 flip(OFF→ON)으로 수행한다.

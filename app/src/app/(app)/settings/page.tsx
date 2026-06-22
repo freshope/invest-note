@@ -7,6 +7,7 @@ import { useAuth } from "@/components/providers/AuthProvider";
 import { AccountList } from "@/components/settings/AccountList";
 import { UserInfoSection } from "@/components/settings/UserInfoSection";
 import { DeleteAccountSection } from "@/components/settings/DeleteAccountSection";
+import { BrokerStatementSection } from "@/components/settings/BrokerStatementSection";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { useAppVersion } from "@/hooks/useAppVersion";
@@ -54,6 +55,11 @@ export default function SettingsPage() {
         <section className="space-y-3">
           <h2 className="text-[13px] font-semibold text-muted-foreground px-1">내 정보</h2>
           <UserInfoSection email={user?.email ?? ""} />
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-[13px] font-semibold text-muted-foreground px-1">고객 지원</h2>
+          <BrokerStatementSection />
         </section>
 
         <section className="space-y-3">
