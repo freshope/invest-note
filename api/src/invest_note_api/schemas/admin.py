@@ -27,6 +27,7 @@ class AdminStats(BaseModel):
     trades: int
     stocks: int
     nps_unmatched: int
+    broker_statements: int
 
 
 class UserGrowthPoint(BaseModel):

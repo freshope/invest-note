@@ -80,7 +80,7 @@ async def list_rows(
 
 
 async def get_stats(conn: Any) -> dict[str, int]:
-    """대시보드 카운트 — 단일 쿼리로 5개 테이블 건수. admin pool 이라 cross-user 전수."""
+    """대시보드 카운트 — 단일 쿼리로 테이블 건수. admin pool 이라 cross-user 전수."""
     row = await conn.fetchrow(
         """
         select
@@ -88,10 +88,14 @@ async def get_stats(conn: Any) -> dict[str, int]:
             (select count(*) from accounts) as accounts,
             (select count(*) from trades) as trades,
             (select count(*) from stocks) as stocks,
-            (select count(*) from nps_unmatched) as nps_unmatched
+            (select count(*) from nps_unmatched) as nps_unmatched,
+            (select count(*) from board_posts where board_type = 'broker_statement') as broker_statements
         """
     )
-    return {k: int(row[k]) for k in ("users", "accounts", "trades", "stocks", "nps_unmatched")}
+    return {
+        k: int(row[k])
+        for k in ("users", "accounts", "trades", "stocks", "nps_unmatched", "broker_statements")
+    }
 
 
 async def get_user_growth(conn: Any) -> list[dict[str, Any]]:

@@ -67,6 +67,7 @@ export interface AdminStats {
   trades: number;
   stocks: number;
   nps_unmatched: number;
+  broker_statements: number;
 }
 
 /** 일별 누적 가입자 수 한 점. date 는 KST 가입일(YYYY-MM-DD), BE UserGrowthPoint 와 정합. */

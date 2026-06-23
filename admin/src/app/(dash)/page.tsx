@@ -16,6 +16,7 @@ const CARDS: StatCard[] = [
   { key: "trades", label: "거래" },
   { key: "stocks", label: "종목" },
   { key: "nps_unmatched", label: "NPS 매칭 큐" },
+  { key: "broker_statements", label: "거래내역서 제출" },
 ];
 
 export default function DashboardPage() {
@@ -31,7 +32,7 @@ export default function DashboardPage() {
       {error ? (
         <ApiErrorState error={error} />
       ) : (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
           {CARDS.map((card) => (
             <div
               key={card.key}
