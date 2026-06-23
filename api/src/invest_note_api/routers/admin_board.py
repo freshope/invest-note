@@ -13,16 +13,19 @@ from fastapi import APIRouter, Depends, Query, Response
 
 from invest_note_api.auth.admin import require_admin
 from invest_note_api.auth.jwt import AuthenticatedUser
+from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import get_pool
 from invest_note_api.db_ops import board_repo
 from invest_note_api.errors import APIError
 from invest_note_api.schemas.admin import AdminListResponse
 from invest_note_api.schemas.board import BoardCommentCreate, BoardPostCreate, BoardPostUpdate
+from invest_note_api.storage import r2
 
 router = APIRouter(prefix="/admin", tags=["admin-board"])
 
 ERR_POST_NOT_FOUND = "해당 게시글을 찾을 수 없습니다."
 ERR_COMMENT_NOT_FOUND = "해당 댓글을 찾을 수 없습니다."
+ERR_ATTACHMENT_NOT_FOUND = "해당 첨부를 찾을 수 없습니다."
 
 
 @router.get("/boards", response_model=AdminListResponse)
@@ -39,6 +42,31 @@ async def list_boards(
             conn, board_type=board_type, page=page, page_size=page_size, q=q
         )
     return AdminListResponse(items=rows, total=total)
+
+
+@router.get("/boards/attachments/{attachment_id}/download")
+async def download_attachment(
+    attachment_id: UUID,
+    _: AuthenticatedUser = Depends(require_admin),
+    settings: Settings = Depends(get_settings),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict:
+    """첨부 다운로드 — presigned GET URL JSON 반환(SPA 가 새 탭으로 연다). R2 미설정 시 503.
+
+    ⚠️ /boards/{post_id} 보다 **먼저** 정의해야 한다 — 그렇지 않으면 'attachments' 가
+    post_id(UUID) 로 파싱 시도되어 422 가 난다.
+    """
+    async with pool.acquire() as conn:
+        attachment = await board_repo.get_attachment(conn, attachment_id)
+    if attachment is None or not attachment.get("storage_key"):
+        raise APIError(ERR_ATTACHMENT_NOT_FOUND, 404)
+    download_url = r2.generate_get_url(
+        settings,
+        attachment["storage_key"],
+        filename=attachment["original_name"],
+        bucket=attachment.get("bucket"),
+    )
+    return {"download_url": download_url}
 
 
 @router.get("/boards/{post_id}")

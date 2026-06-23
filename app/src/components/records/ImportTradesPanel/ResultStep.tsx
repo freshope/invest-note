@@ -8,9 +8,11 @@ import type { ImportCommitResponse } from "@/lib/api-client";
 interface Props {
   result: ImportCommitResponse;
   onClose: () => void;
+  /** 해외 거래내역서 제보 진입(선택 계좌 미상 시 undefined). */
+  onReportOverseas?: () => void;
 }
 
-export function ResultStep({ result, onClose }: Props) {
+export function ResultStep({ result, onClose, onReportOverseas }: Props) {
   // 사용자가 preview 에서 제외 항목을 인지하고 "제외하고 등록" 을 클릭한 결과이므로
   // 등록된 거래가 1건이라도 있으면 성공으로 표시하고, 제외 내역은 안내로 노출한다.
   // 진짜 실패는 등록/갱신이 0건인데 errors 만 있는 경우.
@@ -53,9 +55,21 @@ export function ResultStep({ result, onClose }: Props) {
       </div>
 
       <FullScreenPanelFooter>
-        <Button size="xl" className="w-full" onClick={onClose}>
-          닫기
-        </Button>
+        <div className="flex flex-col gap-2">
+          {onReportOverseas && (
+            <Button
+              size="xl"
+              variant="outline"
+              className="w-full"
+              onClick={onReportOverseas}
+            >
+              해외 거래내역서 제보
+            </Button>
+          )}
+          <Button size="xl" className="w-full" onClick={onClose}>
+            닫기
+          </Button>
+        </div>
       </FullScreenPanelFooter>
     </div>
   );

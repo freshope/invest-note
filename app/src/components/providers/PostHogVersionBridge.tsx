@@ -11,15 +11,16 @@ import { registerAppVersion } from "@/lib/analytics";
  * - native_version / native_build: 스토어 라이브 바이너리 기준 점유율
  */
 export function PostHogVersionBridge() {
-  const { version, nativeVersion, build } = useAppVersion();
+  const { version, nativeVersion, build, ready } = useAppVersion();
 
   useEffect(() => {
     registerAppVersion({
       app_version: version,
       native_version: nativeVersion,
       native_build: build,
+      ready,
     });
-  }, [version, nativeVersion, build]);
+  }, [version, nativeVersion, build, ready]);
 
   return null;
 }

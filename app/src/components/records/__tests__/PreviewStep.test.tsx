@@ -44,6 +44,7 @@ describe("PreviewStep", () => {
         preview={makePreview()}
         account={makeAccount()}
         onCommit={vi.fn()}
+        onReportOverseas={vi.fn()}
         isLoading={false}
       />,
     );
@@ -65,6 +66,7 @@ describe("PreviewStep", () => {
         })}
         account={makeAccount()}
         onCommit={vi.fn()}
+        onReportOverseas={vi.fn()}
         isLoading={false}
       />,
     );
@@ -87,6 +89,7 @@ describe("PreviewStep", () => {
         })}
         account={makeAccount()}
         onCommit={vi.fn()}
+        onReportOverseas={vi.fn()}
         isLoading={false}
       />,
     );
@@ -108,6 +111,7 @@ describe("PreviewStep", () => {
         })}
         account={makeAccount()}
         onCommit={vi.fn()}
+        onReportOverseas={vi.fn()}
         isLoading={false}
       />,
     );

@@ -13,9 +13,17 @@ interface Props {
   selectedAccountId: string;
   onSelect: (id: string) => void;
   onNext: () => void;
+  /** 미지원 계좌 행에서 거래내역서 제보 진입. */
+  onReportUnsupported: (account: Account) => void;
 }
 
-export function AccountStep({ accounts, selectedAccountId, onSelect, onNext }: Props) {
+export function AccountStep({
+  accounts,
+  selectedAccountId,
+  onSelect,
+  onNext,
+  onReportUnsupported,
+}: Props) {
   const isEmpty = accounts.length === 0;
 
   return (
@@ -41,17 +49,40 @@ export function AccountStep({ accounts, selectedAccountId, onSelect, onNext }: P
               {accounts.map((a) => {
                 const supported = findBrokerKeyByAccountBroker(a.broker) !== null;
                 const selected = a.id === selectedAccountId;
+                if (!supported) {
+                  return (
+                    <div
+                      key={a.id}
+                      className="rounded-lg border bg-muted/30 p-3"
+                    >
+                      <div className="flex items-center gap-3 opacity-60">
+                        <BrokerLogo broker={a.broker} size={36} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{a.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {a.broker ?? "증권사 미설정"} · 일괄 등록 미지원
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onReportUnsupported(a)}
+                        className="mt-2 w-full rounded-md border border-primary/40 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/5"
+                      >
+                        거래내역서 제보하기
+                      </button>
+                    </div>
+                  );
+                }
                 return (
                   <button
                     key={a.id}
                     type="button"
-                    disabled={!supported}
-                    onClick={() => supported && onSelect(a.id)}
+                    onClick={() => onSelect(a.id)}
                     className={cn(
                       "flex items-center gap-3 rounded-lg border p-3 text-left transition-colors",
-                      !supported && "cursor-not-allowed bg-muted/30 opacity-60",
-                      supported && selected && "border-primary bg-primary/5",
-                      supported && !selected && "hover:bg-accent"
+                      selected && "border-primary bg-primary/5",
+                      !selected && "hover:bg-accent"
                     )}
                   >
                     <BrokerLogo broker={a.broker} size={36} />
@@ -59,7 +90,6 @@ export function AccountStep({ accounts, selectedAccountId, onSelect, onNext }: P
                       <p className="truncate text-sm font-medium">{a.name}</p>
                       <p className="truncate text-xs text-muted-foreground">
                         {a.broker ?? "증권사 미설정"}
-                        {!supported && " · 일괄 등록 미지원"}
                       </p>
                     </div>
                   </button>

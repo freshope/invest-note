@@ -91,7 +91,12 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
         await accountsApi.create(input);
         capture("account_added", { source: "manual" }); // 계좌명/예수금 등 미포함
       }
-      await queryClient.invalidateQueries({ queryKey: queryKeys.portfolio });
+      // portfolio prefix 는 accounts(["portfolio","accounts"]) 까지 무효화하지만,
+      // records/일괄등록 wizard 는 trades(["trades"]) 응답에 번들된 계좌를 쓰므로 별도 무효화 필요.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.portfolio }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.trades }),
+      ]);
       onOpenChange(false);
     } catch (err) {
       setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });

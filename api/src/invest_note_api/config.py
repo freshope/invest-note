@@ -44,6 +44,17 @@ class Settings(BaseSettings):
     # 빈 값이면 /live-update/manifest 가 fail-open(no-update) 한다(앱 부팅 차단 금지).
     live_update_manifest_url: str = ""
 
+    # 거래내역서 제보 첨부 스토리지 = Cloudflare R2(S3 호환). presigned PUT 직접 업로드.
+    # 4개 자격증명이 모두 있어야만 활성(r2_enabled). 미설정이면 presign/submit 이 503
+    # (dormant) — live_update_manifest_url 과 동일한 빈-값-비활성 패턴. region 은 R2 가 'auto'.
+    r2_endpoint_url: str = ""
+    r2_bucket: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_region: str = "auto"
+    # presigned URL 만료(초). PUT/GET 공통 기본 15분.
+    r2_presign_expiry: int = 900
+
     # 종목 마스터 적재(scripts/seed_stocks.py)용 공공데이터포털 인증키. 런타임 미사용 — batch 전용.
     # 빈 값이면 data.go.kr coverage pass 를 건너뛴다(다른 소스만 적재).
     data_go_kr_api_key: str = ""
@@ -213,6 +224,16 @@ class Settings(BaseSettings):
                 "(빈 값이면 per-issuer aud 격리가 Supabase 'authenticated' 로 격하됨, B7)"
             )
         return self
+
+    # R2 첨부 스토리지 활성 여부 — 4개 자격증명이 모두 있을 때만 활성(없으면 dormant→503).
+    @property
+    def r2_enabled(self) -> bool:
+        return bool(
+            self.r2_endpoint_url
+            and self.r2_bucket
+            and self.r2_access_key_id
+            and self.r2_secret_access_key
+        )
 
     @property
     def jwks_uri(self) -> str:

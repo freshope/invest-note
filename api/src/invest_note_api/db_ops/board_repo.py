@@ -198,3 +198,49 @@ async def delete_comment(conn: Any, comment_id: Any) -> bool:
     """댓글 삭제. 없는 행 False(라우터가 404)."""
     result = await conn.execute("delete from board_comments where id = $1", comment_id)
     return result.endswith(" 1")
+
+
+async def create_attachment(
+    conn: Any,
+    *,
+    post_id: Any,
+    user_id: Any,
+    original_name: str,
+    content_type: str | None,
+    size_bytes: int | None,
+    storage_key: str | None,
+    bucket: str | None,
+) -> dict:
+    """첨부 메타 insert(파일 바이트는 R2). storage_key/bucket 은 라우터가 서버 생성한 값."""
+    row = await conn.fetchrow(
+        "insert into board_attachments "
+        "(post_id, user_id, original_name, content_type, size_bytes, storage_key, bucket) "
+        "values ($1, $2, $3, $4, $5, $6, $7) returning *",
+        post_id,
+        user_id,
+        original_name,
+        content_type,
+        size_bytes,
+        storage_key,
+        bucket,
+    )
+    return _attachment_row_to_dict(row)
+
+
+async def get_attachment(conn: Any, attachment_id: Any) -> dict | None:
+    """첨부 단건 조회(어드민 다운로드용). 없으면 None(라우터가 404)."""
+    row = await conn.fetchrow(
+        "select * from board_attachments where id = $1", attachment_id
+    )
+    return _attachment_row_to_dict(row) if row else None
+
+
+async def count_recent_submissions(conn: Any, user_id: Any, since: Any) -> int:
+    """스팸 가드 — since(timestamptz) 이후 user 가 작성한 broker_statement 글 수."""
+    total = await conn.fetchval(
+        "select count(*) from board_posts "
+        "where user_id = $1 and board_type = 'broker_statement' and created_at >= $2",
+        user_id,
+        since,
+    )
+    return int(total or 0)
