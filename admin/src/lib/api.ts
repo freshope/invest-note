@@ -108,10 +108,16 @@ interface BaseRow {
   [key: string]: unknown;
 }
 
-// ⚠️ users 에 email 컬럼 없음(신원은 Supabase Auth 소유). row = { id, created_at }.
+// users(id, created_at) LEFT JOIN user_profiles — 프로필 컬럼은 행이 없으면 null.
 export interface UserRow extends BaseRow {
   id: string;
   created_at: string;
+  email: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+  email_verified: boolean | null;
+  providers: string[] | null;
+  last_sign_in: string | null;
 }
 
 export interface AccountRow extends BaseRow {

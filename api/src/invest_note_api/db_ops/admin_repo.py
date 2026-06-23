@@ -10,9 +10,19 @@ from datetime import date
 from typing import Any
 
 # 리스트 가능한 테이블 → (실제 테이블명, q 부분일치 검색 컬럼들, 기본 정렬절).
-# q 컬럼은 row shape 기준으로 확정: users 는 email 컬럼이 없어 id 텍스트로 매칭한다.
+# 선택 키: from(기본 table), select(기본 *) — JOIN 으로 다른 테이블 컬럼을 합쳐 노출할 때 사용.
+# users 는 신원/프로필이 1:1 user_profiles 로 격리돼 있어 LEFT JOIN 으로 합쳐 노출한다.
 _LIST_TABLES: dict[str, dict[str, Any]] = {
-    "users": {"table": "users", "search": ["id::text"], "order": "created_at desc"},
+    "users": {
+        "table": "users",
+        "from": "users u left join user_profiles p on p.user_id = u.id",
+        "select": (
+            "u.id, u.created_at, p.email, p.display_name, p.avatar_url, "
+            "p.email_verified, p.providers, p.last_sign_in"
+        ),
+        "search": ["u.id::text", "p.email", "p.display_name"],
+        "order": "u.created_at desc",
+    },
     "accounts": {"table": "accounts", "search": ["name"], "order": "created_at desc"},
     "trades": {
         "table": "trades",
@@ -56,6 +66,8 @@ async def list_rows(
     """
     meta = _LIST_TABLES[table_key]  # KeyError 면 라우터가 사전에 검증(404)
     table = meta["table"]
+    from_clause = meta.get("from", table)  # JOIN 등 — 기본은 단일 테이블
+    select_cols = meta.get("select", "*")
     page = max(page, 1)
     page_size = max(1, min(page_size, MAX_PAGE_SIZE))
     offset = (page - 1) * page_size
@@ -68,11 +80,11 @@ async def list_rows(
         clauses = " or ".join(f"{col} ilike $1" for col in meta["search"])
         where = f"where {clauses}"
 
-    total = await conn.fetchval(f"select count(*) from {table} {where}", *args)
+    total = await conn.fetchval(f"select count(*) from {from_clause} {where}", *args)
 
     args.extend([page_size, offset])
     rows = await conn.fetch(
-        f"select * from {table} {where} order by {meta['order']} "
+        f"select {select_cols} from {from_clause} {where} order by {meta['order']} "
         f"limit ${len(args) - 1} offset ${len(args)}",
         *args,
     )
