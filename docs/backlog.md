@@ -78,7 +78,8 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] `BROKERS`(`lib/brokers.ts`) ↔ `BROKER_OPTIONS`(`ImportTradesPanel/brokers.ts`) 라벨 동기화 단위 테스트 — `findBrokerKeyByAccountBroker`가 라벨 정확 일치에 의존(예: "삼성증권"). 한쪽 표기가 변하면 매칭이 조용히 깨짐. 두 테이블 라벨 교집합을 단위 테스트로 강제
 - [ ] 일괄 등록 — 모든 계좌가 미지원 증권사일 때 별도 안내 — 계좌가 0개일 때(빈 상태)와 다른 메시지(예: "등록된 계좌의 증권사가 아직 일괄 등록을 지원하지 않습니다") 노출. 현재는 비활성 카드에 "일괄 등록 미지원" 라벨만 표시되고 전체 안내 메시지는 없음(`AccountStep.tsx`)
 - [ ] 머지 갱신 범위 확장 재검토 — 현재 머지는 `commission`/`tax`/`traded_at` 만 update, `market_type`/`country_code`/`exchange` 는 사용자 분류를 우선해 **보존**(`docs/decisions.md` 2026-05-18 참고). 다음 트리거 발생 시 재검토: ① 사용자가 거래내역서로 분류 자동 보정을 명시적으로 원함, ② 증권사 파서가 사용자 수동 분류보다 더 정확한 케이스가 다수 보고됨. 재검토 시 `update_trade_from_import` 화이트리스트와 `build_merge_patch` 비교 필드를 함께 확장
-- [ ] 다운로드 가이드 콘텐츠 검수 — `app/src/components/records/ImportTradesPanel/brokers.ts` 의 `downloadGuide` 는 AI 1차 초안(`TODO` 주석 표시). 삼성증권 mPOP/토스 앱과 실제 화면 대조 후 단계 텍스트·`helpUrl` 수정. 증권사 앱 UI 개편 시 깨질 수 있어 분기별 점검 또는 사용자 신고 트리거 시 갱신. 캡처 이미지 단계 안내가 더 효과적이라 판단되면 별도 spec 으로 보강
+- [ ] **KB증권 파서 — 매도 포함 샘플 확보 후 구현 (2026-06-25 보류)** — 신한·미래에셋과 함께 추가하려 했으나 제공된 KB 샘플(`거래내역서_KB증권_1.xlsx`)에 **매수 행만** 있어 매도(`주식장내매도`/`KOSDAQ매도`, 금액=`입금/입고/매도` 컬럼) 포맷을 회귀 검증할 수 없음. 추정 구현 금지 — 매도 거래 포함 KB 거래내역서가 들어오면 매수+매도 함께 구현(`broker_import/kb_xlsx.py` 신규 + PARSERS + FE `BROKER_OPTIONS` 에 `kb_xlsx`/"KB증권"). 시트 `Sheet0`, 헤더 `거래일|내용|종목명|수량|단가|입금/입고/매도|출금/출고/매수|예수금잔액(원)`, 종목코드 없음(종목명 매칭). `lib/brokers.ts` "KB증권"(계좌 마스터)은 이미 존재.
+- [ ] 다운로드 가이드 콘텐츠 검수 — `app/src/components/records/ImportTradesPanel/brokers.ts` 의 `downloadGuide` 는 AI 1차 초안(`TODO` 주석 표시). 삼성증권 mPOP/토스/신한 SOL증권/미래에셋 m.Stock 앱과 실제 화면 대조 후 단계 텍스트·`helpUrl` 수정. 증권사 앱 UI 개편 시 깨질 수 있어 분기별 점검 또는 사용자 신고 트리거 시 갱신. 캡처 이미지 단계 안내가 더 효과적이라 판단되면 별도 spec 으로 보강
 
 ## 거래내역서 일괄등록 고도화 — 해외주식(US/USD)
 
@@ -103,6 +104,9 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] **커밋 환율 가드 충족** — `import_commit` 이 비-KRW 거래에 `exchange_rate` 강제(`trades.py:866` 방어 가드). 파서가 추출한 환율을 staging→`insert_row` 까지 배선하고, `country_code` 하드코딩(KR, `trades.py:730`)을 해외 실국가로 해소.
 - [ ] **삼성증권 USD** — `samsung_xlsx.py:96` 동일 skip 존재. 동일 silent-loss 여부 검증 후 같은 안내 가드·본구현 적용. (삼성 USD 샘플 확보 후)
 - [ ] 업로드 파일 형식 ↔ 선택 증권사 일치 검증 — 파일명 자동감지(`detect_broker`/`match`)는 2026-06-12 제거(사용자가 계좌=증권사 직접 선택). 향후 필요 시 "토스 계좌인데 삼성 xlsx 업로드" 같은 불일치를 경고하는 검증으로 재설계.
+
+**Phase C 착수 가능성 검토 (2026-06-25):** **결론 — 가능·저위험. 신규 인프라 0, 파서+import 경로만.** 데이터/계산 토대는 직접입력 US 거래로 이미 운영 중(per-trade `exchange_rate`, `to_krw`, `currency_for_country`, walker FX 차원, 포트폴리오 KRW 합산, US 시세/seed/검색 — Phase A·B 완료). 부족한 건 import 경로뿐: ① 파서가 해외 행을 `currency=USD`+`exchange_rate=거래내역서 환율`+`country=US` 로 추출(현재 skip), ② `import_commit` 의 비-KRW 방어 가드(`trades.py:902`)를 "파서 환율 사용·누락 시만 에러"로 완화 + `country_code` KR 하드코딩 해소, ③ 종목 식별(위 ISIN/티커 병목). 거래내역서 환율은 **체결환율(settled)** 이라 직접입력 당일 잠정환율 이슈 없음.
+- **증권사별 준비도:** **토스 = 즉시 착수 후보**(해외포함 샘플 보유 + 행 구조 위 문서화 + 환율 컬럼). **신한**(`단가/환율`·`수량/외화`)·**미래에셋**(`환율`·`통화코드`·`외화거래금액`)·**삼성**(`외화*` 컬럼)은 포맷에 환율 보유하나 **실제 해외 행 샘플 없음** → 해외 거래 포함 샘플 확보 후 구현·fixture. 권장 순서: 토스부터.
 
 ## 자산 추이 페이지 — 운영 잔여 (페이지 자체는 2026-06-04 출시)
 
