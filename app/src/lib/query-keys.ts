@@ -34,6 +34,10 @@ export const queryKeys = {
   analysisDashboard: (period: Period) =>
     ["analysis", "dashboard", period] as const,
 
+  // 공지사항(게시판 notice) — 목록/상세. 읽기 전용이라 긴 staleTime.
+  notices: ["notices"] as const,
+  notice: (id: string) => ["notice", id] as const,
+
   // 거래 변경 시 assets prefix invalidate 한 번으로 모든 파라미터 조합을 무효화.
   assets: ["assets"] as const,
   assetHistory: (accountId: string | null, ticker: string | null) =>

@@ -77,6 +77,11 @@ const ROUTES = {
   board: {
     presign: "/board/broker-statement/presign",
     submit: "/board/broker-statement",
+    notices: "/board/notices",
+    noticeById: (id: string) => `/board/notices/${id}`,
+    feedback: "/board/feedback",
+    bugReport: "/board/bug-report",
+    bugReportPresign: "/board/bug-report/presign",
   },
 } as const;
 
@@ -595,4 +600,77 @@ export const brokerStatementApi = {
       throw new ApiError(`업로드에 실패했습니다 (${res.status})`, res.status);
     }
   },
+};
+
+// ============================================================
+// Board — 사용자 게시판 (공지 읽기 / 의견·오류신고 쓰기)
+// ⚠️ broker-statement 와 동일하게 wire 포맷이 전부 snake_case 다(camel → 422).
+// 응답 shape source of truth: _workspace/02_be_changes.md (BE A4).
+// ============================================================
+
+/** 공지 목록 항목. BE 는 raw row(select *) 를 싣지만 FE 는 필요한 키만 구조적으로 선언한다. */
+export interface NoticeListItem {
+  id: string;
+  title: string;
+  created_at: string;
+  is_pinned: boolean;
+}
+
+export interface NoticeListResponse {
+  items: NoticeListItem[];
+  total: number;
+  page: number;
+}
+
+/** 공지 상세 — BE 화이트리스트(6개 키)와 1:1. comments/attachments/user_id 금지. */
+export interface NoticeDetail {
+  id: string;
+  title: string;
+  body: string;
+  created_at: string;
+  is_pinned: boolean;
+  metadata: Record<string, unknown>;
+}
+
+/** 의견 보내기 — 텍스트 전용. board_type 미포함(서버 하드코딩). */
+export interface FeedbackInput {
+  body: string;
+  title?: string;
+}
+
+/** 오류 신고 — 텍스트 + 선택적 이미지 첨부(다중, 최대 5장). 첨부 메타는 broker-statement 와 동일 shape. */
+export interface BugReportInput {
+  body: string;
+  title?: string;
+  attachments?: (BrokerStatementAttachmentMeta & { storage_key: string })[];
+}
+
+export const boardApi = {
+  listNotices: (page = 1) =>
+    apiFetch<NoticeListResponse>(`${ROUTES.board.notices}?page=${page}`),
+
+  getNotice: (id: string) =>
+    apiFetch<NoticeDetail>(ROUTES.board.noticeById(id)),
+
+  submitFeedback: (body: FeedbackInput) =>
+    apiFetch<{ post_id: string }>(ROUTES.board.feedback, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  // 오류신고 첨부 presign — broker-statement presign 과 동일 응답 shape(이미지 화이트리스트).
+  presign: (body: BrokerStatementAttachmentMeta) =>
+    apiFetch<BrokerStatementPresignResponse>(ROUTES.board.bugReportPresign, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  submitBugReport: (body: BugReportInput) =>
+    apiFetch<{ post_id: string; attachments: unknown[] }>(ROUTES.board.bugReport, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  // R2 직접 업로드 — broker-statement 와 동일(Content-Type 정확 일치 필수).
+  uploadToR2: brokerStatementApi.uploadToR2,
 };

@@ -8,9 +8,14 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from invest_note_api.schemas.broker_statement import AttachmentRef
 
 BoardType = Literal["notice", "feedback", "bug_report", "broker_statement"]
+
+# 오류신고 스크린샷 첨부 최대 장수(장당 10MB 게이트는 라우터에서 재검증).
+MAX_BUG_REPORT_ATTACHMENTS = 5
 
 
 class BoardPostCreate(BaseModel):
@@ -53,3 +58,33 @@ class BoardCommentCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     body: str
+
+
+class FeedbackCreate(BaseModel):
+    """앱 의견 보내기 입력 — 텍스트 전용. board_type 미수신(서버 'feedback' 하드코딩).
+
+    title 미전송 시 라우터가 고정 prefix 로 합성(NOT NULL). extra='forbid' 로 board_type
+    주입 차단. wire 는 snake_case.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    body: str
+    title: str | None = None
+
+
+class BugReportCreate(BaseModel):
+    """앱 오류 신고 입력 — 텍스트 + 선택적 이미지 첨부(다중). board_type 미수신(서버 'bug_report').
+
+    attachments 는 broker_statement 의 AttachmentRef 를 재사용한다(presign 응답을 그대로
+    되받는 형태). 최대 MAX_BUG_REPORT_ATTACHMENTS 장(초과 시 422). 첨부 MIME/ext
+    화이트리스트(이미지)는 라우터가 장마다 재검증한다.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    body: str
+    title: str | None = None
+    attachments: list[AttachmentRef] = Field(
+        default_factory=list, max_length=MAX_BUG_REPORT_ATTACHMENTS
+    )

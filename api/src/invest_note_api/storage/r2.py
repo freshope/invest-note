@@ -33,6 +33,7 @@ from invest_note_api.errors import APIError
 # 업로드 스테이징 / 정식 보관 prefix. temp 는 lifecycle 청소 대상.
 TEMP_PREFIX = "temp"
 STATEMENT_PREFIX = "broker_statement"
+BUG_REPORT_PREFIX = "bug_report"
 
 ERR_R2_DISABLED = "첨부 스토리지가 설정되지 않았습니다."
 ERR_UPLOAD_MISSING = "업로드가 완료되지 않았습니다. 다시 시도해주세요."
@@ -81,16 +82,17 @@ def build_temp_key(user_id, ext: str) -> str:
     return f"{TEMP_PREFIX}/{user_id}/{uuid4()}.{ext}"
 
 
-def promote_key(temp_key: str) -> str:
-    """temp 스테이징 key → 정식 보관 key. `temp/{rest}` → `broker_statement/{rest}`.
+def promote_key(temp_key: str, dest_prefix: str = STATEMENT_PREFIX) -> str:
+    """temp 스테이징 key → 정식 보관 key. `temp/{rest}` → `{dest_prefix}/{rest}`.
 
-    user_id·uuid·ext 는 그대로 보존(추적성). 라우터가 이미 temp prefix 를 검증하지만
-    방어적으로 한 번 더 확인한다.
+    dest_prefix 기본값은 broker_statement(기존 호출 보존). bug_report 첨부는
+    BUG_REPORT_PREFIX 를 넘긴다. user_id·uuid·ext 는 그대로 보존(추적성). 라우터가
+    이미 temp prefix 를 검증하지만 방어적으로 한 번 더 확인한다.
     """
     prefix = f"{TEMP_PREFIX}/"
     if not temp_key.startswith(prefix):
         raise APIError(ERR_UPLOAD_MISSING, 400)
-    return f"{STATEMENT_PREFIX}/{temp_key[len(prefix):]}"
+    return f"{dest_prefix}/{temp_key[len(prefix):]}"
 
 
 def copy_object(settings: Settings, src_key: str, dst_key: str) -> None:
