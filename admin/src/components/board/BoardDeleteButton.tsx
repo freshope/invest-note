@@ -14,9 +14,9 @@ import {
   DialogClose,
 } from "@/components/base/Dialog";
 import { Button } from "@/components/base/Button";
-import { boardListKey } from "@/components/board/constants";
+import { boardListKey, boardTypeToSlug } from "@/components/board/constants";
 
-// 글 삭제(cascade). 삭제 후 목록 invalidate + /boards 이동.
+// 글 삭제(cascade). 삭제 후 목록 invalidate + 해당 게시판 목록 이동.
 export function BoardDeleteButton({
   postId,
   boardType,
@@ -35,7 +35,7 @@ export function BoardDeleteButton({
       queryClient.invalidateQueries({ queryKey: boardListKey(boardType) });
       queryClient.invalidateQueries({ queryKey: ["admin", "stats"] });
       setOpen(false);
-      router.push("/boards");
+      router.push(`/boards/${boardTypeToSlug(boardType)}`);
     },
     onError: (e) =>
       setErrorMsg(e instanceof ApiError ? e.message : "삭제에 실패했습니다."),
