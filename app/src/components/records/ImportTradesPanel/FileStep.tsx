@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { ChevronDownIcon, ChevronUpIcon, ExternalLinkIcon, UploadCloudIcon } from "lucide-react";
 import { Button } from "@/components/base/Button";
 import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
-import { isNativePlatform } from "@/lib/platform";
+import { openExternal } from "@/lib/external-link";
 import type { BrokerDownloadGuide } from "./brokers";
 
 interface Props {
@@ -14,15 +14,6 @@ interface Props {
   onFileSelect: (file: File) => void;
   onBack?: () => void;
   isLoading: boolean;
-}
-
-async function openExternal(url: string) {
-  if (isNativePlatform()) {
-    const { Browser } = await import("@capacitor/browser");
-    await Browser.open({ url, presentationStyle: "popover" });
-  } else {
-    window.open(url, "_blank", "noopener");
-  }
 }
 
 export function FileStep({ brokerName, accept, downloadGuide, onFileSelect, onBack, isLoading }: Props) {
