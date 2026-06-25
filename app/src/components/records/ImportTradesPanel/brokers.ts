@@ -8,7 +8,7 @@ export interface BrokerDownloadGuide {
 }
 
 export interface BrokerOption {
-  key: "samsung_xlsx" | "toss_pdf";
+  key: "samsung_xlsx" | "toss_pdf" | "shinhan_pdf" | "mirae_pdf";
   label: string;
   accept: string;
   downloadGuide: BrokerDownloadGuide;
@@ -45,6 +45,37 @@ export const BROKER_OPTIONS: readonly BrokerOption[] = [
         "저장된 PDF 를 이 화면에 업로드",
       ],
       helpUrl: "https://tossinvest.com",
+    },
+  },
+  {
+    key: "shinhan_pdf",
+    label: "신한투자증권",
+    accept: ".pdf",
+    downloadGuide: {
+      description: "거래내역서 (PDF)",
+      steps: [
+        "신한 SOL증권 앱 로그인",
+        "메뉴 → 거래내역 → 기간별 거래내역",
+        "조회 기간 선택 후 PDF로 내보내기",
+        "저장된 PDF 를 이 화면에 업로드",
+      ],
+      helpUrl: "https://www.shinhansec.com",
+    },
+  },
+  {
+    key: "mirae_pdf",
+    label: "미래에셋증권",
+    accept: ".pdf",
+    downloadGuide: {
+      description: "거래내역서 (PDF)",
+      steps: [
+        "미래에셋 m.Stock 앱 로그인",
+        "메뉴 → 거래내역 → 기간별 거래내역",
+        "조회 기간 선택 후 PDF로 출력",
+        "출력 시 '암호 없는 버전으로 출력' 선택 (암호가 걸린 PDF 는 업로드 불가)",
+        "저장된 PDF 를 이 화면에 업로드",
+      ],
+      helpUrl: "https://securities.miraeasset.com",
     },
   },
 ] as const;
