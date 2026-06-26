@@ -60,13 +60,15 @@ def _redirect_uri(settings: Settings) -> str:
     return f"{settings.be_oauth_redirect_base}/auth/callback"
 
 
-def _deeplink_with_code(scheme: str, code: str) -> str:
-    """딥링크에 일회용 code query 를 안전하게 부착(F12).
+def _redirect_with_code(target: str, code: str) -> str:
+    """리다이렉트 대상(앱 딥링크 scheme 또는 어드민 웹 callback URL)에 일회용 code query 를
+    안전하게 부착(F12). 양쪽이 동형이라 단일 헬퍼로 공유한다(B4 — code 만, 토큰 미노출).
 
     query 는 fragment(#) **앞**에 와야 한다(뒤에 붙으면 앱 파서가 못 읽는다). 기존 query 가 있으면
-    '&', 없으면 '?'. 운영 env 오설정(scheme 에 #fragment 포함)에도 로그인 실패하지 않게 한다.
+    '&', 없으면 '?'. 운영 env 오설정(target 에 #fragment 포함)에도 로그인 실패하지 않게 한다.
+    어드민 web 은 클라가 URL 미전송·고정 env(target)만 매핑 → open redirect 차단.
     """
-    base, sep, fragment = scheme.partition("#")
+    base, sep, fragment = target.partition("#")
     q = "&" if "?" in base else "?"
     qs = urlencode({"code": code})
     return f"{base}{q}{qs}" + (f"#{fragment}" if sep else "")
@@ -77,17 +79,23 @@ async def login(
     provider: str,
     code_challenge: str,
     code_challenge_method: str = "S256",
+    client: str = "native",
     settings: Settings = Depends(get_settings),
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> RedirectResponse:
     """IdP authorize 리다이렉트. state+IdP verifier+앱 PKCE challenge 를 transient 저장(B11/B12).
 
     code_challenge = 앱↔BE PKCE(Layer2, B12) — 앱이 생성해 보낸다(2b-1 필수). S256 만 허용.
+    client = web/native 구분(기본 native=딥링크, 무회귀). "admin" = 어드민 웹 패널 →
+    callback 이 be_admin_redirect_url 로 2차 hop. state 에 저장해 callback 이 분기.
     """
     if code_challenge_method != "S256":
         raise APIError(ERR_REQUEST_FALLBACK, 400)
+    # client=admin 인데 redirect env 가 빈 값이면 IdP 왕복·state 소모 전에 503(dormant-503).
+    if client == "admin" and not settings.be_admin_redirect_url:
+        raise APIError(ERR_SERVICE_UNAVAILABLE, 503)
     try:
-        client = get_provider(provider, settings)
+        provider_client = get_provider(provider, settings)
     except KeyError:
         raise APIError(ERR_REQUEST_FALLBACK, 400)  # 미등록 provider 이름
     except ProviderNotConfigured:
@@ -102,10 +110,11 @@ async def login(
                 "provider": provider,
                 "idp_verifier": idp_verifier,
                 "app_code_challenge": code_challenge,  # Layer2(앱↔BE) — /auth/token 에서 대조
+                "client": client,  # callback 이 web(admin)/native 분기에 사용
             },
             _now() + timedelta(seconds=settings.oauth_state_ttl),
         )
-    url = client.build_authorize_url(
+    url = provider_client.build_authorize_url(
         state=state, idp_verifier=idp_verifier, redirect_uri=_redirect_uri(settings)
     )
     return RedirectResponse(url, status_code=302)
@@ -187,14 +196,16 @@ async def _handle_callback(
         raise APIError(ERR_UNAUTHORIZED, 401)  # state 불일치/만료/소비됨
 
     provider = st["provider"]
+    # state 에 저장된 client(web/native). 구 in-flight state(키 부재)는 native 로 폴백(무회귀).
+    client_kind = st.get("client", "native")
     # F4: get_provider 예외 매핑(login 과 대칭) — KeyError/미설정이 500(state 이미 소비) 되지 않게.
     try:
-        client = get_provider(provider, settings)
+        provider_client = get_provider(provider, settings)
     except KeyError:
         raise APIError(ERR_REQUEST_FALLBACK, 400)
     except ProviderNotConfigured:
         raise APIError(ERR_SERVICE_UNAVAILABLE, 503)
-    sub, userinfo = await client.fetch_identity(
+    sub, userinfo = await provider_client.fetch_identity(
         code=code, idp_verifier=st["idp_verifier"],
         redirect_uri=_redirect_uri(settings), http=http,
     )
@@ -247,11 +258,18 @@ async def _handle_callback(
                 last_sign_in=_now(),
             )
 
-    # 딥링크 리다이렉트 — code 만(B4). 앱이 /auth/token 으로 교환.
-    return RedirectResponse(
-        _deeplink_with_code(settings.be_deeplink_scheme, one_time),
-        status_code=302,
-    )
+    # client 별 2차 hop — code 만(B4). client 가 /auth/token 으로 교환.
+    # admin(웹) → be_admin_redirect_url, 그 외(default native) → 딥링크.
+    if client_kind == "admin":
+        # login 이 503 fail-fast 하므로 도달 시 env 가 채워져 있어야 한다. 방어적: 비어 있으면
+        # (login~callback 사이 env 제거 등 극단) 브라우저가 못 여는 네이티브 딥링크로 폴백하지
+        # 말고 503 — silent 실패(빈 화면) 대신 진단 가능한 에러로.
+        if not settings.be_admin_redirect_url:
+            raise APIError(ERR_SERVICE_UNAVAILABLE, 503)
+        target = _redirect_with_code(settings.be_admin_redirect_url, one_time)
+    else:
+        target = _redirect_with_code(settings.be_deeplink_scheme, one_time)
+    return RedirectResponse(target, status_code=302)
 
 
 class TokenRequest(BaseModel):
@@ -299,6 +317,25 @@ async def token(
         access_token=payload["access_token"],
         refresh_token=payload["refresh_token"],
     )
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str
+
+
+@router.post("/logout")
+async def logout(
+    body: LogoutRequest,
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict:
+    """refresh token 서버측 무효화(세션 종료). refresh 소유 자체가 증명이라 무인증(refresh 와 동일).
+
+    멱등 — 무효/이미-revoked 토큰도 200(클라가 항상 로컬 정리를 이어가게). 토큰 존재 여부를
+    노출하지 않게 항상 200 + {revoked} bool. access 는 단명(1h) stateless 라 revoke 대상 아님.
+    """
+    async with pool.acquire() as conn:
+        revoked = await token_store.revoke_refresh(conn, body.refresh_token)
+    return {"revoked": revoked}
 
 
 class RefreshRequest(BaseModel):

@@ -105,6 +105,14 @@ class _FakeConn:
                     r["revoked"] = now
                     return {"user_id": r["user_id"]}
             return None
+        if "UPDATE auth_refresh_tokens" in sql and "expires_at" not in sql:
+            # _REVOKE_REFRESH_SQL(logout): $1 token_hash, $2 now — 만료 조건 없는 멱등 revoke.
+            token_hash, now = args
+            for r in self.s["refresh"]:
+                if r["hash"] == token_hash and r["revoked"] is None:
+                    r["revoked"] = now
+                    return {"user_id": r["user_id"]}
+            return None
         if "FROM user_profiles" in sql:
             (uid,) = args
             p = self.s["profiles"].get(uid)
@@ -396,6 +404,30 @@ def test_b5_refresh_rotation_old_rejected(patch_provider):
     assert r3.status_code == 200
 
 
+def test_logout_revokes_refresh_token(patch_provider):
+    store = _new_store()
+    client = _client(store)
+    verifier = "app-verifier-logout"
+    state = _do_login(client, verifier)
+    cb = _do_callback(client, state)
+    code = parse_qs(urlparse(cb.headers["location"]).query)["code"][0]
+    tok = client.post("/auth/token", json={"code": code, "code_verifier": verifier}).json()
+    refresh = tok["refresh_token"]
+
+    # 로그아웃 → refresh revoke(200, revoked=True).
+    r = client.post("/auth/logout", json={"refresh_token": refresh})
+    assert r.status_code == 200
+    assert r.json()["revoked"] is True
+    # revoke 후 그 refresh 로 회전 거부(401) — 서버측 세션 종료 확인.
+    r2 = client.post("/auth/refresh", json={"refresh_token": refresh})
+    assert r2.status_code == 401
+    # 멱등: 이미 revoked 토큰·미존재 토큰 재로그아웃도 200(revoked=False, 존재 여부 미노출).
+    r3 = client.post("/auth/logout", json={"refresh_token": refresh})
+    assert r3.status_code == 200 and r3.json()["revoked"] is False
+    r4 = client.post("/auth/logout", json={"refresh_token": "unknown-token"})
+    assert r4.status_code == 200 and r4.json()["revoked"] is False
+
+
 # --- 무인증 mount ---
 
 
@@ -524,3 +556,95 @@ def test_login_rejects_non_s256(patch_provider):
         follow_redirects=False,
     )
     assert r.status_code == 400
+
+
+# --- client=admin (어드민 웹 패널 BE flow) ---
+
+ADMIN_REDIRECT_URL = "https://invest-note-admin.example/auth/callback/"
+
+
+def _admin_settings() -> Settings:
+    return Settings(
+        supabase_url=TEST_SUPABASE_URL,
+        be_token_signing_key=_be_pem,
+        be_token_issuer=BE_ISSUER,
+        be_token_audience=BE_AUDIENCE,
+        be_token_kid=BE_KID,
+        be_oauth_redirect_base="https://api.invest-note.example",
+        be_admin_redirect_url=ADMIN_REDIRECT_URL,
+        google_client_id="gid",
+        google_client_secret="gsec",
+    )
+
+
+def _admin_client(store):
+    settings = _admin_settings()
+    app = create_app(settings)
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_pool] = lambda: _FakePool(store)
+    app.dependency_overrides[get_http_client] = lambda: None
+    return TestClient(app)
+
+
+def test_admin_login_stores_client_in_state(patch_provider):
+    # client=admin & env 설정 → 302 IdP, state payload 에 client=="admin" 저장.
+    store = _new_store()
+    client = _admin_client(store)
+    r = client.get(
+        "/auth/login",
+        params={"provider": "google", "code_challenge": _challenge("v-admin-login-001"),
+                "client": "admin"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 302
+    state = parse_qs(urlparse(r.headers["location"]).query)["state"][0]
+    assert store["transient"][state]["payload"]["client"] == "admin"
+
+
+def test_admin_login_empty_env_fails_fast(patch_provider):
+    # client=admin 인데 be_admin_redirect_url 빈 값(_settings) → 503, state 저장 안 함(fail-fast).
+    store = _new_store()
+    client = _client(store)  # 기본 settings = be_admin_redirect_url 빈 값
+    r = client.get(
+        "/auth/login",
+        params={"provider": "google", "code_challenge": _challenge("v-admin-noenv-1"),
+                "client": "admin"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 503
+    assert store["transient"] == {}  # IdP 왕복·state 소모 전 fail-fast
+
+
+def test_admin_callback_web_redirects_to_admin_url(patch_provider):
+    # admin client callback → be_admin_redirect_url?code=... 로 302(딥링크 아님).
+    store = _new_store()
+    client = _admin_client(store)
+    verifier = "v-admin-callback-01"
+    r = client.get(
+        "/auth/login",
+        params={"provider": "google", "code_challenge": _challenge(verifier),
+                "client": "admin"},
+        follow_redirects=False,
+    )
+    state = parse_qs(urlparse(r.headers["location"]).query)["state"][0]
+    cb = _do_callback(client, state)
+    assert cb.status_code == 302
+    loc = cb.headers["location"]
+    assert loc.startswith(ADMIN_REDIRECT_URL)
+    assert not loc.startswith("app.pixelwave.investnote://")  # 딥링크 아님
+    code = parse_qs(urlparse(loc).query)["code"][0]
+    assert code  # 일회용 code 부착
+    # 교환 가능(기존 shape 유지) — admin web flow 도 동일 /auth/token.
+    tok = client.post("/auth/token", json={"code": code, "code_verifier": verifier})
+    assert tok.status_code == 200
+    assert "access_token" in tok.json()
+
+
+def test_native_callback_still_deeplink(patch_provider):
+    # client 미지정(default native) → 기존 딥링크 302(무회귀). admin env 설정돼 있어도 영향 없음.
+    store = _new_store()
+    client = _admin_client(store)
+    state = _do_login(client, "v-native-default-01")
+    cb = _do_callback(client, state)
+    assert cb.status_code == 302
+    assert cb.headers["location"].startswith("app.pixelwave.investnote://")

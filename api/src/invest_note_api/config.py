@@ -23,9 +23,9 @@ class Settings(BaseSettings):
         "https://localhost:3000",
         "capacitor://localhost",
         "https://localhost",
-        # 어드민 패널 dev 서버(별도 포트 3001, app 3000 과 분리). 운영 origin 은 Coolify env.
-        "http://localhost:3001",
-        "https://localhost:3001",
+        # 어드민 패널 dev 서버(별도 포트 3101, app 3000 과 분리). 운영 origin 은 Coolify env.
+        "http://localhost:3101",
+        "https://localhost:3101",
     ]
     database_url: str = ""
     supabase_secret_key: str = ""
@@ -161,6 +161,11 @@ class Settings(BaseSettings):
     # be_deeplink_scheme: callback 이 일회용 code 를 실어 앱으로 돌려보내는 딥링크 URL.
     # IdP redirect_uri 가 아니라 BE→앱 최종 단계 전용(스킴 고정, 바뀌는 건 BE 뿐).
     be_deeplink_scheme: str = "app.pixelwave.investnote://auth/callback"
+    # be_admin_redirect_url: 어드민 웹 패널(client=admin)용 BE→client 2차 hop 리다이렉트 URL.
+    # 딥링크(네이티브)와 대칭이나 web origin(예: https://<admin>/auth/callback/). 빈 값이면
+    # /auth/login?client=admin 이 503 fail-fast(dormant-503, be_token_audience 와 동일 사상 —
+    # 강제 안 함). 클라가 URL 을 보내지 않고 이 고정 env 만 매핑 → open redirect 차단.
+    be_admin_redirect_url: str = ""
 
     # OAuth/refresh transient TTL(초). token_store 가 settings 에서 읽는다.
     # be_refresh_token_ttl: refresh token 수명(기본 30d). oauth_code_ttl: 일회용 code(딥링크↔

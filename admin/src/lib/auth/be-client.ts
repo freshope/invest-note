@@ -1,9 +1,9 @@
-// BE OAuth flow fetch + access JWT 로컬 디코드. 2b-1 계약(02_be_changes) 소비.
-// 경로는 bare(/v1 아래 아님, D-F) — api-client 와 동일 NEXT_PUBLIC_API_BASE_URL 공유.
+// BE OAuth flow fetch + access JWT 로컬 디코드. app/src/lib/auth/be-client.ts 미러링.
+// 경로는 bare(/v1 아래 아님) — api.ts 와 동일 NEXT_PUBLIC_API_BASE_URL 공유.
 //
-// 토큰 검증은 안 한다(D-D): BE 가 서명 검증, 앱은 claim 읽기만.
+// 토큰 검증은 안 한다: BE 가 서명 검증, 어드민은 claim 읽기만.
 
-// api-client 와 동일 env. trailing slash 제거.
+// api.ts 와 동일 env. trailing slash 제거.
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
 
 export interface BeTokens {
@@ -18,14 +18,15 @@ interface TokenResponse {
 }
 
 /**
- * 인앱 브라우저용 BE 로그인 URL(C1). 앱이 challenge(S256) 를 BE 에 전달하면
- * BE 가 IdP 중개 후 딥링크로 일회용 code 를 돌려준다.
+ * 어드민 web 용 BE 로그인 URL. 어드민은 web client 이므로 `client=admin` 을 포함한다
+ * (계약 핀) → BE 가 IdP 중개 후 `be_admin_redirect_url` 로 일회용 code 를 돌려준다.
  */
 export function buildLoginUrl(provider: string, codeChallenge: string): string {
   const params = new URLSearchParams({
     provider,
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
+    client: "admin",
   });
   return `${API_BASE}/auth/login?${params.toString()}`;
 }
@@ -36,7 +37,7 @@ async function postTokens(path: string, body: unknown): Promise<BeTokens> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  // 비-2xx(dormant 503·만료·PKCE 불일치 401) → throw(C7, 호출부 라우팅).
+  // 비-2xx(만료·PKCE 불일치 401 등) → throw(호출부 라우팅).
   if (!res.ok) {
     throw new Error(`auth request failed (${res.status})`);
   }
@@ -44,7 +45,7 @@ async function postTokens(path: string, body: unknown): Promise<BeTokens> {
   return { access: data.access_token, refresh: data.refresh_token };
 }
 
-/** 딥링크 code + PKCE verifier → BE access/refresh 토큰 교환(C1). */
+/** 일회용 code + PKCE verifier → BE access/refresh 토큰 교환. */
 export function exchangeToken(code: string, verifier: string): Promise<BeTokens> {
   return postTokens("/auth/token", { code, code_verifier: verifier });
 }
@@ -66,7 +67,7 @@ export async function revokeSession(refresh: string): Promise<void> {
   });
 }
 
-// ── access JWT 로컬 디코드 (검증 안 함, D-D) ──────────────────────────────
+// ── access JWT 로컬 디코드 (검증 안 함) ──────────────────────────────────────
 
 interface JwtClaims {
   sub?: string;
@@ -74,7 +75,7 @@ interface JwtClaims {
   exp?: number;
 }
 
-// base64url → JSON. 한글 email 안전을 위해 TextDecoder 경유(C10).
+// base64url → JSON. 한글 email 안전을 위해 TextDecoder 경유.
 function decodePayload(token: string): JwtClaims | null {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
@@ -100,7 +101,7 @@ export function decodeClaims(
 }
 
 /**
- * access token 이 skewSec 내 만료 임박/만료인지(C3/C9). exp 없으면 만료로 간주.
+ * access token 이 skewSec 내 만료 임박/만료인지. exp 없으면 만료로 간주.
  */
 export function isExpiringSoon(accessToken: string, skewSec: number): boolean {
   const claims = decodePayload(accessToken);
