@@ -159,10 +159,13 @@ export interface NpsUnmatchedRow extends BaseRow {
 export type BoardType = "notice" | "feedback" | "bug_report" | "broker_statement";
 
 // board_posts row(10키). status 는 BE 에서 자유 텍스트(Literal 아님).
+// author_* 는 user_profiles LEFT JOIN 노출(프로필 행 없으면 null).
 export interface BoardRow extends BaseRow {
   id: string;
   board_type: BoardType;
   user_id: string | null;
+  author_display_name: string | null;
+  author_avatar_url: string | null;
   title: string;
   body: string;
   status: string;
@@ -173,10 +176,13 @@ export interface BoardRow extends BaseRow {
 }
 
 // board_comments row(7키). is_admin 으로 관리자 댓글 구분.
+// author_* 는 user_profiles LEFT JOIN 노출(프로필 행 없으면 null).
 export interface BoardComment extends BaseRow {
   id: string;
   post_id: string;
   user_id: string | null;
+  author_display_name: string | null;
+  author_avatar_url: string | null;
   is_admin: boolean;
   body: string;
   created_at: string;

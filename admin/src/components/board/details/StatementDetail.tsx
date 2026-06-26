@@ -4,6 +4,7 @@ import type { BoardDetail } from "@/lib/api";
 import { fmtText, fmtDateTime } from "@/lib/format";
 import { BoardStatusControls } from "@/components/board/BoardStatusControls";
 import { statementTypeLabel } from "@/components/board/constants";
+import { AuthorCell } from "@/components/AuthorCell";
 import { BoardDetailShell } from "./BoardDetailShell";
 import { BoardAttachments } from "./BoardAttachments";
 
@@ -34,7 +35,13 @@ export function StatementDetail({
           <div>
             <h1 className="text-lg font-bold">{fmtText(data.title)}</h1>
             <p className="mt-1 text-[13px] text-muted-foreground">
-              작성자 {fmtText(data.user_id)} · {fmtDateTime(data.created_at)}
+              작성자{" "}
+              <AuthorCell
+                avatarUrl={data.author_avatar_url}
+                displayName={data.author_display_name}
+                fallback={data.user_id ?? "작성자 미상"}
+              />{" "}
+              · {fmtDateTime(data.created_at)}
             </p>
           </div>
         </div>

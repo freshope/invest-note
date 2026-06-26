@@ -6,6 +6,7 @@ import { boardTypeLabel } from "@/components/board/constants";
 import { BoardStatusControls } from "@/components/board/BoardStatusControls";
 import { BoardCommentThread } from "@/components/board/BoardCommentThread";
 import { BoardCommentForm } from "@/components/board/BoardCommentForm";
+import { AuthorCell } from "@/components/AuthorCell";
 import { BoardDetailShell } from "./BoardDetailShell";
 import { BoardAttachments } from "./BoardAttachments";
 
@@ -23,8 +24,13 @@ export function TriageDetail({
         <div>
           <h1 className="text-xl font-bold">{fmtText(data.title)}</h1>
           <p className="mt-1 text-[13px] text-muted-foreground">
-            {boardTypeLabel(data.board_type)} · 작성자 {fmtText(data.user_id)} ·{" "}
-            {fmtDateTime(data.created_at)}
+            {boardTypeLabel(data.board_type)} · 작성자{" "}
+            <AuthorCell
+              avatarUrl={data.author_avatar_url}
+              displayName={data.author_display_name}
+              fallback={data.user_id ?? "작성자 미상"}
+            />{" "}
+            · {fmtDateTime(data.created_at)}
           </p>
         </div>
         <BoardStatusControls

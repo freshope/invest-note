@@ -8,7 +8,8 @@ import {
   ApiError,
 } from "@/lib/api";
 import { Button } from "@/components/base/Button";
-import { fmtText, fmtDateTime } from "@/lib/format";
+import { fmtDateTime } from "@/lib/format";
+import { AuthorCell } from "@/components/AuthorCell";
 import { boardDetailKey, boardListKey } from "@/components/board/constants";
 
 function CommentDeleteButton({
@@ -74,7 +75,15 @@ export function BoardCommentThread({
         >
           <div className="flex items-center justify-between gap-2">
             <span className="text-[13px] font-medium">
-              {c.is_admin ? "관리자" : `사용자 ${fmtText(c.user_id)}`}
+              {c.is_admin ? (
+                "관리자"
+              ) : (
+                <AuthorCell
+                  avatarUrl={c.author_avatar_url}
+                  displayName={c.author_display_name}
+                  fallback={c.user_id ?? "작성자 미상"}
+                />
+              )}
             </span>
             <div className="flex items-center gap-2">
               <span className="text-[12px] text-muted-foreground">

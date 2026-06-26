@@ -3,31 +3,19 @@
 import { adminApi, type UserRow } from "@/lib/api";
 import { DataTablePage, type Column } from "@/components/DataTablePage";
 import { fmtDateTime, fmtText } from "@/lib/format";
+import { AuthorCell } from "@/components/AuthorCell";
 
 // users 는 읽기 전용. 신원/프로필은 user_profiles LEFT JOIN — 프로필 행 없으면 각 필드 null.
 const columns: Column<UserRow>[] = [
   {
     header: "사용자",
-    cell: (r) => {
-      const name = r.display_name?.trim();
-      return (
-        <div className="flex items-center gap-2">
-          {r.avatar_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={r.avatar_url}
-              alt=""
-              className="h-7 w-7 rounded-full object-cover"
-            />
-          ) : (
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-[11px] text-muted-foreground">
-              {name ? name[0]!.toUpperCase() : "?"}
-            </span>
-          )}
-          <span>{fmtText(name)}</span>
-        </div>
-      );
-    },
+    cell: (r) => (
+      <AuthorCell
+        avatarUrl={r.avatar_url}
+        displayName={r.display_name}
+        fallback="-"
+      />
+    ),
   },
   {
     header: "이메일",

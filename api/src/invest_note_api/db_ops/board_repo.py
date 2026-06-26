@@ -88,11 +88,18 @@ async def list_posts(
 
     total = await conn.fetchval(f"select count(*) from board_posts {where}", *args)
 
-    order = "is_pinned desc, created_at desc" if pinned_first else "created_at desc"
+    # user_profiles 에도 created_at 컬럼이 있어 JOIN 후 정렬절은 board_posts 로 한정한다.
+    order = (
+        "board_posts.is_pinned desc, board_posts.created_at desc"
+        if pinned_first
+        else "board_posts.created_at desc"
+    )
     args.extend([page_size, offset])
     rows = await conn.fetch(
-        f"select * from board_posts {where} order by {order} "
-        f"limit ${len(args) - 1} offset ${len(args)}",
+        f"select board_posts.*, p.display_name as author_display_name, "
+        f"p.avatar_url as author_avatar_url from board_posts "
+        f"left join user_profiles p on p.user_id = board_posts.user_id {where} "
+        f"order by {order} limit ${len(args) - 1} offset ${len(args)}",
         *args,
     )
     return [_post_row_to_dict(r) for r in rows], int(total or 0)
@@ -106,13 +113,22 @@ async def get_post(conn: Any, post_id: Any, *, with_relations: bool = True) -> d
     with_relations=False 면 post 행만 조회한다(공지 상세처럼 comments/attachments 를 버리는
     호출에서 불필요한 2회 왕복 제거).
     """
-    post = await conn.fetchrow("select * from board_posts where id = $1", post_id)
+    post = await conn.fetchrow(
+        "select board_posts.*, p.display_name as author_display_name, "
+        "p.avatar_url as author_avatar_url from board_posts "
+        "left join user_profiles p on p.user_id = board_posts.user_id where id = $1",
+        post_id,
+    )
     if post is None:
         return None
     if not with_relations:
         return _post_row_to_dict(post)
     comments = await conn.fetch(
-        "select * from board_comments where post_id = $1 order by created_at asc", post_id
+        "select board_comments.*, p.display_name as author_display_name, "
+        "p.avatar_url as author_avatar_url from board_comments "
+        "left join user_profiles p on p.user_id = board_comments.user_id "
+        "where post_id = $1 order by board_comments.created_at asc",
+        post_id,
     )
     attachments = await conn.fetch(
         "select * from board_attachments where post_id = $1 order by created_at asc", post_id

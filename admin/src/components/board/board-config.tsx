@@ -1,6 +1,7 @@
 import type { BoardRow, BoardType } from "@/lib/api";
 import type { Column } from "@/components/DataTablePage";
 import { fmtText, fmtDateTime } from "@/lib/format";
+import { AuthorCell } from "@/components/AuthorCell";
 import {
   boardStatusLabel,
   statementTypeLabel,
@@ -29,7 +30,13 @@ const createdCol: Column<BoardRow> = {
 };
 const authorCol: Column<BoardRow> = {
   header: "작성자",
-  cell: (r) => fmtText(r.user_id),
+  cell: (r) => (
+    <AuthorCell
+      avatarUrl={r.author_avatar_url}
+      displayName={r.author_display_name}
+      fallback={r.user_id ?? "작성자 미상"}
+    />
+  ),
 };
 
 export interface BoardConfig {
