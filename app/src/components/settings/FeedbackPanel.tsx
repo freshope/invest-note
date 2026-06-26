@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -30,6 +30,12 @@ function errorMessage(err: unknown): string {
 
 export function FeedbackPanel({ open, onOpenChange }: Props) {
   const [body, setBody] = useState("");
+
+  // 진입(open) 시마다 폼을 초기 상태로 — 패널 컴포넌트는 항상 마운트되어 있어
+  // 직전 입력값이 useState 에 남기 때문.
+  useEffect(() => {
+    if (open) setBody("");
+  }, [open]);
 
   const mutation = useMutation({
     mutationFn: (input: FeedbackInput) => boardApi.submitFeedback(input),

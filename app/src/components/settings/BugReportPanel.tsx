@@ -51,6 +51,15 @@ export function BugReportPanel({ open, onOpenChange }: Props) {
   const [body, setBody] = useState("");
   const [files, setFiles] = useState<File[]>([]);
 
+  // 진입(open) 시마다 폼을 초기 상태로 — 패널 컴포넌트는 항상 마운트되어 있어
+  // 직전 입력값이 useState 에 남기 때문. files 리셋 시 previews 는 아래 effect 가 정리.
+  useEffect(() => {
+    if (open) {
+      setBody("");
+      setFiles([]);
+    }
+  }, [open]);
+
   // 첨부 썸네일 — files 마다 object URL 생성, 변경/언마운트 시 전부 revoke(메모리 누수 방지).
   const [previews, setPreviews] = useState<string[]>([]);
   useEffect(() => {
