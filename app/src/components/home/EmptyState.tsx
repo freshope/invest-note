@@ -1,6 +1,9 @@
+"use client";
+
 import Link from "next/link";
 import { buttonVariants } from "@/components/base/Button";
 import { EmptyCard } from "@/components/shared/EmptyCard";
+import { capture } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 interface EmptyStateProps {
@@ -36,6 +39,7 @@ export function EmptyState({ variant }: EmptyStateProps) {
         action={
           <Link
             href={content.href}
+            onClick={() => capture("empty_state_cta_clicked", { variant })}
             className={cn(buttonVariants({ variant: "outline", size: "sm" }), "rounded-xl font-semibold")}
           >
             {content.action}
