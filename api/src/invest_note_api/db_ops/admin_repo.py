@@ -111,7 +111,7 @@ async def get_stats(conn: Any) -> dict[str, int]:
 
 
 async def get_user_growth(conn: Any) -> list[dict[str, Any]]:
-    """일별 누적 가입자 수 시계열 — [{date, cumulative}], 가입일 오름차순.
+    """일별 가입자 시계열 — [{date, cumulative, new_users}], 가입일 오름차순.
 
     created_at 을 KST(Asia/Seoul)로 변환해 날짜 버킷팅한다(단순 ::date 는 UTC 버킷이라
     KST 가입일이 ±9h 어긋남). 첫 가입일~오늘(KST)까지 generate_series 로 연속 날짜를
@@ -135,13 +135,17 @@ async def get_user_growth(conn: Any) -> list[dict[str, Any]]:
         )
         select
             s.day as date,
+            coalesce(d.cnt, 0) as new_users,
             sum(coalesce(d.cnt, 0)) over (order by s.day) as cumulative
         from series s
         left join daily d on d.day = s.day
         order by s.day
         """
     )
-    return [{"date": r["date"], "cumulative": int(r["cumulative"])} for r in rows]
+    return [
+        {"date": r["date"], "cumulative": int(r["cumulative"]), "new_users": int(r["new_users"])}
+        for r in rows
+    ]
 
 
 # ─────────────────────────── stocks 수정 (PK = country_code, ticker) ───────────────────────────

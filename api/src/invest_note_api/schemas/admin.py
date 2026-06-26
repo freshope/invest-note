@@ -35,6 +35,7 @@ class UserGrowthPoint(BaseModel):
 
     date: date
     cumulative: int
+    new_users: int
 
 
 class StockUpdate(BaseModel):

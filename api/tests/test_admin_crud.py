@@ -128,11 +128,11 @@ def test_email_case_insensitive_match():
 
 
 def test_user_growth_returns_series():
-    """allowlist 면 200 + [{date, cumulative}] 시계열(누적 단조증가)."""
+    """allowlist 면 200 + [{date, cumulative, new_users}] 시계열(누적 단조증가)."""
     app = _make_admin_app()
     series = [
-        {"date": "2026-06-01", "cumulative": 1},
-        {"date": "2026-06-03", "cumulative": 3},
+        {"date": "2026-06-01", "cumulative": 1, "new_users": 1},
+        {"date": "2026-06-03", "cumulative": 3, "new_users": 2},
     ]
     conn = FakeConnection(series)
     client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))

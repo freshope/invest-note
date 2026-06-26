@@ -70,10 +70,12 @@ export interface AdminStats {
   broker_statements: number;
 }
 
-/** 일별 누적 가입자 수 한 점. date 는 KST 가입일(YYYY-MM-DD), BE UserGrowthPoint 와 정합. */
+/** 일별 가입자 한 점. date 는 KST 가입일(YYYY-MM-DD), BE UserGrowthPoint 와 정합. */
 export interface UserGrowthPoint {
   date: string;
   cumulative: number;
+  // 해당 날짜의 신규 가입자 수(0 포함). generate_series 로 빈 날도 0 으로 채워짐.
+  new_users: number;
 }
 
 /** 목록 쿼리 파라미터(전 테이블 공통). page 1-base, page_size 기본 50·최대 200(서버 clamp). */
