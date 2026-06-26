@@ -10,9 +10,19 @@ from datetime import date
 from typing import Any
 
 # 리스트 가능한 테이블 → (실제 테이블명, q 부분일치 검색 컬럼들, 기본 정렬절).
-# q 컬럼은 row shape 기준으로 확정: users 는 email 컬럼이 없어 id 텍스트로 매칭한다.
+# 선택 키: from(기본 table), select(기본 *) — JOIN 으로 다른 테이블 컬럼을 합쳐 노출할 때 사용.
+# users 는 신원/프로필이 1:1 user_profiles 로 격리돼 있어 LEFT JOIN 으로 합쳐 노출한다.
 _LIST_TABLES: dict[str, dict[str, Any]] = {
-    "users": {"table": "users", "search": ["id::text"], "order": "created_at desc"},
+    "users": {
+        "table": "users",
+        "from": "users u left join user_profiles p on p.user_id = u.id",
+        "select": (
+            "u.id, u.created_at, p.email, p.display_name, p.avatar_url, "
+            "p.email_verified, p.providers, p.last_sign_in"
+        ),
+        "search": ["u.id::text", "p.email", "p.display_name"],
+        "order": "u.created_at desc",
+    },
     "accounts": {"table": "accounts", "search": ["name"], "order": "created_at desc"},
     "trades": {
         "table": "trades",
@@ -56,6 +66,8 @@ async def list_rows(
     """
     meta = _LIST_TABLES[table_key]  # KeyError 면 라우터가 사전에 검증(404)
     table = meta["table"]
+    from_clause = meta.get("from", table)  # JOIN 등 — 기본은 단일 테이블
+    select_cols = meta.get("select", "*")
     page = max(page, 1)
     page_size = max(1, min(page_size, MAX_PAGE_SIZE))
     offset = (page - 1) * page_size
@@ -68,11 +80,11 @@ async def list_rows(
         clauses = " or ".join(f"{col} ilike $1" for col in meta["search"])
         where = f"where {clauses}"
 
-    total = await conn.fetchval(f"select count(*) from {table} {where}", *args)
+    total = await conn.fetchval(f"select count(*) from {from_clause} {where}", *args)
 
     args.extend([page_size, offset])
     rows = await conn.fetch(
-        f"select * from {table} {where} order by {meta['order']} "
+        f"select {select_cols} from {from_clause} {where} order by {meta['order']} "
         f"limit ${len(args) - 1} offset ${len(args)}",
         *args,
     )
@@ -80,7 +92,7 @@ async def list_rows(
 
 
 async def get_stats(conn: Any) -> dict[str, int]:
-    """대시보드 카운트 — 단일 쿼리로 5개 테이블 건수. admin pool 이라 cross-user 전수."""
+    """대시보드 카운트 — 단일 쿼리로 테이블 건수. admin pool 이라 cross-user 전수."""
     row = await conn.fetchrow(
         """
         select
@@ -88,34 +100,52 @@ async def get_stats(conn: Any) -> dict[str, int]:
             (select count(*) from accounts) as accounts,
             (select count(*) from trades) as trades,
             (select count(*) from stocks) as stocks,
-            (select count(*) from nps_unmatched) as nps_unmatched
+            (select count(*) from nps_unmatched) as nps_unmatched,
+            (select count(*) from board_posts where board_type = 'broker_statement') as broker_statements
         """
     )
-    return {k: int(row[k]) for k in ("users", "accounts", "trades", "stocks", "nps_unmatched")}
+    return {
+        k: int(row[k])
+        for k in ("users", "accounts", "trades", "stocks", "nps_unmatched", "broker_statements")
+    }
 
 
 async def get_user_growth(conn: Any) -> list[dict[str, Any]]:
-    """일별 누적 가입자 수 시계열 — [{date, cumulative}], 가입일 오름차순.
+    """일별 가입자 시계열 — [{date, cumulative, new_users}], 가입일 오름차순.
 
     created_at 을 KST(Asia/Seoul)로 변환해 날짜 버킷팅한다(단순 ::date 는 UTC 버킷이라
-    KST 가입일이 ±9h 어긋남). 가입 없는 날은 생략 — 누적이라 단조증가가 유지된다.
+    KST 가입일이 ±9h 어긋남). 첫 가입일~오늘(KST)까지 generate_series 로 연속 날짜를
+    만들어 가입 없는 날도 0 으로 채운다 — 시계열 차트에 빈 날짜도 표시되도록.
     """
     rows = await conn.fetch(
         """
-        select
-            day as date,
-            sum(cnt) over (order by day) as cumulative
-        from (
+        with daily as (
             select
                 (created_at at time zone 'Asia/Seoul')::date as day,
                 count(*) as cnt
             from users
             group by day
-        ) daily
-        order by day
+        ),
+        series as (
+            select generate_series(
+                (select min(day) from daily),
+                (now() at time zone 'Asia/Seoul')::date,
+                interval '1 day'
+            )::date as day
+        )
+        select
+            s.day as date,
+            coalesce(d.cnt, 0) as new_users,
+            sum(coalesce(d.cnt, 0)) over (order by s.day) as cumulative
+        from series s
+        left join daily d on d.day = s.day
+        order by s.day
         """
     )
-    return [{"date": r["date"], "cumulative": int(r["cumulative"])} for r in rows]
+    return [
+        {"date": r["date"], "cumulative": int(r["cumulative"]), "new_users": int(r["new_users"])}
+        for r in rows
+    ]
 
 
 # ─────────────────────────── stocks 수정 (PK = country_code, ticker) ───────────────────────────

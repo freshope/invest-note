@@ -6,7 +6,9 @@ import openpyxl
 import pytest
 
 from invest_note_api.broker_import import PARSERS
+from invest_note_api.broker_import.mirae_pdf import MiraePdfParser
 from invest_note_api.broker_import.samsung_xlsx import SamsungXlsxParser
+from invest_note_api.broker_import.shinhan_pdf import _LINE2_RE, ShinhanPdfParser
 from invest_note_api.broker_import.toss_pdf import (
     TossPdfParser,
     _build_column_map,
@@ -320,7 +322,138 @@ class TestTossColumnMap:
         assert _build_column_map("발급번호 20260522-101-11-B000033") is None
 
 
+class TestShinhanPdfParserLine:
+    """종목명에 숫자 토큰이 있어도 단가/수수료를 끝 6개 컬럼에서 정확히 앵커하는지."""
+
+    parser = ShinhanPdfParser()
+
+    def test_asset_name_with_number_token(self):
+        # 종목명 "KODEX 200" 의 '200' 을 단가로 오인하면 안 된다.
+        line1 = "2026-01-13 KODEX 200 49,700 0 0 0 99,400 0"
+        line2 = "1 장내_매수 2 0 0 0 0 신한 SOL증권(iPhone)"
+        line3 = "위탁(주식) 99,400 0 99,400 468,768"
+        result = ParseResult()
+        m2 = _LINE2_RE.match(line2)
+        assert m2 is not None
+        trade = self.parser._parse_record(line1, line2, line3, m2, 1, result)
+        assert trade is not None, result.errors
+        assert trade.asset_name == "KODEX 200"
+        assert trade.price == 49700
+        assert trade.commission == 0
+        assert trade.quantity == 2
+        assert trade.trade_type == "BUY"
+
+
+class TestShinhanPdfParserFixture:
+    parser = ShinhanPdfParser()
+
+    @pytest.fixture
+    def sample_bytes(self) -> bytes:
+        from pathlib import Path
+        path = Path(__file__).resolve().parents[2] / "sample" / "거래내역서_신한투자증권_1.pdf"
+        if not path.exists():
+            pytest.skip(f"sample not present: {path}")
+        return path.read_bytes()
+
+    def test_parses_real_sample(self, sample_bytes: bytes):
+        result = self.parser.parse(sample_bytes, "거래내역서_신한투자증권_1.pdf")
+        # 위탁(주식) 거래만 29건 (RP_* 위탁(RP)는 제외).
+        assert len(result.trades) == 29
+        assert result.account_hint == "270-26-192214"
+        # 첫 거래: 한화엔진 SELL 2 @ 49,700.
+        first = result.trades[0]
+        assert first.asset_name == "한화엔진"
+        assert first.trade_type == "SELL"
+        assert first.quantity == 2
+        assert first.price == 49700
+        assert first.commission == 0
+        assert first.tax == 49  # 거래세
+        # 수량 × 단가 == 과표금액 (모든 거래에서 정합).
+        for t in result.trades:
+            assert t.quantity > 0 and t.price > 0
+
+    def test_encrypted_pdf_friendly_error(self):
+        # 열 수 없는 PDF(암호화 등)는 500 이 아니라 친절 안내 에러로 처리한다.
+        from pathlib import Path
+        path = Path(__file__).resolve().parents[2] / "sample" / "거래내역증명서_미래에셋증권_1.pdf"
+        if not path.exists():
+            pytest.skip(f"sample not present: {path}")
+        result = self.parser.parse(path.read_bytes(), "암호.pdf")
+        assert len(result.trades) == 0
+        assert len(result.errors) == 1
+        assert "암호 없는 버전" in result.errors[0]["reason"]
+
+
+class TestMiraePdfParserFixture:
+    parser = MiraePdfParser()
+
+    @pytest.fixture
+    def sample_bytes(self) -> bytes:
+        from pathlib import Path
+        path = Path(__file__).resolve().parents[2] / "sample" / "거래내역증명서_미래에셋증권_2.pdf"
+        if not path.exists():
+            pytest.skip(f"sample not present: {path}")
+        return path.read_bytes()
+
+    @pytest.fixture
+    def encrypted_bytes(self) -> bytes:
+        from pathlib import Path
+        path = Path(__file__).resolve().parents[2] / "sample" / "거래내역증명서_미래에셋증권_1.pdf"
+        if not path.exists():
+            pytest.skip(f"sample not present: {path}")
+        return path.read_bytes()
+
+    def test_parses_real_sample(self, sample_bytes: bytes):
+        result = self.parser.parse(sample_bytes, "거래내역증명서_미래에셋증권_2.pdf")
+        # 주식 입출고(BUY/SELL) 38건. 현금leg(주식매수출금/매도입금)·이체·예탁금이용료는 skip.
+        assert len(result.trades) == 38
+        assert result.account_hint == "584-566838640"
+        # 첫 거래: 두산에너빌리티 BUY 10 @ 105,700, ticker_hint=A코드 6자리.
+        first = result.trades[0]
+        assert first.asset_name == "두산에너빌리티보통주"
+        assert first.trade_type == "BUY"
+        assert first.quantity == 10
+        assert first.price == 105700
+        assert first.ticker_hint == "034020"
+        # 긴 ETF명(줄바꿈) 레코드도 정상 파싱.
+        wrapped = [t for t in result.trades if "KODEX 방산" in t.asset_name]
+        assert wrapped, "줄바꿈된 ETF 레코드가 누락되었다"
+        # 영숫자 종목번호(A0080G0)는 KRX 표준 숫자 코드가 아니라 ticker_hint 로 쓰지 않는다
+        # (다른 증권사 숫자 코드와 보유가 갈라지는 것 방지 — 종목명 매칭에 맡김).
+        assert wrapped[0].ticker_hint is None
+        assert wrapped[0].quantity == 13
+        assert wrapped[0].price == 15095
+        # 매도 제세금합: inline 매도행은 종목명 뒤 첫 trailing 숫자가 제세금합(≈거래액의 0.2%).
+        sells = [t for t in result.trades if t.trade_type == "SELL"]
+        kai_sell = next(
+            t for t in sells if t.asset_name == "한국항공우주산업보통주" and t.quantity == 5 and t.price == 203000
+        )
+        assert kai_sell.tax == 2029  # 종목명 뒤 trailing [2,029 5] 의 첫 값
+        samsung_sell = next(
+            t for t in sells if t.asset_name == "삼성전자보통주" and t.quantity == 52 and t.price == 194000
+        )
+        assert samsung_sell.tax == 20176  # trailing 단일 [20,176] 도 제세금합으로 인식
+        # 줄바꿈(wrapped) 매도행은 line3 에 제세금합이 없어 tax=0(보수적).
+        wrapped_sell = next(
+            (t for t in sells if "TIGER 미국S&P500" in t.asset_name), None
+        )
+        assert wrapped_sell is not None
+        assert wrapped_sell.tax == 0
+
+    def test_encrypted_pdf_friendly_error(self, encrypted_bytes: bytes):
+        result = self.parser.parse(encrypted_bytes, "거래내역증명서_미래에셋증권_1.pdf")
+        assert len(result.trades) == 0
+        assert len(result.errors) == 1
+        assert "암호 없는 버전" in result.errors[0]["reason"]
+
+
 class TestParsersRegistry:
     def test_parsers_registry_has_both_brokers(self):
         assert "samsung_xlsx" in PARSERS
         assert "toss_pdf" in PARSERS
+
+    def test_parsers_registry_has_new_brokers(self):
+        assert "shinhan_pdf" in PARSERS
+        assert "mirae_pdf" in PARSERS
+        assert PARSERS["shinhan_pdf"].display_name == "신한투자증권"
+        assert PARSERS["mirae_pdf"].display_name == "미래에셋증권"

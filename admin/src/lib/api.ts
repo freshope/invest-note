@@ -67,12 +67,15 @@ export interface AdminStats {
   trades: number;
   stocks: number;
   nps_unmatched: number;
+  broker_statements: number;
 }
 
-/** 일별 누적 가입자 수 한 점. date 는 KST 가입일(YYYY-MM-DD), BE UserGrowthPoint 와 정합. */
+/** 일별 가입자 한 점. date 는 KST 가입일(YYYY-MM-DD), BE UserGrowthPoint 와 정합. */
 export interface UserGrowthPoint {
   date: string;
   cumulative: number;
+  // 해당 날짜의 신규 가입자 수(0 포함). generate_series 로 빈 날도 0 으로 채워짐.
+  new_users: number;
 }
 
 /** 목록 쿼리 파라미터(전 테이블 공통). page 1-base, page_size 기본 50·최대 200(서버 clamp). */
@@ -107,10 +110,16 @@ interface BaseRow {
   [key: string]: unknown;
 }
 
-// ⚠️ users 에 email 컬럼 없음(신원은 Supabase Auth 소유). row = { id, created_at }.
+// users(id, created_at) LEFT JOIN user_profiles — 프로필 컬럼은 행이 없으면 null.
 export interface UserRow extends BaseRow {
   id: string;
   created_at: string;
+  email: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+  email_verified: boolean | null;
+  providers: string[] | null;
+  last_sign_in: string | null;
 }
 
 export interface AccountRow extends BaseRow {
@@ -152,10 +161,13 @@ export interface NpsUnmatchedRow extends BaseRow {
 export type BoardType = "notice" | "feedback" | "bug_report" | "broker_statement";
 
 // board_posts row(10키). status 는 BE 에서 자유 텍스트(Literal 아님).
+// author_* 는 user_profiles LEFT JOIN 노출(프로필 행 없으면 null).
 export interface BoardRow extends BaseRow {
   id: string;
   board_type: BoardType;
   user_id: string | null;
+  author_display_name: string | null;
+  author_avatar_url: string | null;
   title: string;
   body: string;
   status: string;
@@ -166,10 +178,13 @@ export interface BoardRow extends BaseRow {
 }
 
 // board_comments row(7키). is_admin 으로 관리자 댓글 구분.
+// author_* 는 user_profiles LEFT JOIN 노출(프로필 행 없으면 null).
 export interface BoardComment extends BaseRow {
   id: string;
   post_id: string;
   user_id: string | null;
+  author_display_name: string | null;
+  author_avatar_url: string | null;
   is_admin: boolean;
   body: string;
   created_at: string;

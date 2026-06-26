@@ -47,8 +47,9 @@ function LoginForm() {
     setError(null);
     setPending(true);
     try {
-      const redirectTo = `${window.location.origin}/auth/callback/`;
-      await signInWithGoogle(redirectTo);
+      // BE flow: signInWithGoogle 가 내부에서 BE login URL 로 full-page 리다이렉트.
+      // redirect 대상은 BE 가 고정 식별자(client=admin)로 env 매핑 — 클라가 URL 미전송.
+      await signInWithGoogle();
       // 성공 시 OAuth 리다이렉트로 페이지 이탈
     } catch {
       setError(AUTH_ERROR_MSG);

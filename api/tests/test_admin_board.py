@@ -147,6 +147,49 @@ def test_boards_detail_shape():
     assert body["attachments"][0]["original_name"] == "statement.xlsx"
 
 
+def test_boards_list_exposes_author_profile():
+    """JOIN user_profiles → 목록 row 에 author_display_name/avatar_url 노출(snake_case passthrough)."""
+    app = _make_admin_app()
+    row = _post_row(
+        user_id=str(uuid4()),
+        author_display_name="홍길동",
+        author_avatar_url="https://cdn/avatar.png",
+    )
+    conn = FakeConnection(1, [row])
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
+    resp = client.get("/admin/boards")
+    assert resp.status_code == 200
+    item = resp.json()["items"][0]
+    assert item["author_display_name"] == "홍길동"
+    assert item["author_avatar_url"] == "https://cdn/avatar.png"
+
+
+def test_boards_detail_author_null_for_missing_profile():
+    """user_id null(관리자 공지)·프로필 미존재 → LEFT JOIN 으로 author 필드 null. 댓글도 동일."""
+    app = _make_admin_app()
+    post = _post_row(author_display_name=None, author_avatar_url=None)  # user_id=None
+    comment = {
+        "id": str(uuid4()),
+        "post_id": post["id"],
+        "user_id": str(uuid4()),
+        "is_admin": False,
+        "body": "사용자 댓글",
+        "created_at": "2026-06-19T01:00:00Z",
+        "updated_at": "2026-06-19T01:00:00Z",
+        "author_display_name": "김철수",
+        "author_avatar_url": None,
+    }
+    conn = FakeConnection(post, [comment], [])
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
+    resp = client.get(f"/admin/boards/{post['id']}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["author_display_name"] is None
+    assert body["author_avatar_url"] is None
+    assert body["comments"][0]["author_display_name"] == "김철수"
+    assert body["comments"][0]["author_avatar_url"] is None
+
+
 def test_boards_detail_not_found_404():
     app = _make_admin_app()
     conn = FakeConnection(None)  # get_post fetchrow → None

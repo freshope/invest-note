@@ -74,7 +74,8 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
       broker: account?.broker ?? null,
       cash_display: fmtNumberInput(account?.cash_balance ? Number(account.cash_balance) : null),
     });
-  }, [open, account, reset]);
+    if (!isEdit) capture("account_add_started"); // 활성화 퍼널: 계좌 추가 폼 진입
+  }, [open, account, reset, isEdit]);
 
   const broker = watch("broker");
 
@@ -99,6 +100,7 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
       ]);
       onOpenChange(false);
     } catch (err) {
+      if (!isEdit) capture("account_add_failed"); // 활성화 퍼널: 제출 실패 누수 (메시지 미포함)
       setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
     }
   }

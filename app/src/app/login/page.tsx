@@ -8,6 +8,7 @@ import { useAuth } from "@/components/providers/AuthProvider";
 import { OAUTH_BROWSER_FINISHED_EVENT } from "@/components/providers/CapacitorDeepLinkHandler";
 import { getPlatform, isNativePlatform } from "@/lib/platform";
 import { NATIVE_REDIRECT_URL, WEB_CALLBACK_PATH } from "@/lib/auth/oauth-config";
+import { LEGAL_LINKS } from "@/lib/legal-links";
 
 const KAKAO_BG = "#FEE500";
 const KAKAO_FG = "#3C1E1E";
@@ -159,7 +160,7 @@ export default function LoginPage() {
         <p className="mt-8 text-center text-[12px] text-muted-foreground">
           로그인 시{" "}
           <a
-            href="https://invest-note.pixelwave.app/terms.html"
+            href={LEGAL_LINKS.terms}
             target="_blank"
             rel="noopener noreferrer"
             className="underline underline-offset-2 hover:text-foreground"
@@ -168,7 +169,7 @@ export default function LoginPage() {
           </a>{" "}
           및{" "}
           <a
-            href="https://invest-note.pixelwave.app/privacy.html"
+            href={LEGAL_LINKS.privacy}
             target="_blank"
             rel="noopener noreferrer"
             className="underline underline-offset-2 hover:text-foreground"

@@ -65,10 +65,12 @@ async def list_posts(
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
     q: str | None = None,
+    pinned_first: bool = False,
 ) -> tuple[list[dict], int]:
     """게시글 목록 — (rows, total). board_type 필터(없으면 전체), q 는 title 부분일치(ILIKE).
 
     page 1-base, page_size 는 [1, MAX_PAGE_SIZE] clamp. rows 는 snake_case dict(metadata=dict).
+    pinned_first=True 면 is_pinned 글을 상단 고정(공지용). 기본 off 로 admin 정렬 불변.
     """
     page = max(page, 1)
     page_size = max(1, min(page_size, MAX_PAGE_SIZE))
@@ -86,26 +88,47 @@ async def list_posts(
 
     total = await conn.fetchval(f"select count(*) from board_posts {where}", *args)
 
+    # user_profiles 에도 created_at 컬럼이 있어 JOIN 후 정렬절은 board_posts 로 한정한다.
+    order = (
+        "board_posts.is_pinned desc, board_posts.created_at desc"
+        if pinned_first
+        else "board_posts.created_at desc"
+    )
     args.extend([page_size, offset])
     rows = await conn.fetch(
-        f"select * from board_posts {where} order by created_at desc "
-        f"limit ${len(args) - 1} offset ${len(args)}",
+        f"select board_posts.*, p.display_name as author_display_name, "
+        f"p.avatar_url as author_avatar_url from board_posts "
+        f"left join user_profiles p on p.user_id = board_posts.user_id {where} "
+        f"order by {order} limit ${len(args) - 1} offset ${len(args)}",
         *args,
     )
     return [_post_row_to_dict(r) for r in rows], int(total or 0)
 
 
-async def get_post(conn: Any, post_id: Any) -> dict | None:
+async def get_post(conn: Any, post_id: Any, *, with_relations: bool = True) -> dict | None:
     """게시글 상세 — {...post, comments:[...], attachments:[...]} 또는 None.
 
     comments/attachments 는 created_at 오름차순. 이번 스펙은 comment 첨부 뷰어가 없으므로
     attachments 는 post 에 직접 달린 것(post_id=$1)만 묶는다(comment 첨부는 후속).
+    with_relations=False 면 post 행만 조회한다(공지 상세처럼 comments/attachments 를 버리는
+    호출에서 불필요한 2회 왕복 제거).
     """
-    post = await conn.fetchrow("select * from board_posts where id = $1", post_id)
+    post = await conn.fetchrow(
+        "select board_posts.*, p.display_name as author_display_name, "
+        "p.avatar_url as author_avatar_url from board_posts "
+        "left join user_profiles p on p.user_id = board_posts.user_id where id = $1",
+        post_id,
+    )
     if post is None:
         return None
+    if not with_relations:
+        return _post_row_to_dict(post)
     comments = await conn.fetch(
-        "select * from board_comments where post_id = $1 order by created_at asc", post_id
+        "select board_comments.*, p.display_name as author_display_name, "
+        "p.avatar_url as author_avatar_url from board_comments "
+        "left join user_profiles p on p.user_id = board_comments.user_id "
+        "where post_id = $1 order by board_comments.created_at asc",
+        post_id,
     )
     attachments = await conn.fetch(
         "select * from board_attachments where post_id = $1 order by created_at asc", post_id
@@ -235,12 +258,19 @@ async def get_attachment(conn: Any, attachment_id: Any) -> dict | None:
     return _attachment_row_to_dict(row) if row else None
 
 
-async def count_recent_submissions(conn: Any, user_id: Any, since: Any) -> int:
-    """스팸 가드 — since(timestamptz) 이후 user 가 작성한 broker_statement 글 수."""
+async def count_recent_submissions(
+    conn: Any, user_id: Any, since: Any, *, board_type: str = "broker_statement"
+) -> int:
+    """스팸 가드 — since(timestamptz) 이후 user 가 작성한 해당 board_type 글 수.
+
+    board_type 기본값으로 broker_statement 제보 동작을 보존하고, feedback/bug_report 도
+    같은 가드를 재사용한다.
+    """
     total = await conn.fetchval(
         "select count(*) from board_posts "
-        "where user_id = $1 and board_type = 'broker_statement' and created_at >= $2",
+        "where user_id = $1 and board_type = $3 and created_at >= $2",
         user_id,
         since,
+        board_type,
     )
     return int(total or 0)

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import io
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+
+import pdfplumber
 
 from ..utils.numbers import strip_comma_number
 
@@ -16,6 +20,35 @@ def parse_number(s: object) -> float:
         return float(str(strip_comma_number(s)))
     except ValueError:
         return 0.0
+
+
+def extract_pdf_lines(
+    file_bytes: bytes, account_re: re.Pattern[str]
+) -> tuple[str | None, list[str]] | None:
+    """PDF 바이트 → (account_hint, 비어있지 않은 줄 리스트).
+
+    PDF 열기 실패(암호화 등) 시 None 을 반환한다 — 호출자는 사용자 친절 안내로 처리한다.
+    PDF 파서(신한·미래에셋)가 공유하는 페이지 텍스트 수집 보일러플레이트.
+    """
+    try:
+        pdf = pdfplumber.open(io.BytesIO(file_bytes))
+    except Exception:
+        return None
+
+    account_hint: str | None = None
+    lines: list[str] = []
+    with pdf:
+        for page in pdf.pages:
+            page_text = page.extract_text() or ""
+            if account_hint is None:
+                m = account_re.search(page_text)
+                if m:
+                    account_hint = m.group(1).strip()
+            for line in page_text.split("\n"):
+                line = line.strip()
+                if line:
+                    lines.append(line)
+    return account_hint, lines
 
 
 @dataclass

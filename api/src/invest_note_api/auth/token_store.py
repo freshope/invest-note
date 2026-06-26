@@ -138,6 +138,23 @@ async def save_refresh(
     await conn.execute(_SAVE_REFRESH_SQL, user_id, hash_token(token), expires_at)
 
 
+_REVOKE_REFRESH_SQL = """
+    UPDATE auth_refresh_tokens
+       SET revoked_at = $2
+     WHERE token_hash = $1
+       AND revoked_at IS NULL
+    RETURNING user_id
+"""
+
+
+async def revoke_refresh(conn: Any, token: str) -> bool:
+    """logout 시 refresh token 무효화(B5) — 회전 없이 revoke 만. 만료 조건 없음(만료 토큰도
+    멱등 처리). 이미 revoked/없음이면 False(멱등 — 재호출·무효 토큰 무해). access 는 단명(1h)
+    stateless 라 별도 denylist 없이 자연 만료에 맡긴다."""
+    row = await conn.fetchrow(_REVOKE_REFRESH_SQL, hash_token(token), _now())
+    return row is not None
+
+
 async def rotate_refresh(
     conn: Any, old_token: str, new_token: str, expires_at: datetime
 ) -> UUID | None:

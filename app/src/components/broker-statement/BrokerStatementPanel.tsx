@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { UploadCloudIcon, FileIcon } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -81,6 +81,16 @@ export function BrokerStatementPanel({
   const [consent, setConsent] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // 진입(open) 시마다 폼을 초기 상태로 — 패널 컴포넌트는 항상 마운트되어 있어
+  // 직전 입력값이 useState 에 남기 때문. broker 는 fixed 라벨(없으면 빈 값)로 복원.
+  useEffect(() => {
+    if (open) {
+      setBroker(fixedLabel);
+      setConsent(false);
+      setFile(null);
+    }
+  }, [open, fixedLabel]);
 
   const brokerValid = broker.trim().length > 0;
   const canSubmit = consent && brokerValid && !!file && !submitting;

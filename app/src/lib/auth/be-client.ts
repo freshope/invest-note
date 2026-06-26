@@ -54,6 +54,18 @@ export function refreshToken(refresh: string): Promise<BeTokens> {
   return postTokens("/auth/refresh", { refresh_token: refresh });
 }
 
+/**
+ * 서버측 refresh 무효화(로그아웃). best-effort — BE 는 멱등 200 이고, 네트워크 실패해도
+ * 호출부(signOut)가 로컬 정리를 이어가야 하므로 결과를 확인하지 않는다.
+ */
+export async function revokeSession(refresh: string): Promise<void> {
+  await fetch(`${API_BASE}/auth/logout`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: refresh }),
+  });
+}
+
 // ── access JWT 로컬 디코드 (검증 안 함, D-D) ──────────────────────────────
 
 interface JwtClaims {

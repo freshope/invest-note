@@ -17,27 +17,15 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/base/Dialog";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/base/Select";
 import { Button } from "@/components/base/Button";
 import { Input } from "@/components/base/Input";
 import { Label } from "@/components/base/Label";
-import { BOARD_TYPES, boardListKey } from "@/components/board/constants";
+import { boardListKey, boardTypeLabel } from "@/components/board/constants";
 
-// 게시판 글 작성(관리자 공지 등). board_type 선택 + title + body + is_pinned.
-export function BoardCreateDialog({
-  defaultBoardType,
-}: {
-  defaultBoardType: BoardType;
-}) {
+// 게시판 글 작성(관리자 공지 등). board_type 은 진입한 게시판으로 고정.
+export function BoardCreateDialog({ boardType }: { boardType: BoardType }) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
-  const [boardType, setBoardType] = useState<BoardType>(defaultBoardType);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [isPinned, setIsPinned] = useState(false);
@@ -81,27 +69,9 @@ export function BoardCreateDialog({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>게시판 글 작성</DialogTitle>
+          <DialogTitle>{boardTypeLabel(boardType)} 글 작성</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="space-y-1">
-            <Label htmlFor="board_type">게시판(board_type)</Label>
-            <Select
-              value={boardType}
-              onValueChange={(v) => setBoardType(v as BoardType)}
-            >
-              <SelectTrigger id="board_type">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {BOARD_TYPES.map((b) => (
-                  <SelectItem key={b.value} value={b.value}>
-                    {b.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
           <div className="space-y-1">
             <Label htmlFor="title">제목 (title)</Label>
             <Input

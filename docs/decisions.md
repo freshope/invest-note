@@ -4,6 +4,35 @@
 
 ---
 
+## 2026-06-26 | 어드민 패널 인증 — Supabase → BE 토큰-브로커 교체(탈-Supabase 2c 선행)
+
+- **맥락:** [[탈-Supabase Auth]] cutover 운영 완료 후 어드민 패널(`admin/` standalone SPA)이 남은 Supabase 의존 중 하나였다. 2c(Supabase 물리 제거) 전에 어드민을 BE OAuth flow 로 교체하지 않으면 Supabase 제거 시 `/admin/*` 전부 401. `app/`(네이티브)의 BE flow 를 **웹용으로 미러링**하되, lib/auth/ 격리 경계 덕에 `api.ts`·`AuthProvider` 무변경.
+- **결정 ① web/native 구분 = `/auth/login?client=admin` state 플래그.**
+  - login 이 `client` 쿼리를 state transient 에 저장 → callback 이 분기(admin→web redirect, default→딥링크).
+  - **별도 web callback endpoint 불가**: IdP redirect_uri(`{be_oauth_redirect_base}/auth/callback`)가 Google/Kakao 에 등록된 고정값이라 콜백을 쪼갤 수 없다. 어드민 web redirect 는 IdP **다음**의 BE→client 2차 hop이므로 IdP 신규 등록 작업 0.
+- **결정 ② 어드민 redirect = 고정 식별자(`client=admin`)→env(`be_admin_redirect_url`) URL 매핑.**
+  - 클라이언트는 redirect **URL 을 전송하지 않는다** — 고정 식별자만 보내고 BE 가 env 의 고정 URL 로 매핑. **open redirect 차단.**
+  - 단일 env 가 곧 allowlist(URL 리스트로 일반화하지 않음, YAGNI — 현재 web 클라이언트는 어드민 하나). 빈 env + `client=admin` 은 login 시점 503 fail-fast(IdP 왕복·state 소모 전, `be_token_enabled` dormant-503 패턴).
+- **결정 ③ 브라우저 토큰 저장 = localStorage.**
+  - 현 Supabase(pkce flowType)도 세션을 localStorage 에 보관 → **회귀 없음.** 어드민은 ADMIN_EMAILS allowlist 게이트의 내부 운영 콘솔이라 위협모델상 수용 가능.
+  - httpOnly cookie + CSRF 토큰 미채택: BE `/auth/*` 가 Bearer/JSON 계약이라 쿠키 전환은 BE 재설계가 필요한데 이득(내부 콘솔)이 비용을 정당화하지 않음. PKCE verifier 도 full-page 리다이렉트 왕복 생존을 위해 localStorage(교환 후 삭제).
+  - **트레이드오프:** XSS 시 토큰 탈취 가능 — 단, allowlist 게이트라 비허용 계정은 토큰이 있어도 403. cookie 강화는 BE 토큰 계약 전반을 바꿀 때 재검토.
+- **결정 ④ 어드민 BE-flow 점진 토글 플래그 미도입(hard-swap).**
+  - `app/`은 스토어 바이너리 보급률 때문에 `be_auth_enabled` 서버 플래그로 점진 전환했지만, 어드민은 **단일 web 배포**(배포=전원 즉시 전환)라 플래그가 불필요. 배포 순서(BE env `be_admin_redirect_url` 주입 + 어드민 origin CORS 확인 → 어드민 SPA 배포)로 안전 확보.
+- **참고:** `require_admin` 비허용 응답은 **403**(ERR_FORBIDDEN)이다(스펙 초안 본문의 "401"은 부정확). BE 토큰의 email 클레임이 `admin_email_set` 와 정확 비교 — 기존 동작이며 이번 교체로 무회귀. 신규 마이그레이션 없음(token_store/auth_identities 재사용, 어드민 유저 백필 완료).
+
+## 2026-06-25 | 거래내역서 일괄등록 — 신한·미래에셋 PDF 파서 추가(Phase 1 국내 KRW)
+
+- **맥락:** [[2026-06-22 거래내역서 제보]]로 수집한 샘플 중 신한투자증권·미래에셋증권·KB증권 거래내역서를 일괄등록 파서로 추가. 기존 `samsung_xlsx`/`toss_pdf` 패턴(`broker_import/`, PARSERS 레지스트리, FE `BROKER_OPTIONS` 키 동기화) 확장.
+- **결정:**
+  - **Phase 1 = 국내 KRW 전용.** 해외(USD) 행은 기존 삼성/토스처럼 skip(신한/미래는 KR 앵커라 자연 배제). 해외 import 는 Phase C 로 분리(아래 트레이드오프·backlog).
+  - **신한 `shinhan_pdf`**: 거래 1건=3줄, line2 `^\d+ 장내_(매수|매도)` + line3 `위탁(주식)` 앵커. RP_*(위탁(RP) CMA) 등 비주식 자연 배제. 단가/수수료는 line1 **끝 6개 컬럼 앵커**(첫 숫자 토큰 아님 — 종목명에 숫자 포함돼도 안 밀림).
+  - **미래에셋 `mirae_pdf`**: 거래 1건=2줄(긴 ETF명은 줄바꿈 3줄), line1 `주식매수입고/주식매도출고`+`A<코드6>` 앵커. 현금leg(주식매수출금/매도입금)·이체·공모주·배당 skip.
+  - **mirae ticker_hint = 6자리 순수 숫자만 신뢰**(토스 관례). `A0080G0` 같은 영숫자 사내 코드는 None → 종목명 매칭. (영숫자를 ticker 로 적재하면 같은 ETF 가 숫자코드 적재한 다른 증권사와 보유 분리 → 평단/손익 손상)
+  - **KB증권 보류**: 제공 샘플에 매수만 있어 매도 추정 금지. 매도 포함 샘플 확보 후 매수+매도 함께 구현(backlog). `lib/brokers.ts` "KB증권"은 계좌 생성 마스터라 유지.
+  - **공통 PDF 헬퍼 `base.extract_pdf_lines`**: pdfplumber open+페이지 텍스트 수집 보일러플레이트를 신한·미래가 공유. **열기 실패(미래에셋 인증서식 AES 암호 등) 시 None 반환** → 파서가 친절 에러("암호 없는 버전으로 재출력"). 신한도 동일 경로(기존 500 → 안내).
+- **트레이드오프/교훈:** 합성 행 테스트만으론 컬럼 시프트·종목명 공백/줄바꿈·trailing 가변을 못 잡아 **실파일 fixture 회귀 필수**([[feedback_broker_parser_fixture_tests]]). 미래에셋 매도 제세금합 trailing 개수는 행마다 가변(1~2개, 유가잔고=0 이면 생략)이라 거래유형 고정 카운트 불가 — 실데이터 검증으로 확인. [[project_broker_import_parsers]].
+
 ## 2026-06-22 | 거래내역서 제보 — 연기 두 건 개봉(첨부 스토리지=R2 + app-side board write)
 
 - **맥락:** 일괄등록(거래내역서 업로드)이 삼성·토스만 지원하고, 새 증권사 파서·해외(USD) 거래 파싱을 만들려면 실제 거래내역서 샘플이 필요하다. 사용자에게서 샘플을 수집해 어드민 게시판(`board_posts`, `board_type='broker_statement'`)에 저장·검토한다. 이 작업이 [[2026-06-19 멀티 게시판 구조]]가 의도적으로 연기했던 두 결정(③ 첨부 스토리지 백엔드, app-side board write 경로)을 연다.

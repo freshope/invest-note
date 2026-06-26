@@ -7,13 +7,17 @@
 from __future__ import annotations
 
 from .base import BrokerStatementParser, ParseResult
+from .mirae_pdf import MiraePdfParser
 from .samsung_xlsx import SamsungXlsxParser
+from .shinhan_pdf import ShinhanPdfParser
 from .toss_pdf import TossPdfParser
 
 # 새 증권사 파서 추가 시 여기에 인스턴스를 추가한다.
 PARSERS: dict[str, BrokerStatementParser] = {
     SamsungXlsxParser.key: SamsungXlsxParser(),
     TossPdfParser.key: TossPdfParser(),
+    ShinhanPdfParser.key: ShinhanPdfParser(),
+    MiraePdfParser.key: MiraePdfParser(),
 }
 
 __all__ = ["PARSERS", "BrokerStatementParser", "ParseResult"]
