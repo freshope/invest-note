@@ -4,6 +4,23 @@
 
 ---
 
+## 2026-06-26 | 어드민 패널 인증 — Supabase → BE 토큰-브로커 교체(탈-Supabase 2c 선행)
+
+- **맥락:** [[탈-Supabase Auth]] cutover 운영 완료 후 어드민 패널(`admin/` standalone SPA)이 남은 Supabase 의존 중 하나였다. 2c(Supabase 물리 제거) 전에 어드민을 BE OAuth flow 로 교체하지 않으면 Supabase 제거 시 `/admin/*` 전부 401. `app/`(네이티브)의 BE flow 를 **웹용으로 미러링**하되, lib/auth/ 격리 경계 덕에 `api.ts`·`AuthProvider` 무변경.
+- **결정 ① web/native 구분 = `/auth/login?client=admin` state 플래그.**
+  - login 이 `client` 쿼리를 state transient 에 저장 → callback 이 분기(admin→web redirect, default→딥링크).
+  - **별도 web callback endpoint 불가**: IdP redirect_uri(`{be_oauth_redirect_base}/auth/callback`)가 Google/Kakao 에 등록된 고정값이라 콜백을 쪼갤 수 없다. 어드민 web redirect 는 IdP **다음**의 BE→client 2차 hop이므로 IdP 신규 등록 작업 0.
+- **결정 ② 어드민 redirect = 고정 식별자(`client=admin`)→env(`be_admin_redirect_url`) URL 매핑.**
+  - 클라이언트는 redirect **URL 을 전송하지 않는다** — 고정 식별자만 보내고 BE 가 env 의 고정 URL 로 매핑. **open redirect 차단.**
+  - 단일 env 가 곧 allowlist(URL 리스트로 일반화하지 않음, YAGNI — 현재 web 클라이언트는 어드민 하나). 빈 env + `client=admin` 은 login 시점 503 fail-fast(IdP 왕복·state 소모 전, `be_token_enabled` dormant-503 패턴).
+- **결정 ③ 브라우저 토큰 저장 = localStorage.**
+  - 현 Supabase(pkce flowType)도 세션을 localStorage 에 보관 → **회귀 없음.** 어드민은 ADMIN_EMAILS allowlist 게이트의 내부 운영 콘솔이라 위협모델상 수용 가능.
+  - httpOnly cookie + CSRF 토큰 미채택: BE `/auth/*` 가 Bearer/JSON 계약이라 쿠키 전환은 BE 재설계가 필요한데 이득(내부 콘솔)이 비용을 정당화하지 않음. PKCE verifier 도 full-page 리다이렉트 왕복 생존을 위해 localStorage(교환 후 삭제).
+  - **트레이드오프:** XSS 시 토큰 탈취 가능 — 단, allowlist 게이트라 비허용 계정은 토큰이 있어도 403. cookie 강화는 BE 토큰 계약 전반을 바꿀 때 재검토.
+- **결정 ④ 어드민 BE-flow 점진 토글 플래그 미도입(hard-swap).**
+  - `app/`은 스토어 바이너리 보급률 때문에 `be_auth_enabled` 서버 플래그로 점진 전환했지만, 어드민은 **단일 web 배포**(배포=전원 즉시 전환)라 플래그가 불필요. 배포 순서(BE env `be_admin_redirect_url` 주입 + 어드민 origin CORS 확인 → 어드민 SPA 배포)로 안전 확보.
+- **참고:** `require_admin` 비허용 응답은 **403**(ERR_FORBIDDEN)이다(스펙 초안 본문의 "401"은 부정확). BE 토큰의 email 클레임이 `admin_email_set` 와 정확 비교 — 기존 동작이며 이번 교체로 무회귀. 신규 마이그레이션 없음(token_store/auth_identities 재사용, 어드민 유저 백필 완료).
+
 ## 2026-06-25 | 거래내역서 일괄등록 — 신한·미래에셋 PDF 파서 추가(Phase 1 국내 KRW)
 
 - **맥락:** [[2026-06-22 거래내역서 제보]]로 수집한 샘플 중 신한투자증권·미래에셋증권·KB증권 거래내역서를 일괄등록 파서로 추가. 기존 `samsung_xlsx`/`toss_pdf` 패턴(`broker_import/`, PARSERS 레지스트리, FE `BROKER_OPTIONS` 키 동기화) 확장.

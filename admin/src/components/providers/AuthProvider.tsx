@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-// provider-neutral auth 인터페이스만 사용(@supabase/* 직접 import 금지 — 격리 경계).
+// provider-neutral auth 인터페이스만 사용(auth SDK 직접 import 금지 — 격리 경계).
 import { getUser, subscribe, type AdminUser } from "@/lib/auth";
 import { adminApi } from "@/lib/api";
 

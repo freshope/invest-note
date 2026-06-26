@@ -14,6 +14,7 @@ import {
   buildLoginUrl,
   exchangeToken,
   refreshToken,
+  revokeSession,
   decodeClaims,
   isExpiringSoon,
 } from "./be-client";
@@ -213,6 +214,16 @@ export async function signOut(): Promise<void> {
     // 동기 구간에서 먼저 세션 상태 전부 무효화(C#1). epoch 증가는 clearTokens await 전에 일어나
     // in-flight doRefresh 가 persist 직전 epoch 불일치를 보고 토큰을 부활시키지 못하게 한다.
     logoutEpoch++;
+    // 서버측 refresh revoke(best-effort) — clearTokens 전에 읽어야 토큰이 남아있다. 네트워크
+    // 실패해도 로컬 로그아웃은 무조건 진행(catch 흡수).
+    const refresh = await getRefreshToken();
+    if (refresh) {
+      try {
+        await revokeSession(refresh);
+      } catch {
+        /* 로컬 정리 우선 — revoke 실패 무시 */
+      }
+    }
     clearCache();
     refreshPromise = null;
     await clearTokens();
