@@ -90,6 +90,7 @@ from invest_note_api.schemas.trade_import import (
 from invest_note_api.schemas.trade_response import TradeSummaryResponse
 from invest_note_api.broker_import import PARSERS
 from invest_note_api.broker_import.ticker_resolver import resolve_tickers
+from invest_note_api.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -664,6 +665,7 @@ async def import_preview(
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
     staging: TradeStagingState = Depends(get_trade_staging_state),
+    settings: Settings = Depends(get_settings),
 ) -> ImportPreviewResponse:
     """파일을 파싱해 중복 체크 후 staging cache에 저장한다. commit 전에 호출."""
     filename = file.filename or ""
@@ -696,9 +698,21 @@ async def import_preview(
         for t in parse_result.trades
         if t.ticker_hint
     }
+    # ISIN(토스 해외 USD 행) 은 ticker_hint 와 분리 — OpenFIGI 로 해소(ISIN 매칭 우선).
+    isins = {
+        (t.country_code, t.asset_name): t.isin
+        for t in parse_result.trades
+        if t.isin
+    }
 
     async with pool.acquire() as conn:
-        ticker_map = await resolve_tickers(resolve_items, ticker_hints, conn=conn)
+        ticker_map = await resolve_tickers(
+            resolve_items,
+            ticker_hints,
+            conn=conn,
+            isins=isins,
+            openfigi_api_key=settings.openfigi_api_key or None,
+        )
 
     # 기존 거래에서 시그니처 셋 구성 (중복 판단용)
     # 파싱 결과의 KST 일자 min/max 범위로만 fetch — 사용자 전체 trades fetch 회피.

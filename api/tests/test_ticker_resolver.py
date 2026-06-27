@@ -239,6 +239,195 @@ async def test_find_first_empty_search_returns_none():
         assert await naver_search.find_first_kr_match("없는종목") is None
 
 
+# ─────────────────────────── ISIN 우선 해소 (OpenFIGI) ───────────────────────────
+
+
+def _patch_isin(
+    *,
+    cached: dict | None = None,
+    fetched: dict | None = None,
+    stock_by_ticker: dict | None = None,
+):
+    """ISIN 경로 의존성 3종을 한 번에 mock.
+
+    - isin_cache_repo.fetch_cached → `cached`
+    - openfigi.map_isins → `fetched` (그리고 upsert 는 no-op 으로 캡처)
+    - stocks_repo.lookup_by_tickers → `stock_by_ticker`(country 무시 단순화)
+    """
+    cached = cached or {}
+    fetched = fetched or {}
+    stock_by_ticker = stock_by_ticker or {}
+    upserted: list[list[dict]] = []
+
+    async def fake_fetch_cached(_conn, isins):
+        return {i: cached[i] for i in isins if i in cached}
+
+    async def fake_upsert(_conn, rows):
+        upserted.append(rows)
+
+    async def fake_map_isins(isins, *, api_key=None):
+        return {i: fetched.get(i) for i in isins}
+
+    async def fake_lookup_tickers(_conn, tickers, *, country_code="KR"):
+        return {t.upper(): stock_by_ticker[t.upper()] for t in tickers if t.upper() in stock_by_ticker}
+
+    patches = [
+        patch("invest_note_api.broker_import.ticker_resolver.isin_cache_repo.fetch_cached", fake_fetch_cached),
+        patch("invest_note_api.broker_import.ticker_resolver.isin_cache_repo.upsert", fake_upsert),
+        patch("invest_note_api.broker_import.ticker_resolver.map_isins", fake_map_isins),
+        patch("invest_note_api.db_ops.stocks_repo.lookup_by_tickers", fake_lookup_tickers),
+    ]
+    return patches, upserted
+
+
+def _enter(patches):
+    for p in patches:
+        p.start()
+
+
+def _exit(patches):
+    for p in patches:
+        p.stop()
+
+
+@pytest.mark.asyncio
+async def test_isin_resolves_to_ticker_with_exchange():
+    """ISIN → OpenFIGI ticker(PLTR), stocks 매칭으로 exchange 채움."""
+    patches, _ = _patch_isin(
+        fetched={"US69608A1088": {"ticker": "PLTR", "exch_code": "UN", "name": "PALANTIR", "security_type": "Common Stock"}},
+        stock_by_ticker={"PLTR": {"code": "PLTR", "name": "Palantir", "market": "US", "exchange": "NASDAQ"}},
+    )
+    _enter(patches)
+    try:
+        result = await resolve_tickers(
+            items={("US", "팔란티어")},
+            ticker_hints={},
+            conn=None,
+            isins={("US", "팔란티어"): "US69608A1088"},
+        )
+    finally:
+        _exit(patches)
+
+    assert result == {("US", "팔란티어"): {"code": "PLTR", "exchange": "NASDAQ"}}
+
+
+@pytest.mark.asyncio
+async def test_isin_resolved_but_no_local_stock_still_success():
+    """ISIN 해소 성공 + stocks 미보유 → ticker 권위, exchange="" (종목명 폴백 아님)."""
+    patches, _ = _patch_isin(
+        fetched={"KYG3731B1086": {"ticker": "GMHS", "exch_code": "UW", "name": "GAMEHAUS", "security_type": "Common Stock"}},
+        stock_by_ticker={},  # 마스터에 없음
+    )
+    _enter(patches)
+    try:
+        result = await resolve_tickers(
+            items={("US", "게임하우스 홀딩스")},
+            ticker_hints={},
+            conn=None,
+            isins={("US", "게임하우스 홀딩스"): "KYG3731B1086"},
+        )
+    finally:
+        _exit(patches)
+
+    assert result == {("US", "게임하우스 홀딩스"): {"code": "GMHS", "exchange": ""}}
+
+
+@pytest.mark.asyncio
+async def test_isin_unresolved_falls_back_to_name_match():
+    """OpenFIGI 가 미해결 → 종목명 매칭 폴백(+negative cache 저장)."""
+    patches, upserted = _patch_isin(fetched={"XX0000000000": None})
+    fake_db = {"애플": {"code": "AAPL", "name": "Apple", "market": "US", "exchange": "NASDAQ"}}
+    _enter(patches)
+    try:
+        with _patch_lookup(fake_db):
+            result = await resolve_tickers(
+                items={("US", "애플")},
+                ticker_hints={},
+                conn=None,
+                isins={("US", "애플"): "XX0000000000"},
+            )
+    finally:
+        _exit(patches)
+
+    # 종목명 폴백으로 AAPL 매칭.
+    assert result == {("US", "애플"): {"code": "AAPL", "exchange": "NASDAQ"}}
+    # negative cache 저장됨(resolved=False).
+    assert upserted == [[{
+        "isin": "XX0000000000", "ticker": None, "exch_code": None,
+        "country_code": None, "name": None, "resolved": False,
+    }]]
+
+
+@pytest.mark.asyncio
+async def test_isin_cache_hit_skips_openfigi():
+    """캐시 positive hit 이면 OpenFIGI 호출 안 함(캐시 ticker 사용)."""
+    async def boom(_isins, **_kw):
+        raise AssertionError("map_isins 가 호출됨 (캐시 hit 인데)")
+
+    patches, upserted = _patch_isin(
+        cached={"US69608A1088": {"ticker": "PLTR", "exch_code": "UN", "country_code": "US", "name": "P", "resolved": True}},
+        stock_by_ticker={"PLTR": {"code": "PLTR", "name": "Palantir", "market": "US", "exchange": "NASDAQ"}},
+    )
+    _enter(patches)
+    try:
+        with patch("invest_note_api.broker_import.ticker_resolver.map_isins", boom):
+            result = await resolve_tickers(
+                items={("US", "팔란티어")},
+                ticker_hints={},
+                conn=None,
+                isins={("US", "팔란티어"): "US69608A1088"},
+            )
+    finally:
+        _exit(patches)
+
+    assert result == {("US", "팔란티어"): {"code": "PLTR", "exchange": "NASDAQ"}}
+    assert upserted == []  # 미스 없음 → upsert 안 함
+
+
+@pytest.mark.asyncio
+async def test_isin_negative_cache_hit_skips_openfigi_and_falls_back():
+    """캐시 negative hit(resolved=False)이면 OpenFIGI 재호출 없이 종목명 폴백."""
+    async def boom(_isins, **_kw):
+        raise AssertionError("map_isins 가 호출됨 (negative cache hit 인데)")
+
+    patches, _ = _patch_isin(
+        cached={"XX0000000000": {"ticker": None, "exch_code": None, "country_code": None, "name": None, "resolved": False}},
+    )
+    fake_db = {"애플": {"code": "AAPL", "name": "Apple", "market": "US", "exchange": "NASDAQ"}}
+    _enter(patches)
+    try:
+        with patch("invest_note_api.broker_import.ticker_resolver.map_isins", boom):
+            with _patch_lookup(fake_db):
+                result = await resolve_tickers(
+                    items={("US", "애플")},
+                    ticker_hints={},
+                    conn=None,
+                    isins={("US", "애플"): "XX0000000000"},
+                )
+    finally:
+        _exit(patches)
+
+    assert result == {("US", "애플"): {"code": "AAPL", "exchange": "NASDAQ"}}
+
+
+@pytest.mark.asyncio
+async def test_no_isins_skips_isin_path_entirely():
+    """isins 없으면 OpenFIGI/캐시 경로 미진입(conn=None 무회귀) — 종목명만."""
+    async def boom_fetch(_conn, _isins):
+        raise AssertionError("fetch_cached 가 호출됨 (isins 없는데)")
+
+    fake_db = {"삼성전자": {"code": "005930", "name": "삼성전자", "market": "KR", "exchange": "KOSPI"}}
+    with patch("invest_note_api.broker_import.ticker_resolver.isin_cache_repo.fetch_cached", boom_fetch):
+        with _patch_lookup(fake_db):
+            result = await resolve_tickers(
+                items={("KR", "삼성전자")},
+                ticker_hints={},
+                conn=None,
+            )
+
+    assert result == {("KR", "삼성전자"): {"code": "005930", "exchange": "KOSPI"}}
+
+
 @pytest.mark.asyncio
 async def test_search_kr_filters_non_kr_type_codes():
     """typeCode 가 한국 거래소가 아니면 결과에서 제외."""

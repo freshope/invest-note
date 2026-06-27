@@ -13,6 +13,7 @@ from invest_note_api.broker_import.toss_pdf import (
     TossPdfParser,
     _build_column_map,
     _parse_ticker_hint,
+    _parse_usd_isin,
     _parse_usd_name,
     _split_usd_nums,
 )
@@ -346,6 +347,12 @@ class TestTossUsdHelpers:
         assert _parse_usd_name("팔란티어(US69608A1088)") == "팔란티어"
         assert _parse_usd_name("게임하우스 홀딩스(KYG3731B1086)") == "게임하우스 홀딩스"
 
+    def test_parse_usd_isin_extracts_code(self):
+        assert _parse_usd_isin("팔란티어(US69608A1088)") == "US69608A1088"
+        assert _parse_usd_isin("게임하우스 홀딩스(KYG3731B1086)") == "KYG3731B1086"
+        # ISIN 패턴이 없으면 None (종목명 폴백).
+        assert _parse_usd_isin("이름만") is None
+
 
 class TestTossUsdParserLine:
     """USD 행의 ÷환율 복원 단위 검증. 두 실파일 샘플은 수수료/제세금이 모두 0이라
@@ -370,6 +377,8 @@ class TestTossUsdParserLine:
         assert t.country_code == "US"
         assert t.currency == "USD"
         assert t.ticker_hint is None
+        # ISIN 은 ticker_hint 가 아니라 isin 필드로 전달(OpenFIGI 해소용).
+        assert t.isin == "US69608A1088"
         assert t.exchange_rate == pytest.approx(1370.30)
         assert t.quantity == pytest.approx(0.030345)
         # 단가 40,641원 ÷ 1,370.30 ≈ 29.66 USD.

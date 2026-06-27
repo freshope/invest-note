@@ -4,6 +4,25 @@
 
 ---
 
+## 2026-06-27 | 토스 해외 ISIN 코드 매칭 (OpenFIGI) — 종목명 매칭 → ISIN 정확 매칭
+
+- **맥락:** 직전 "토스 해외(USD) 일괄등록"(아래 엔트리)은 달러 행을 **한글 종목명**으로 매칭했다 — 원리적 오매칭 리스크 + 미해결 노이즈. QA-A2 실측: 토스 대형 샘플 USD 중 **101건 미해결**(알파벳 A 이름포맷 54·더치 브로스 master 부재 47). 토스가 행에 ISIN(`US69608A1088`)을 주므로 이를 권위 식별자로 써 정확 매칭한다. [[project_broker_import_parsers]] Phase 2 의 정밀도 보강.
+- **결정 ① import 시점 ISIN→ticker 해소 + `isin_ticker_map` 캐시 (마스터 ISIN 백필 아님).** OpenFIGI `/v3/mapping` 은 ISIN **입력 전용** — 응답에 ISIN 이 없어(ticker·exchCode 만 반환) `stocks` 마스터에 ISIN 컬럼을 전수 백필할 방법이 없다. 따라서 **import 가 만난 미해결 ISIN 만 그 시점에 해소**하고 `isin_ticker_map`(isin PK·ticker·exch_code·country_code·name·resolved·source·resolved_at)에 캐시한다. `resolved=false` 는 **negative cache** — 미해결 ISIN 의 매 import 재호출(rate limit 소모)을 막는다. 마이그레이션 0008(head, 0007 위), 컬럼/신규테이블이라 superuser 불요·로컬 적용만(운영 confirm).
+- **결정 ② 소스 = OpenFIGI(FIGI), license-clean.** FIGI 는 public domain·상업 이용·재배포 허용·출처표기 불요. CUSIP(라이선스 함정)을 출력하지 않아 구조적으로 회피. Rate: 무키 25req/분·10건/요청, 옵션 무료키(`OPENFIGI_API_KEY`) 시 25req/6초·100건/요청. 키 미설정이어도 무키 경로로 동작(graceful) — 옵션 env 단일.
+- **결정 ③ ISIN 매칭 > 종목명 폴백 (우선순위 고정).** `resolve_tickers` 가 ISIN 있는 항목은 캐시→OpenFIGI 배치→캐시 upsert→ticker 로 `stocks` 조회(exchange 채움) 순으로 해소하고, **해소 성공 시 그 ticker 가 권위**(`stocks` 마스터에 없어도 `exchange=""` 로 성공 — ticker_hint 와 동일 사상). OpenFIGI 가 아무것도 못 줬을 때(+negative cache hit)에만 기존 종목명 매칭으로 폴백. `ParsedTrade.isin` 은 `ticker_hint` 와 **별도 필드**(ticker_hint="이미 ticker"=KR 6자리, isin="조회 필요" — 혼용 시 resolver 가 ISIN 을 code 로 오용).
+- **결정 ④ picker = `exchCode=='US'`(합성) ∩ `securityType ∈ {Common Stock, ETP, ...}` 우선, `data[0]` 직사용 금지.** OpenFIGI 는 ISIN 1건당 글로벌 거래소·통화별 후보 수백 행 반환(PLTR 229행: PLTRCHF/0A7R(런던)/TL0 등 외국상장 혼재). **`data[0]` 신뢰 불가** — AMZN 의 `data[0]` exchCode 가 `PE`(페루)다. `_choose` 가 후보를 (US거래소 ∩ 우선타입)=rank0 으로 점수화해 `min()` 선택 → 외국상장 silent 오해소 방지(QA 실측: 11 ISIN 각 rank0 후보 정확히 1 ticker, flip-risk 0). **exchCode 용도는 ticker 디스앰비규에이션 전용** — country 는 파서가 달러 섹션 행에 이미 `country_code="US"` 스탬프(`exch_code_to_country` 는 현재 항상 US 반환, 유일 해외 마스터).
+- **성과 (QA #18 실 OpenFIGI 무키 + 실 dev DB 실측):**
+  - **미해결 101 → 0** — 종목명 매칭 시절 미해결 101건이 ISIN 경로로 토스 대형 샘플 USD 전건 해소(0 미해결).
+  - **share-class 정밀도** — 알파벳 A(`US02079K3059`) → **GOOGL**(NASDAQ, GOOG Class C 아님). 종목명 "알파벳 A" 가 보장 못 하는 정밀도를 ISIN 이 디스앰비규에이트.
+  - 종목명 매칭으론 미해결이던 케이맨 게임하우스(`KYG3731B1086`)→GMHS(NASDAQ), 더치 브로스(`US26701L1008`)→BROS(NYSE) 정확 해소·US 마스터 존재.
+  - 캐시 positive(2회차 OpenFIGI 0회)·negative(합성 미해결 2회차 0회·resolved=false 저장)·폴백 양성(애플+가짜ISIN→종목명 폴백 AAPL)·KRW 무회귀·preview→commit 실 INSERT read-back(GMHS·US·rate=1380.5·origin=IMPORT) 전건 통과. 전체 pytest 896 passed/3 skipped.
+- **트레이드오프/교훈:**
+  - ⓐ **import 시점 외부 의존:** 해소가 OpenFIGI 가용성에 묶인다. 네트워크/non-200/JSON/shape 실패·429 는 전부 graceful(해당 배치 None→종목명 폴백, 429 백오프 최대 2회) — import preview 전체가 5xx 되면 안 됨. 외부 장애 시 정밀도만 한시 저하(종목명 경로로 복귀), 등록 자체는 유지.
+  - ⓑ **캐시 staleness:** ISIN→ticker 매핑은 거의 불변이라 무TTL 영구 캐시. 드문 ticker 변경(상장 이전/리네이밍) 시 `isin_ticker_map` 수동 무효화 필요(현재 자동 만료 없음 — 빈도 낮아 YAGNI).
+  - ⓒ **`exch_code_to_country` 단일 US:** 유일 해외 마스터가 US 라 모든 exchCode 를 US 로 매핑. 향후 비-US 해외 마스터 도입 시 이 함수가 분기점([[project_stock_data_sources]]).
+  - ⓓ **FE/PnL 무영향:** import 결과는 기존 US 거래 경로로 staged/렌더(ISIN 은 BE 내부에서 ticker 로 치환). PnL 재계산·BUY meta cascade 무관(staging→commit insert 경로 그대로).
+- 참조: 아래 "2026-06-27 토스 해외(USD) 일괄등록"(전신·101 출처), [[project_broker_import_parsers]]·[[project_stock_data_sources]].
+
 ## 2026-06-27 | 토스 해외(USD) 일괄등록 — USD 네이티브 복원 + country-scoped 매칭
 
 - **맥락:** [[project_broker_import_parsers]] Phase 2(해외)의 첫 구현. `toss_pdf.py` 가 달러 섹션 행을 6자리 KRX 코드 정규식으로만 매칭해, ISIN(`US69608A1088`) 종목은 정규식에 안 걸려 `usd_skip_count` 조차 안 오르고 "신규 0·중복 0·건너뜀 0·에러 0"의 **침묵 누락**이 났다. 토스 달러 섹션을 USD 네이티브 거래로 임포트한다.

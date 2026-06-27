@@ -34,7 +34,8 @@ _USD_DATA_LINE_RE = re.compile(
     r"(?P<rest>.+)$"
 )
 # ISIN 은 KRX 표준 숫자코드가 아니라 ticker_hint 로 쓰지 않는다(mirae A0080G0 선례).
-_USD_TICKER_RE = re.compile(r"^(.+?)\([A-Z0-9]{12}\)$")
+# 대신 OpenFIGI 해소용으로 별도 isin 필드에 담는다(ParsedTrade.isin). group(2)=ISIN.
+_USD_TICKER_RE = re.compile(r"^(.+?)\(([A-Z0-9]{12})\)$")
 # 환율 앵커: '1,xxx.xx'(소수 2자리). glued 토큰 '1,370.300.004568' 디-글루용.
 _USD_RATE_ANCHOR = re.compile(r"^(\d{1,3}(?:,\d{3})*\.\d{2})")
 
@@ -93,6 +94,12 @@ def _parse_usd_name(raw_name: str) -> str:
     if m:
         return m.group(1).strip()
     return raw_name.strip()
+
+
+def _parse_usd_isin(raw_name: str) -> str | None:
+    """'팔란티어(US69608A1088)' → 'US69608A1088'. ISIN 없으면 None (종목명 폴백)."""
+    m = _USD_TICKER_RE.match(raw_name.strip())
+    return m.group(2) if m else None
 
 
 def _split_usd_nums(rest: str) -> list[str]:
@@ -350,6 +357,7 @@ class TossPdfParser(BrokerStatementParser):
         if not asset_name:
             result.add_error(row_no, "종목명 없음")
             return None
+        isin = _parse_usd_isin(name_raw)
 
         quantity = parse_number(qty_raw)
         amount_krw = parse_number(amount_raw)
@@ -386,7 +394,8 @@ class TossPdfParser(BrokerStatementParser):
             currency="USD",
             country_code="US",
             exchange_rate=exchange_rate,
-            ticker_hint=None,  # ISIN 은 hint 로 쓰지 않는다 → name 매칭 폴백
+            ticker_hint=None,  # ISIN 은 hint 로 쓰지 않는다 → isin 필드로 OpenFIGI 해소
+            isin=isin,
             account_hint=result.account_hint,
             raw={"date": date_raw, "name": name_raw, "qty": qty_raw, "rate": rate_raw},
         )

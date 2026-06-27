@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     kis_app_key: str = ""
     kis_app_secret: str = ""
 
+    # OpenFIGI ISIN→ticker 해소(external/openfigi.py) API 키. 옵션 — 빈 값이면 무키 경로
+    # (25req/분·10건/요청). 키가 있으면 25req/6초·100건/요청으로 페이싱·배치가 빨라진다.
+    # 토스 해외(USD) import 의 ISIN 매칭에만 쓰인다. 호출부는 `or None` 으로 빈 값을 무키 처리.
+    openfigi_api_key: str = ""
+
     # KIS 환경. "real"(실전) | "mock"(모의투자) — 도메인·TR ID prefix(T↔V) 분기에 사용.
     kis_env: str = "real"
 
