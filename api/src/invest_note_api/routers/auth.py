@@ -41,7 +41,11 @@ from invest_note_api.errors import (
     APIError,
 )
 from invest_note_api.external.http_client import get_http_client
-from invest_note_api.services.auth_identity import create_user_identity, resolve_user_id
+from invest_note_api.services.auth_identity import (
+    create_user_identity,
+    link_user_by_verified_email,
+    resolve_user_id,
+)
 from invest_note_api.services.user_profile import upsert_profile
 
 router = APIRouter(prefix="/auth")
@@ -214,12 +218,18 @@ async def _handle_callback(
     display_name = userinfo.display_name or apple_display_name
 
     async with pool.acquire() as conn:
-        # 매핑 해석. hit = 기존자 → 원래 UUID 재사용(데이터 보존, B1). miss = 진짜 신규 가입
-        # → user + auth_identities 매핑 생성(2b-3, race-safe). email 매칭 안 함(B1 정책 유지).
+        # 매핑 해석. hit = 기존자 → 원래 UUID 재사용(데이터 보존, B1). miss = (provider,sub) 신규.
         # ⚠️ gapless 전제: cutover 시 Supabase 신규가입 동결 후 최종 백필로 매핑 완전·확정 →
         # 미매핑 sub 는 기존자가 아님(고아화 없음). 클라이언트 BE flow 노출(B안: 서버 플래그
         # flip)은 백필 완료 후(운영 runbook 가드 — flip 시점이 신규 생성 시작점).
         user_id = await resolve_user_id(conn, provider, sub)
+        if user_id is None:
+            # B1-link: (provider,sub) miss 라도 같은 verified 이메일의 기존 계정이 있으면 자동 연결
+            # (카카오↔구글 동일 이메일 중복 계정 방지). 양쪽-verified 가드, 매칭 없으면 신규 생성 폴백.
+            user_id = await link_user_by_verified_email(
+                conn, provider, sub,
+                email=userinfo.email, email_verified=userinfo.email_verified,
+            )
         if user_id is None:
             user_id = await create_user_identity(conn, provider, sub)
 

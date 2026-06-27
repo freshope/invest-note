@@ -28,6 +28,53 @@ async def resolve_user_id(conn: asyncpg.Connection, provider: str, sub: str) -> 
     return row["user_id"] if row else None
 
 
+async def link_user_by_verified_email(
+    conn: asyncpg.Connection,
+    provider: str,
+    sub: str,
+    *,
+    email: str | None,
+    email_verified: bool | None,
+) -> UUID | None:
+    """email_verified cross-provider 자동 연결(B1-link) — 같은 이메일=같은 계정.
+
+    카카오→구글처럼 IdP 가 달라 sub 가 달라도, **양쪽 이메일이 모두 인증된** 경우에만
+    기존 user 에 `(provider, sub)` 매핑을 추가해 동일 계정으로 연결한다(중복 users 생성 방지).
+    매칭 없으면 None 을 반환해 `create_user_identity` 신규 생성으로 폴백한다.
+
+    ⚠️ 양쪽-verified 가드(보안 — 절대 완화 금지):
+    - 새 측(`email_verified`)이 미인증/이메일 없음 → None. 미인증 이메일로 link 하면 공격자가
+      남의 이메일을 스쿼팅해 피해자 계정에 자기 IdP 를 붙이는 하이재킹이 된다.
+    - 기존 측도 `email_verified IS TRUE` 인 후보만(null/false 배제). 한쪽이라도 미인증이면 연결 안 함.
+    - `lower()` 비교만(dot/plus 정규화 안 함 — 과정규화는 서로 다른 이메일 오매칭 = 보안 구멍).
+    - 후보가 0(진짜 신규) 또는 2+(이미 중복 존재 → 어디 붙일지 모호) → None(자동 연결 보류).
+
+    새 `users` 를 만들지 않으므로 advisory lock 없이도 race-safe: 동시 첫 로그인은
+    UNIQUE(provider, provider_id) + ON CONFLICT DO NOTHING 으로 단일 매핑이 보장된다(orphan 없음).
+    """
+    if not email or not email_verified:
+        return None
+    provider = provider.lower()
+    rows = await conn.fetch(
+        "SELECT DISTINCT user_id FROM public.user_profiles "
+        "WHERE lower(email) = lower($1) AND email_verified IS TRUE",
+        email,
+    )
+    if len(rows) != 1:
+        return None  # 0 = 진짜 신규, 2+ = 모호(기존 중복) → 자동 연결 보류
+    target = rows[0]["user_id"]
+    # 기존 user 에 새 IdP 매핑만 추가(users 생성 없음). 경쟁자가 같은 (provider,sub) 선점 시 그 매핑 채택.
+    row = await conn.fetchrow(
+        "INSERT INTO public.auth_identities (provider, provider_id, user_id) "
+        "VALUES ($1, $2, $3) "
+        "ON CONFLICT (provider, provider_id) DO NOTHING RETURNING user_id",
+        provider, sub, target,
+    )
+    if row is not None:
+        return row["user_id"]
+    return await resolve_user_id(conn, provider, sub)
+
+
 async def create_user_identity(conn: asyncpg.Connection, provider: str, sub: str) -> UUID:
     """신규 가입: `public.users` + `auth_identities` 매핑을 생성하고 user_id 를 반환한다.
 

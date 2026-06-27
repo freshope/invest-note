@@ -298,6 +298,11 @@ def _apple_bool(v: Any) -> bool | None:
     return str(v).lower() == "true"
 
 
+# ⚠️ 보안 불변식: 여기 등록하는 provider 의 userinfo.email_verified 는 **실제 이메일 소유 증명**을
+# 의미해야 한다. cross-provider 자동 계정연결(auth_identity.link_user_by_verified_email)이 이 값을
+# 신뢰하므로, 사용자가 임의 이메일을 verified 로 self-assert 할 수 있는 IdP 를 추가하면 같은 이메일의
+# 기존 계정에 자동 연결돼 하이재킹이 가능하다. 현재 3사(Google OIDC·Apple OIDC·Kakao is_email_verified)는
+# 모두 소유를 검증한다. self-assert 가능한 provider 를 추가하려면 link 측에 originator allowlist 를 먼저 둘 것.
 _PROVIDERS = {"google": GoogleProvider, "kakao": KakaoProvider, "apple": AppleProvider}
 
 

@@ -119,6 +119,18 @@ class _FakeConn:
             return {"email": p["email"]} if p else None
         raise AssertionError(f"unhandled fetchrow: {sql[:50]}")
 
+    async def fetch(self, sql, *args):
+        # link_user_by_verified_email — 같은 verified 이메일의 기존 user 조회(B1-link).
+        if "FROM public.user_profiles" in sql:
+            (email,) = args
+            seen = []
+            for uid, p in self.s["profiles"].items():
+                pe = p.get("email")
+                if pe and pe.lower() == email.lower() and p.get("email_verified") is True and uid not in seen:
+                    seen.append(uid)
+            return [{"user_id": u} for u in seen]
+        raise AssertionError(f"unhandled fetch: {sql[:50]}")
+
     async def execute(self, sql, *args):
         import json
 
@@ -280,6 +292,35 @@ def test_b1_mapping_miss_creates_new_user(patch_provider):
 
     # profile 첫 레코드 생성.
     assert new_uid in store["profiles"]
+
+
+def test_b1_link_to_existing_verified_email(patch_provider):
+    # 매핑 miss 라도 같은 verified 이메일의 기존 계정이 있으면 새 user 생성 없이 그 계정에 연결(B1-link).
+    # (카카오↔구글 동일 이메일 중복 계정 방지. _MockProvider 가 verified 'u@gmail.com' 제공.)
+    existing_uid = uuid4()
+    store = _new_store(with_mapping=False)
+    store["profiles"][existing_uid] = {
+        "email": "u@gmail.com", "display_name": "기존", "avatar_url": None,
+        "email_verified": True,
+    }
+    client = _client(store)
+    verifier = "app-verifier-link-001"
+    state = _do_login(client, verifier)
+    cb = _do_callback(client, state)
+    assert cb.status_code == 302
+
+    # 새 user 생성 안 함(create_user_identity 미호출 → public.users INSERT 없음).
+    assert store["users"] == set()
+    # 새 provider 매핑은 기존 user_id 로 추가됨(연결).
+    assert store["identities"][("google", PROVIDER_SUB)] == existing_uid
+
+    # 토큰 sub == 기존 UUID(데이터 연속성 — 같은 계정).
+    code = parse_qs(urlparse(cb.headers["location"]).query)["code"][0]
+    r = client.post("/auth/token", json={"code": code, "code_verifier": verifier})
+    assert r.status_code == 200
+    claims = jwt.decode(r.json()["access_token"], _be_key.public_key(),
+                        algorithms=["ES256"], audience=BE_AUDIENCE, issuer=BE_ISSUER)
+    assert claims["sub"] == str(existing_uid)
 
 
 # --- B4: 딥링크에 토큰 직접 미노출 ---
