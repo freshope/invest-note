@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-06-27 | 거래 출처(origin) 도입 + 일괄등록 거래 금액 잠금
+
+- **맥락:** 거래내역서 일괄등록(import)과 손입력 거래가 데이터·UI상 구분되지 않아, 증권사가 준 "사실에 가까운" 금액을 사용자가 수정하면 기록 신뢰도가 떨어졌다. PostHog상 import는 소수(4명/57건)지만 사실 보호 가치가 있다.
+- **결정 ① 컬럼명 `origin`(`source` 아님), 값 `MANUAL`/`IMPORT`.** 코드 전반의 `source`는 전부 analytics용이라 `trade.source`로 두면 혼동.
+- **결정 ② 잠금 = "사실 5필드만"(`price, quantity, exchange_rate, commission, tax`), 분석 메타(전략/감정/태그/메모)는 수정 허용.** import가 메타를 안 채우므로 사용자 저널링 여지를 남긴다. `market_type`/`trade_type`은 **절대 잠금집합 제외** — FE가 항상 변경없이 전송하므로 끼면 메타 수정까지 false-reject.
+- **결정 ③ BE 서버단 강제(presence-based 422) + FE read-only/omit 이중 방어.** `origin=="IMPORT" and fields & IMPORT_LOCKED_FIELDS`면 422. FE만 막으면 "이 화면에서만 불가"라 불변식이 안 됨. presence-based(값 비교 아님)는 의도적 — explicit null도 거부.
+- **결정 ④ forward-only(소급 backfill 없음).** 기존 import 57건은 출처 신호 미저장이라 식별 불가 → 전부 `MANUAL`로 남는다. `origin`은 INSERT 시에만 설정(불변, PATCH 화이트리스트 제외).
+- **결정 ⑤ origin 컬럼은 마이그레이션 0007에만, baseline_schema.sql(0001 동결 스냅샷)에는 넣지 않음.** 둘 다 넣으면 신규 DB에서 `alembic upgrade head`가 DuplicateColumn으로 실패(코드리뷰에서 발견·수정). 후속 마이그레이션은 새 객체만 추가하는 컨벤션.
+- **트레이드오프:** ⓐ 배포 skew — presence-based 422라 omit 로직 없는 구버전/캐시 웹 클라가 IMPORT 거래 메타 편집 시 422 가능(IMPORT는 OTA 후 생성·FE도 같은 OTA라 창은 좁음). ⓑ 해외(Phase 2) 일괄등록 도입 시, 잠긴 금액필드가 zod 검증을 통과 못하면 메타 저장이 막히는 잠복 결함(현재 KR 전용이라 미발생). ⓒ 잠금 5필드가 BE frozenset·FE omit·readOnly 3곳에 중복 — 향후 필드 추가 시 동기화 필요.
+
+---
+
 ## 2026-06-26 | 어드민 패널 인증 — Supabase → BE 토큰-브로커 교체(탈-Supabase 2c 선행)
 
 - **맥락:** [[탈-Supabase Auth]] cutover 운영 완료 후 어드민 패널(`admin/` standalone SPA)이 남은 Supabase 의존 중 하나였다. 2c(Supabase 물리 제거) 전에 어드민을 BE OAuth flow 로 교체하지 않으면 Supabase 제거 시 `/admin/*` 전부 401. `app/`(네이티브)의 BE flow 를 **웹용으로 미러링**하되, lib/auth/ 격리 경계 덕에 `api.ts`·`AuthProvider` 무변경.

@@ -71,6 +71,9 @@ export interface Trade {
   commission: number;
   tax: number;
 
+  // 거래 출처 — MANUAL(개별등록) / IMPORT(거래내역서 일괄등록). INSERT 시 확정·불변.
+  origin: "MANUAL" | "IMPORT";
+
   created_at: string;
   updated_at: string;
 }

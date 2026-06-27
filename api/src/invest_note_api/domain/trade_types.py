@@ -139,6 +139,9 @@ class Trade(BaseModel):
     avg_buy_price: float | None = None
     holding_days: int | None = None
 
+    # 거래 출처. "MANUAL"=개별등록(기본), "IMPORT"=거래내역서 일괄등록. INSERT 시에만 설정(불변).
+    origin: str = "MANUAL"
+
     country_code: str = DEFAULT_COUNTRY
     exchange: str = ""
     # 거래 시점 환율(native→KRW). KR=1.0. KRW 금액 = native × exchange_rate.
