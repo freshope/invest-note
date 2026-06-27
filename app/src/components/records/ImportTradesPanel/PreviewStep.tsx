@@ -8,6 +8,10 @@ import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
 import type { ImportPreviewResponse } from "@/lib/api-client";
 import type { Account } from "@/types/database";
 
+// 해외(USD) 일괄 등록을 지원하는 broker_key. 그 외 브로커는 해외 행이 조용히
+// 누락될 수 있어 미지원 고지를 유지한다.
+const OVERSEAS_SUPPORTED_BROKERS = new Set(["toss_pdf"]);
+
 interface Props {
   preview: ImportPreviewResponse;
   account: Account;
@@ -55,6 +59,8 @@ export function PreviewStep({ preview, account, onCommit, onBack, onReportOverse
   const validationErrors = preview.validation_errors ?? [];
   const hasValidationError = validationErrors.length > 0;
   const excludedCount = preview.excluded_count ?? 0;
+  const foreignCount = preview.foreign_count ?? 0;
+  const overseasUnsupported = !OVERSEAS_SUPPORTED_BROKERS.has(preview.broker_key);
   // 제외 예정 그룹은 보통 신규 등록으로 분류돼 있으므로 차감해서 실제 등록 예정 수를 표시한다.
   // dup_count 까지 차감하지 않는 이유: 제외 그룹의 row 가 dup 으로 분류된 경우는 드물고, BE 가 row 합계만 알려주기 때문.
   const effectiveNewCount = Math.max(0, preview.new_count - excludedCount);
@@ -77,24 +83,36 @@ export function PreviewStep({ preview, account, onCommit, onBack, onReportOverse
           />
         </div>
 
-        {/* 해외 거래는 아직 일괄 등록 미지원. 감지 여부와 무관하게 상시 고지해
-            해외 행이 조용히 누락되는 것(silent loss)을 사용자가 인지하도록 한다. */}
-        <div className="rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
-          <div className="flex items-start gap-2">
-            <InfoIcon className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>
-              해외(미국 등) 거래는 아직 일괄 등록을 지원하지 않습니다. 이 결과에는 국내 거래만
-              포함되어 있으니, 해외 거래가 있다면 직접 입력해 주세요.
-            </span>
+        {foreignCount > 0 ? (
+          // 해외(USD) 거래가 감지·등록됨. 침묵 누락이 아니라 함께 등록됨을 안내한다.
+          <div className="rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+            <div className="flex items-start gap-2">
+              <InfoIcon className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                해외 거래 {foreignCount}건 포함됨(USD) — 외화 기준으로 함께 등록됩니다.
+              </span>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={onReportOverseas}
-            className="mt-2 w-full rounded-md border border-primary/40 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/5"
-          >
-            해외 거래내역서 제보
-          </button>
-        </div>
+        ) : overseasUnsupported ? (
+          // 해외 미지원 브로커는 해외 행이 조용히 누락(silent loss)될 수 있어
+          // 감지 여부와 무관하게 고지하고 제보 경로를 제공한다.
+          <div className="rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+            <div className="flex items-start gap-2">
+              <InfoIcon className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                해외(미국 등) 거래는 아직 일괄 등록을 지원하지 않습니다. 이 결과에는 국내 거래만
+                포함되어 있으니, 해외 거래가 있다면 직접 입력해 주세요.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={onReportOverseas}
+              className="mt-2 w-full rounded-md border border-primary/40 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/5"
+            >
+              해외 거래내역서 제보
+            </button>
+          </div>
+        ) : null}
         {preview.duplicate_count > 0 && (
           <div className="flex items-start gap-2 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
             <InfoIcon className="mt-0.5 h-4 w-4 shrink-0" />

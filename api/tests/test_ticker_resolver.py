@@ -11,7 +11,11 @@ from invest_note_api.external import naver_search
 
 
 def _patch_lookup(fake_db: dict[str, dict]):
-    """stocks_repo.lookup_by_names 대체 — 매칭된 이름만 담은 dict 반환(미해결은 키 없음)."""
+    """stocks_repo.lookup_by_names 대체 — 매칭된 이름만 담은 dict 반환(미해결은 키 없음).
+
+    country 스코프를 무시하는 단순 버전(KR 전용 테스트용). country-scoped 동작은
+    `_patch_lookup_by_country` spy 로 별도 검증한다.
+    """
     async def fake_lookup(_conn, names, **_kw):
         return {n: fake_db[n] for n in names if n in fake_db}
 
@@ -25,12 +29,12 @@ async def test_ticker_hint_provides_code_lookup_provides_exchange():
 
     with _patch_lookup(fake_db):
         result = await resolve_tickers(
-            asset_names={"삼성전자"},
-            ticker_hints={"삼성전자": "005930"},
+            items={("KR", "삼성전자")},
+            ticker_hints={("KR", "삼성전자"): "005930"},
             conn=None,
         )
 
-    assert result == {"삼성전자": {"code": "005930", "exchange": "KOSPI"}}
+    assert result == {("KR", "삼성전자"): {"code": "005930", "exchange": "KOSPI"}}
 
 
 @pytest.mark.asyncio
@@ -38,12 +42,12 @@ async def test_ticker_hint_keeps_code_when_lookup_misses():
     """hint 코드가 있는데 로컬 매칭이 없으면 code 는 유지, exchange 만 빈 값."""
     with _patch_lookup({}):
         result = await resolve_tickers(
-            asset_names={"삼성전자"},
-            ticker_hints={"삼성전자": "005930"},
+            items={("KR", "삼성전자")},
+            ticker_hints={("KR", "삼성전자"): "005930"},
             conn=None,
         )
 
-    assert result == {"삼성전자": {"code": "005930", "exchange": ""}}
+    assert result == {("KR", "삼성전자"): {"code": "005930", "exchange": ""}}
 
 
 @pytest.mark.asyncio
@@ -52,9 +56,9 @@ async def test_lookup_match_short_alias():
     fake_db = {"현대차": {"code": "005380", "name": "현대자동차", "market": "KR", "exchange": "KOSPI"}}
 
     with _patch_lookup(fake_db):
-        result = await resolve_tickers(asset_names={"현대차"}, ticker_hints={}, conn=None)
+        result = await resolve_tickers(items={("KR", "현대차")}, ticker_hints={}, conn=None)
 
-    assert result == {"현대차": {"code": "005380", "exchange": "KOSPI"}}
+    assert result == {("KR", "현대차"): {"code": "005380", "exchange": "KOSPI"}}
 
 
 @pytest.mark.asyncio
@@ -63,18 +67,18 @@ async def test_lookup_match_etf_full_name():
     fake_db = {"TIGER 미국S&P500": {"code": "360750", "name": "TIGER 미국S&P500", "market": "KR", "exchange": "ETF"}}
 
     with _patch_lookup(fake_db):
-        result = await resolve_tickers(asset_names={"TIGER 미국S&P500"}, ticker_hints={}, conn=None)
+        result = await resolve_tickers(items={("KR", "TIGER 미국S&P500")}, ticker_hints={}, conn=None)
 
-    assert result == {"TIGER 미국S&P500": {"code": "360750", "exchange": "ETF"}}
+    assert result == {("KR", "TIGER 미국S&P500"): {"code": "360750", "exchange": "ETF"}}
 
 
 @pytest.mark.asyncio
 async def test_lookup_no_match_returns_none():
     """로컬 매칭 없으면 미해결 (None)."""
     with _patch_lookup({}):
-        result = await resolve_tickers(asset_names={"존재하지않는종목"}, ticker_hints={}, conn=None)
+        result = await resolve_tickers(items={("KR", "존재하지않는종목")}, ticker_hints={}, conn=None)
 
-    assert result == {"존재하지않는종목": None}
+    assert result == {("KR", "존재하지않는종목"): None}
 
 
 @pytest.mark.asyncio
@@ -87,15 +91,15 @@ async def test_lookup_for_multiple_names():
 
     with _patch_lookup(fake_db):
         result = await resolve_tickers(
-            asset_names={"삼성전자", "카카오", "없는종목"},
+            items={("KR", "삼성전자"), ("KR", "카카오"), ("KR", "없는종목")},
             ticker_hints={},
             conn=None,
         )
 
     assert result == {
-        "삼성전자": {"code": "005930", "exchange": "KOSPI"},
-        "카카오": {"code": "035720", "exchange": "KOSPI"},
-        "없는종목": None,
+        ("KR", "삼성전자"): {"code": "005930", "exchange": "KOSPI"},
+        ("KR", "카카오"): {"code": "035720", "exchange": "KOSPI"},
+        ("KR", "없는종목"): None,
     }
 
 
@@ -109,15 +113,76 @@ async def test_mixed_hints_and_lookup():
 
     with _patch_lookup(fake_db):
         result = await resolve_tickers(
-            asset_names={"삼성전자", "현대차"},
-            ticker_hints={"삼성전자": "005930"},
+            items={("KR", "삼성전자"), ("KR", "현대차")},
+            ticker_hints={("KR", "삼성전자"): "005930"},
             conn=None,
         )
 
     assert result == {
-        "삼성전자": {"code": "005930", "exchange": "KOSPI"},
-        "현대차": {"code": "005380", "exchange": "KOSPI"},
+        ("KR", "삼성전자"): {"code": "005930", "exchange": "KOSPI"},
+        ("KR", "현대차"): {"code": "005380", "exchange": "KOSPI"},
     }
+
+
+@pytest.mark.asyncio
+async def test_lookup_is_country_scoped():
+    """🔴 핵심 회귀 가드: 거래 country 별로 lookup_by_names 가 해당 country_code 로 호출된다.
+
+    과거엔 country 무관(KR 기본) 호출이라 US 섹션 종목명이 KR alias 에 오매칭됐다
+    (애플→PLUS 애플채권혼합). country 스코프가 lookup 까지 실제로 전파되는지 spy 로 단언.
+    """
+    # (country_code, name) 별 매칭 — 같은 이름이라도 country 스코프에 따라 다른 결과.
+    by_country: dict[tuple[str, str], dict] = {
+        ("US", "애플"): {"code": "AAPL", "name": "Apple", "market": "US", "exchange": "NASDAQ"},
+        ("KR", "애플"): {"code": "950210", "name": "PLUS 애플채권혼합", "market": "KR", "exchange": "ETF"},
+        ("KR", "삼성전자"): {"code": "005930", "name": "삼성전자", "market": "KR", "exchange": "KOSPI"},
+    }
+    seen_country_by_name: dict[str, str] = {}
+
+    async def spy_lookup(_conn, names, *, country_code="KR"):
+        out = {}
+        for n in names:
+            seen_country_by_name[n] = country_code
+            match = by_country.get((country_code, n))
+            if match:
+                out[n] = match
+        return out
+
+    with patch("invest_note_api.db_ops.stocks_repo.lookup_by_names", spy_lookup):
+        result = await resolve_tickers(
+            items={("US", "애플"), ("KR", "삼성전자")},
+            ticker_hints={},
+            conn=None,
+        )
+
+    # US 종목명은 US 스코프로, KR 종목명은 KR 스코프로 조회됐다.
+    assert seen_country_by_name["애플"] == "US"
+    assert seen_country_by_name["삼성전자"] == "KR"
+    # US '애플' 은 KR ETF(PLUS 애플채권혼합)가 아니라 US Apple 로 매칭된다.
+    assert result[("US", "애플")] == {"code": "AAPL", "exchange": "NASDAQ"}
+    assert result[("KR", "삼성전자")] == {"code": "005930", "exchange": "KOSPI"}
+
+
+@pytest.mark.asyncio
+async def test_same_name_kr_and_us_no_collision():
+    """같은 종목명이 KR/US 양쪽 거래에 있어도 (country, name) 키로 충돌 없이 분리된다."""
+    by_country: dict[tuple[str, str], dict] = {
+        ("US", "애플"): {"code": "AAPL", "name": "Apple", "market": "US", "exchange": "NASDAQ"},
+        ("KR", "애플"): {"code": "950210", "name": "PLUS 애플채권혼합", "market": "KR", "exchange": "ETF"},
+    }
+
+    async def spy_lookup(_conn, names, *, country_code="KR"):
+        return {n: by_country[(country_code, n)] for n in names if (country_code, n) in by_country}
+
+    with patch("invest_note_api.db_ops.stocks_repo.lookup_by_names", spy_lookup):
+        result = await resolve_tickers(
+            items={("US", "애플"), ("KR", "애플")},
+            ticker_hints={},
+            conn=None,
+        )
+
+    assert result[("US", "애플")] == {"code": "AAPL", "exchange": "NASDAQ"}
+    assert result[("KR", "애플")] == {"code": "950210", "exchange": "ETF"}
 
 
 @pytest.mark.asyncio

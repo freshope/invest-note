@@ -277,7 +277,10 @@ export interface ImportPreviewResponse {
   new_count: number;
   duplicate_count: number;
   error_count: number;
+  /** 임포트되지 않은 진짜 비거래 USD 행(환전·이체 등) 수. 임포트된 USD 거래(country_code=US)는 더 이상 skip 으로 집계하지 않는다. */
   usd_skip_count: number;
+  /** staged 된 해외(country_code != "KR") 거래 수. ticker 가 resolved 된 행만 집계 — ISIN 미해결 USD 종목은 미포함. */
+  foreign_count: number;
   unresolved_ticker_count: number;
   errors: ImportErrorItem[];
   /** 선택 계좌 기준 정합성 위반 (oversell 등). 해당 종목 그룹은 commit 시 BE 가 skip; FE 는 사용자에게 노출만 한다. */

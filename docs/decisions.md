@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-06-27 | 토스 해외(USD) 일괄등록 — USD 네이티브 복원 + country-scoped 매칭
+
+- **맥락:** [[project_broker_import_parsers]] Phase 2(해외)의 첫 구현. `toss_pdf.py` 가 달러 섹션 행을 6자리 KRX 코드 정규식으로만 매칭해, ISIN(`US69608A1088`) 종목은 정규식에 안 걸려 `usd_skip_count` 조차 안 오르고 "신규 0·중복 0·건너뜀 0·에러 0"의 **침묵 누락**이 났다. 토스 달러 섹션을 USD 네이티브 거래로 임포트한다.
+- **결정 ① 금액 컬럼은 전부 원화 환산값 → 환율로 나눠 USD 네이티브 복원, `price·commission·tax` 세 필드 전부.** 토스 달러 섹션의 모든 금액 컬럼은 원화로 적힌다(괄호줄 `($ ...)` 에 USD 병기). `domain/trade_types.py:krw_normalized_trade` 가 셋을 모두 `×exchange_rate` 로 KRW 환원하므로, 하나라도 KRW 로 남기면 원가가 ~환율배(≈1370x)로 부풀고 `build_merge_patch` 비교가 깨진다. **괄호줄 USD 를 파싱하지 않고 ÷환율로 복원** — 그래야 `price_usd × rate == 원화단가` 가 정확히 라운드트립(괄호줄은 토스가 별도 라운딩해 미세 drift, cost basis 보존 불가).
+- **결정 ② `exchange_rate` = 행의 환율(원/달러), `country_code="US"` 가 통화 권위.** 다운스트림 통화 판단은 `currency_for_country(country_code)` 지 `ParsedTrade.currency` 가 아니다(currency 는 표시/디버그용). `schemas/trade.py:exchange_rate_error` 규칙상 US 거래는 `exchange_rate != 1.0` 필수(1.0/누락이면 native 를 KRW 로 오인 집계). insert_row 에 `exchange_rate` 키 누락 시 repo default 1.0 → KRW 오인이라 commit 가드가 US+rate==1.0 행을 commit_error 로 막는다(배치 raise 아님 — 행 단위).
+- **결정 ③ ISIN 은 ticker_hint 로 쓰지 않는다(`None` → name 매칭 폴백).** mirae `A0080G0` 선례와 동일 — KRX 표준 숫자코드가 아닌 식별자를 ticker 로 적재하면 같은 종목이 다른 증권사 코드와 보유 분리된다. 섹션 기준으로 country=US 를 정한다(ISIN 접두사 KY/US 로 국가 유도 금지 — 케이맨 ISIN `KYG3731B1086` 도 달러 섹션이면 US).
+- **결정 ④ USD 전용 컬럼맵/정규식 분리(KRW 무회귀).** USD 헤더는 거래세 컬럼이 없고 환율 컬럼이 값으로 채워진다(KRW 는 비어 토큰화 안 됨) → `_USD_HEADER_EXCLUDED`(환율 미제외)·`_USD_DEFAULT_COLUMN_MAP` 분리. 사양은 "`_DATA_LINE_RE` 확장"이라 했으나 KRW 29개 무회귀를 위해 **USD 전용 `_USD_DATA_LINE_RE`·`_parse_usd_line` 로 분리**(결과 동일, KRW 경로 무수정).
+- **결정 ⑤ glued 토큰 인덱싱 전 디-글루.** `1,370.300.004568`(환율+소수수량 공백 없이 붙음, 간헐) 을 환율 앵커 `\d{1,3}(,\d{3})*\.\d{2}`(소수 2자리)로 컬럼 인덱싱 **전에** 분리. 인덱싱 후 디-글루하면 환율 이후 모든 컬럼이 한 칸씩 밀린다.
+- **결정 ⑥ `usd_skip_count` 재정의(필드 유지) + `foreign_count` 신설.** 임포트된 USD 는 더 이상 skip 아님(country=US 로 staging) — `usd_skip_count` 는 하위호환 카운터로 남기되 토스 USD 경로에선 비거래 행이 무카운트 스킵돼 보통 0. `ImportPreviewResponse.foreign_count`(staged 중 country!=KR) 신설 → FE "해외 N건 포함(USD)" 분기.
+- **결정 ⑦ ticker 매칭을 거래 country 로 스코프 분리(🔴 차단결함 수정, QA #9).** `resolve_tickers` 가 `lookup_by_names` 를 country_code 없이(KR 기본) 호출 → US 종목명이 KR alias(US master 한글 alias 부재 + KR 테마 ETF 한글명)에 오매칭. dev DB 실측: 토스 648 USD 중 **456건**이 `country=US·rate=1370` 인 채 KR ETF 티커(애플→447660 PLUS애플채권혼합, 테슬라→457480, 팔란티어→0047R0)로 staged→INSERT 되는 포트폴리오 손상. 게다가 `foreign_count` 가 비-0 이라 성공처럼 보여 손상을 가린다. 수정: `resolve_tickers(items: set[(country, name)])` 로 country 별 그룹핑 → `lookup_by_names(country_code=cc)` 호출, 반환 키 `(country, name)`(KR/US 동명 충돌 방지). 호출부 staging 조회도 동일 튜플 키(한쪽만 바꾸면 전건 None).
+- **트레이드오프/교훈:**
+  - ⓐ **US resolve 율 한계(QA-A2 실측):** US-scope 수정 후 토스 648 USD = resolve 547(84%)·unresolved 101(알파벳 A 54·더치 브로스 47 — US master 에 한글명/alias 부재 또는 prefix 불일치). 사양상 unresolved 가 의도 경로지만 수백 건 unresolved 노이즈 노출 방식은 제품 결정으로 남김. 자동 US 종목 등록/별칭 백필·ISIN→ticker 외부조회는 본 스펙 **제외**(backlog).
+  - ⓑ **실파일이 산술 불변식을 검증 못 함:** 두 토스 샘플의 USD 행은 수수료·제세금이 전부 0이라 `0÷환율==0` 으로 commission/tax 의 ÷환율 라운드트립이 공허(분할 누락 버그도 통과). **비-0 합성 단위테스트**로 별도 가드([[feedback_broker_parser_fixture_tests]] 의 실파일 규칙은 shape 버그용, 실데이터가 못 미치는 산술 불변식엔 보조 합성테스트 정당). price 라운드트립은 648행 전수 + 환율 밴드(1000~2000)로 de-glue 컬럼시프트 가드.
+  - ⓒ **pytest 187 passed 가 #12 를 못 잡았다:** 단위 테스트가 `lookup_by_names` 를 목킹해 실 DB country 스코프를 안 타서, 재키잉만으로 가짜 green. dev DB 실측 + country_code 기록 spy 테스트(`test_lookup_is_country_scoped`)로 잠금.
+- 참조: [[project_be_buy_meta_cascades_to_sell]]·[[feedback_fe_trade_sort_for_calc]](USD 머지/정렬 영향 없음 확인), [[project_broker_import_parsers]].
+
 ## 2026-06-27 | 거래 출처(origin) 도입 + 일괄등록 거래 금액 잠금
 
 - **맥락:** 거래내역서 일괄등록(import)과 손입력 거래가 데이터·UI상 구분되지 않아, 증권사가 준 "사실에 가까운" 금액을 사용자가 수정하면 기록 신뢰도가 떨어졌다. PostHog상 import는 소수(4명/57건)지만 사실 보호 가치가 있다.

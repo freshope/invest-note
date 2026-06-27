@@ -688,11 +688,17 @@ async def import_preview(
     now_utc = datetime.now(timezone.utc)
 
     # ticker 해결 (로컬 stocks 마스터 조회 — public 테이블이라 plain connection)
-    asset_names = {t.asset_name for t in parse_result.trades}
-    ticker_hints = {t.asset_name: t.ticker_hint for t in parse_result.trades if t.ticker_hint}
+    # (country_code, asset_name) 키로 country-scoped 매칭 — US 종목명이 KR alias 에
+    # 오매칭(예: 애플→PLUS 애플채권혼합)되는 것을 막는다.
+    resolve_items = {(t.country_code, t.asset_name) for t in parse_result.trades}
+    ticker_hints = {
+        (t.country_code, t.asset_name): t.ticker_hint
+        for t in parse_result.trades
+        if t.ticker_hint
+    }
 
     async with pool.acquire() as conn:
-        ticker_map = await resolve_tickers(asset_names, ticker_hints, conn=conn)
+        ticker_map = await resolve_tickers(resolve_items, ticker_hints, conn=conn)
 
     # 기존 거래에서 시그니처 셋 구성 (중복 판단용)
     # 파싱 결과의 KST 일자 min/max 범위로만 fetch — 사용자 전체 trades fetch 회피.
@@ -728,7 +734,7 @@ async def import_preview(
     ]
 
     for pt in parse_result.trades:
-        resolved = ticker_map.get(pt.asset_name)
+        resolved = ticker_map.get((pt.country_code, pt.asset_name))
         if resolved is None:
             unresolved_ticker_count += 1
             parse_errors.append(ImportError(
@@ -774,13 +780,18 @@ async def import_preview(
             "traded_at_kst_full": kst_full,  # 시각 정보 있을 때만 (머지 traded_at 갱신용)
             "commission": pt.commission,
             "tax": pt.tax,
-            "country_code": DEFAULT_COUNTRY,
+            "country_code": pt.country_code,
+            "exchange_rate": pt.exchange_rate,
             "exchange": resolved["exchange"],
             "_sig_date": kst_str,
             "_sig_ticker": ticker,
             "_sig_asset": pt.asset_name,
         }
         rows_to_stage.append(row_data)
+
+    # staged 중 해외(country_code != KR) 행 수. resolved(ticker 매칭된) 행만 집계되므로
+    # ISIN 미해결 USD 종목은 포함되지 않는다 — FE 의 "해외 N건 포함" 안내 분기에 사용.
+    foreign_count = sum(1 for r in rows_to_stage if r["country_code"] != DEFAULT_COUNTRY)
 
     staging_id = str(uuid.uuid4())
     staging.cache[staging_id] = {
@@ -809,6 +820,7 @@ async def import_preview(
         duplicate_count=dup_count,
         error_count=len(parse_errors),
         usd_skip_count=parse_result.usd_skip_count,
+        foreign_count=foreign_count,
         unresolved_ticker_count=unresolved_ticker_count,
         errors=parse_errors,
         validation_errors=validation_errors,
@@ -906,15 +918,20 @@ async def import_commit(
                     continue
 
                 # 방어 가드: import 경로는 create 의 _foreign_requires_exchange_rate validator 를
-                # 우회한다. 현재 staging 은 country_code=KR 하드코딩이라 가드가 발동하지 않지만,
-                # Phase C(해외 import) 추가 시 exchange_rate(미설정→DB default 1.0) 누락이 조용히
-                # 통과해 해외 원가가 왜곡되는 것을 막는다. 해외 import 도입 시 이 가드가 강제로
-                # exchange_rate 처리를 재검토하게 한다. KR 하드코딩 전제를 코드로 못박는다.
-                if currency_for_country(row["country_code"]) != CURRENCY_KRW:
-                    raise APIError(
-                        "해외(비-KRW) 거래 import 는 거래 시점 환율(exchange_rate)이 필요합니다.",
-                        400,
-                    )
+                # 우회한다. 해외(비-KRW) 행은 exchange_rate(원/달러)를 반드시 실어 INSERT 한다.
+                # exchange_rate 가 1.0/누락이면 native USD 금액이 KRW 로 오인 집계되므로(원가
+                # ~환율배 부풀림), 그 행만 commit_error 로 처리하고 배치는 계속한다(침묵 통과 금지).
+                row_country = row["country_code"]
+                row_rate = row.get("exchange_rate", 1.0)
+                if (
+                    currency_for_country(row_country) != CURRENCY_KRW
+                    and row_rate == 1.0
+                ):
+                    commit_errors.append(ImportError(
+                        row_no=0,
+                        reason=f"{row['asset_name']} 해외 거래 환율 누락 — exchange_rate 가 필요합니다.",
+                    ))
+                    continue
                 insert_row = {
                     "account_id": str(body.account_id),
                     "asset_name": row["asset_name"],
@@ -926,7 +943,8 @@ async def import_commit(
                     "traded_at": traded_at_utc,
                     "commission": row["commission"],
                     "tax": row["tax"],
-                    "country_code": row["country_code"],
+                    "country_code": row_country,
+                    "exchange_rate": row_rate,
                     "exchange": row["exchange"],
                     "origin": "IMPORT",
                 }

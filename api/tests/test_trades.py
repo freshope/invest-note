@@ -828,14 +828,14 @@ class TestImportCommit:
         assert resp.status_code == 200
         assert resp.json()["inserted_count"] == 1
 
-    def test_foreign_import_commit_blocked_by_guard(self, trades_client):
-        """비-KRW(US) staging row 가 commit 에 들어오면 환율 가드가 명시적 에러로 막는다.
+    def test_foreign_import_commit_missing_rate_row_error(self, trades_client):
+        """US staging row 에 exchange_rate 가 없으면(기본 1.0) 그 행만 commit_error 로 막는다.
 
-        현재 staging 은 KR 하드코딩이라 이 경로는 미존재하나, Phase C(해외 import) 추가 시
-        exchange_rate 누락이 조용히 통과(1.0)하는 것을 가드가 차단한다 — 방어선 동작 검증.
+        해외 import 도입 후 가드는 배치 전체를 raise 로 중단하지 않고, 환율 누락 행만
+        스킵+에러로 처리한다(침묵 통과 금지, 정상 행은 계속 진행).
         """
         us_row = {**self._merge_row(ticker="AAPL", asset_name="Apple", trade_type="BUY"),
-                  "country_code": "US"}
+                  "country_code": "US"}  # exchange_rate 키 없음 → .get default 1.0
         staging_id = self._stage(trades_client, [us_row])
         conn = FakeConnection("a1", [])  # list_trades_in_group
         with _patch_trades(conn):
@@ -843,8 +843,49 @@ class TestImportCommit:
                 "/trades/import/commit",
                 json={"staging_id": staging_id, "account_id": "a1"},
             )
-        assert resp.status_code == 400
-        assert "환율" in resp.json()["error"]
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["inserted_count"] == 0
+        assert body["error_count"] == 1
+        assert "환율" in body["errors"][0]["reason"]
+
+    def test_foreign_import_commit_inserts_with_exchange_rate(self, trades_client):
+        """exchange_rate 가 실린 US staging row 는 정상 INSERT 되고, 환율이 repo 까지 실려간다.
+
+        inserted_count 만으론 부족 — insert_row 에서 exchange_rate 키가 빠지면 repo default
+        1.0 으로 US 거래가 KRW rate 로 INSERT 되어 원가가 ~환율배 부풀지만 count 는 그대로다.
+        repo 로 넘어가는 to_insert 의 exchange_rate 까지 단언해 그 회귀를 잠근다.
+        """
+        us_row = {**self._merge_row(ticker="AAPL", asset_name="Apple", trade_type="BUY"),
+                  "country_code": "US", "exchange_rate": 1350.0}
+        staging_id = self._stage(trades_client, [us_row])
+        conn = FakeConnection(
+            "a1",  # assert_account_exists
+            [],    # list_trades_in_group
+            [_to_record(_make_trade_row(id_="new-1", ticker="AAPL", asset_name="Apple", country_code="US"))],
+        )
+
+        from invest_note_api.routers import trades as trades_module
+
+        captured: dict = {}
+        real_bulk = trades_module.insert_trades_bulk
+
+        async def spy_bulk(conn_, user_id, to_insert):
+            captured["to_insert"] = to_insert
+            return await real_bulk(conn_, user_id, to_insert)
+
+        with _patch_trades(conn), patch.object(trades_module, "insert_trades_bulk", spy_bulk):
+            resp = trades_client.post(
+                "/trades/import/commit",
+                json={"staging_id": staging_id, "account_id": "a1"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["inserted_count"] == 1
+        assert body["error_count"] == 0
+        # 환율이 INSERT 파라미터까지 실려가는가 — 1370배 트랩 가드.
+        assert captured["to_insert"][0]["exchange_rate"] == 1350.0
+        assert captured["to_insert"][0]["country_code"] == "US"
 
 
 class TestImportPreviewValidation:
