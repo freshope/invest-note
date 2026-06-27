@@ -13,6 +13,8 @@ from invest_note_api.broker_import.toss_pdf import (
     TossPdfParser,
     _build_column_map,
     _parse_ticker_hint,
+    _parse_usd_name,
+    _split_usd_nums,
 )
 from invest_note_api.broker_import.base import ParseResult
 
@@ -320,6 +322,168 @@ class TestTossColumnMap:
         # 데이터 행이나 잡음 라인은 헤더로 오인되면 안 된다.
         assert _build_column_map("2025.06.11 구매 삼성전자(A005930) 33 1,980,000") is None
         assert _build_column_map("발급번호 20260522-101-11-B000033") is None
+
+
+class TestTossUsdHelpers:
+    def test_split_usd_nums_normal(self):
+        # 공백 정상 분리.
+        rest = "1,370.30 0.030345 1,233 1,219 40,641 0 0 0 0.030345 3,713"
+        assert _split_usd_nums(rest) == [
+            "1,370.30", "0.030345", "1,233", "1,219", "40,641",
+            "0", "0", "0", "0.030345", "3,713",
+        ]
+
+    def test_split_usd_nums_glued_rate_and_qty(self):
+        # 환율+소수수량이 공백 없이 붙은 케이스('1,370.300.004568') 디-글루.
+        # 인덱싱 전에 분리되지 않으면 이후 모든 컬럼이 한 칸씩 밀린다.
+        rest = "1,370.300.004568 1,233 1,219 269,961 0 0 0 0.004568 2,493"
+        assert _split_usd_nums(rest) == [
+            "1,370.30", "0.004568", "1,233", "1,219", "269,961",
+            "0", "0", "0", "0.004568", "2,493",
+        ]
+
+    def test_parse_usd_name_strips_isin(self):
+        assert _parse_usd_name("팔란티어(US69608A1088)") == "팔란티어"
+        assert _parse_usd_name("게임하우스 홀딩스(KYG3731B1086)") == "게임하우스 홀딩스"
+
+
+class TestTossUsdParserLine:
+    """USD 행의 ÷환율 복원 단위 검증. 두 실파일 샘플은 수수료/제세금이 모두 0이라
+    라운드트립만으론 commission/tax 의 KRW 잔류를 못 잡는다 — nonzero 합성 행으로
+    세 필드 전부 ÷환율 되는지 증명한다(원가 ~환율배 부풀림 가드)."""
+
+    parser = TossPdfParser()
+
+    def test_usd_buy_divides_all_three_fields_by_rate(self):
+        result = ParseResult()
+        # 컬럼: 환율 수량 거래대금 정산금액 단가 수수료 제세금 변제 잔고 잔액.
+        # 실파일 샘플은 수수료·제세금이 전부 0이라 ÷환율 라운드트립이 공허하다(양변 0).
+        # 비-0 원화 수수료(6,852원)·제세금(1,370원)으로 ÷환율 정확성을 별도 커버한다.
+        line = (
+            "2024.08.14 구매 팔란티어(US69608A1088) "
+            "1,370.30 0.030345 1,233 1,219 40,641 6,852 1,370 0 0.030345 3,713"
+        )
+        t = self.parser._parse_usd_line(line, 1, result)
+        assert t is not None, result.errors
+        assert t.trade_type == "BUY"
+        assert t.asset_name == "팔란티어"
+        assert t.country_code == "US"
+        assert t.currency == "USD"
+        assert t.ticker_hint is None
+        assert t.exchange_rate == pytest.approx(1370.30)
+        assert t.quantity == pytest.approx(0.030345)
+        # 단가 40,641원 ÷ 1,370.30 ≈ 29.66 USD.
+        assert t.price == pytest.approx(40641 / 1370.30)
+        # 수수료 6,852원 ÷ 1,370.30 ≈ 5.0 USD, 제세금 1,370원 ÷ 1,370.30 ≈ 1.0 USD.
+        # KRW 잔류 시 ×환율 으로 천문학적 부풀림 → 분할 누락 가드.
+        assert t.commission == pytest.approx(5.0, abs=0.001)
+        assert t.tax == pytest.approx(1.0, abs=0.001)
+        # 라운드트립: USD × 환율 ≈ 원화값.
+        assert t.price * t.exchange_rate == pytest.approx(40641)
+        assert t.commission * t.exchange_rate == pytest.approx(6852)
+        assert t.tax * t.exchange_rate == pytest.approx(1370)
+
+    def test_usd_sell_glued_rate_token(self):
+        result = ParseResult()
+        line = (
+            "2024.08.14 판매 테슬라(US88160R1014) "
+            "1,370.300.004568 1,233 1,219 269,961 0 0 0 0.004568 2,493"
+        )
+        t = self.parser._parse_usd_line(line, 2, result)
+        assert t is not None, result.errors
+        assert t.trade_type == "SELL"
+        assert t.asset_name == "테슬라"
+        assert t.quantity == pytest.approx(0.004568)
+        assert t.exchange_rate == pytest.approx(1370.30)
+        assert t.price == pytest.approx(269961 / 1370.30)
+
+
+class TestTossUsdParserFixture:
+    """실파일 USD 회귀. ISIN 침묵 스킵(신규 0·스킵 0) 버그 재발 가드."""
+
+    parser = TossPdfParser()
+
+    @pytest.fixture
+    def sample_usd_only(self) -> bytes:
+        from pathlib import Path
+        path = Path(__file__).resolve().parents[2] / "sample" / "토스_거래내역서_20240811_20250810_1.pdf"
+        if not path.exists():
+            pytest.skip(f"sample PDF not present: {path}")
+        return path.read_bytes()
+
+    @pytest.fixture
+    def sample_mixed(self) -> bytes:
+        from pathlib import Path
+        path = Path(__file__).resolve().parents[2] / "sample" / "거래내역서_토스_해외포함_20250613_20260612_1.pdf"
+        if not path.exists():
+            pytest.skip(f"sample PDF not present: {path}")
+        return path.read_bytes()
+
+    def test_usd_only_sample_counts(self, sample_usd_only: bytes):
+        result = self.parser.parse(sample_usd_only, "토스_거래내역서_20240811_20250810_1.pdf")
+        usd = [t for t in result.trades if t.country_code == "US"]
+        krw = [t for t in result.trades if t.country_code == "KR"]
+        assert len(usd) == 648
+        assert len(krw) == 0
+        # 모든 USD 거래(648행): currency/country/hint 불변식.
+        for t in usd:
+            assert t.currency == "USD"
+            assert t.ticker_hint is None
+            assert t.price > 0 and t.quantity > 0
+            # 환율이 정상 USD/KRW 밴드(1,300~1,550)에 들어야 한다. de-glue 가 환율 이후
+            # 컬럼을 한 칸 밀면 환율 자리에 수량(0.00x)/거래대금(1,2xx) 같은 값이 들어와
+            # 밴드를 벗어난다 — 건수 일치로는 못 잡는 컬럼 시프트를 648행 전부에서 가드.
+            assert 1000 < t.exchange_rate < 2000
+
+    def test_usd_only_first_buy_concrete_values(self, sample_usd_only: bytes):
+        result = self.parser.parse(sample_usd_only, "토스_거래내역서_20240811_20250810_1.pdf")
+        usd = [t for t in result.trades if t.country_code == "US"]
+        first = usd[0]
+        # 팔란티어 첫 매수: 단가 40,641원 ÷ 1,370.30 ≈ 29.66 USD, qty 0.030345.
+        assert first.asset_name == "팔란티어"
+        assert first.trade_type == "BUY"
+        assert first.quantity == pytest.approx(0.030345)
+        assert first.exchange_rate == pytest.approx(1370.30)
+        assert first.price == pytest.approx(29.66, abs=0.01)
+        assert first.price * first.exchange_rate == pytest.approx(40641)
+
+    def test_usd_only_glued_row_concrete_values(self, sample_usd_only: bytes):
+        """실파일의 glued 행('1,370.300.004568')이 디-글루 후 정확히 인덱싱되는지.
+
+        둘째 USD 거래(테슬라)는 환율+소수수량이 공백 없이 붙은 실데이터 행이다. 디-글루가
+        실패하면 환율/수량/단가가 한 칸씩 밀려 price 가 천문학적으로 깨진다.
+        """
+        result = self.parser.parse(sample_usd_only, "토스_거래내역서_20240811_20250810_1.pdf")
+        usd = [t for t in result.trades if t.country_code == "US"]
+        tesla = usd[1]
+        assert tesla.asset_name == "테슬라"
+        assert tesla.quantity == pytest.approx(0.004568)
+        assert tesla.exchange_rate == pytest.approx(1370.30)
+        # 단가 269,961원 ÷ 1,370.30 ≈ 197.01 USD.
+        assert tesla.price == pytest.approx(269961 / 1370.30)
+        assert tesla.price * tesla.exchange_rate == pytest.approx(269961)
+
+    def test_mixed_sample_counts(self, sample_mixed: bytes):
+        result = self.parser.parse(sample_mixed, "거래내역서_토스_해외포함_20250613_20260612_1.pdf")
+        usd = [t for t in result.trades if t.country_code == "US"]
+        krw = [t for t in result.trades if t.country_code == "KR"]
+        # KRW 주식 15 + USD 구매 2.
+        assert len(krw) == 15
+        assert len(usd) == 2
+        # KRW 거래 무회귀: 환율 1.0, currency KRW.
+        for t in krw:
+            assert t.exchange_rate == 1.0
+            assert t.currency == "KRW"
+        # 게임하우스 홀딩스 첫 매수: 단가 3,006원 ÷ 1,518.40 ≈ 1.98 USD, qty 1.
+        # ISIN 이 KY(케이맨) 접두사지만 country_code 는 ISIN 이 아니라 *섹션*('달러 거래내역')
+        # 기준으로 "US" — 통화 권위는 섹션이지 ISIN 국가코드가 아님을 못박는다.
+        g = usd[0]
+        assert g.asset_name == "게임하우스 홀딩스"
+        assert g.country_code == "US"
+        assert g.quantity == pytest.approx(1.0)
+        assert g.exchange_rate == pytest.approx(1518.40)
+        assert g.price == pytest.approx(3006 / 1518.40)
+        assert g.ticker_hint is None
 
 
 class TestShinhanPdfParserLine:

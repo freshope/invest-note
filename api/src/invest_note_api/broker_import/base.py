@@ -61,7 +61,11 @@ class ParsedTrade:
     price: float
     commission: float = 0.0
     tax: float = 0.0
+    # 다운스트림 통화 권위는 country_code (currency_for_country): US=USD, 그 외=KRW.
+    # currency 는 표시/디버그용 — country_code 와 drift 시 country_code 가 이긴다.
     currency: str = "KRW"
+    country_code: str = "KR"
+    exchange_rate: float = 1.0       # 원/달러 (해외 행만 1.0 != ); KR 행은 1.0
     ticker_hint: str | None = None   # 파일에서 직접 추출한 코드 (있을 때만)
     account_hint: str | None = None  # 파일 메타에서 추출한 계좌번호 문자열
     raw: dict = field(default_factory=dict)

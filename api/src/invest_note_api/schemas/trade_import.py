@@ -18,7 +18,12 @@ class ImportPreviewResponse(BaseModel):
     new_count: int
     duplicate_count: int
     error_count: int
+    # 하위호환 유지 필드. 토스 USD 임포트 도입 후 임포트된 USD 거래는 더 이상 skip 이 아니다
+    # (country_code=US 로 staging). 토스 USD 경로의 비거래 행(환전·이체)은 데이터 행 매칭에서
+    # 무카운트로 스킵되어 이 값은 보통 0 (다른 파서가 USD 행을 skip 할 때를 위한 호환 카운터).
     usd_skip_count: int
+    # staged 된 해외(country_code != KR) 거래 수. resolved 행만 집계 → ISIN 미해결 USD 종목 제외.
+    foreign_count: int = 0
     unresolved_ticker_count: int
     errors: list[ImportError]
     # 선택한 계좌 기준 정합성 검증 결과 (oversell/보유 부족 등).
