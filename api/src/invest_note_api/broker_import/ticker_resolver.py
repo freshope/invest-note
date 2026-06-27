@@ -6,7 +6,8 @@ from collections import defaultdict
 from typing import Any, TypedDict
 
 from invest_note_api.db_ops import isin_cache_repo, stocks_repo
-from invest_note_api.external.openfigi import OpenFigiResult, exch_code_to_country, map_isins
+from invest_note_api.domain.trade_types import COUNTRY_US
+from invest_note_api.external.openfigi import OpenFigiResult, map_isins
 
 # (country_code, asset_name) — 같은 종목명이 KR/US 양쪽에 존재할 수 있어 국가를 키에 포함한다.
 ResolveKey = tuple[str, str]
@@ -127,8 +128,9 @@ async def _resolve_by_isin(
     fetched: dict[str, OpenFigiResult | None] = {}
     if miss:
         fetched = await map_isins(miss, api_key=api_key)
-        # 3. 캐시 upsert (해소/미해결 모두 — negative cache)
-        await isin_cache_repo.upsert(conn, _to_cache_rows(miss, fetched))
+        # 3. 캐시 upsert — fetched 에 담긴 ISIN(해소 + genuine not-found)만. 일시 장애로
+        #    map_isins 가 omit 한 ISIN 은 캐시하지 않아 다음 import 때 재조회된다(영구 박제 방지).
+        await isin_cache_repo.upsert(conn, _to_cache_rows(fetched))
 
     # 4. isin → {ticker, country_code} (캐시 positive + 이번 fetch 성공분)
     resolved_by_isin: dict[str, dict[str, str]] = {}
@@ -137,14 +139,14 @@ async def _resolve_by_isin(
         if row is not None and row["resolved"] and row["ticker"]:
             resolved_by_isin[isin] = {
                 "ticker": row["ticker"],
-                "country_code": row["country_code"] or exch_code_to_country(""),
+                "country_code": row["country_code"] or COUNTRY_US,
             }
             continue
         figi = fetched.get(isin)
         if figi is not None:
             resolved_by_isin[isin] = {
                 "ticker": figi["ticker"],
-                "country_code": exch_code_to_country(figi["exch_code"]),
+                "country_code": COUNTRY_US,
             }
 
     if not resolved_by_isin:
@@ -177,20 +179,22 @@ async def _resolve_by_isin(
     return out
 
 
-def _to_cache_rows(
-    isins: list[str], fetched: dict[str, OpenFigiResult | None]
-) -> list[dict]:
-    """OpenFIGI 결과 → isin_ticker_map upsert rows(해소/미해결 모두)."""
+def _to_cache_rows(fetched: dict[str, OpenFigiResult | None]) -> list[dict]:
+    """OpenFIGI 결과 → isin_ticker_map upsert rows.
+
+    `fetched` 에 담긴 ISIN 만 캐시한다: 해소(resolved=true) + genuine not-found(None→
+    resolved=false). 일시 장애로 map_isins 가 **omit** 한 ISIN 은 fetched 에 키가 없어
+    캐시되지 않는다(다음 import 재조회 — negative cache 오염 방지).
+    """
     rows: list[dict] = []
-    for isin in isins:
-        figi = fetched.get(isin)
+    for isin, figi in fetched.items():
         if figi is not None:
             rows.append(
                 {
                     "isin": isin,
                     "ticker": figi["ticker"],
                     "exch_code": figi["exch_code"],
-                    "country_code": exch_code_to_country(figi["exch_code"]),
+                    "country_code": COUNTRY_US,
                     "name": figi["name"],
                     "resolved": True,
                 }

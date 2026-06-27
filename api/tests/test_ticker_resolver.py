@@ -359,6 +359,48 @@ async def test_isin_unresolved_falls_back_to_name_match():
 
 
 @pytest.mark.asyncio
+async def test_isin_transient_failure_not_negative_cached():
+    """OpenFIGI 일시 장애(map_isins 가 ISIN 을 omit) → negative cache 에 기록하지 않는다
+    (genuine not-found 와 달리 다음 import 재조회 가능 — 영구 미해결 박제 방지). 이번 import
+    는 종목명 폴백으로 살린다."""
+    upserted: list[list[dict]] = []
+
+    async def fake_fetch_cached(_conn, isins):
+        return {}
+
+    async def fake_upsert(_conn, rows):
+        upserted.append(rows)
+
+    async def fake_map_isins_omit(isins, *, api_key=None):
+        return {}  # 일시 장애 — 배치 전건 omit(키 없음)
+
+    fake_db = {"애플": {"code": "AAPL", "name": "Apple", "market": "US", "exchange": "NASDAQ"}}
+    patches = [
+        patch("invest_note_api.broker_import.ticker_resolver.isin_cache_repo.fetch_cached", fake_fetch_cached),
+        patch("invest_note_api.broker_import.ticker_resolver.isin_cache_repo.upsert", fake_upsert),
+        patch("invest_note_api.broker_import.ticker_resolver.map_isins", fake_map_isins_omit),
+    ]
+    _enter(patches)
+    try:
+        with _patch_lookup(fake_db):
+            result = await resolve_tickers(
+                items={("US", "애플")},
+                ticker_hints={},
+                conn=None,
+                isins={("US", "애플"): "XX0000000000"},
+            )
+    finally:
+        _exit(patches)
+
+    # 이번 import 는 종목명 폴백으로 매칭.
+    assert result == {("US", "애플"): {"code": "AAPL", "exchange": "NASDAQ"}}
+    # 핵심: 일시 장애 ISIN 은 어떤 캐시 행에도 기록되지 않는다(다음 import 재조회).
+    assert all(
+        row["isin"] != "XX0000000000" for batch in upserted for row in batch
+    )
+
+
+@pytest.mark.asyncio
 async def test_isin_cache_hit_skips_openfigi():
     """캐시 positive hit 이면 OpenFIGI 호출 안 함(캐시 ticker 사용)."""
     async def boom(_isins, **_kw):

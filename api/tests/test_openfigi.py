@@ -87,26 +87,28 @@ async def test_unresolved_isin_returns_none():
 
 @pytest.mark.asyncio
 async def test_network_error_is_graceful():
-    """네트워크 예외는 삼키고 미해결 처리 — import 전체 실패 금지."""
+    """네트워크 예외는 삼키되 ISIN 을 **omit**(키 없음) — import 전체 실패 금지 +
+    negative cache 오염 방지(일시 장애를 not-found 로 박제하지 않음)."""
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("boom")
 
     async with _mock_client(handler) as client:
         result = await map_isins(["US69608A1088"], client=client)
 
-    assert result == {"US69608A1088": None}
+    # genuine not-found(None)과 달리 일시 장애는 키 자체가 빠진다 → 호출자가 캐시 제외·재조회.
+    assert result == {}
 
 
 @pytest.mark.asyncio
 async def test_non_200_is_graceful():
-    """non-200(예: 500)도 미해결 처리."""
+    """non-200(예: 500)도 일시 장애로 omit(키 없음) — not-found 로 캐시되면 안 됨."""
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, text="server error")
 
     async with _mock_client(handler) as client:
         result = await map_isins(["US69608A1088"], client=client)
 
-    assert result == {"US69608A1088": None}
+    assert result == {}
 
 
 @pytest.mark.asyncio

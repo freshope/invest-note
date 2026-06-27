@@ -18,8 +18,6 @@ from typing import TypedDict
 
 import httpx
 
-from invest_note_api.domain.trade_types import COUNTRY_US
-
 logger = logging.getLogger(__name__)
 
 OPENFIGI_MAPPING_URL = "https://api.openfigi.com/v3/mapping"
@@ -51,16 +49,6 @@ class OpenFigiResult(TypedDict):
     exch_code: str
     name: str
     security_type: str
-
-
-def exch_code_to_country(exch_code: str) -> str:
-    """OpenFIGI exchCode → country_code.
-
-    토스 USD 섹션은 전부 해외(미국 상장) 거래이고 로컬 stocks 의 유일한 해외 마스터가
-    US 이므로, 미국 거래소 코드든 미상 코드든 US 로 매핑한다(US 외 매핑은 매칭 대상이 없다).
-    exchCode 인자는 향후 비-US 해외 마스터 도입 시 분기점으로 남겨 둔다.
-    """
-    return COUNTRY_US
 
 
 def _choose(items: list[dict]) -> OpenFigiResult | None:
@@ -99,11 +87,16 @@ async def map_isins(
     api_key: str | None = None,
     client: httpx.AsyncClient | None = None,
 ) -> dict[str, OpenFigiResult | None]:
-    """ISIN 목록 → {isin: OpenFigiResult | None}. 미해결 ISIN 은 None.
+    """ISIN 목록 → {isin: OpenFigiResult | None}.
 
-    - 입력 중복은 제거하고 한 번만 조회한다(반환 dict 은 유니크 ISIN 키).
+    반환 값의 의미를 3가지로 구분한다(negative cache 오염 방지의 핵심):
+    - `isin → OpenFigiResult`: 해소 성공.
+    - `isin → None`: OpenFIGI 가 정상 응답했으나 매칭이 없음(genuine not-found). 캐시해도 안전.
+    - **키 자체 없음**: 일시 장애(네트워크/timeout/non-200/429 소진/shape 불일치)로 판정 불가.
+      호출자는 이를 **캐시하지 말고** 다음 import 때 재조회해야 한다(영구 미해결 박제 방지).
+
+    - 입력 중복은 제거하고 한 번만 조회한다.
     - 배치 크기·페이싱은 api_key 유무로 분기. 단일 배치면 sleep 하지 않는다.
-    - HTTP/네트워크 실패는 graceful — 해당 배치를 전부 None(미해결)으로 처리하고 진행한다.
     - `client` 주입 시 재사용, 없으면 소유 client 를 만들어 닫는다.
     """
     unique = list(dict.fromkeys(i for i in isins if i))
@@ -114,7 +107,8 @@ async def map_isins(
     pace = _PACE_KEY if api_key else _PACE_NO_KEY
     batches = [unique[i : i + batch_size] for i in range(0, len(unique), batch_size)]
 
-    result: dict[str, OpenFigiResult | None] = {isin: None for isin in unique}
+    # 일시 장애 배치는 결과에서 빠진다(키 없음) → 호출자가 캐시 제외 + 재조회.
+    result: dict[str, OpenFigiResult | None] = {}
 
     own_client = client is None
     cl = client or httpx.AsyncClient(timeout=_TIMEOUT_SECONDS)
@@ -136,7 +130,12 @@ async def _map_batch(
     *,
     attempt: int = 0,
 ) -> dict[str, OpenFigiResult | None]:
-    """ISIN 한 배치를 OpenFIGI 로 조회. 실패 시 배치 전체를 미해결(None)로 반환."""
+    """ISIN 한 배치를 OpenFIGI 로 조회.
+
+    - 정상 응답: {isin: Result | None}(None = genuine not-found).
+    - **일시 장애**(네트워크/non-200/429 소진/JSON·shape 불일치): **빈 dict** 반환 →
+      배치 ISIN 들이 호출자 결과에서 빠져 캐시 제외·다음 import 재조회된다(영구 박제 방지).
+    """
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["X-OPENFIGI-APIKEY"] = api_key
@@ -148,7 +147,7 @@ async def _map_batch(
         )
     except httpx.HTTPError as e:
         logger.info("openfigi 네트워크 예외 n=%d: %s", len(batch), type(e).__name__)
-        return {isin: None for isin in batch}
+        return {}
 
     if res.status_code == 429 and attempt < _MAX_RETRIES:
         await asyncio.sleep(_BACKOFF_BASE * (2**attempt))
@@ -156,17 +155,17 @@ async def _map_batch(
 
     if res.status_code != 200:
         logger.warning("openfigi non-200 status=%d n=%d", res.status_code, len(batch))
-        return {isin: None for isin in batch}
+        return {}
 
     try:
         data = res.json()
     except ValueError:
         logger.warning("openfigi 응답 JSON 파싱 실패 n=%d", len(batch))
-        return {isin: None for isin in batch}
+        return {}
 
     if not isinstance(data, list) or len(data) != len(batch):
         logger.warning("openfigi 응답 shape 불일치 n=%d", len(batch))
-        return {isin: None for isin in batch}
+        return {}
 
     out: dict[str, OpenFigiResult | None] = {}
     for isin, job_result in zip(batch, data):
