@@ -154,6 +154,31 @@ async def lookup_by_names(
     return result
 
 
+_TICKERS_SQL = """
+select ticker, asset_name, country_code, market
+from stocks
+where country_code = $1 and is_active and upper(ticker) = any($2::text[])
+"""
+
+
+async def lookup_by_tickers(
+    conn: Any,
+    tickers: list[str],
+    *,
+    country_code: str = DEFAULT_COUNTRY,
+) -> dict[str, StockSearchResult]:
+    """ticker 목록 → {ticker(대문자): 매칭}. 마스터에 없는 ticker 는 결과에서 제외.
+
+    ISIN 해소(OpenFIGI)로 확정된 ticker 의 exchange(보드 분류)를 로컬 stocks 에서 채우는 용도.
+    OpenFIGI ticker 는 대문자라 `upper(ticker)` 로 대조하고 키도 대문자로 돌려준다.
+    """
+    if not tickers:
+        return {}
+    upper = [t.upper() for t in tickers]
+    rows = await conn.fetch(_TICKERS_SQL, country_code, upper)
+    return {row["ticker"].upper(): _row_to_result(row) for row in rows}
+
+
 # ─────────────────────────── 종목 메타 배치 조회 (뱃지용) ───────────────────────────
 
 
