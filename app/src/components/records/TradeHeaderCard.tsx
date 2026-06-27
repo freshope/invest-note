@@ -8,6 +8,7 @@ import { MoneyText } from "@/components/shared/MoneyText";
 import { getTradeTypeAccent } from "@/lib/constants/colors";
 import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import { TradeTypeBadge } from "@/components/shared/TradeTypeBadge";
+import { ImportSourceBadge } from "@/components/shared/ImportSourceBadge";
 import { StockMetaBadges } from "@/components/stocks/StockMetaBadges";
 import { useStockMeta, isMetaCode } from "@/hooks/useStockMeta";
 import {
@@ -19,7 +20,7 @@ import type { Trade, TradeType } from "@/types/database";
 interface TradeHeaderCardProps {
   trade: Pick<
     Trade,
-    "asset_name" | "ticker_symbol" | "market_type" | "country_code" | "exchange" | "exchange_rate"
+    "asset_name" | "ticker_symbol" | "market_type" | "country_code" | "exchange" | "exchange_rate" | "origin"
   >;
   tradeType: TradeType;
   totalAmount: number;
@@ -78,6 +79,7 @@ export function TradeHeaderCard({
             </span>
           )}
           <TradeTypeBadge tradeType={tradeType} size="md" />
+          <ImportSourceBadge origin={trade.origin} size="md" />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <MarketTypeBadge marketType={trade.market_type} />

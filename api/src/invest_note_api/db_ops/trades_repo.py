@@ -207,17 +207,17 @@ INSERT INTO trades (
     trade_type, price, quantity, traded_at, commission, tax,
     country_code, exchange, exchange_rate,
     strategy_type, reasoning_tags, buy_reason, sell_reason,
-    emotion, result, custom_tags
+    emotion, result, custom_tags, origin
 ) VALUES (
     $1, $2, $3, $4, $5,
     $6, $7, $8, $9, $10, $11,
     $12, $13, $14,
     $15, $16, $17, $18,
-    $19, $20, $21
+    $19, $20, $21, $22
 )
 """
 
-_TRADE_INSERT_PARAM_COUNT = 21
+_TRADE_INSERT_PARAM_COUNT = 22
 
 
 def _trade_insert_params(user_id: str, data: dict) -> tuple:
@@ -243,6 +243,8 @@ def _trade_insert_params(user_id: str, data: dict) -> tuple:
         data.get("emotion"),
         data.get("result"),
         data.get("custom_tags", []),
+        # 출처. 개별등록 경로는 키 없음→"MANUAL", import 경로는 "IMPORT" 명시 전달.
+        data.get("origin", "MANUAL"),
     )
 
 
@@ -294,6 +296,12 @@ PNL_AFFECTING_FIELDS: frozenset[str] = frozenset(
 )
 SELL_AUTO_DERIVED_FIELDS: frozenset[str] = frozenset(
     name for name, meta in TRADE_FIELD_META.items() if meta.sell_auto_derived
+)
+
+# origin == "IMPORT" 거래에서 PATCH 금지되는 "사실(금액)" 필드. 정확히 5개.
+# market_type/trade_type 절대 포함 금지(FE가 항상 변경없이 전송 → 메타 수정 false-reject).
+IMPORT_LOCKED_FIELDS: frozenset[str] = frozenset(
+    {"price", "quantity", "exchange_rate", "commission", "tax"}
 )
 
 

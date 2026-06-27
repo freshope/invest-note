@@ -14,6 +14,8 @@ import {
 } from "@/components/base/FullScreenPanel";
 import { Button } from "@/components/base/Button";
 import { Label } from "@/components/base/Label";
+import { Alert, AlertDescription } from "@/components/base/Alert";
+import { LockIcon } from "lucide-react";
 import { tradesApi } from "@/lib/api-client";
 import { VALIDATION_LIMITS, TRADE_FREE_TEXT_ERROR } from "@/lib/constants/validation";
 import { queryKeys } from "@/lib/query-keys";
@@ -104,6 +106,9 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
   const isSell = trade.trade_type === TRADE_TYPE.SELL;
   // 거래 통화는 prop 고정(수정 폼에서 국가 변경 불가). US(USD) 거래면 체결 원화 입력·역산 환율 분기.
   const isForeign = currencyForCountry(trade.country_code) === "USD";
+  // 거래내역서 일괄등록(IMPORT) 거래는 금액 정보(가격/수량/환율/수수료/세금)를 잠근다 — 사실 필드 보호.
+  // BE도 동일 5필드 PATCH를 422로 거부하므로 FE는 read-only + onSubmit omit 으로 정합을 맞춘다.
+  const isImported = trade.origin === "IMPORT";
 
   const {
     control,
@@ -176,14 +181,21 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
         isForeign && getFieldState("amount_krw").isDirty && implied != null
           ? { exchange_rate: implied }
           : {};
+      // IMPORT 거래는 금액 5필드(price/quantity/exchange_rate/commission/tax)를 patch 에서 제외 —
+      // BE 의 IMPORT_LOCKED_FIELDS 가드(422)와 정확히 동일 집합. 메타(전략/감정/태그/결과/메모)는 그대로 전송.
+      const amountPatch = isImported
+        ? {}
+        : {
+            price: values.price,
+            quantity: values.quantity,
+            ...exchangeRatePatch,
+            commission: values.commission,
+            tax: values.tax,
+          };
       await tradesApi.update(trade.id, {
         trade_type: trade.trade_type,
         market_type: trade.market_type,
-        price: values.price,
-        quantity: values.quantity,
-        ...exchangeRatePatch,
-        commission: values.commission,
-        tax: values.tax,
+        ...amountPatch,
         strategy_type: isSell ? (summary?.strategyEvaluation?.planned ?? null) : values.strategy_type,
         // SELL의 emotion / reasoning_tags / custom_tags / result는 백엔드가 자동 산출(매칭 매수 상속) — 패치 미포함.
         ...(isSell
@@ -247,6 +259,14 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                 </div>
               </div>
 
+              {/* 거래내역서(IMPORT) 거래: 금액 필드 수정 불가 안내 — 잠금 필드 바로 위에 배치 */}
+              {isImported && (
+                <Alert>
+                  <LockIcon />
+                  <AlertDescription>거래내역서에서 가져온 거래는 금액 정보를 수정할 수 없어요.</AlertDescription>
+                </Alert>
+              )}
+
               {/* 가격 */}
               <div className="space-y-1.5">
                 <Label htmlFor="edit_price">가격 ({isForeign ? "USD" : "원"}) <span className="text-destructive">*</span></Label>
@@ -259,6 +279,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                       inputMode={isForeign ? "decimal" : "numeric"}
                       value={field.value}
                       onValueChange={field.onChange}
+                      readOnly={isImported}
                     />
                   )}
                 />
@@ -276,6 +297,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                       inputMode="decimal"
                       value={field.value}
                       onValueChange={field.onChange}
+                      readOnly={isImported}
                     />
                   )}
                 />
@@ -294,6 +316,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                         inputMode="numeric"
                         value={field.value}
                         onValueChange={field.onChange}
+                        readOnly={isImported}
                       />
                     )}
                   />
@@ -315,6 +338,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                       inputMode={isForeign ? "decimal" : "numeric"}
                       value={field.value}
                       onValueChange={field.onChange}
+                      readOnly={isImported}
                     />
                   )}
                 />
@@ -333,6 +357,7 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                         inputMode={isForeign ? "decimal" : "numeric"}
                         value={field.value}
                         onValueChange={field.onChange}
+                        readOnly={isImported}
                       />
                     )}
                   />

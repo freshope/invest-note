@@ -32,6 +32,7 @@ const trade: TradeWithAccount = {
   exchange: "KOSPI",
   commission: 0,
   tax: 0,
+  origin: "MANUAL",
   created_at: "2026-06-01T00:00:00Z",
   updated_at: "2026-06-01T00:00:00Z",
 };
@@ -45,6 +46,18 @@ const meta: StockMeta = {
 };
 
 afterEach(cleanup);
+
+describe("TradeCard 거래내역서 배지", () => {
+  it("origin이 IMPORT면 '거래내역서' 배지를 노출한다", () => {
+    render(<TradeCard trade={{ ...trade, origin: "IMPORT" }} meta={meta} onPress={vi.fn()} />);
+    expect(screen.getByText("거래내역서")).toBeDefined();
+  });
+
+  it("origin이 MANUAL이면 '거래내역서' 배지를 노출하지 않는다", () => {
+    render(<TradeCard trade={trade} meta={meta} onPress={vi.fn()} />);
+    expect(screen.queryByText("거래내역서")).toBeNull();
+  });
+});
 
 describe("TradeCard 메타 뱃지", () => {
   it("뱃지를 탭하면 바텀시트만 열리고 카드 onPress는 호출되지 않는다", async () => {

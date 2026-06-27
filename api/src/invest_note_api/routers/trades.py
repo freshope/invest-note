@@ -24,6 +24,7 @@ from invest_note_api.db_ops.custom_tags_repo import (
 )
 from invest_note_api.db_ops.pnl_sync import recalc_group_pnl
 from invest_note_api.db_ops.trades_repo import (
+    IMPORT_LOCKED_FIELDS,
     PNL_AFFECTING_FIELDS,
     acquire_trade_group_lock,
     assert_account_exists,
@@ -466,6 +467,11 @@ async def update_trade(
         existing = await get_trade_by_id(conn, trade_id, user.id)
         if existing is None:
             raise APIError(ERR_TRADE_NOT_FOUND, 404)
+
+        # 거래내역서(import) 거래의 금액(사실) 필드는 불변 — 잠금 5필드 patch 시도 거부.
+        # 메타(전략/감정/태그/메모)는 그대로 허용해 사용자 저널링 여지를 남긴다.
+        if existing.origin == "IMPORT" and fields & IMPORT_LOCKED_FIELDS:
+            raise APIError("거래내역서에서 가져온 거래는 금액 정보를 수정할 수 없어요.", 422)
 
         patch, fields = strip_sell_auto_derived(patch, fields, existing.trade_type)
         if not patch:
@@ -922,6 +928,7 @@ async def import_commit(
                     "tax": row["tax"],
                     "country_code": row["country_code"],
                     "exchange": row["exchange"],
+                    "origin": "IMPORT",
                 }
                 to_insert.append(insert_row)
                 seen_sigs.add(sig)

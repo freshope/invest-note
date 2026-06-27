@@ -5,6 +5,7 @@ import { useSwipeable } from "react-swipeable";
 import { cn } from "@/lib/utils";
 import { AccountChip } from "@/components/shared/AccountChip";
 import { TradeTypeBadge } from "@/components/shared/TradeTypeBadge";
+import { ImportSourceBadge } from "@/components/shared/ImportSourceBadge";
 import { STRATEGY_LABELS, EMOTION_LABELS, RESULT_LABELS, TRADE_TYPE } from "@/lib/constants/trading";
 import { PNL_COLORS, getTradeTypeAccent } from "@/lib/constants/colors";
 import { currencyForCountry, formatMoney, formatPnLCurrency } from "@/lib/format";
@@ -220,6 +221,7 @@ export const TradeCard = memo(function TradeCard({
                   <div className="flex items-start gap-2 min-w-0">
                     <span className="min-w-0 text-[16px] font-bold text-foreground break-words">{trade.asset_name}</span>
                     <TradeTypeBadge tradeType={trade.trade_type} size="sm" />
+                    <ImportSourceBadge origin={trade.origin} size="sm" />
                   </div>
                   {hasMeta && (
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">

@@ -9,6 +9,7 @@ from uuid import uuid4
 import asyncpg
 import pytest
 
+from invest_note_api.db_ops.trades_repo import _TRADE_INSERT_PARAM_COUNT
 from invest_note_api.schemas.trade import TRADE_FREE_TEXT_MAX_LEN, TradeCreate, TradeUpdate
 from tests.conftest import TEST_USER_ID
 from tests.fake_pool import FakeConnection, make_fake_acquire, make_fake_pool
@@ -36,6 +37,7 @@ def _make_trade_row(
     exchange="",
     created_at=None,
     custom_tags=None,
+    origin="MANUAL",
 ) -> dict:
     now = _dt("2024-01-10T09:00:00+09:00")
     return {
@@ -66,6 +68,7 @@ def _make_trade_row(
         "tax": 0.0,
         "created_at": created_at or _dt("2024-01-01T00:00:00Z"),
         "updated_at": _dt("2024-01-01T00:00:00Z"),
+        "origin": origin,
         "account_name": None,
         "account_broker": None,
     }
@@ -1273,6 +1276,215 @@ class TestPatchTrade:
         with _patch_trades(conn):
             resp = trades_client.patch("/trades/t1", json={"buy_reason": "메모"})
         assert resp.status_code == 204
+
+
+def _capture_insert_params(monkeypatch) -> list[tuple]:
+    """trades INSERT 의 실제 파라미터를 행 단위로 기록 — origin 분기 검증용.
+
+    create 경로는 conn.fetchrow(INSERT ... RETURNING, *params) (1행),
+    import 경로는 conn.fetch(INSERT ... VALUES (...),(...) RETURNING *, *flattened)
+    로 다중 행을 평탄화해 보낸다. 두 경로 모두 _TRADE_INSERT_PARAM_COUNT(=22)
+    단위로 청크해 행 튜플 리스트로 환원한다.
+    """
+    rows: list[tuple] = []
+    n = _TRADE_INSERT_PARAM_COUNT
+    orig_fetchrow = FakeConnection.fetchrow
+    orig_fetch = FakeConnection.fetch
+
+    def _collect(query: str, args: tuple) -> None:
+        if "insert into trades" in query.lower():
+            rows.extend(args[i : i + n] for i in range(0, len(args), n))
+
+    async def spy_fetchrow(self: Any, query: str, *args: Any) -> Any:
+        _collect(query, args)
+        return await orig_fetchrow(self, query, *args)
+
+    async def spy_fetch(self: Any, query: str, *args: Any) -> Any:
+        _collect(query, args)
+        return await orig_fetch(self, query, *args)
+
+    monkeypatch.setattr(FakeConnection, "fetchrow", spy_fetchrow)
+    monkeypatch.setattr(FakeConnection, "fetch", spy_fetch)
+    return rows
+
+
+class TestTradeOrigin:
+    """origin INSERT 분기 + IMPORT 거래 금액 잠금 가드 (Task #13/#14)."""
+
+    # ── INSERT 분기 (마지막 INSERT 파라미터 = origin) ─────────────────────────
+
+    def test_create_inserts_origin_manual(self, trades_client, monkeypatch):
+        """개별등록 POST /trades 는 origin=MANUAL 로 INSERT 한다."""
+        params = _capture_insert_params(monkeypatch)
+        conn = FakeConnection(
+            _to_record({"id": "a1"}),                       # account exists
+            [_to_record(_make_trade_row())],                # list_trades
+            _to_record({"id": "new-t1", "trade_type": "BUY"}),  # insert RETURNING
+        )
+        with _patch_trades(conn):
+            resp = trades_client.post("/trades", json=TestCreateTrade()._buy_payload())
+        assert resp.status_code == 201
+        assert len(params) == 1
+        # origin 은 _TRADE_INSERT_PARAM_COUNT 번째(마지막) 파라미터.
+        assert params[0][-1] == "MANUAL"
+
+    def test_import_commit_inserts_origin_import(self, trades_client, monkeypatch):
+        """거래내역서 일괄등록 commit 은 origin=IMPORT 로 INSERT 한다."""
+        params = _capture_insert_params(monkeypatch)
+        staging_id = str(uuid4())
+        trades_client.app.state.trade_staging.cache[staging_id] = {
+            "user_id": TEST_USER_ID,
+            "rows": [
+                TestImportCommit()._staged_row("005930", "삼성전자"),
+                TestImportCommit()._staged_row("000660", "SK하이닉스"),
+            ],
+            "parse_errors": [],
+            "usd_skip_count": 0,
+            "broker_key": "toss",
+            "account_hint": None,
+        }
+        conn = FakeConnection(
+            "a1",                                            # assert_account_exists
+            [],                                              # group1 list_trades_in_group
+            [_to_record(_make_trade_row(id_="new-1", ticker="005930", asset_name="삼성전자"))],
+            [],                                              # group2 list_trades_in_group
+            [_to_record(_make_trade_row(id_="new-2", ticker="000660", asset_name="SK하이닉스"))],
+        )
+        with _patch_trades(conn):
+            resp = trades_client.post(
+                "/trades/import/commit",
+                json={"staging_id": staging_id, "account_id": "a1"},
+            )
+        assert resp.status_code == 200
+        assert len(params) == 2
+        # 모든 import INSERT 의 마지막 파라미터 = IMPORT.
+        assert all(p[-1] == "IMPORT" for p in params)
+
+    # ── GET 응답에 origin 노출 (FE 배지/잠금이 의존하는 shape) ─────────────────
+
+    def test_list_response_exposes_origin(self, trades_client):
+        """GET /trades(목록) 응답의 각 trade 에 origin 이 실제 직렬화된다."""
+        conn = FakeConnection(
+            [_to_record(_make_trade_row(origin="IMPORT"))],  # list_trades_with_account
+            [],                                              # accounts
+        )
+        with _patch_trades(conn):
+            resp = trades_client.get("/trades")
+        assert resp.status_code == 200
+        assert resp.json()["trades"][0]["origin"] == "IMPORT"
+
+    def test_detail_response_exposes_origin(self, trades_client):
+        """GET /trades/{id}(상세) 응답에 origin 이 실제 직렬화된다."""
+        conn = FakeConnection(_to_record(_make_trade_row(origin="IMPORT")))
+        with _patch_trades(conn):
+            resp = trades_client.get("/trades/t1")
+        assert resp.status_code == 200
+        assert resp.json()["origin"] == "IMPORT"
+
+    # ── PATCH 잠금 가드 (IMPORT 거래의 금액 5필드) ────────────────────────────
+
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("price", 75000),
+            ("quantity", 5),
+            ("exchange_rate", 1350),
+            ("commission", 100),
+            ("tax", 50),
+        ],
+    )
+    def test_patch_import_locked_field_422(self, trades_client, field, value):
+        """IMPORT 거래에 금액 5필드 중 하나라도 PATCH → 422 (DB 미접근)."""
+        row = _make_trade_row(origin="IMPORT")
+        conn = FakeConnection(_to_record(row))  # fetchrow 만 — 가드에서 즉시 차단
+        with _patch_trades(conn):
+            resp = trades_client.patch("/trades/t1", json={field: value})
+        assert resp.status_code == 422
+        assert "금액 정보를 수정할 수 없어요" in resp.json()["error"]
+
+    def test_patch_import_explicit_null_locked_field_422(self, trades_client):
+        """명시적 price=null 도 model_fields_set 에 포함되어 거부된다."""
+        row = _make_trade_row(origin="IMPORT")
+        conn = FakeConnection(_to_record(row))
+        with _patch_trades(conn):
+            resp = trades_client.patch("/trades/t1", json={"price": None})
+        assert resp.status_code == 422
+
+    # ── PATCH 메타 허용 (IMPORT 거래여도 분석 메타는 수정 가능) ────────────────
+
+    def test_patch_import_meta_allowed(self, trades_client):
+        """IMPORT 거래의 비-금액 메타(buy_reason)는 그대로 수정 허용 → 204."""
+        row = _make_trade_row(origin="IMPORT")
+        conn = FakeConnection(
+            _to_record(row),  # fetchrow
+            "UPDATE 1",       # patch_trade (비-PNL 메타라 list_trades 없음)
+        )
+        with _patch_trades(conn):
+            resp = trades_client.patch("/trades/t1", json={"buy_reason": "저점 매수 판단"})
+        assert resp.status_code == 204
+
+    def test_patch_import_meta_with_market_type_not_false_rejected(self, trades_client):
+        """드리프트 가드: IMPORT 거래에 메타+market_type 동봉 PATCH → 422 아님(204).
+
+        FE 는 메타 수정 시 market_type 을 변경 없이 항상 전송한다. market_type 이
+        잠금 집합에 끼면 메타 수정까지 false-reject 되므로, 절대 422 가 아니어야 한다.
+        """
+        row = _make_trade_row(origin="IMPORT")
+        conn = FakeConnection(
+            _to_record(row),  # fetchrow
+            "UPDATE 1",       # patch_trade (market_type/buy_reason 둘 다 비-PNL)
+        )
+        with _patch_trades(conn):
+            resp = trades_client.patch(
+                "/trades/t1",
+                json={"buy_reason": "메모", "market_type": "STOCK"},
+            )
+        assert resp.status_code == 204
+
+    def test_patch_import_buy_meta_cascades_to_sell(self, trades_client, monkeypatch):
+        """IMPORT BUY 의 메타(custom_tags) 수정도 매칭 SELL 캐스케이드를 트리거한다."""
+        sql_calls = _capture_sql(monkeypatch)
+        buy_row = _make_trade_row(
+            id_="b1", trade_type="BUY", quantity=10, origin="IMPORT",
+            traded_at=_dt("2024-01-01T09:00:00+09:00"),
+        )
+        sell_row = _make_trade_row(
+            id_="s1", trade_type="SELL", quantity=10, origin="IMPORT",
+            traded_at=_dt("2024-02-01T09:00:00+09:00"),
+        )
+        conn = FakeConnection(
+            _to_record(buy_row),                          # existing fetchrow
+            [_to_record(buy_row), _to_record(sell_row)],  # list_trades (PNL 분기)
+            "UPDATE 1",                                   # patch_trade
+        )
+        with _patch_trades(conn):
+            resp = trades_client.patch("/trades/b1", json={"custom_tags": ["테마주"]})
+        assert resp.status_code == 204
+        _assert_lock_before_list(sql_calls)
+        assert any(
+            "custom_tags = $6" in q and "UPDATE trades SET profit_loss" in q
+            for q in sql_calls
+        )
+
+    # ── 회귀: MANUAL 거래는 금액 PATCH 기존대로 허용 ──────────────────────────
+
+    def test_patch_manual_locked_field_ok(self, trades_client, monkeypatch):
+        """MANUAL 거래의 금액(price) PATCH 는 기존대로 허용 → 204 (회귀 없음)."""
+        row = _make_trade_row(origin="MANUAL")
+        conn = FakeConnection(
+            _to_record(row),    # existing fetchrow
+            [_to_record(row)],  # list_trades (PNL 분기)
+            "UPDATE 1",         # patch_trade
+        )
+        with _patch_trades(conn):
+            resp = trades_client.patch("/trades/t1", json={"price": 75000})
+        assert resp.status_code == 204
+
+    # ── origin 불변 (PATCH 화이트리스트 미포함) ───────────────────────────────
+
+    def test_origin_not_patchable_via_schema(self):
+        """origin 은 TradeUpdate 스키마에 없어 PATCH 로 변경 불가(불변)."""
+        assert "origin" not in TradeUpdate.model_fields
 
 
 class TestCustomTagsRegistry:

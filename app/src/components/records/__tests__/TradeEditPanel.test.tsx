@@ -59,6 +59,7 @@ function makeTrade(overrides: Partial<Trade>): Trade {
     exchange: "",
     commission: 0,
     tax: 0,
+    origin: "MANUAL",
     created_at: "2026-01-02T00:00:00Z",
     updated_at: "2026-01-02T00:00:00Z",
     ...overrides,
@@ -187,5 +188,57 @@ describe("TradeEditPanel — 해외(US) 환율 인지", () => {
     await waitFor(() => expect(tradesApi.update).toHaveBeenCalled());
     const [, patch] = (tradesApi.update as ReturnType<typeof vi.fn>).mock.calls[0];
     expect("exchange_rate" in patch).toBe(false);
+  });
+});
+
+describe("TradeEditPanel — 거래내역서(IMPORT) 금액 잠금", () => {
+  beforeEach(() => {
+    (tradesApi.update as ReturnType<typeof vi.fn>).mockClear();
+  });
+  afterEach(() => cleanup());
+
+  it("IMPORT 거래는 안내문을 노출하고 금액 입력칸을 read-only 로 만든다", () => {
+    renderPanel(makeTrade({ origin: "IMPORT", country_code: "KR", trade_type: "SELL" }));
+
+    expect(screen.getByText(/거래내역서에서 가져온 거래는 금액 정보를 수정할 수 없어요/)).toBeDefined();
+    // 금액 5필드(KR SELL 은 price/quantity/commission/tax 4개) 만 read-only. 메타(메모 textarea)는 편집 가능.
+    for (const id of ["edit_price", "edit_quantity", "edit_commission", "edit_tax"]) {
+      const el = document.getElementById(id) as HTMLInputElement | null;
+      expect(el).not.toBeNull();
+      expect(el!.readOnly).toBe(true);
+    }
+  });
+
+  it("IMPORT 거래 저장 시 잠금 5필드(price/quantity/exchange_rate/commission/tax)를 patch 에서 제외하고 메타는 전송한다", async () => {
+    renderPanel(makeTrade({ origin: "IMPORT", country_code: "KR", trade_type: "BUY", buy_reason: "기존 메모" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(tradesApi.update).toHaveBeenCalled());
+    const [, patch] = (tradesApi.update as ReturnType<typeof vi.fn>).mock.calls[0];
+
+    for (const locked of ["price", "quantity", "exchange_rate", "commission", "tax"]) {
+      expect(locked in patch).toBe(false);
+    }
+    // 메타·불변 식별 필드는 그대로 전송(false-reject 방지 — BE 가드 비대상).
+    expect(patch.trade_type).toBe("BUY");
+    expect(patch.market_type).toBe("STOCK");
+    expect("buy_reason" in patch).toBe(true);
+    expect("strategy_type" in patch).toBe(true);
+  });
+
+  it("MANUAL 거래는 금액 입력칸이 편집 가능하고 잠금 필드를 전송한다(회귀 없음)", async () => {
+    renderPanel(makeTrade({ origin: "MANUAL", country_code: "KR", trade_type: "BUY" }));
+
+    for (const id of ["edit_price", "edit_quantity", "edit_commission"]) {
+      const el = document.getElementById(id) as HTMLInputElement;
+      expect(el.readOnly).toBe(false);
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(tradesApi.update).toHaveBeenCalled());
+    const [, patch] = (tradesApi.update as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect("price" in patch).toBe(true);
+    expect("quantity" in patch).toBe(true);
+    expect("commission" in patch).toBe(true);
   });
 });

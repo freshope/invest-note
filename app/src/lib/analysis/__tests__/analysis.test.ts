@@ -32,6 +32,7 @@ function makeTrade(overrides: Partial<Trade> & { id: string; trade_type: Trade["
     exchange: "",
     commission: 0,
     tax: 0,
+    origin: "MANUAL",
     created_at: "2024-01-01T00:00:00Z",
     updated_at: "2024-01-01T00:00:00Z",
     ...overrides,
