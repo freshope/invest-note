@@ -93,7 +93,7 @@ export function DeleteAccountSection() {
                 </div>
                 <div className="space-y-2 px-1">
                   <p className="text-[13px] font-medium text-foreground/80">
-                    탈퇴 사유를 알려주시면 개선에 큰 도움이 됩니다. (선택)
+                    탈퇴 사유를 선택해주세요. 서비스 개선에 큰 도움이 됩니다.
                   </p>
                   <ToggleGroup
                     type="single"
@@ -113,7 +113,7 @@ export function DeleteAccountSection() {
                   </ToggleGroup>
                 </div>
                 <p className="px-1 text-[13px] text-muted-foreground leading-relaxed">
-                  계속 진행하시려면 아래 “탈퇴하기”를 눌러주세요.
+                  사유를 선택하신 뒤 아래 “탈퇴하기”를 눌러주세요.
                 </p>
               </div>
 
@@ -126,7 +126,7 @@ export function DeleteAccountSection() {
                   variant="destructive"
                   size="xl"
                   className="w-full"
-                  disabled={panel.pending}
+                  disabled={panel.pending || !reason}
                   onClick={handleConfirm}
                 >
                   {panel.pending ? "탈퇴 중..." : "탈퇴하기"}
