@@ -73,6 +73,50 @@ class FeedbackCreate(BaseModel):
     title: str | None = None
 
 
+class MyPostComment(BaseModel):
+    """내 글에 달린 어드민 답변(is_admin=true) — wire 는 snake_case."""
+
+    id: str
+    body: str
+    is_admin: bool
+    created_at: Any
+
+
+class MyPostAttachment(BaseModel):
+    """내 글 첨부 — storage_key 대신 소유자 스코프 presigned GET url 만 노출."""
+
+    id: str
+    original_name: str
+    content_type: str | None = None
+    size_bytes: int | None = None
+    url: str
+
+
+class MyPostItem(BaseModel):
+    """"내 제보/문의" 한 건 — 본인 글 + 어드민 답변 + 첨부. 노출 필드는 이 모델이 화이트리스트.
+
+    user_id 등 내부 필드는 의도적으로 비포함(본인 글이라 작성자 표시 불필요). 첨부 storage_key 도
+    비노출 — presigned url 로만 접근.
+    """
+
+    id: str
+    board_type: str
+    title: str
+    body: str
+    status: str
+    metadata: dict[str, Any]
+    created_at: Any
+    updated_at: Any
+    comments: list[MyPostComment] = Field(default_factory=list)
+    attachments: list[MyPostAttachment] = Field(default_factory=list)
+
+
+class MyPostsResponse(BaseModel):
+    """GET /board/my-posts 응답 — 본인 글 목록(최신순). notice/타인 글 비포함."""
+
+    items: list[MyPostItem]
+
+
 class BugReportCreate(BaseModel):
     """앱 오류 신고 입력 — 텍스트 + 선택적 이미지 첨부(다중). board_type 미수신(서버 'bug_report').
 

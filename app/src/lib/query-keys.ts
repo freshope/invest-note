@@ -38,6 +38,9 @@ export const queryKeys = {
   notices: ["notices"] as const,
   notice: (id: string) => ["notice", id] as const,
 
+  // 내 제보/문의(본인이 쓴 글 + 어드민 답변). 진입 팝업 게이트와 read-back 패널이 공유.
+  myPosts: ["my-posts"] as const,
+
   // 거래 변경 시 assets prefix invalidate 한 번으로 모든 파라미터 조합을 무효화.
   assets: ["assets"] as const,
   assetHistory: (accountId: string | null, ticker: string | null) =>

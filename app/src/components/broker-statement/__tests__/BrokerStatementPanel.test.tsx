@@ -1,7 +1,17 @@
 // @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactElement } from "react";
 import { BrokerStatementPanel } from "../BrokerStatementPanel";
+
+// 패널이 submit 성공 시 my-posts 무효화(useQueryClient)에 의존하므로 QueryClient 를 제공한다.
+function renderWithClient(ui: ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 const presign = vi.fn();
 const submit = vi.fn();
@@ -36,7 +46,7 @@ afterEach(() => {
 
 describe("BrokerStatementPanel", () => {
   it("동의 미체크·파일 미선택 시 제보 버튼이 비활성화된다", () => {
-    render(
+    renderWithClient(
       <BrokerStatementPanel
         open
         onOpenChange={vi.fn()}
@@ -58,7 +68,7 @@ describe("BrokerStatementPanel", () => {
     submit.mockResolvedValue({ post_id: "p1", attachment: {} });
     const onOpenChange = vi.fn();
 
-    render(
+    renderWithClient(
       <BrokerStatementPanel
         open
         onOpenChange={onOpenChange}

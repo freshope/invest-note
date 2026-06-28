@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   FullScreenPanel,
@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/base/Button";
 import { Textarea } from "@/components/base/Textarea";
 import { boardApi, ApiError, type FeedbackInput } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 
 interface Props {
   open: boolean;
@@ -29,6 +30,7 @@ function errorMessage(err: unknown): string {
 }
 
 export function FeedbackPanel({ open, onOpenChange }: Props) {
+  const queryClient = useQueryClient();
   const [body, setBody] = useState("");
 
   // 진입(open) 시마다 폼을 초기 상태로 — 패널 컴포넌트는 항상 마운트되어 있어
@@ -41,6 +43,7 @@ export function FeedbackPanel({ open, onOpenChange }: Props) {
     mutationFn: (input: FeedbackInput) => boardApi.submitFeedback(input),
     onSuccess: () => {
       toast.success("의견이 전송되었습니다. 감사합니다!");
+      queryClient.invalidateQueries({ queryKey: queryKeys.myPosts });
       setBody("");
       onOpenChange(false);
     },

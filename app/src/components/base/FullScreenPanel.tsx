@@ -137,9 +137,11 @@ function FullScreenPanelContent({ children, className }: FullScreenPanelContentP
 interface FullScreenPanelHeaderProps {
   title: string;
   className?: string;
+  /** 헤더 우측 액션(예: "작성" 버튼). 중앙 타이틀은 pointer-events-none 라 클릭 충돌 없음. */
+  action?: React.ReactNode;
 }
 
-function FullScreenPanelHeader({ title, className }: FullScreenPanelHeaderProps) {
+function FullScreenPanelHeader({ title, className, action }: FullScreenPanelHeaderProps) {
   const { onClose } = React.useContext(FullScreenPanelContext);
 
   return (
@@ -172,6 +174,9 @@ function FullScreenPanelHeader({ title, className }: FullScreenPanelHeaderProps)
         <span className="absolute inset-x-0 text-center text-[17px] font-bold text-foreground pointer-events-none">
           {title}
         </span>
+        {action ? (
+          <div className="relative z-10 ml-auto flex items-center pr-1">{action}</div>
+        ) : null}
       </div>
     </div>
   );
