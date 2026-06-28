@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-06-28 | 해외 종목 한글명 — 백필 대상을 인기/SP500/거래이력 → 활성 US 전 종목 점진 적재
+
+- **맥락:** name_ko 결정(이 문서 아래)의 트레이드오프 ⓒ "커버리지는 naver 백필분(인기+SP500+거래이력)에 한정 → 롱테일 US 는 영문(구조적 상한)" 을 해소한다. `backfill_us_aliases` 가 `(_US_POPULAR_TICKERS ∪ 거래이력) ∪ us_index` 로만 pending 을 골라, nasdaqtrader 전 유니버스(~8–10천)의 롱테일은 `name_ko`(표시)·`stock_aliases`(검색) 둘 다 영영 빈 채였다.
+- **결정 ① 대상을 활성 US 전 종목으로 확대하되, KR 교차검증의 batch-커서 패턴을 그대로 미러링.** pending 쿼리만 교체: `where is_active and naver_checked_at is null` + `ORDER BY (보유/인기 0 → SP500 1 → 롱테일 2), ticker` + `LIMIT _US_ALIAS_BATCH(=500)`. 적재(`set_name_ko`/`upsert_aliases`)·rate가드(`_NAVER_CONCURRENCY=8`)·커서(`naver_checked_at`, found/not-found 모두 박제) 전부 무수정 재사용.
+- **결정 ② 점진 적재는 주기 `stock_seed us` 실행에 의존.** `naver_checked_at` 커서가 run 마다 frontier 를 전진시켜 ~16일에 걸쳐 전 유니버스를 sweep. 우선순위 ORDER BY 로 사용자 체감(보유/인기/SP500)이 항상 먼저 채워진다. (US seed cron 은 운영에 등록됨.)
+- **이유:** 제약(① 리미트 회피 ② 기존 로직 재사용·수정 최소 ③ 점진 ④ 불필요 호출 차단 ⑤ 회귀 최소)을 한 번에 만족하는 최소 변경 — KR 이 이미 `_NAVER_STOCK_BATCH=1500` 로 "첫 전수검증 여러 run 분산" 을 검증한 선례라 신규 메커니즘 0. backfill 이 alias 와 name_ko 를 같은 네이버 조회로 동시 적재하므로 확장이 **표시·검색 양쪽**을 함께 개선한다(엉뚱한 곳 수정 아님, advisor 검토).
+- **트레이드오프:** ⓐ 롱테일 다수는 한글명 0건 → 네거티브 캐시만 채움(1회 조회 후 박제, 재호출 없음 — "불필요 호출"은 1종목 1회로 상한). ⓑ batch 500/일 → 전수 sweep 에 ~16일(즉시성 포기, 점진성 채택). 참조: [[project_stock_name_ko]]·[[project_naver_checked_at_dual_use]].
+
+---
+
 ## 2026-06-28 | 게시판 읽음 상태 — localStorage → DB 이전 (공지 high-water mark + 내 글 per-post)
 
 - **맥락:** 직전 board-notify 결정②(이 문서 아래)가 읽음을 기기 `localStorage`(`board-seen.ts`)에만 둬서 ⓐ 기기 변경·재설치 시 모든 글이 안읽음으로 부활, ⓑ 신규 가입자가 `last-seen-notice=null` 이라 가입 전 옛 공지까지 전부 안읽음으로 보였다(공지 메뉴 점). 그 결정의 트레이드오프 "read receipt deferred"를 해소하며 판정을 DB로 옮긴다. **운영 미적용 구간이라 데이터 마이그레이션/backfill 불필요.**

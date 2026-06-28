@@ -269,14 +269,15 @@ class _FakeConn:
         if "from trades" in sql:
             return [{"ticker_symbol": t} for t in self.traded]
         if "from stocks" in sql:
-            if "naver_checked_at is null" in sql:  # backfill pending — (target ∪ 편입) ∩ 미조회
-                target = set(args[1])
-                rows = {
-                    t
-                    for t in self.universe
-                    if (t in target or t in self.indexed) and t not in self.checked
-                }
-                return [{"ticker": t} for t in rows]
+            if "naver_checked_at is null" in sql:  # backfill pending — 활성 전 종목, 우선순위+batch
+                target, limit = set(args[1]), args[2]
+                eligible = [t for t in self.universe if t not in self.checked]
+                # 보유/인기(0) → SP500(1) → 롱테일(2), 동순위는 ticker 정렬
+                ordered = sorted(
+                    eligible,
+                    key=lambda t: (0 if t in target else 1 if t in self.indexed else 2, t),
+                )
+                return [{"ticker": t} for t in ordered[:limit]]
             return [{"ticker": t} for t in set(args[1]) & self.universe]  # _existing_tickers
         raise AssertionError(f"예상치 못한 쿼리: {sql}")
 
@@ -386,6 +387,60 @@ async def test_backfill_us_aliases_includes_index_members(monkeypatch):
     assert n == 1
     assert {t[1] for t in conn.upserted} == {"SPX"}
     assert conn.marked == ["SPX"]
+
+
+async def test_backfill_us_aliases_includes_long_tail(monkeypatch):
+    # 인기/거래/SP500 어디에도 없는 롱테일 종목도 점진 적재 대상에 포함된다.
+    conn = _FakeConn(traded=[], universe={"TAIL"})
+
+    async def fake_names(tickers, *, client=None):
+        assert list(tickers) == ["TAIL"]
+        return {t: f"한글{t}" for t in tickers}, list(tickers)
+
+    monkeypatch.setattr(stock_seed, "_naver_us_korean_names", fake_names)
+
+    assert await stock_seed.backfill_us_aliases(conn) == 1
+    assert conn.name_ko == {"TAIL": "한글TAIL"}
+
+
+async def test_backfill_us_aliases_prioritizes_owned_then_index_then_tail(monkeypatch):
+    # 우선순위: 보유/인기(TRD) → SP500(SPX) → 롱테일(TAIL). batch 가 작아도 상위부터.
+    conn = _FakeConn(traded=["TRD"], universe={"TRD", "SPX", "TAIL"}, indexed={"SPX"})
+    monkeypatch.setattr(stock_seed, "_US_ALIAS_BATCH", 2)
+
+    captured: dict = {}
+
+    async def fake_names(tickers, *, client=None):
+        captured["asked"] = list(tickers)
+        return {}, list(tickers)
+
+    monkeypatch.setattr(stock_seed, "_naver_us_korean_names", fake_names)
+
+    await stock_seed.backfill_us_aliases(conn)
+
+    # batch=2 → 우선순위 상위 2건(보유 TRD, SP500 SPX)만 선정. 롱테일 TAIL 은 다음 run 으로.
+    # (Naver 호출은 batch 내에서 알파벳 정렬되므로 순서가 아닌 선정 집합으로 검증)
+    assert set(captured["asked"]) == {"TRD", "SPX"}
+    assert "TAIL" not in captured["asked"]
+
+
+async def test_backfill_us_aliases_caps_batch_per_run(monkeypatch):
+    # 유니버스가 batch 보다 커도 run 당 _US_ALIAS_BATCH 만 조회(전수는 여러 run 분산).
+    conn = _FakeConn(traded=[], universe={f"T{i:03d}" for i in range(10)})
+    monkeypatch.setattr(stock_seed, "_US_ALIAS_BATCH", 3)
+
+    captured: dict = {}
+
+    async def fake_names(tickers, *, client=None):
+        captured["asked"] = list(tickers)
+        return {}, list(tickers)
+
+    monkeypatch.setattr(stock_seed, "_naver_us_korean_names", fake_names)
+
+    await stock_seed.backfill_us_aliases(conn)
+
+    assert len(captured["asked"]) == 3
+    assert captured["asked"] == ["T000", "T001", "T002"]  # ticker 정렬 상위 3
 
 
 # ─────────────────────────── US 인덱스 편입(S&P 500) ───────────────────────────
