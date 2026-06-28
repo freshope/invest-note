@@ -19,10 +19,8 @@ import {
   TYPE_LABEL,
   STATUS_META,
   getPostDisplayTitle,
-  isMyPostUnread,
 } from "@/lib/board-post";
 import { formatDateOnly } from "@/lib/format";
-import { getLastReadMyPostMap } from "@/lib/board-seen";
 import { cn } from "@/lib/utils";
 import { MyPostDetailPanel } from "./MyPostDetailPanel";
 
@@ -37,8 +35,8 @@ interface Props {
 
 /**
  * "내가 보낸 내역" 목록 메인 패널(공지 스타일 행: 미리보기 + 상태 칩 + 글별 읽기 점).
- * 행 클릭 → 상세 패널(스택). 헤더 "작성" → 별도 작성 폼 패널. 상세 닫힐 때 readTick 으로
- * 행 점을 재계산한다(localStorage 비반응형).
+ * 행 클릭 → 상세 패널(스택). 헤더 "작성" → 별도 작성 폼 패널. 읽기 점은 서버 플래그(post.unread)이며
+ * 상세 진입 시 서버 read 처리 + my-posts invalidate 로 갱신된다.
  */
 export function MyPostsListPanel({
   open,
@@ -50,8 +48,6 @@ export function MyPostsListPanel({
   const router = useRouter();
   // 스냅샷 객체 대신 id 보관 후 live items 에서 조회 → 상세 열린 중 refetch 되면 새 답변 반영.
   const [detailId, setDetailId] = useState<string | null>(null);
-  // 상세에서 글을 읽으면 그 id 의 점만 사라져야 하므로, 상세 닫힘 시 재계산 트리거.
-  const [readTick, setReadTick] = useState(0);
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: queryKeys.myPosts,
@@ -63,14 +59,11 @@ export function MyPostsListPanel({
     () => (data?.items ?? []).filter((p) => p.board_type === boardType),
     [data, boardType],
   );
-  // 클라이언트 전용 포털이라 render 중 localStorage 읽기 안전. readTick 으로 강제 갱신.
-  // read map 1회 읽어 글마다 재파싱 방지.
-  const unreadIds = useMemo(() => {
-    const lastReadMap = getLastReadMyPostMap();
-    return new Set(
-      items.filter((p) => isMyPostUnread(p, lastReadMap)).map((p) => p.id),
-    );
-  }, [items, readTick]);
+  // 서버 unread 플래그로 행 점 구성(단일 출처). invalidate 로 자연 갱신.
+  const unreadIds = useMemo(
+    () => new Set(items.filter((p) => p.unread === true).map((p) => p.id)),
+    [items],
+  );
 
   // useStaggeredPanel 이 닫힘 애니메이션 동안 payload 유지 → close 시 null 돼도 안전.
   const detailPost = detailId
@@ -133,10 +126,7 @@ export function MyPostsListPanel({
 
       <MyPostDetailPanel
         post={detailPost}
-        onClose={() => {
-          setDetailId(null);
-          setReadTick((t) => t + 1);
-        }}
+        onClose={() => setDetailId(null)}
         onImport={goImport}
       />
     </>

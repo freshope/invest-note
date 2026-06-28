@@ -10,6 +10,7 @@ str 로 반환하므로, 읽기는 json.loads, 쓰기는 json.dumps + $n::jsonb 
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -23,6 +24,46 @@ _POST_UPDATABLE = ("title", "body", "status", "is_pinned")
 
 # "내 제보/문의" 가 노출하는 board_type — notice 절대 제외(공지는 전용 경로).
 _MY_POST_BOARD_TYPES = ("feedback", "bug_report", "broker_statement")
+
+
+def _to_dt(value: Any) -> datetime:
+    """timestamptz 값을 timezone-aware datetime 으로 정규화한다.
+
+    asyncpg 는 timestamptz 를 aware datetime 으로 주지만, fake_pool/테스트는 ISO 문자열
+    (`...Z` 또는 `+00:00`)을 준다. 양쪽을 모두 받아 수치 비교 가능한 aware datetime 으로 만든다
+    (FE isMyPostUnread 와 동일하게 사전식 문자열 비교 금지 — `+00:00` vs `Z` 버그 회피).
+    naive 면 UTC 로 간주(aware 와 비교 시 TypeError 방지).
+    """
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        # Python 3.10 fromisoformat 은 'Z' 를 못 받으므로 '+00:00' 으로 치환.
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _compute_unread(post: dict, read_at: Any) -> bool:
+    """내 글 안읽음 판정 — FE isMyPostUnread(board-post.ts) 규칙을 정확히 복제.
+
+    - 어드민 댓글 0 + status=='open' → False(갓 쓴 본인 글, 활동 없음).
+    - 활동시각 = max(어드민 댓글 created_at, status!='open' 일 때만 updated_at).
+      updated_at 은 status 미변경(open) 글에선 본문 편집 잡음이므로 활동신호에서 제외.
+    - read_at 없으면 True, 있으면 활동시각 > read_at.
+    """
+    comments = post.get("comments", [])
+    admin_comments = [c for c in comments if c.get("is_admin")]
+    status_changed = post.get("status") != "open"
+    if not admin_comments and not status_changed:
+        return False
+    candidates = [_to_dt(c["created_at"]) for c in admin_comments]
+    if status_changed:
+        candidates.append(_to_dt(post["updated_at"]))
+    activity = max(candidates)
+    if read_at is None:
+        return True
+    return activity > _to_dt(read_at)
 
 
 def _escape_like(term: str) -> str:
@@ -151,11 +192,17 @@ async def list_my_posts(conn: Any, user_id: Any) -> list[dict]:
     첨부(board_attachments)도 글별로 합본하되 storage_key 는 raw 로 싣고 라우터가 presigned
     GET URL 로 치환한다. 정렬은 list_posts 컨벤션대로 created_at desc(updated_at 은 status 외
     수정에도 갱신돼 부정확).
+
+    각 글에 board_post_reads(현재 user)를 LEFT JOIN 해 read_at/popup_acked_at 을 끌어와
+    unread(_compute_unread)·popup_acked(popup_acked_at IS NOT NULL)를 계산해 더한다. 별도
+    fetch 가 아닌 단일 쿼리 JOIN 이라 호출 횟수는 늘지 않는다.
     """
     posts = await conn.fetch(
-        "select * from board_posts "
-        "where user_id = $1 and board_type = any($2) "
-        "order by created_at desc",
+        "select board_posts.*, r.read_at, r.popup_acked_at from board_posts "
+        "left join board_post_reads r "
+        "on r.post_id = board_posts.id and r.user_id = $1 "
+        "where board_posts.user_id = $1 and board_posts.board_type = any($2) "
+        "order by board_posts.created_at desc",
         user_id,
         list(_MY_POST_BOARD_TYPES),
     )
@@ -188,8 +235,13 @@ async def list_my_posts(conn: Any, user_id: Any) -> list[dict]:
     result = []
     for row in posts:
         d = _post_row_to_dict(row)
+        # JOIN 으로 끌어온 reads 컬럼은 응답에 직접 노출하지 않고 파생 플래그로만 쓴다.
+        read_at = d.pop("read_at", None)
+        popup_acked_at = d.pop("popup_acked_at", None)
         d["comments"] = comments_by_post.get(d["id"], [])
         d["attachments"] = attachments_by_post.get(d["id"], [])
+        d["unread"] = _compute_unread(d, read_at)
+        d["popup_acked"] = popup_acked_at is not None
         result.append(d)
     return result
 
@@ -329,3 +381,79 @@ async def count_recent_submissions(
         board_type,
     )
     return int(total or 0)
+
+
+# ─────────────────────────── 읽음/알림 상태 ───────────────────────────
+
+
+async def set_notices_seen_at(conn: Any, user_id: Any) -> None:
+    """공지 high-water mark upsert — notices_seen_at = now()(공지 메뉴 열 때). 멱등."""
+    await conn.execute(
+        "insert into user_notice_state (user_id, notices_seen_at) values ($1, now()) "
+        "on conflict (user_id) do update set notices_seen_at = now()",
+        user_id,
+    )
+
+
+async def has_unread_notice(conn: Any, user_id: Any) -> bool:
+    """안읽은 공지 존재 여부(서버 EXISTS).
+
+    state row 없으면 users.created_at(가입 시각)으로 fallback → 신규가입자에게 가입 전
+    옛 공지는 안 뜬다. pinned_first 정렬로 인한 client-side 오판도 서버 EXISTS 가 해소.
+    """
+    return bool(
+        await conn.fetchval(
+            "select exists("
+            "select 1 from board_posts bp where bp.board_type = 'notice' "
+            "and bp.created_at > coalesce("
+            "(select notices_seen_at from user_notice_state where user_id = $1), "
+            "(select created_at from users where id = $1)))",
+            user_id,
+        )
+    )
+
+
+async def _upsert_post_read_field(
+    conn: Any, user_id: Any, post_id: Any, column: str
+) -> None:
+    """board_post_reads 의 read_at|popup_acked_at 한 컬럼을 now() 로 upsert. 멱등.
+
+    column 은 내부 호출 전용(아래 두 래퍼의 리터럴) — 외부 입력 아니므로 f-string 안전.
+    한쪽 컬럼만 set 하고 다른 컬럼은 보존한다.
+    """
+    await conn.execute(
+        f"insert into board_post_reads (user_id, post_id, {column}) "
+        f"values ($1, $2, now()) "
+        f"on conflict (user_id, post_id) do update set {column} = now()",
+        user_id,
+        post_id,
+    )
+
+
+async def upsert_post_read(conn: Any, user_id: Any, post_id: Any) -> None:
+    """내 글 상세 열람 — read_at = now() upsert. popup_acked_at 은 건드리지 않음. 멱등."""
+    await _upsert_post_read_field(conn, user_id, post_id, "read_at")
+
+
+async def upsert_popup_ack(conn: Any, user_id: Any, post_id: Any) -> None:
+    """바텀시트 팝업 확인 — popup_acked_at = now() upsert. read_at 은 건드리지 않음. 멱등."""
+    await _upsert_post_read_field(conn, user_id, post_id, "popup_acked_at")
+
+
+async def post_is_owned_by(conn: Any, post_id: Any, user_id: Any) -> bool:
+    """post 가 해당 user 의 글인지 — read/ack-popup 소유권 게이트. notice(미소유)는 자연 제외.
+
+    post_id 가 UUID 형식이 아니면(스캐너·오타) asyncpg 가 uuid 컬럼 인코딩에서 터져 500 이
+    나므로, 먼저 파싱해 미충족이면 False(→ 404)로 떨군다.
+    """
+    try:
+        UUID(str(post_id))
+    except (ValueError, TypeError):
+        return False
+    return bool(
+        await conn.fetchval(
+            "select 1 from board_posts where id = $1 and user_id = $2",
+            post_id,
+            user_id,
+        )
+    )

@@ -78,8 +78,11 @@ const ROUTES = {
     presign: "/board/broker-statement/presign",
     submit: "/board/broker-statement",
     notices: "/board/notices",
+    noticesSeen: "/board/notices/seen",
     noticeById: (id: string) => `/board/notices/${id}`,
     myPosts: "/board/my-posts",
+    postRead: (id: string) => `/board/posts/${id}/read`,
+    ackPopup: (id: string) => `/board/posts/${id}/ack-popup`,
     feedback: "/board/feedback",
     bugReport: "/board/bug-report",
     bugReportPresign: "/board/bug-report/presign",
@@ -628,6 +631,8 @@ export interface NoticeListResponse {
   items: NoticeListItem[];
   total: number;
   page: number;
+  // 서버 EXISTS 판정(notices_seen_at high-water mark, 가입시각 fallback). 공지 메뉴 점 단일 출처.
+  has_unread: boolean;
 }
 
 /** 공지 상세 — BE 화이트리스트(6개 키)와 1:1. comments/attachments/user_id 금지. */
@@ -697,6 +702,12 @@ export interface MyPost {
   comments: MyPostComment[];
   // BE 가 아직 응답에 안 싣는 단계 → optional. 소비처(상세 패널)에서 `?? []` 가드 강제.
   attachments?: MyPostAttachment[];
+  // 서버 read 판정(board_post_reads.read_at 기준, isMyPostUnread 규칙 복제). 안읽음 점 단일 출처.
+  // BE-lag(OTA 선행) 시 필드 부재 → optional. 소비처는 `=== true` 로 비교(undefined → 점 미표시, 안전).
+  unread?: boolean;
+  // resolved 거래내역서 진입 팝업 1회 dedup(board_post_reads.popup_acked_at). 기기 무관.
+  // BE-lag 시 필드 부재 → optional. 소비처는 `=== false` 로 비교(undefined → 팝업 미노출, 안전).
+  popup_acked?: boolean;
 }
 
 export interface MyPostsResponse {
@@ -712,6 +723,18 @@ export const boardApi = {
 
   // 내 제보/문의 — 인증 필요(401). 본인 글만, notice 제외, 어드민 답변 합본.
   myPosts: () => apiFetch<MyPostsResponse>(ROUTES.board.myPosts),
+
+  // 공지 메뉴 열 때 읽음 처리 — notices_seen_at = now() upsert. 이후 notices 재조회로 has_unread 갱신.
+  markNoticesSeen: () =>
+    apiFetch<void>(ROUTES.board.noticesSeen, { method: "POST" }),
+
+  // 내 글 상세 진입 시 읽음 처리 — read_at = now() upsert. 이후 my-posts 재조회로 unread 갱신.
+  markPostRead: (id: string) =>
+    apiFetch<void>(ROUTES.board.postRead(id), { method: "POST" }),
+
+  // resolved 진입 팝업 확인 — popup_acked_at = now() upsert. 기기 무관 1회 dedup.
+  ackPopup: (id: string) =>
+    apiFetch<void>(ROUTES.board.ackPopup(id), { method: "POST" }),
 
   submitFeedback: (body: FeedbackInput) =>
     apiFetch<{ post_id: string }>(ROUTES.board.feedback, {

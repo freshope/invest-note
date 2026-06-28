@@ -107,6 +107,9 @@ class MyPostItem(BaseModel):
     metadata: dict[str, Any]
     created_at: Any
     updated_at: Any
+    # 읽음 점(서버 판정, isMyPostUnread 복제) / 바텀시트 팝업 1회 노출 dedup.
+    unread: bool
+    popup_acked: bool
     comments: list[MyPostComment] = Field(default_factory=list)
     attachments: list[MyPostAttachment] = Field(default_factory=list)
 
