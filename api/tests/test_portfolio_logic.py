@@ -112,6 +112,23 @@ class TestBuildPositions:
         assert pos.holding_quantity == 10.0
         assert pytest.approx(pos.avg_buy_price) == 70000.0
 
+    def test_name_ko_propagates_to_position(self):
+        """trades 의 name_ko(US 한글명)가 집계(lot→position)를 통과해 Position 에 실린다."""
+        buy = make_trade(
+            id="b-us", trade_type="BUY", ticker_symbol="AAPL", asset_name="Apple Inc.",
+            country_code="US", exchange="NASDAQ", name_ko="애플",
+        )
+        positions, _ = build_positions([buy])
+        assert len(positions) == 1
+        assert positions[0].name_ko == "애플"
+        assert positions[0].asset_name == "Apple Inc."  # 계산/표시 원본은 불변
+
+    def test_name_ko_none_when_absent(self):
+        """name_ko 없는 거래(KR 등)는 Position.name_ko 가 None — FE 가 asset_name fallback."""
+        buy = make_trade(id="b-kr", trade_type="BUY")
+        positions, _ = build_positions([buy])
+        assert positions[0].name_ko is None
+
     def test_no_positions_after_full_sell(self):
         buy = make_trade(id="b1", trade_type="BUY", quantity=10, traded_at=_dt("2024-01-01T09:00:00+09:00"))
         sell = make_trade(id="s1", trade_type="SELL", quantity=10, avg_buy_price=70000.0, profit_loss=0.0,

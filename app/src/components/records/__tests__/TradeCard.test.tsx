@@ -118,3 +118,24 @@ describe("TradeCard 메타 뱃지", () => {
     expect(screen.queryByText(/연금/)).toBeNull();
   });
 });
+
+describe("TradeCard 표시명(한글 우선)", () => {
+  const usTrade: TradeWithAccount = {
+    ...trade,
+    ticker_symbol: "AAPL",
+    asset_name: "Apple Inc.",
+    country_code: "US",
+    exchange: "NASDAQ",
+  };
+
+  it("name_ko가 있으면 한글명을 표시한다", () => {
+    render(<TradeCard trade={{ ...usTrade, name_ko: "애플" }} onPress={vi.fn()} />);
+    expect(screen.getByText("애플")).toBeDefined();
+    expect(screen.queryByText("Apple Inc.")).toBeNull();
+  });
+
+  it("name_ko가 없으면 영문 asset_name으로 fallback한다", () => {
+    render(<TradeCard trade={usTrade} onPress={vi.fn()} />);
+    expect(screen.getByText("Apple Inc.")).toBeDefined();
+  });
+});

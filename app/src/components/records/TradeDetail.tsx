@@ -15,7 +15,7 @@ import { formatTradedAtLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import { tradesApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { ChevronLeftIcon } from "lucide-react";
-import { CompactRow } from "./trade-display";
+import { CompactRow, tradeDisplayName } from "./trade-display";
 import { STRATEGY_LABELS, EMOTION_LABELS, REASONING_TAG_LABELS, TRADE_TYPE } from "@/lib/constants/trading";
 import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import { currencyForCountry, formatMoney } from "@/lib/format";
@@ -218,7 +218,7 @@ export function TradeDetail({ trade: initialTrade, accounts, onBack, onDeleted, 
         title="거래 삭제"
         description={
           <>
-            <strong>{trade.asset_name}</strong> 거래 기록을 삭제하시겠습니까?
+            <strong>{tradeDisplayName(trade)}</strong> 거래 기록을 삭제하시겠습니까?
             <br />
             이 작업은 되돌릴 수 없습니다.
           </>

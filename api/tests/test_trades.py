@@ -65,6 +65,7 @@ def _make_trade_row(
     created_at=None,
     custom_tags=None,
     origin="MANUAL",
+    name_ko=None,
 ) -> dict:
     now = _dt("2024-01-10T09:00:00+09:00")
     return {
@@ -96,6 +97,7 @@ def _make_trade_row(
         "created_at": created_at or _dt("2024-01-01T00:00:00Z"),
         "updated_at": _dt("2024-01-01T00:00:00Z"),
         "origin": origin,
+        "name_ko": name_ko,
         "account_name": None,
         "account_broker": None,
     }
@@ -192,6 +194,43 @@ class TestListTrades:
         body = resp.json()
         assert "trades" in body
         assert "accounts" in body
+
+    def test_list_exposes_name_ko(self, trades_client):
+        """해외 종목 한글명(name_ko)이 조회 응답에 노출된다 — 표시명 한글 우선용."""
+        trade_row = _make_trade_row(
+            ticker="AAPL", asset_name="Apple Inc.", country_code="US", name_ko="애플"
+        )
+        conn = FakeConnection(
+            [_to_record(trade_row)],   # list_trades_with_account
+            [],                         # accounts
+        )
+        with _patch_trades(conn):
+            resp = trades_client.get("/trades")
+        assert resp.status_code == 200
+        trade = resp.json()["trades"][0]
+        assert trade["name_ko"] == "애플"
+        assert trade["asset_name"] == "Apple Inc."  # 저장값(영문)은 불변
+
+    def test_list_query_joins_stocks_for_name_ko(self, trades_client, monkeypatch):
+        """목록 SQL 이 stocks 를 (country_code, ticker) 로 LEFT JOIN 해 name_ko 를 읽는다."""
+        captured: list[str] = []
+        orig_fetch = FakeConnection.fetch
+
+        async def spy_fetch(self: Any, query: str, *args: Any) -> list:
+            captured.append(query)
+            return await orig_fetch(self, query, *args)
+
+        monkeypatch.setattr(FakeConnection, "fetch", spy_fetch)
+        conn = FakeConnection([_to_record(_make_trade_row())], [])
+        with _patch_trades(conn):
+            resp = trades_client.get("/trades")
+        assert resp.status_code == 200
+        join_q = next(
+            (q for q in captured if "left join stocks" in q.lower() and "name_ko" in q.lower()),
+            None,
+        )
+        assert join_q is not None, "stocks LEFT JOIN + name_ko 가 목록 쿼리에 없음"
+        assert "s.ticker = t.ticker_symbol" in join_q
 
     def test_list_ticker_filter(self, trades_client):
         trade_row = _make_trade_row()

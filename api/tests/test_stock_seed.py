@@ -262,6 +262,7 @@ class _FakeConn:
         self.checked = set(checked or ())  # naver_checked_at 이 채워진 티커
         self.indexed = set(indexed or ())  # us_index 가 채워진(편입) 티커
         self.upserted: list[tuple] = []
+        self.name_ko: dict[str, str] = {}  # set_name_ko 로 stocks.name_ko 에 기록된 ticker→한글명
         self.marked: list[str] = []  # naver_checked_at = now() 로 기록된 티커
 
     async def fetch(self, sql: str, *args):
@@ -279,8 +280,11 @@ class _FakeConn:
             return [{"ticker": t} for t in set(args[1]) & self.universe]  # _existing_tickers
         raise AssertionError(f"예상치 못한 쿼리: {sql}")
 
-    async def executemany(self, _sql: str, tuples) -> None:
-        self.upserted.extend(tuples)
+    async def executemany(self, sql: str, tuples) -> None:
+        if "name_ko" in sql:  # set_name_ko: (country_code, name, ticker)
+            self.name_ko.update({t[2]: t[1] for t in tuples})
+            return
+        self.upserted.extend(tuples)  # upsert_aliases: (country_code, ticker, alias, chosung, source)
 
     async def execute(self, sql: str, *args) -> None:
         if "set naver_checked_at" in sql:
@@ -314,6 +318,8 @@ async def test_backfill_us_aliases_unions_popular_and_traded(monkeypatch):
     assert {t[1] for t in conn.upserted} == {"AAPL", "TRD"}
     aapl = next(t for t in conn.upserted if t[1] == "AAPL")
     assert aapl == (COUNTRY_US, "AAPL", "한글AAPL", to_chosung("한글AAPL"), "naver")
+    # alias 와 별개로 표시용 한글명이 stocks.name_ko 에도 적재됨
+    assert conn.name_ko == {"AAPL": "한글AAPL", "TRD": "한글TRD"}
     # 조회한 종목은 naver_checked_at 으로 기록 → 다음 run skip
     assert set(conn.marked) == {"AAPL", "TRD"}
 

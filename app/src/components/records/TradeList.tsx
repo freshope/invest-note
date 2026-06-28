@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { TradeCard } from "./TradeCard";
+import { tradeDisplayName } from "./trade-display";
 import { TradeFormPanel } from "./TradeFormPanel";
 import { useDetailPanel } from "@/components/panels/DetailPanelProvider";
 import { CsvUploadButton } from "./CsvUploadButton";
@@ -365,7 +366,7 @@ export function TradeList({ trades, accounts }: TradeListProps) {
         title="거래 삭제"
         description={
           <>
-            <strong>{pendingDelete?.asset_name ?? ""}</strong> 거래를 삭제하시겠습니까?
+            <strong>{pendingDelete ? tradeDisplayName(pendingDelete) : ""}</strong> 거래를 삭제하시겠습니까?
             <br />
             이 작업은 되돌릴 수 없습니다.
           </>
