@@ -161,6 +161,71 @@ def test_user_growth_not_swallowed_by_catch_all():
     assert resp.json() == []
 
 
+# ─────────────────────────── 탈퇴 통계 ───────────────────────────
+
+
+def test_deletion_stats_returns_shape():
+    """allowlist 면 200 + 요약/추이/사유 분포. churn_rate = 탈퇴/(가입자+탈퇴).
+
+    repo 는 fetchrow(summary) → fetch(trend) → fetch(reasons) 순서로 호출하므로
+    FakeConnection 에 3개 응답을 순서대로 준다.
+    """
+    app = _make_admin_app()
+    summary = {
+        "total_users": 90,
+        "total_deletions": 10,
+        "deletions_30d": 3,
+        "avg_lifetime_days": 12.5,
+    }
+    trend = [
+        {"date": "2026-06-01", "deletions": 1},
+        {"date": "2026-06-02", "deletions": 0},
+    ]
+    reasons = [
+        {"reason": "not_useful", "count": 6},
+        {"reason": "unspecified", "count": 4},
+    ]
+    conn = FakeConnection(summary, trend, reasons)
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
+    resp = client.get("/admin/deletion-stats")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total_users"] == 90
+    assert body["total_deletions"] == 10
+    assert body["churn_rate"] == 0.1  # 10 / (90 + 10)
+    assert body["deletions_30d"] == 3
+    assert body["avg_lifetime_days"] == 12.5
+    assert body["trend"] == trend
+    assert body["reasons"] == reasons
+
+
+def test_deletion_stats_empty():
+    """탈퇴 0 건: churn 0.0, avg_lifetime None, trend/reasons 빈 배열(0 나눗셈·NULL 방어)."""
+    app = _make_admin_app()
+    summary = {
+        "total_users": 5,
+        "total_deletions": 0,
+        "deletions_30d": 0,
+        "avg_lifetime_days": None,
+    }
+    conn = FakeConnection(summary, [], [])
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
+    resp = client.get("/admin/deletion-stats")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["churn_rate"] == 0.0
+    assert body["avg_lifetime_days"] is None
+    assert body["trend"] == []
+    assert body["reasons"] == []
+
+
+def test_deletion_stats_forbidden_for_non_allowlist():
+    """allowlist 외 이메일은 403 — pool 도달 전 게이트 차단."""
+    app = _make_admin_app()
+    client = _client(app, email="intruder@evil.com", admin_pool=FakePool())
+    assert client.get("/admin/deletion-stats").status_code == 403
+
+
 # ─────────────────────────── 리스트 엔벨로프 / shape ───────────────────────────
 
 

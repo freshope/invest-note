@@ -148,6 +148,71 @@ async def get_user_growth(conn: Any) -> list[dict[str, Any]]:
     ]
 
 
+async def get_deletion_stats(conn: Any) -> dict[str, Any]:
+    """회원 탈퇴 통계 — 요약 카운트 + 일별 추이 + 사유 분포.
+
+    추이는 get_user_growth 와 동일하게 KST 버킷 + generate_series 로 빈 날 0 채움.
+    탈퇴가 0 건이면 min(day) 가 NULL → generate_series 가 0 행 → trend=[](안전).
+    avg_lifetime_days 는 signup_at 이 있는 행만(현재는 항상 채워지나 방어).
+    """
+    summary = await conn.fetchrow(
+        """
+        select
+            (select count(*) from users) as total_users,
+            (select count(*) from account_deletions) as total_deletions,
+            (select count(*) from account_deletions
+                where deleted_at >= now() - interval '30 days') as deletions_30d,
+            (select avg(extract(epoch from (deleted_at - signup_at)) / 86400.0)
+                from account_deletions where signup_at is not null) as avg_lifetime_days
+        """
+    )
+    total_users = int(summary["total_users"])
+    total_deletions = int(summary["total_deletions"])
+    ever = total_users + total_deletions
+    churn_rate = (total_deletions / ever) if ever else 0.0
+    avg_lifetime = summary["avg_lifetime_days"]
+
+    trend = await conn.fetch(
+        """
+        with daily as (
+            select (deleted_at at time zone 'Asia/Seoul')::date as day, count(*) as cnt
+            from account_deletions
+            group by day
+        ),
+        series as (
+            select generate_series(
+                (select min(day) from daily),
+                (now() at time zone 'Asia/Seoul')::date,
+                interval '1 day'
+            )::date as day
+        )
+        select s.day as date, coalesce(d.cnt, 0) as deletions
+        from series s
+        left join daily d on d.day = s.day
+        order by s.day
+        """
+    )
+    reasons = await conn.fetch(
+        """
+        select coalesce(reason, 'unspecified') as reason, count(*) as count
+        from account_deletions
+        group by coalesce(reason, 'unspecified')
+        order by count desc, reason
+        """
+    )
+    return {
+        "total_users": total_users,
+        "total_deletions": total_deletions,
+        "churn_rate": round(float(churn_rate), 4),
+        "deletions_30d": int(summary["deletions_30d"]),
+        "avg_lifetime_days": (
+            round(float(avg_lifetime), 1) if avg_lifetime is not None else None
+        ),
+        "trend": [{"date": r["date"], "deletions": int(r["deletions"])} for r in trend],
+        "reasons": [{"reason": r["reason"], "count": int(r["count"])} for r in reasons],
+    }
+
+
 # ─────────────────────────── stocks 수정 (PK = country_code, ticker) ───────────────────────────
 
 # StockUpdate 화이트리스트와 1:1. seed 가 덮어쓰지 않는 필드만(스키마 docstring 참조).

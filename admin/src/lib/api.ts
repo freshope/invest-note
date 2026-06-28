@@ -78,6 +78,30 @@ export interface UserGrowthPoint {
   new_users: number;
 }
 
+/** 일별 탈퇴 수 한 점. date 는 KST 탈퇴일(YYYY-MM-DD), BE DeletionTrendPoint 와 정합. */
+export interface DeletionTrendPoint {
+  date: string;
+  deletions: number;
+}
+
+/** 탈퇴 사유별 건수. reason 미선택은 'unspecified'. BE DeletionReasonCount 와 정합. */
+export interface DeletionReasonCount {
+  reason: string;
+  count: number;
+}
+
+/** 회원 탈퇴 통계(BE AccountDeletionStats 와 정합, 키 snake_case).
+ *  churn_rate = total_deletions / (total_users + total_deletions), 0~1. */
+export interface AccountDeletionStats {
+  total_users: number;
+  total_deletions: number;
+  churn_rate: number;
+  deletions_30d: number;
+  avg_lifetime_days: number | null;
+  trend: DeletionTrendPoint[];
+  reasons: DeletionReasonCount[];
+}
+
 /** 목록 쿼리 파라미터(전 테이블 공통). page 1-base, page_size 기본 50·최대 200(서버 clamp). */
 export interface AdminListParams {
   page?: number;
@@ -274,6 +298,9 @@ export const adminApi = {
   stats: () => apiFetch<AdminStats>("/admin/stats"),
 
   userGrowth: () => apiFetch<UserGrowthPoint[]>("/admin/user-growth"),
+
+  deletionStats: () =>
+    apiFetch<AccountDeletionStats>("/admin/deletion-stats"),
 
   users: (params?: AdminListParams) =>
     apiFetch<AdminListResponse<UserRow>>(`/admin/users${listQuery(params)}`),

@@ -14,6 +14,7 @@ from invest_note_api.db import get_pool
 from invest_note_api.db_ops import admin_repo
 from invest_note_api.errors import APIError
 from invest_note_api.schemas.admin import (
+    AccountDeletionStats,
     AdminListResponse,
     AdminStats,
     NpsUnmatchedCreate,
@@ -197,6 +198,19 @@ async def admin_me(
     `/{table}` 보다 먼저 등록해야 `table="me"` 로 흡수되지 않는다.
     """
     return {"email": user.email}
+
+
+@router.get("/deletion-stats", response_model=AccountDeletionStats)
+async def admin_deletion_stats(
+    _: AuthenticatedUser = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> AccountDeletionStats:
+    """회원 탈퇴 통계 — 누적/탈퇴율/평균 사용기간/사유 분포/일별 추이.
+
+    `/{table}` catch-all 보다 먼저 등록해야 table="deletion-stats" 로 흡수되지 않는다.
+    """
+    async with pool.acquire() as conn:
+        return AccountDeletionStats(**await admin_repo.get_deletion_stats(conn))
 
 
 @router.get("/{table}", response_model=AdminListResponse)

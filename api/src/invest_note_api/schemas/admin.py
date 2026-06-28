@@ -38,6 +38,36 @@ class UserGrowthPoint(BaseModel):
     new_users: int
 
 
+class DeletionTrendPoint(BaseModel):
+    """일별 탈퇴 수 한 점. date 는 KST(Asia/Seoul) 기준 탈퇴일 버킷."""
+
+    date: date
+    deletions: int
+
+
+class DeletionReasonCount(BaseModel):
+    """탈퇴 사유별 건수. reason 미선택은 'unspecified'."""
+
+    reason: str
+    count: int
+
+
+class AccountDeletionStats(BaseModel):
+    """회원 탈퇴 통계 대시보드. 키는 snake_case 유지(FE 가 그대로 소비).
+
+    churn_rate 는 누적 이탈률 = total_deletions / (total_users + total_deletions).
+    분모는 '가입한 적 있는 전체'(현재 가입자 + 탈퇴자) — 현재 users 는 탈퇴자를 이미 제외하므로.
+    """
+
+    total_users: int
+    total_deletions: int
+    churn_rate: float
+    deletions_30d: int
+    avg_lifetime_days: float | None
+    trend: list[DeletionTrendPoint]
+    reasons: list[DeletionReasonCount]
+
+
 class StockUpdate(BaseModel):
     """stocks 수정 입력 — seed 파이프라인이 덮어쓰지 않는 필드만 화이트리스트.
 

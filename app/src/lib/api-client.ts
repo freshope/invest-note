@@ -528,7 +528,11 @@ export const assetsApi = {
 // ============================================================
 
 export const meApi = {
-  deleteAccount: () => apiFetch<void>(ROUTES.me.base, { method: "DELETE" }),
+  deleteAccount: (reason?: string) =>
+    apiFetch<void>(ROUTES.me.base, {
+      method: "DELETE",
+      body: JSON.stringify({ reason: reason ?? null }),
+    }),
 };
 
 // ============================================================
