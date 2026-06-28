@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
   Drawer,
@@ -13,7 +13,6 @@ import { Button } from "@/components/base/Button";
 import { boardApi, type MyPost } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { useAuth } from "@/components/providers/AuthProvider";
-import { addAckedResolvedPost, hasAckedResolvedPost } from "@/lib/board-seen";
 import { requestImportOpen } from "@/lib/import-deeplink";
 import { useUpdateRequired } from "@/hooks/useUpdateRequired";
 
@@ -26,6 +25,7 @@ import { useUpdateRequired } from "@/hooks/useUpdateRequired";
 export function MySubmissionsPopupGate() {
   const { user } = useAuth();
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   // 강제 업데이트 판정: undefined=미정(대기), false=비강제, true=강제(팝업 금지).
   const updateRequired = useUpdateRequired();
@@ -43,6 +43,9 @@ export function MySubmissionsPopupGate() {
   });
 
   // 미확인 resolved 거래내역서 제보 중 1건(글 목록 created_at desc → 첫 매칭).
+  // 미확인 판정은 서버 플래그(popup_acked) — 기기 무관 1회 dedup.
+  // `=== false` 명시 비교: BE-lag(OTA 선행)로 필드 부재 시 undefined → 미노출(안전). `!popup_acked`
+  // 면 undefined 가 truthy 처리돼 ack 불가 구간에 매 진입마다 팝업이 떠버린다.
   const target = useMemo<MyPost | null>(() => {
     if (!data) return null;
     return (
@@ -50,7 +53,7 @@ export function MySubmissionsPopupGate() {
         (p) =>
           p.status === "resolved" &&
           p.board_type === "broker_statement" &&
-          !hasAckedResolvedPost(p.id),
+          p.popup_acked === false,
       ) ?? null
     );
   }, [data]);
@@ -66,7 +69,13 @@ export function MySubmissionsPopupGate() {
   if (!target) return null;
 
   const ack = () => {
-    addAckedResolvedPost(target.id);
+    // 서버 popup_acked 처리 → my-posts invalidate 로 기기 무관 dedup. 로컬 acked 는 같은 세션 재오픈 방지.
+    void boardApi
+      .ackPopup(target.id)
+      .then(() =>
+        queryClient.invalidateQueries({ queryKey: queryKeys.myPosts }),
+      )
+      .catch(() => {});
     setAcked(true);
     setOpen(false);
   };

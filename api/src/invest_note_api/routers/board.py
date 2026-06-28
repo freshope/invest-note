@@ -17,10 +17,12 @@ board 는 기본적으로 require_admin 이지만, 이 한 흐름만 get_current
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import asyncpg
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from starlette.concurrency import run_in_threadpool
 
 from invest_note_api.auth.dependency import get_current_user
@@ -98,6 +100,7 @@ ERR_FORBIDDEN_KEY = "잘못된 첨부 참조입니다."
 ERR_DUP_ATTACHMENT = "중복된 첨부가 있습니다."
 ERR_RATE_LIMITED = "너무 많은 제보가 접수되었습니다. 잠시 후 다시 시도해주세요."
 ERR_NOTICE_NOT_FOUND = "공지를 찾을 수 없습니다."
+ERR_POST_NOT_FOUND = "글을 찾을 수 없습니다."
 
 
 def _ext_of(name: str) -> str:
@@ -244,13 +247,16 @@ async def list_notices(
     """공지 목록 — board_type='notice' 만. status 는 publish 게이트가 아니므로 필터하지 않는다.
 
     items 는 화이트리스트 필드만(D-2 — admin user_id·내부 필드 비노출). 본문은 상세에서만.
+    has_unread 는 서버 EXISTS(state 없으면 가입 시각 fallback) — pinned_first 정렬로 인한
+    client-side 오판을 피한다.
     """
     async with pool.acquire() as conn:
         rows, total = await board_repo.list_posts(
             conn, board_type="notice", page=page, page_size=page_size, pinned_first=True
         )
+        has_unread = await board_repo.has_unread_notice(conn, user.id)
     items = [{k: r[k] for k in _NOTICE_LIST_FIELDS} for r in rows]
-    return {"items": items, "total": total, "page": max(page, 1)}
+    return {"items": items, "total": total, "page": max(page, 1), "has_unread": has_unread}
 
 
 @router.get("/notices/{post_id}")
@@ -307,6 +313,8 @@ async def list_my_posts(
     items = [
         {
             **{k: p[k] for k in _MY_POST_FIELDS},
+            "unread": p["unread"],
+            "popup_acked": p["popup_acked"],
             "comments": [
                 {k: c[k] for k in _MY_POST_COMMENT_FIELDS} for c in p["comments"]
             ],
@@ -317,6 +325,54 @@ async def list_my_posts(
         for p in posts
     ]
     return MyPostsResponse(items=items)
+
+
+# ─────────────────────────── 읽음/알림 상태 쓰기 ───────────────────────────
+
+
+@router.post("/notices/seen")
+async def mark_notices_seen(
+    user: AuthenticatedUser = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> Response:
+    """공지 메뉴 열람 — notices_seen_at = now() upsert(high-water mark). 본문 없음(204)."""
+    async with pool.acquire() as conn:
+        await board_repo.set_notices_seen_at(conn, user.id)
+    return Response(status_code=204)
+
+
+async def _mark_post_marker(
+    pool: asyncpg.Pool,
+    post_id: str,
+    user_id: Any,
+    upsert: Callable[[Any, Any, str], Awaitable[None]],
+) -> Response:
+    """read/ack-popup 공통: 소유권 게이트(미충족 404) → upsert → 204. 두 엔드포인트가 공유한다."""
+    async with pool.acquire() as conn:
+        if not await board_repo.post_is_owned_by(conn, post_id, user_id):
+            raise APIError(ERR_POST_NOT_FOUND, 404)
+        await upsert(conn, user_id, post_id)
+    return Response(status_code=204)
+
+
+@router.post("/posts/{post_id}/read")
+async def mark_post_read(
+    post_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> Response:
+    """내 글 상세 열람 — read_at = now() upsert. 본인 글만 허용(소유권 미충족 404). 본문 없음(204)."""
+    return await _mark_post_marker(pool, post_id, user.id, board_repo.upsert_post_read)
+
+
+@router.post("/posts/{post_id}/ack-popup")
+async def ack_post_popup(
+    post_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> Response:
+    """바텀시트 팝업 확인 — popup_acked_at = now() upsert. 본인 글만 허용(404). 본문 없음(204)."""
+    return await _mark_post_marker(pool, post_id, user.id, board_repo.upsert_popup_ack)
 
 
 # ─────────────────────────── 의견(feedback) 쓰기 ───────────────────────────

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { FileIcon, DownloadIcon } from "lucide-react";
 import {
   FullScreenPanel,
@@ -15,7 +16,8 @@ import {
   DialogTitle,
 } from "@/components/base/Dialog";
 import { Button } from "@/components/base/Button";
-import type { MyPost, MyPostAttachment } from "@/lib/api-client";
+import { boardApi, type MyPost, type MyPostAttachment } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 import {
   TYPE_LABEL,
   STATUS_META,
@@ -23,7 +25,6 @@ import {
   isImageAttachment,
 } from "@/lib/board-post";
 import { formatDateOnly } from "@/lib/format";
-import { setLastReadMyPost } from "@/lib/board-seen";
 import { openExternal } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
@@ -53,10 +54,19 @@ export function MyPostDetailPanel({ post, onClose, onImport }: Props) {
 }
 
 function DetailContent({ post, onImport }: { post: MyPost; onImport: () => void }) {
-  // 상세를 열면 그 글을 읽음 처리(글별 점 해제).
+  const queryClient = useQueryClient();
+  // 상세 진입 시 서버 읽음 처리 → my-posts invalidate 로 점 해제. POST 성공 후 invalidate(race 회피).
+  // 이미 읽음(unread!==true)이면 skip — 안 그러면 핫패스(상세 열 때마다) my-posts 전체 재조회 +
+  // 첨부 presigned URL 재서명이 무의미하게 반복된다. unread 가 true→false 로 바뀌면 가드가 막아 루프 없음.
   useEffect(() => {
-    setLastReadMyPost(post.id);
-  }, [post.id]);
+    if (post.unread !== true) return;
+    boardApi
+      .markPostRead(post.id)
+      .then(() =>
+        queryClient.invalidateQueries({ queryKey: queryKeys.myPosts }),
+      )
+      .catch(() => {});
+  }, [post.id, post.unread, queryClient]);
 
   const [lightbox, setLightbox] = useState<string | null>(null);
 

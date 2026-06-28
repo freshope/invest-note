@@ -144,15 +144,16 @@ def _attachment_row(storage_key: str, post_id: str) -> dict:
 
 
 def test_list_notices_returns_items_total_page():
-    """목록 → {items, total, page}. count(fetchval) → rows(fetch) 순서."""
+    """목록 → {items, total, page, has_unread}. count(fetchval) → rows(fetch) → exists(fetchval)."""
     post_id = str(uuid4())
-    conn = FakeConnection(1, [_notice_row(post_id)])
+    conn = FakeConnection(1, [_notice_row(post_id)], True)
     client = _client(_r2_settings(), pool=FakePool(conn))
     resp = client.get("/v1/board/notices")
     assert resp.status_code == 200
     body = resp.json()
     assert body["total"] == 1
     assert body["page"] == 1
+    assert body["has_unread"] is True
     assert len(body["items"]) == 1
     item = body["items"][0]
     assert item["id"] == post_id
@@ -475,7 +476,7 @@ def test_my_posts_returns_own_posts_with_admin_comments():
     items = resp.json()["items"]
     assert len(items) == 1
     item = items[0]
-    # 글 화이트리스트: 정확히 10키(8 필드 + comments + attachments). user_id/is_pinned 미노출.
+    # 글 화이트리스트: 정확히 12키(8 필드 + unread/popup_acked + comments + attachments).
     assert set(item.keys()) == {
         "id",
         "board_type",
@@ -485,10 +486,15 @@ def test_my_posts_returns_own_posts_with_admin_comments():
         "metadata",
         "created_at",
         "updated_at",
+        "unread",
+        "popup_acked",
         "comments",
         "attachments",
     }
     assert "user_id" not in item
+    # 어드민 댓글(2026-06-26) 있고 read 없음 → unread True. popup_acked 는 read row 미제공 → False.
+    assert item["unread"] is True
+    assert item["popup_acked"] is False
     assert item["board_type"] == "broker_statement"
     assert item["metadata"] == {"source": "app"}  # jsonb → dict
     assert item["attachments"] == []  # 첨부 row 미제공 → 빈 배열
@@ -555,3 +561,50 @@ def test_my_posts_requires_auth_401():
     client = TestClient(app)
     resp = client.get("/v1/board/my-posts")
     assert resp.status_code == 401
+
+
+# ─────────────────────────── 읽음/알림 상태 쓰기 ───────────────────────────
+
+
+def test_mark_notices_seen_204():
+    """공지 열람 → 204(본문 없음). set_notices_seen_at execute 1회."""
+    client = _client(_r2_settings(), pool=FakePool(FakeConnection()))
+    resp = client.post("/v1/board/notices/seen")
+    assert resp.status_code == 204
+    assert resp.content == b""
+
+
+def test_mark_post_read_owned_204():
+    """본인 글 read → 204. post_is_owned_by(fetchval=1) → upsert."""
+    pid = str(uuid4())
+    conn = FakeConnection(1)  # 소유권 fetchval → truthy
+    client = _client(_r2_settings(), pool=FakePool(conn))
+    resp = client.post(f"/v1/board/posts/{pid}/read")
+    assert resp.status_code == 204
+
+
+def test_mark_post_read_not_owned_404():
+    """타인/없는 글 read → 404(소유권 fetchval None)."""
+    pid = str(uuid4())
+    conn = FakeConnection(None)
+    client = _client(_r2_settings(), pool=FakePool(conn))
+    resp = client.post(f"/v1/board/posts/{pid}/read")
+    assert resp.status_code == 404
+
+
+def test_ack_popup_owned_204():
+    """본인 글 ack-popup → 204."""
+    pid = str(uuid4())
+    conn = FakeConnection(1)
+    client = _client(_r2_settings(), pool=FakePool(conn))
+    resp = client.post(f"/v1/board/posts/{pid}/ack-popup")
+    assert resp.status_code == 204
+
+
+def test_ack_popup_not_owned_404():
+    """타인/없는 글 ack-popup → 404."""
+    pid = str(uuid4())
+    conn = FakeConnection(None)
+    client = _client(_r2_settings(), pool=FakePool(conn))
+    resp = client.post(f"/v1/board/posts/{pid}/ack-popup")
+    assert resp.status_code == 404

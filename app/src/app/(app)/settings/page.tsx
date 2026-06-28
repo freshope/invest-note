@@ -7,12 +7,6 @@ import { toast } from "sonner";
 
 import { accountsApi, boardApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
-import {
-  getLastSeenNotice,
-  setLastSeenNotice,
-  getLastReadMyPostMap,
-} from "@/lib/board-seen";
-import { isMyPostUnread } from "@/lib/board-post";
 import type { MyPostBoardType } from "@/lib/api-client";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { Button } from "@/components/base/Button";
@@ -69,40 +63,26 @@ export default function SettingsPage() {
     enabled: !!user,
   });
 
-  // localStorage 는 비반응형이라 query.data + recomputeTick 으로 파생 계산(useMemo).
-  // 첫 렌더 data=undefined 라 안전. 패널/상세 닫힐 때 recomputeTick 으로 재계산해 점 해제.
-  const [recomputeTick, setRecomputeTick] = useState(0);
-
-  // board_type 별 unread 점. read map 1회 읽어 글마다 재파싱 방지, 3개 type 1회 순회.
+  // board_type 별 unread 점 — 서버 플래그(post.unread) 단일 출처. invalidate 로 자연 갱신.
   const myPostsUnread = useMemo<Record<MyPostBoardType, boolean>>(() => {
     const items = myPostsQuery.data?.items ?? [];
-    const lastReadMap = getLastReadMyPostMap();
     const result: Record<MyPostBoardType, boolean> = {
       feedback: false,
       bug_report: false,
       broker_statement: false,
     };
     for (const p of items) {
-      if (!result[p.board_type] && isMyPostUnread(p, lastReadMap)) {
+      if (!result[p.board_type] && p.unread === true) {
         result[p.board_type] = true;
       }
     }
     return result;
-  }, [myPostsQuery.data, recomputeTick]);
+  }, [myPostsQuery.data]);
 
-  // 최신 공지 created_at > lastSeenNotice 면 뱃지. 시각은 getTime 수치 비교(ISO 포맷 차이 회피).
-  const noticeUnread = useMemo(() => {
-    const lastSeen = getLastSeenNotice();
-    const items = noticesQuery.data?.items ?? [];
-    const latestMs = items.reduce(
-      (max, n) => Math.max(max, new Date(n.created_at).getTime()),
-      0,
-    );
-    return latestMs > 0 && (!lastSeen || latestMs > new Date(lastSeen).getTime());
-  }, [noticesQuery.data, recomputeTick]);
+  // 공지 점 — 서버 EXISTS 판정(has_unread). BE-lag 시 필드 부재면 점 미표시로 degrade.
+  const noticeUnread = noticesQuery.data?.has_unread === true;
 
-  // 메뉴 진입 = 목록 패널 오픈. 읽음은 상세를 열 때 글별로 기록되므로 여기선 점을 건드리지 않는다.
-  // (목록/상세에서 읽은 뒤 목록 패널이 닫힐 때 recomputeTick 으로 메뉴 점 재계산)
+  // 메뉴 진입 = 목록 패널 오픈. 읽음은 상세 진입 시 서버에 기록되고 my-posts invalidate 로 점이 갱신된다.
   const openListPanel = (setOpen: (open: boolean) => void) => {
     setOpen(true);
   };
@@ -154,9 +134,17 @@ export default function SettingsPage() {
               label="공지사항"
               dot={noticeUnread}
               onClick={() => {
-                // 진입 시 마지막 확인 시각 기록 + recompute 로 뱃지 해제(NoticePanel 은 손대지 않음).
-                setLastSeenNotice();
-                setRecomputeTick((t) => t + 1);
+                // 진입 시 서버 읽음 처리 → notices 재조회로 has_unread 갱신(점 해제). NoticePanel 무변경.
+                // POST 성공 후 invalidate(race 회피: 미커밋 상태에서 refetch 시 has_unread=true 유지 방지).
+                // 안읽은 공지가 없으면(점 꺼짐) seen 갱신이 무의미 → 진입마다 중복 쓰기/재조회 skip.
+                if (noticeUnread) {
+                  void boardApi
+                    .markNoticesSeen()
+                    .then(() =>
+                      queryClient.invalidateQueries({ queryKey: queryKeys.notices }),
+                    )
+                    .catch(() => {});
+                }
                 setNoticeOpen(true);
               }}
             />
@@ -227,40 +215,25 @@ export default function SettingsPage() {
 
       {/* 패널들 — 각 메뉴 진입점 */}
       <AccountListPanel open={accountsOpen} onOpenChange={setAccountsOpen} />
-      <NoticePanel
-        open={noticeOpen}
-        onOpenChange={(o) => {
-          setNoticeOpen(o);
-          if (!o) setRecomputeTick((t) => t + 1);
-        }}
-      />
-      {/* 목록(메인) 패널 — 닫힐 때 unread 재계산. 위에 작성 폼 패널이 스택된다. */}
+      <NoticePanel open={noticeOpen} onOpenChange={setNoticeOpen} />
+      {/* 목록(메인) 패널 — 위에 작성 폼 패널이 스택된다. unread 점은 서버 플래그 + invalidate 로 갱신. */}
       <MyPostsListPanel
         open={feedbackListOpen}
-        onOpenChange={(o) => {
-          setFeedbackListOpen(o);
-          if (!o) setRecomputeTick((t) => t + 1);
-        }}
+        onOpenChange={setFeedbackListOpen}
         boardType="feedback"
         title="의견 보내기"
         onCompose={() => setFeedbackOpen(true)}
       />
       <MyPostsListPanel
         open={bugReportListOpen}
-        onOpenChange={(o) => {
-          setBugReportListOpen(o);
-          if (!o) setRecomputeTick((t) => t + 1);
-        }}
+        onOpenChange={setBugReportListOpen}
         boardType="bug_report"
         title="오류 신고"
         onCompose={() => setBugReportOpen(true)}
       />
       <MyPostsListPanel
         open={brokerListOpen}
-        onOpenChange={(o) => {
-          setBrokerListOpen(o);
-          if (!o) setRecomputeTick((t) => t + 1);
-        }}
+        onOpenChange={setBrokerListOpen}
         boardType="broker_statement"
         title="거래내역서 제보"
         onCompose={() => setBrokerStatementOpen(true)}
