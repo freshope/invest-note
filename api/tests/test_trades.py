@@ -15,6 +15,33 @@ from tests.conftest import TEST_USER_ID
 from tests.fake_pool import FakeConnection, make_fake_acquire, make_fake_pool
 
 
+@pytest.fixture(autouse=True)
+def staging_store(request, monkeypatch):
+    """import staging(DB repo)을 in-memory dict 로 대체 — 테스트는 pool=None 이라 실제 DB 불가.
+
+    repo 가 반환하던 형식({user_id, rows, parse_errors, ...})을 그대로 흉내내, 라우터의
+    preview(put)·commit(get/delete) 경로를 검증한다. 클래스 테스트는 self._staging_store 로
+    staging 을 직접 주입/조회한다(preview 우회 commit 테스트용).
+    """
+    store: dict[str, dict] = {}
+
+    async def fake_put(conn, staging_id, user_id, payload, expires_at):
+        store[staging_id] = {"user_id": user_id, **payload}
+
+    async def fake_get(conn, staging_id):
+        return store.get(staging_id)
+
+    async def fake_delete(conn, staging_id):
+        store.pop(staging_id, None)
+
+    monkeypatch.setattr("invest_note_api.routers.trades.put_import_staging", fake_put)
+    monkeypatch.setattr("invest_note_api.routers.trades.get_import_staging", fake_get)
+    monkeypatch.setattr("invest_note_api.routers.trades.delete_import_staging", fake_delete)
+    if request.instance is not None:
+        request.instance._staging_store = store
+    return store
+
+
 def _dt(s: str) -> datetime:
     return datetime.fromisoformat(s).astimezone(timezone.utc)
 
@@ -449,7 +476,7 @@ class TestImportCommit:
         sql_calls = _capture_sql(monkeypatch)
         staging_id = str(uuid4())
 
-        trades_client.app.state.trade_staging.cache[staging_id] = {
+        self._staging_store[staging_id] = {
             "user_id": TEST_USER_ID,
             "rows": [
                 self._staged_row("005930", "삼성전자"),
@@ -517,7 +544,7 @@ class TestImportCommit:
 
     def _stage(self, trades_client, rows: list[dict]) -> str:
         staging_id = str(uuid4())
-        trades_client.app.state.trade_staging.cache[staging_id] = {
+        self._staging_store[staging_id] = {
             "user_id": TEST_USER_ID,
             "rows": rows,
             "parse_errors": [],
@@ -1057,7 +1084,7 @@ class TestImportPreviewExchange:
 
         assert resp.status_code == 200, resp.text
         staging_id = resp.json()["staging_id"]
-        return trades_client.app.state.trade_staging.cache[staging_id]["rows"]
+        return self._staging_store[staging_id]["rows"]
 
     def test_naver_resolved_exchange_is_staged(self, trades_client):
         rows = self._preview(trades_client)
@@ -1373,7 +1400,7 @@ class TestTradeOrigin:
         """거래내역서 일괄등록 commit 은 origin=IMPORT 로 INSERT 한다."""
         params = _capture_insert_params(monkeypatch)
         staging_id = str(uuid4())
-        trades_client.app.state.trade_staging.cache[staging_id] = {
+        self._staging_store[staging_id] = {
             "user_id": TEST_USER_ID,
             "rows": [
                 TestImportCommit()._staged_row("005930", "삼성전자"),
