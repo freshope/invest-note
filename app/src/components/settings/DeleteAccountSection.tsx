@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { CheckIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -105,9 +106,12 @@ export function DeleteAccountSection() {
                       <ToggleGroupItem
                         key={r.code}
                         value={r.code}
-                        className="flex-none w-full justify-start px-4"
+                        className="flex-none w-full justify-between px-4"
                       >
-                        {r.label}
+                        <span>{r.label}</span>
+                        {reason === r.code && (
+                          <CheckIcon className="size-4 shrink-0" />
+                        )}
                       </ToggleGroupItem>
                     ))}
                   </ToggleGroup>
