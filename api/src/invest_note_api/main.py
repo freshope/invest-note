@@ -15,7 +15,6 @@ from invest_note_api.external.fx import FxCacheState, validate_fx_providers
 from invest_note_api.external.quotes import QuoteCacheState, validate_quote_providers
 from invest_note_api.routers import accounts, admin, admin_board, app_config, auth, board, health, live_update, me
 from invest_note_api.routers import trades, portfolio, stocks, analysis, assets
-from invest_note_api.routers.trades import TradeStagingState
 from invest_note_api.services.daily_price_seed import validate_daily_price_providers
 
 
@@ -52,7 +51,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         configure_kis(settings, pool=app.state.pool)
         app.state.quote_cache = QuoteCacheState()
         app.state.fx_cache = FxCacheState()
-        app.state.trade_staging = TradeStagingState()
         app.state.http_client = create_http_client()
         yield
         await app.state.http_client.aclose()
