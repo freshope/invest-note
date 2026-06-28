@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-06-28 | 게시판 읽음 상태 — localStorage → DB 이전 (공지 high-water mark + 내 글 per-post)
+
+- **맥락:** 직전 board-notify 결정②(이 문서 아래)가 읽음을 기기 `localStorage`(`board-seen.ts`)에만 둬서 ⓐ 기기 변경·재설치 시 모든 글이 안읽음으로 부활, ⓑ 신규 가입자가 `last-seen-notice=null` 이라 가입 전 옛 공지까지 전부 안읽음으로 보였다(공지 메뉴 점). 그 결정의 트레이드오프 "read receipt deferred"를 해소하며 판정을 DB로 옮긴다. **운영 미적용 구간이라 데이터 마이그레이션/backfill 불필요.**
+- **결정 ① 두 메커니즘 그대로 DB 이전, 통합 안 함.** 공지 = per-user **high-water mark**(`user_notice_state.notices_seen_at`), 내 글(feedback/bug_report/broker_statement) + 거래내역서 팝업 = **per-(user,post)**(`board_post_reads.read_at` / `popup_acked_at` 두 nullable 컬럼, 마이그레이션 0012). 통합하지 않은 이유: 공지를 per-post 로 만들면 신규 가입자에게 가입 전 전체 공지의 read 행을 backfill 해야 하는데, high-water mark 가 이 문제를 구조적으로 회피한다. 읽음과 팝업 ack 는 독립 이벤트(상세 안 열고 팝업만 닫기 가능)라 같은 행의 두 컬럼으로 분리.
+- **결정 ② 신규 가입자 = `COALESCE(notices_seen_at, users.created_at)` fallback.** `user_notice_state` 행은 **lazy 생성**(공지 메뉴 첫 열람 시 upsert)이라 hot path `acquire_for_user` 무변경. 행이 없으면 가입 시각으로 떨어져 가입 전 공지는 점이 안 뜬다(problem ⓑ 구조적 해결, provisioning 변경·backfill 0).
+- **결정 ③ unread 는 서버가 판정해 플래그로 내려줌(FE `isMyPostUnread` 제거).** my-posts item += `unread`/`popup_acked`, notices += `has_unread`(서버 EXISTS — `pinned_first` 정렬로 인한 client-side 오판도 해소). 서버 unread 는 기존 규칙을 정확히 복제: 어드민 댓글 `created_at` + (status≠'open' 일 때만) `updated_at` 을 활동시각으로, `read_at` 과 수치 비교. 신규 엔드포인트 `POST /board/{notices/seen, posts/{id}/read, posts/{id}/ack-popup}`(전부 204, 소유권 미충족 404).
+- **이유:** 목적이 기기간 동기화 + 신규 가입자 옛 공지 점 제거 둘 뿐이라 단일 timestamp(공지)·소형 per-post 테이블(내 글)로 충분. 서버가 단일 출처로 판정하면 FE 의 비반응형 localStorage 강제 재계산(`recomputeTick`)이 사라지고 invalidate 로 자연 갱신된다.
+- **트레이드오프:** ⓐ FE 가 read/seen/ack 를 fire-and-forget POST(.then→invalidate, `.catch(()=>{})`)로 보내 **실패 시 점이 안 꺼진다 — 그러나 이는 서버에 실제로 기록 안 된 진실과 일치**(localStorage 의 "항상 성공"이 오히려 비정상). 오프라인 재시도 큐는 범위 밖(best-effort), 이미 읽음/안읽음 없음일 때 POST 를 막는 no-op 가드로 실패 표면을 축소. ⓑ `popup_acked` 는 OTA 선행(FE>BE) 구간에 필드가 없어 `!popup_acked` 면 매 진입 팝업 오발 → **`=== false` 명시 비교 + 타입 optional** 로 안전 degrade(`unread` 도 `=== true`). ⓒ 비-UUID `post_id` 는 `post_is_owned_by` 의 UUID 가드로 404(이전엔 asyncpg 인코딩 500). ⓓ 진입 팝업 dedup 도 기기 로컬(`acked-resolved-post-ids`)에서 서버 `popup_acked` 로 이전 → 기기 무관 1회. 참조: [[project_board_structure]]·[[project_broker_statement_submission]]·[[project_alembic_migrations]].
+
+---
+
 ## 2026-06-28 | 해외 종목 한글 표시명 — name_ko 별도 컬럼 오버레이(저장값 불변) + 적재 이원화
 
 - **맥락:** US 종목은 `stocks.asset_name` 이 영문(nasdaqtrader Security Name)이라, 개별 등록은 "Apple Inc."(검색 영문명)·토스 일괄등록은 "애플"(PDF 파싱 한글명)이 각각 `trades.asset_name` 에 박제돼 같은 종목이 등록 경로별로 다르게 표시됐다. 한글명은 마스터 canonical 이 아니라 검색 전용 `stock_aliases(source='naver')` 에만 존재. 거래/보유 표시를 한글 우선으로 통일하려 했다.
