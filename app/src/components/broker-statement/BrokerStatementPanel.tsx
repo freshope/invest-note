@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { UploadCloudIcon, FileIcon } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -21,6 +22,7 @@ import {
 } from "@/lib/api-client";
 import { BROKERS } from "@/lib/brokers";
 import { capture } from "@/lib/analytics";
+import { queryKeys } from "@/lib/query-keys";
 
 // 제보 시 증권사명을 어떻게 결정하는지. fixed=호출 맥락이 계좌 증권사를 알고 있어 라벨 고정,
 // freetext=사용자가 직접 입력(설정 독립 진입).
@@ -72,6 +74,7 @@ export function BrokerStatementPanel({
   defaultType,
   brokerSource,
 }: Props) {
+  const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   // fixed 모드라도 라벨이 비어 있으면(예: 증권사 미설정 계좌, broker=null) freetext 로
   // 폴백해 사용자가 직접 입력하게 한다 — 빈 라벨 read-only 면 제출이 영구 불가해진다.
@@ -127,6 +130,7 @@ export function BrokerStatementPanel({
       });
 
       capture("broker_statement_submitted", { type: defaultType });
+      queryClient.invalidateQueries({ queryKey: queryKeys.myPosts });
       toast.success("제보가 접수되었습니다. 감사합니다!");
       onOpenChange(false);
     } catch (err) {

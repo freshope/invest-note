@@ -34,7 +34,7 @@ const authorCol: Column<BoardRow> = {
     <AuthorCell
       avatarUrl={r.author_avatar_url}
       displayName={r.author_display_name}
-      fallback={r.user_id ?? "작성자 미상"}
+      fallback="회원 미상"
     />
   ),
 };

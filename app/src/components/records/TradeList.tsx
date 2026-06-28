@@ -19,6 +19,7 @@ import { useTradeSelection } from "@/hooks/useTradeSelection";
 import { useDialogState } from "@/hooks/useDialogState";
 import { useStockMeta, isMetaCode } from "@/hooks/useStockMeta";
 import { tradesApi } from "@/lib/api-client";
+import { consumeImportOpen, subscribeImportOpen } from "@/lib/import-deeplink";
 import { queryKeys } from "@/lib/query-keys";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import type { Account } from "@/types/database";
@@ -62,6 +63,15 @@ export function TradeList({ trades, accounts }: TradeListProps) {
     setImportKey((k) => k + 1);
     setImportOpen(true);
   }, []);
+
+  // "지금 가져오기" 딥링크 소비. 교차 라우트는 마운트 시 1회 consume,
+  // 동일 라우트(이미 /records)는 listener 로 즉시 consume → 양쪽 다 플래그 잔존 없음.
+  useEffect(() => {
+    if (consumeImportOpen()) openImport();
+    return subscribeImportOpen(() => {
+      if (consumeImportOpen()) openImport();
+    });
+  }, [openImport]);
 
   const filteredTrades = useMemo(
     () =>

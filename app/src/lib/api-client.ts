@@ -79,6 +79,7 @@ const ROUTES = {
     submit: "/board/broker-statement",
     notices: "/board/notices",
     noticeById: (id: string) => `/board/notices/${id}`,
+    myPosts: "/board/my-posts",
     feedback: "/board/feedback",
     bugReport: "/board/bug-report",
     bugReportPresign: "/board/bug-report/presign",
@@ -652,12 +653,65 @@ export interface BugReportInput {
   attachments?: (BrokerStatementAttachmentMeta & { storage_key: string })[];
 }
 
+/** 내 제보/문의 — 본인이 쓴 글만(feedback/bug_report/broker_statement, notice 제외). */
+export type MyPostBoardType = "broker_statement" | "feedback" | "bug_report";
+
+/** open=검토중 / resolved=완료 / closed=반려. 어드민이 flip. */
+export type MyPostStatus = "open" | "resolved" | "closed";
+
+/** 어드민 답변 댓글(is_admin=true 만 노출). created_at asc. */
+export interface MyPostComment {
+  id: string;
+  body: string;
+  is_admin: boolean;
+  created_at: string;
+}
+
+/** broker_statement 일 때 broker(자유 텍스트 증권사명)·type 존재. 키 부재 가능. */
+export interface MyPostMetadata {
+  type?: string;
+  broker?: string;
+  country?: string;
+  source?: string;
+}
+
+/** 첨부파일. url=소유자 스코프 presigned GET(Content-Disposition=attachment). 첨부 없으면 빈 배열. */
+export interface MyPostAttachment {
+  id: string;
+  original_name: string;
+  content_type: string | null;
+  size_bytes: number | null;
+  url: string;
+}
+
+/** BE 응답 1:1(snake_case wire, 변환 없음). 글 created_at desc / 댓글 created_at asc. */
+export interface MyPost {
+  id: string;
+  board_type: MyPostBoardType;
+  title: string;
+  body: string;
+  status: MyPostStatus;
+  metadata: MyPostMetadata;
+  created_at: string;
+  updated_at: string;
+  comments: MyPostComment[];
+  // BE 가 아직 응답에 안 싣는 단계 → optional. 소비처(상세 패널)에서 `?? []` 가드 강제.
+  attachments?: MyPostAttachment[];
+}
+
+export interface MyPostsResponse {
+  items: MyPost[];
+}
+
 export const boardApi = {
   listNotices: (page = 1) =>
     apiFetch<NoticeListResponse>(`${ROUTES.board.notices}?page=${page}`),
 
   getNotice: (id: string) =>
     apiFetch<NoticeDetail>(ROUTES.board.noticeById(id)),
+
+  // 내 제보/문의 — 인증 필요(401). 본인 글만, notice 제외, 어드민 답변 합본.
+  myPosts: () => apiFetch<MyPostsResponse>(ROUTES.board.myPosts),
 
   submitFeedback: (body: FeedbackInput) =>
     apiFetch<{ post_id: string }>(ROUTES.board.feedback, {

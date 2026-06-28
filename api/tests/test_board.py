@@ -95,6 +95,36 @@ def _post_row(post_id: str, board_type: str) -> dict:
     }
 
 
+def _my_post_row(post_id: str, *, board_type: str = "feedback", **over) -> dict:
+    """list_my_posts 가 fetch 로 반환하는 board_posts row(본인 글, metadata 는 jsonb str)."""
+    row = {
+        "id": post_id,
+        "board_type": board_type,
+        "user_id": str(USER_ID),
+        "title": f"[{board_type}]",
+        "body": "본문",
+        "status": "open",
+        "is_pinned": False,
+        "metadata": '{"source": "app"}',
+        "created_at": "2026-06-25T00:00:00Z",
+        "updated_at": "2026-06-25T00:00:00Z",
+    }
+    row.update(over)
+    return row
+
+
+def _comment_row(post_id: str, *, is_admin: bool = True, body: str = "반영했습니다") -> dict:
+    """board_comments row(어드민 답변)."""
+    return {
+        "id": str(uuid4()),
+        "post_id": post_id,
+        "user_id": str(uuid4()),  # admin 작성자 — 응답에 노출되면 안 됨
+        "body": body,
+        "is_admin": is_admin,
+        "created_at": "2026-06-26T00:00:00Z",
+    }
+
+
 def _attachment_row(storage_key: str, post_id: str) -> dict:
     return {
         "id": str(uuid4()),
@@ -426,3 +456,102 @@ def test_submit_bug_report_non_image_attachment_415():
         },
     )
     assert resp.status_code == 415
+
+
+# ─────────────────────────── my-posts ───────────────────────────
+
+
+def test_my_posts_returns_own_posts_with_admin_comments():
+    """본인 글 + is_admin 댓글 합본. fetch(posts) → fetch(comments) → fetch(attachments) 순서."""
+    pid = str(uuid4())
+    conn = FakeConnection(
+        [_my_post_row(pid, board_type="broker_statement")],
+        [_comment_row(pid)],
+        [],  # attachments
+    )
+    client = _client(_r2_settings(), pool=FakePool(conn))
+    resp = client.get("/v1/board/my-posts")
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert len(items) == 1
+    item = items[0]
+    # 글 화이트리스트: 정확히 10키(8 필드 + comments + attachments). user_id/is_pinned 미노출.
+    assert set(item.keys()) == {
+        "id",
+        "board_type",
+        "title",
+        "body",
+        "status",
+        "metadata",
+        "created_at",
+        "updated_at",
+        "comments",
+        "attachments",
+    }
+    assert "user_id" not in item
+    assert item["board_type"] == "broker_statement"
+    assert item["metadata"] == {"source": "app"}  # jsonb → dict
+    assert item["attachments"] == []  # 첨부 row 미제공 → 빈 배열
+    assert len(item["comments"]) == 1
+    c = item["comments"][0]
+    assert set(c.keys()) == {"id", "body", "is_admin", "created_at"}
+    assert c["is_admin"] is True
+    assert "user_id" not in c  # admin 작성자 비노출
+
+
+def test_my_posts_includes_attachments_with_presigned_url(monkeypatch):
+    """첨부 있는 글 → {id, original_name, content_type, size_bytes, url}. storage_key 미노출."""
+    monkeypatch.setattr(
+        r2, "generate_get_url", lambda *a, **k: "https://r2.example/presigned-get"
+    )
+    pid = str(uuid4())
+    storage_key = f"broker_statement/{USER_ID}/{uuid4()}.xlsx"
+    att = _attachment_row(storage_key, pid)
+    att.update(original_name="거래내역.xlsx", content_type="application/vnd.ms-excel")
+    conn = FakeConnection(
+        [_my_post_row(pid, board_type="broker_statement")],
+        [],  # comments
+        [att],  # attachments
+    )
+    client = _client(_r2_settings(), pool=FakePool(conn))
+    resp = client.get("/v1/board/my-posts")
+    assert resp.status_code == 200
+    atts = resp.json()["items"][0]["attachments"]
+    assert len(atts) == 1
+    a = atts[0]
+    assert set(a.keys()) == {"id", "original_name", "content_type", "size_bytes", "url"}
+    assert a["original_name"] == "거래내역.xlsx"
+    assert a["url"] == "https://r2.example/presigned-get"
+    assert "storage_key" not in a  # 비노출
+    assert "bucket" not in a
+
+
+def test_my_posts_empty_returns_empty_list():
+    """본인 글 0건 → {items: []}. posts fetch 가 빈 리스트면 comments 조회 생략."""
+    conn = FakeConnection([])
+    client = _client(_r2_settings(), pool=FakePool(conn))
+    resp = client.get("/v1/board/my-posts")
+    assert resp.status_code == 200
+    assert resp.json() == {"items": []}
+
+
+def test_my_posts_post_without_admin_comment_has_empty_comments():
+    """어드민 답변 없는 글 → comments: []. fetch(posts) → fetch(빈 comments)."""
+    pid = str(uuid4())
+    conn = FakeConnection([_my_post_row(pid, board_type="feedback")], [])
+    client = _client(_r2_settings(), pool=FakePool(conn))
+    resp = client.get("/v1/board/my-posts")
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert len(items) == 1
+    assert items[0]["comments"] == []
+
+
+def test_my_posts_requires_auth_401():
+    """Authorization 헤더 없으면 401(get_current_user override 미설치 클라이언트)."""
+    settings = _r2_settings()
+    app = create_app(settings)
+    app.dependency_overrides[get_settings] = lambda: settings
+    client = TestClient(app)
+    resp = client.get("/v1/board/my-posts")
+    assert resp.status_code == 401

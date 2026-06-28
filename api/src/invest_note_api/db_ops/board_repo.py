@@ -21,6 +21,9 @@ MAX_PAGE_SIZE = 200
 # PATCH 편집 가능 컬럼(board_type 은 수정 불가). 명시적 null 은 스키마가 사전 거부.
 _POST_UPDATABLE = ("title", "body", "status", "is_pinned")
 
+# "내 제보/문의" 가 노출하는 board_type — notice 절대 제외(공지는 전용 경로).
+_MY_POST_BOARD_TYPES = ("feedback", "bug_report", "broker_statement")
+
 
 def _escape_like(term: str) -> str:
     """ILIKE 패턴의 와일드카드를 이스케이프(기본 ESCAPE '\\')."""
@@ -137,6 +140,58 @@ async def get_post(conn: Any, post_id: Any, *, with_relations: bool = True) -> d
     detail["comments"] = [_comment_row_to_dict(c) for c in comments]
     detail["attachments"] = [_attachment_row_to_dict(a) for a in attachments]
     return detail
+
+
+async def list_my_posts(conn: Any, user_id: Any) -> list[dict]:
+    """본인이 쓴 글(feedback/bug_report/broker_statement) + 어드민 답변 댓글 합본.
+
+    사용자 격리는 posts 의 `user_id = $1` 과 comments 의 `post_id = any(<내 글 id>)` 가 전부다
+    (RLS 제거됨). notice 는 board_type 화이트리스트로 제외한다. 각 글에 is_admin=true 댓글만
+    created_at 오름차순으로 묶는다(작성자 표시 불필요라 get_post 의 user_profiles JOIN 은 생략).
+    첨부(board_attachments)도 글별로 합본하되 storage_key 는 raw 로 싣고 라우터가 presigned
+    GET URL 로 치환한다. 정렬은 list_posts 컨벤션대로 created_at desc(updated_at 은 status 외
+    수정에도 갱신돼 부정확).
+    """
+    posts = await conn.fetch(
+        "select * from board_posts "
+        "where user_id = $1 and board_type = any($2) "
+        "order by created_at desc",
+        user_id,
+        list(_MY_POST_BOARD_TYPES),
+    )
+    if not posts:
+        return []
+
+    # raw row 의 UUID id 로 합본 대상을 조회한다(_post_row_to_dict 가 str 로 바꾸기 전 값).
+    post_ids = [row["id"] for row in posts]
+    comments = await conn.fetch(
+        "select * from board_comments "
+        "where post_id = any($1) and is_admin = true "
+        "order by created_at asc",
+        post_ids,
+    )
+    comments_by_post: dict[str, list[dict]] = {}
+    for c in comments:
+        cd = _comment_row_to_dict(c)
+        comments_by_post.setdefault(cd["post_id"], []).append(cd)
+
+    # 첨부도 내 글 id 로만 스코프(post_id=any) — 타인 첨부 발급 경로 없음.
+    attachments = await conn.fetch(
+        "select * from board_attachments where post_id = any($1) order by created_at asc",
+        post_ids,
+    )
+    attachments_by_post: dict[str, list[dict]] = {}
+    for a in attachments:
+        ad = _attachment_row_to_dict(a)
+        attachments_by_post.setdefault(ad["post_id"], []).append(ad)
+
+    result = []
+    for row in posts:
+        d = _post_row_to_dict(row)
+        d["comments"] = comments_by_post.get(d["id"], [])
+        d["attachments"] = attachments_by_post.get(d["id"], [])
+        result.append(d)
+    return result
 
 
 async def create_post(

@@ -29,7 +29,11 @@ from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import get_pool
 from invest_note_api.db_ops import board_repo
 from invest_note_api.errors import APIError
-from invest_note_api.schemas.board import BugReportCreate, FeedbackCreate
+from invest_note_api.schemas.board import (
+    BugReportCreate,
+    FeedbackCreate,
+    MyPostsResponse,
+)
 from invest_note_api.schemas.broker_statement import PresignRequest, SubmitRequest
 from invest_note_api.storage import r2
 
@@ -68,6 +72,22 @@ _NOTICE_DETAIL_FIELDS = ("id", "title", "body", "created_at", "is_pinned", "meta
 # 공지 목록 화이트리스트 — 상세와 동일 취지(D-2)로 admin user_id·내부 필드 비노출.
 # 본문(body)은 목록에서 제외하고 상세에서만 노출한다.
 _NOTICE_LIST_FIELDS = ("id", "title", "created_at", "is_pinned")
+
+# "내 제보/문의" 글 화이트리스트 — 본인 글이라 user_id 등은 비노출. comments 는 별도 합본.
+_MY_POST_FIELDS = (
+    "id",
+    "board_type",
+    "title",
+    "body",
+    "status",
+    "metadata",
+    "created_at",
+    "updated_at",
+)
+# 어드민 답변 댓글 화이트리스트 — 작성자(admin) user_id·post_id 비노출.
+_MY_POST_COMMENT_FIELDS = ("id", "body", "is_admin", "created_at")
+# 첨부 메타 화이트리스트 — storage_key 비노출. url(presigned GET)은 라우터가 발급해 더한다.
+_MY_POST_ATTACHMENT_FIELDS = ("id", "original_name", "content_type", "size_bytes")
 
 ERR_BAD_EXT = "지원하지 않는 파일 형식입니다 (xlsx, xls, pdf만 허용)."
 ERR_BAD_CONTENT_TYPE = "지원하지 않는 파일 형식입니다."
@@ -248,6 +268,55 @@ async def get_notice(
     if detail is None or detail.get("board_type") != "notice":
         raise APIError(ERR_NOTICE_NOT_FOUND, 404)
     return {k: detail[k] for k in _NOTICE_DETAIL_FIELDS}
+
+
+# ─────────────────────────── 내 제보/문의 읽기 ───────────────────────────
+
+
+def _my_post_attachment(att: dict, settings: Settings) -> dict:
+    """첨부 메타(화이트리스트) + 소유자 스코프 presigned GET url. storage_key 비노출.
+
+    어드민 다운로드와 동일한 r2.generate_get_url 재사용(행별 bucket 우선). my-posts 가 이미
+    user_id 로 스코프돼 본인 글 첨부만 도달하므로 추가 소유권 검사 불필요.
+    """
+    return {
+        **{k: att[k] for k in _MY_POST_ATTACHMENT_FIELDS},
+        "url": r2.generate_get_url(
+            settings,
+            att["storage_key"],
+            filename=att["original_name"],
+            bucket=att.get("bucket"),
+        ),
+    }
+
+
+@router.get("/my-posts", response_model=MyPostsResponse)
+async def list_my_posts(
+    user: AuthenticatedUser = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> MyPostsResponse:
+    """본인이 쓴 글(feedback/bug_report/broker_statement)을 어드민 답변·첨부와 함께 최신순으로.
+
+    user_id 는 토큰에서만 취한다(body/query 무시). notice·타인 글은 절대 비노출 — repo 의
+    user_id 스코프 + board_type 화이트리스트가 유일한 가드다. 응답 필드는 화이트리스트로 통제.
+    첨부는 storage_key 대신 presigned GET url 만 노출(R2 미설정 시 발급 단계에서 503).
+    """
+    async with pool.acquire() as conn:
+        posts = await board_repo.list_my_posts(conn, user.id)
+    items = [
+        {
+            **{k: p[k] for k in _MY_POST_FIELDS},
+            "comments": [
+                {k: c[k] for k in _MY_POST_COMMENT_FIELDS} for c in p["comments"]
+            ],
+            "attachments": [
+                _my_post_attachment(a, settings) for a in p["attachments"]
+            ],
+        }
+        for p in posts
+    ]
+    return MyPostsResponse(items=items)
 
 
 # ─────────────────────────── 의견(feedback) 쓰기 ───────────────────────────

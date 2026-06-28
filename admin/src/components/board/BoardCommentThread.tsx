@@ -81,7 +81,7 @@ export function BoardCommentThread({
                 <AuthorCell
                   avatarUrl={c.author_avatar_url}
                   displayName={c.author_display_name}
-                  fallback={c.user_id ?? "작성자 미상"}
+                  fallback="회원 미상"
                 />
               )}
             </span>

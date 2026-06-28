@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-06-28 | 거래내역서 제보 알림 — 인앱(앱 진입) + 클라이언트 로컬 읽음 + 어드민 활동 트리거
+
+- **맥락:** 사용자가 거래내역서를 제보하면 그 증권사 일괄등록이 실제 추가됐을 때 알릴 방법이 전혀 없었고, 사용자가 쓴 게시판 글(의견/오류/제보)에 어드민이 단 답변을 앱에서 되읽을 경로조차 없었다(답변은 어드민 콘솔에서만). 푸시·이메일 인프라 전무 — 서버→사용자 능동 채널은 강제 업데이트 게이트 하나뿐.
+- **결정 ① 푸시 없이 인앱(앱 진입 시점) 방식.** `GET /board/my-posts`(본인 글+어드민 답변+첨부 presigned GET, **user_id 토큰 스코프**가 유일 격리)로 read-back. 의견/오류/거래내역서 제보 메뉴 → 목록 메인 패널(공지 스타일 행: 상태·미리보기·글별 읽기 점) → 상세(첨부 이미지 라이트박스/PDF·엑셀 `openExternal` 다운로드, 어드민 답변·보기 전용). 앱 진입 시 미확인 resolved 제보 1건을 바텀시트 팝업(`MySubmissionsPopupGate`, **강제업데이트 판정 우선**·`useUpdateRequired` 공유 훅, resolved post-id 집합으로 1회 dedup).
+- **결정 ② 읽음 상태 = 클라이언트 로컬(localStorage), 서버 읽음 테이블 신설 안 함.** 글별 읽기 점 = **어드민 활동(is_admin 답변 OR status≠'open')이 있고** 마지막 상세 열람(`lastReadMyPost[postId]`) 이후이면 점 — 갓 쓴 본인 글(open+댓글0)은 점 없음. 메뉴 점은 그 type 안읽은 글에서 파생.
+- **결정 ③ 트리거 = 어드민이 status→resolved / 답변 댓글(is_admin=true) / 공지 작성(사람 판정).** `metadata.broker`는 자유 텍스트라 증권사명 **자동 문자열 매칭 금지**(오매칭 시 거짓 "지원됨" 고지). 어드민 거래내역서 제보 댓글 작성 UI 추가(기존 `BoardCommentThread`/`Form` 재사용, 반려 사유). 작성자 표시 raw UUID → "회원 미상", `[unsupported_broker]`/`[overseas_trade]` prefix 사용자 노출 제거.
+- **이유:** 푸시/이메일은 단일 유스케이스엔 인프라 0 대비 과투자. 읽음을 서버에 두면 기기간 동기화·어드민 읽음 확인이 가능하나, 목적이 "네가 부탁한 게 됐다" 통지지 읽음 증명이 아니라 client-local 로 충분(스키마 무변경). 작성자 UUID 하드닝은 `user_profiles` 가 Supabase 인증 경로에서 런타임 미수집이라 프로필 없는 작성자가 raw UUID 로 노출되던 것 차단 — 이름 표시는 auth cutover 가 BE flow 로그인마다 프로필을 채우며 자연 해결([[project_auth_cutover_exec_method]]).
+- **트레이드오프:** ⓐ 읽음=기기 로컬 → 재설치/타 기기서 unread·팝업 재노출, 어드민 개별 읽음 확인 불가(read receipt deferred). ⓑ 첨부 presigned GET 을 매 my-posts 호출 발급(비용 수용). ⓒ 기존 profile-less 글은 작성자가 BE flow 재로그인(2c force-update 가 강제) 전까지 "회원 미상" — 즉시 보정은 user_profiles 백필 1회. ⓓ Apple 은 재인증 시 이름 미전송 → 프로필 있어도 display_name null 가능 → UUID fallback 하드닝이 2c 후에도 유효. 참조: [[project_broker_statement_submission]]·[[project_board_structure]].
+
+---
+
 ## 2026-06-28 | 회원 탈퇴 — 하드삭제 유지 + 감사 로그(account_deletions)
 
 - **맥락:** 기존 탈퇴는 하드삭제(DELETE /me → `public.users` 삭제 → FK cascade + Supabase Auth 삭제)라 탈퇴자가 아무 흔적도 남기지 않아 탈퇴율·생존기간·사유를 사후 집계할 데이터가 0이었다. 탈퇴 비중·이유를 측정해야 한다는 요구.
