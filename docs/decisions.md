@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-06-28 | 해외 종목 한글 표시명 — name_ko 별도 컬럼 오버레이(저장값 불변) + 적재 이원화
+
+- **맥락:** US 종목은 `stocks.asset_name` 이 영문(nasdaqtrader Security Name)이라, 개별 등록은 "Apple Inc."(검색 영문명)·토스 일괄등록은 "애플"(PDF 파싱 한글명)이 각각 `trades.asset_name` 에 박제돼 같은 종목이 등록 경로별로 다르게 표시됐다. 한글명은 마스터 canonical 이 아니라 검색 전용 `stock_aliases(source='naver')` 에만 존재. 거래/보유 표시를 한글 우선으로 통일하려 했다.
+- **결정 ① 표시명은 `stocks.name_ko`(마이그레이션 0011) 별도 nullable 컬럼 오버레이.** `asset_name` 을 덮어쓰지 않고 조회 응답에 `name_ko` 를 추가, 표시 = `COALESCE(name_ko, asset_name)`(FE `name_ko || asset_name` — 빈문자열도 fallback). 거래는 `trades_repo` 두 read 에 `LEFT JOIN stocks ON (country_code, ticker)`, 포트폴리오는 그 로더(`list_trades_with_account`)를 이미 써서 `domain/portfolio.py` Lot/Position carry-through 만 추가. KR 은 asset_name 이 이미 한글이라 name_ko 비움.
+- **결정 ② 적재 이원화 — 기존분은 마이그레이션 일회성 복사, 신규분은 `set_name_ko`.** 기존 US 한글명은 이미 `stock_aliases(naver)` 에 있어 0011 `upgrade()` 가 `min(alias)` 로 `stocks.name_ko` 에 일회성 복사. 신규 종목은 `backfill_us_aliases` 가 `set_name_ko` 로 적재.
+- **이유:** `asset_name` 은 FE 그룹핑/매칭 키(holdings·realized-pnl·concentration)·BE lot 키라, 응답값을 덮으면 계산 키가 오염된다 → 표시 전용 필드 분리가 안전. 한글명을 stocks canonical(name_ko)로 끌어올리면 표시·검색이 같은 출처를 공유. 마이그레이션 복사가 **필수**인 이유: `set_name_ko` 는 `naver_checked_at IS NULL` 신규 종목만 도는 `backfill_us_aliases` 안에서만 호출돼, 이미 조회된 인기주(AAPL·SP500 = 사용자 보유 대부분)는 영영 제외 → 복사 없으면 기능이 기존 데이터에 무효과(advisor 가 지적, 로컬 532 checked/495 한글별칭 실증).
+- **트레이드오프:** ⓐ 토스 거래가 파싱한 한글명과 마스터 name_ko 가 다른 변형이면 표시는 **마스터명 우선**(의도된 canonical 화, 크래시·영문퇴행 아님). ⓑ name_ko 는 `list_trades_with_account` JOIN 경로에서만 채워져 `list_trades`(SELECT *) 로 만든 Position(분석 탭 집중도)은 항상 None → 같은 US 종목이 홈(한글)/분석(영문)으로 갈림(`Position.name_ko` 주석으로 트랩 명시, 후속). ⓒ 커버리지는 naver 백필분(인기+SP500+거래이력)에 한정 → 롱테일 US 는 영문(구조적 상한). ⓓ ticker 조인은 case-sensitive(US 대문자 관례, 미스매치 시 영문 graceful fallback). ⓔ **배포 시 0011 선/동시 적용 필수** — 코드가 `s.name_ko` 무조건 참조라 미적용 시 거래/포트폴리오/자산 조회 500.
+
+---
+
 ## 2026-06-28 | 거래내역서 제보 알림 — 인앱(앱 진입) + 클라이언트 로컬 읽음 + 어드민 활동 트리거
 
 - **맥락:** 사용자가 거래내역서를 제보하면 그 증권사 일괄등록이 실제 추가됐을 때 알릴 방법이 전혀 없었고, 사용자가 쓴 게시판 글(의견/오류/제보)에 어드민이 단 답변을 앱에서 되읽을 경로조차 없었다(답변은 어드민 콘솔에서만). 푸시·이메일 인프라 전무 — 서버→사용자 능동 채널은 강제 업데이트 게이트 하나뿐.

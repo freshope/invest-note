@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { getCountryLabel, MARKET_LABELS } from "./trade-formatters";
 import type { MarketType } from "@/types/database";
 
-export { getQuantityUnit, getCountryLabel, MARKET_LABELS } from "./trade-formatters";
+export { getQuantityUnit, getCountryLabel, MARKET_LABELS, tradeDisplayName } from "./trade-formatters";
 
 export function CompactRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (

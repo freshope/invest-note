@@ -12,6 +12,7 @@ import { currencyForCountry, formatMoney, formatPnLCurrency } from "@/lib/format
 import { MoneyText } from "@/components/shared/MoneyText";
 import { CheckIcon, Trash2Icon } from "lucide-react";
 import { StockMetaBadges } from "@/components/stocks/StockMetaBadges";
+import { tradeDisplayName } from "./trade-display";
 import type { TradeWithAccount } from "@/lib/trade-utils";
 import type { StockMeta } from "@/lib/api-client";
 
@@ -148,9 +149,9 @@ export const TradeCard = memo(function TradeCard({
   const cardLabel = useMemo(
     () =>
       selectionMode
-        ? `${trade.asset_name} ${selected ? "선택 해제" : "선택"}`
+        ? `${tradeDisplayName(trade)} ${selected ? "선택 해제" : "선택"}`
         : undefined,
-    [selectionMode, selected, trade.asset_name],
+    [selectionMode, selected, trade],
   );
 
   return (
@@ -161,7 +162,7 @@ export const TradeCard = memo(function TradeCard({
         onClick={handleDeleteClick}
         tabIndex={swipeOpen ? 0 : -1}
         aria-hidden={!swipeOpen}
-        aria-label={`${trade.asset_name} 삭제`}
+        aria-label={`${tradeDisplayName(trade)} 삭제`}
         style={{ width: ACTION_WIDTH_PX }}
         className="absolute inset-y-0 right-0 flex flex-col items-center justify-center gap-1 bg-destructive text-white active:bg-destructive/90"
       >
@@ -219,7 +220,7 @@ export const TradeCard = memo(function TradeCard({
                 {/* 종목명 + 매수/매도 뱃지, 그 아래 메타 뱃지 줄 */}
                 <div className="min-w-0">
                   <div className="flex items-start gap-2 min-w-0">
-                    <span className="min-w-0 text-[16px] font-bold text-foreground break-words">{trade.asset_name}</span>
+                    <span className="min-w-0 text-[16px] font-bold text-foreground break-words">{tradeDisplayName(trade)}</span>
                     <TradeTypeBadge tradeType={trade.trade_type} size="sm" />
                     <ImportSourceBadge origin={trade.origin} size="sm" />
                   </div>

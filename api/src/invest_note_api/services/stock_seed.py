@@ -173,6 +173,25 @@ async def upsert_aliases(
     return len(tuples)
 
 
+async def set_name_ko(
+    conn: Any, names: dict[str, str], *, country_code: str = DEFAULT_COUNTRY
+) -> int:
+    """ticker→한글명 매핑을 stocks.name_ko 로 UPDATE. 빈/None 한글명은 skip.
+
+    stocks row 가 없는 ticker 는 UPDATE 가 0행이라 자연히 무시된다(미seed 종목 → 표시 fallback).
+    """
+    tuples = [
+        (country_code, name, ticker) for ticker, name in names.items() if ticker and name
+    ]
+    if not tuples:
+        return 0
+    await conn.executemany(
+        "update stocks set name_ko = $2 where country_code = $1 and ticker = $3",
+        tuples,
+    )
+    return len(tuples)
+
+
 async def _existing_tickers(conn: Any, country_code: str, tickers: set[str]) -> set[str]:
     rows = await conn.fetch(
         "select ticker from stocks where country_code = $1 and ticker = any($2::text[])",
@@ -697,6 +716,8 @@ async def backfill_us_aliases(
     names, checked = await _naver_us_korean_names(sorted(tickers), client=client)
     aliases = [{"ticker": t, "alias": n, "source": "naver"} for t, n in names.items()]
     n = await upsert_aliases(conn, aliases, country_code=COUNTRY_US)
+    # alias(검색용)와 별개로 표시용 canonical 한글명을 stocks.name_ko 에도 적재.
+    await set_name_ko(conn, names, country_code=COUNTRY_US)
     # 확정 조회된 종목만 checked 로 기록 → 한글명 없음(None)은 박제(다음 run skip)하되,
     # 일시 실패(예외)는 제외해 다음 run 에 재시도한다(전체 outage 의 영구 오염 방지).
     if checked:

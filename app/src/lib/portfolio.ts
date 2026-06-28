@@ -15,6 +15,7 @@ export interface Position {
   country: string;
   currency: string;             // 거래 통화(KRW|USD) — 달러 보조 표시 분기용
   assetName: string;
+  nameKo?: string | null;       // 표시용 한글명(US). 없으면 assetName fallback. 계산 키는 assetName 유지.
   exchange: string;
   holdingQuantity: number;      // sum(buy.qty) - sum(sell.qty)
   avgBuyPrice: number;          // KRW (거래 시점 환율 고정, primary)
@@ -171,7 +172,7 @@ export function buildStockAllocation(
   const sorted = [...withEval].sort((a, b) => b.krw - a.krw);
   const top = sorted.slice(0, 7);
   const rest = sorted.slice(7);
-  const out: AllocationEntry[] = top.map(({ p, krw }) => ({ name: p.assetName, value: krw }));
+  const out: AllocationEntry[] = top.map(({ p, krw }) => ({ name: p.nameKo || p.assetName, value: krw }));
   if (rest.length > 0) {
     out.push({ name: "기타", value: rest.reduce((s, x) => s + x.krw, 0) });
   }

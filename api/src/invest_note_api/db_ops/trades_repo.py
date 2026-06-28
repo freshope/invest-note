@@ -122,9 +122,13 @@ async def list_trades_with_account(
         f"""
         SELECT t.*,
                a.name  AS account_name,
-               a.broker AS account_broker
+               a.broker AS account_broker,
+               s.name_ko AS name_ko
         FROM trades t
         LEFT JOIN accounts a ON a.id = t.account_id
+        LEFT JOIN stocks s
+               ON s.country_code = COALESCE(NULLIF(t.country_code, ''), 'KR')
+              AND s.ticker = t.ticker_symbol
         WHERE {' AND '.join(where)}
         ORDER BY t.traded_at DESC
         """,
@@ -188,9 +192,13 @@ async def get_trade_with_account(conn: Any, trade_id: str, user_id: str) -> Trad
         """
         SELECT t.*,
                a.name  AS account_name,
-               a.broker AS account_broker
+               a.broker AS account_broker,
+               s.name_ko AS name_ko
         FROM trades t
         LEFT JOIN accounts a ON a.id = t.account_id
+        LEFT JOIN stocks s
+               ON s.country_code = COALESCE(NULLIF(t.country_code, ''), 'KR')
+              AND s.ticker = t.ticker_symbol
         WHERE t.id = $1 AND t.user_id = $2
         """,
         trade_id,

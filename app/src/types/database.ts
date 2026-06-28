@@ -31,6 +31,9 @@ export interface Trade {
 
   // 거래 기본 정보
   asset_name: string;
+  // 종목 마스터(stocks)에서 조회 시점에 채워지는 표시용 한글명(US 영문 asset_name 보완).
+  // 응답 전용 — 저장/계산 키는 asset_name. 표시는 name_ko ?? asset_name.
+  name_ko?: string | null;
   ticker_symbol: string;
   market_type: MarketType;
   trade_type: TradeType;
