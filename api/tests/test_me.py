@@ -24,7 +24,19 @@ from tests.conftest import (
     _private_key,
     make_jwt,
 )
-from tests.fake_pool import make_fake_pool
+from tests.fake_pool import FakeConnection, make_fake_pool
+
+
+class _RecordingConn(FakeConnection):
+    """execute 호출의 (query, args) 를 기록하는 fake — account_deletions INSERT 검증용."""
+
+    def __init__(self, *responses: object) -> None:
+        super().__init__(*responses)
+        self.executed: list[tuple[str, tuple]] = []
+
+    async def execute(self, query: str, *args: object) -> str:
+        self.executed.append((query, args))
+        return await super().execute(query, *args)
 
 
 def test_me_no_header(auth_client: TestClient) -> None:
@@ -135,6 +147,7 @@ def _make_delete_client(
     *,
     secret_key: str,
     handler,
+    conn: FakeConnection | None = None,
 ) -> TestClient:
     """DELETE /me 테스트용 클라이언트 — http_client/settings/auth override."""
     settings = Settings(
@@ -152,7 +165,7 @@ def _make_delete_client(
     def override_http_client():
         return mock_http
 
-    fake_pool = make_fake_pool()
+    fake_pool = make_fake_pool(conn)
 
     app.dependency_overrides[get_current_user] = mock_user
     app.dependency_overrides[get_settings] = lambda: settings
@@ -196,6 +209,64 @@ def test_delete_me_success() -> None:
     assert str(req.url) == f"{TEST_SUPABASE_URL}/auth/v1/admin/users/{TEST_USER_ID}"
     assert req.headers["apikey"] == "test-service-key"
     assert req.headers["authorization"] == "Bearer test-service-key"
+
+
+def test_delete_me_records_audit_with_reason() -> None:
+    # 탈퇴 시 account_deletions 에 1건 INSERT(...SELECT) 후 users DELETE.
+    # signup_at 은 SQL 내부(SELECT created_at)라 INSERT args 에 노출되지 않음 → 실DB 에서 검증.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"id": TEST_USER_ID})
+
+    conn = _RecordingConn()
+    client = _make_delete_client(
+        secret_key="test-service-key", handler=handler, conn=conn
+    )
+    r = client.request("DELETE", "/me", json={"reason": "not_useful"})
+    assert r.status_code == 204
+
+    inserts = [q for q in conn.executed if "INSERT INTO public.account_deletions" in q[0]]
+    assert len(inserts) == 1
+    query, args = inserts[0]
+    assert "SELECT id, created_at" in query  # INSERT ... SELECT (멱등 — 행 없으면 0건)
+    assert args == (UUID(TEST_USER_ID), "not_useful")
+
+    # 감사 INSERT 가 users DELETE 보다 먼저 실행됨.
+    queries = [q[0] for q in conn.executed]
+    insert_idx = next(i for i, q in enumerate(queries) if "account_deletions" in q)
+    delete_idx = next(i for i, q in enumerate(queries) if "DELETE FROM public.users" in q)
+    assert insert_idx < delete_idx
+
+
+def test_delete_me_records_audit_without_reason() -> None:
+    # 사유 미전송(바디 없음)도 204 + reason NULL 로 기록.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"id": TEST_USER_ID})
+
+    conn = _RecordingConn()
+    client = _make_delete_client(
+        secret_key="test-service-key", handler=handler, conn=conn
+    )
+    r = client.delete("/me")
+    assert r.status_code == 204
+
+    inserts = [q for q in conn.executed if "INSERT INTO public.account_deletions" in q[0]]
+    assert len(inserts) == 1
+    _, args = inserts[0]
+    assert args == (UUID(TEST_USER_ID), None)
+
+
+def test_delete_me_rejects_invalid_reason() -> None:
+    # reason 은 Literal 고정 코드값만 허용 — 임의 문자열은 422, DB 쓰기 없음(사유 분포 오염 차단).
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"id": TEST_USER_ID})
+
+    conn = _RecordingConn()
+    client = _make_delete_client(
+        secret_key="test-service-key", handler=handler, conn=conn
+    )
+    r = client.request("DELETE", "/me", json={"reason": "spam_garbage"})
+    assert r.status_code == 422
+    assert conn.executed == []
 
 
 @pytest.mark.parametrize("status_code", [400, 401, 403, 500])
