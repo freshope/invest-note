@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-06-28 | 회원 탈퇴 — 하드삭제 유지 + 감사 로그(account_deletions)
+
+- **맥락:** 기존 탈퇴는 하드삭제(DELETE /me → `public.users` 삭제 → FK cascade + Supabase Auth 삭제)라 탈퇴자가 아무 흔적도 남기지 않아 탈퇴율·생존기간·사유를 사후 집계할 데이터가 0이었다. 탈퇴 비중·이유를 측정해야 한다는 요구.
+- **결정:** 하드삭제 정책은 그대로 두고, 삭제 직전 PII 없는 감사 행 1건을 `public.account_deletions`(마이그레이션 0009, 컬럼 user_id/signup_at/reason/deleted_at, **users FK 없음**)에 남긴다. reason 은 BE 에서 `Literal["not_useful","not_using","privacy","other"] | None` 강제. 기록은 `INSERT ... SELECT FROM users WHERE id=$1`(멱등). 어드민 패널 `/withdrawals`(`GET /admin/deletion-stats`)로 누적/탈퇴율/평균 사용기간/사유 분포/일별 추이 조회. churn_rate 분모 = `total_users + total_deletions`.
+- **이유:** 소프트삭제/익명화 전환은 PII 보존 리스크 + 복잡도만 늘리고, 측정 목적만이면 감사 로그로 충분. FK 를 빼는 건 users(id) FK ON DELETE CASCADE 면 감사 행이 함께 지워져 목적을 잃기 때문. reason Literal 강제는 변조 클라이언트의 임의 문자열이 어드민 사유 분포 버킷을 오염시키는 것 차단(FE 에 자유 텍스트 입력 없음). churn 분모를 "가입한 적 있는 전체(현재 가입자+탈퇴자)"로 둔 건 현재 `users` 가 탈퇴자를 이미 제외하므로 그래야 누적 이탈률이 의미를 가져서.
+- **트레이드오프:** delete→재가입 사용자는 churn 분모 양쪽에 카운트되어 이탈률이 약간 과대(cosmetic, 재가입 추적 미구현). Auth 정리 실패(502) 시 데이터는 삭제됐으나 Auth 신원이 잠시 잔존 — FE 는 502 를 정상 종료(로그아웃→로그인)로 처리해 사용자 혼란을 막되, 신원 물리 잔존은 재로그인 시 빈 계정 재프로비저닝으로 흡수(기존 설계). PostHog `account_deleted` 이벤트(대안 1단계)는 BE 권위 집계로 충분해 미도입.
+
+---
+
 ## 2026-06-27 | 토스 해외 ISIN 코드 매칭 (OpenFIGI) — 종목명 매칭 → ISIN 정확 매칭
 
 - **맥락:** 직전 "토스 해외(USD) 일괄등록"(아래 엔트리)은 달러 행을 **한글 종목명**으로 매칭했다 — 원리적 오매칭 리스크 + 미해결 노이즈. QA-A2 실측: 토스 대형 샘플 USD 중 **101건 미해결**(알파벳 A 이름포맷 54·더치 브로스 master 부재 47). 토스가 행에 ISIN(`US69608A1088`)을 주므로 이를 권위 식별자로 써 정확 매칭한다. [[project_broker_import_parsers]] Phase 2 의 정밀도 보강.
