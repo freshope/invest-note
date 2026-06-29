@@ -161,6 +161,11 @@ class Settings(BaseSettings):
     # /auth/login?client=admin 이 503 fail-fast(dormant-503, be_token_audience 와 동일 사상 —
     # 강제 안 함). 클라가 URL 을 보내지 않고 이 고정 env 만 매핑 → open redirect 차단.
     be_admin_redirect_url: str = ""
+    # be_app_web_redirect_url: 개발 편의용 웹 BE flow(client=web)의 BE→client 2차 hop URL
+    # (예: http://localhost:3000/auth/callback). be_admin_redirect_url 과 동형이나 app 웹 전용.
+    # 빈 값이면 /auth/login?client=web 이 503(dormant). 운영은 빈 값 유지 — 웹은 배포 타깃 아님
+    # (Capacitor 단일), 보안 표면 증가 0. 클라가 URL 미전송·고정 env 만 매핑 → open redirect 차단.
+    be_app_web_redirect_url: str = ""
 
     # OAuth/refresh transient TTL(초). token_store 가 settings 에서 읽는다.
     # be_refresh_token_ttl: refresh token 수명(기본 30d). oauth_code_ttl: 일회용 code(딥링크↔
