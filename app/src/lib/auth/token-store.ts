@@ -44,6 +44,25 @@ function safeGet(key: string): string | null {
   }
 }
 
+// write 는 read(safeGet)와 대칭으로 감싸되, 흡수하지 않는다 — write 실패는 토큰 미저장=인증
+// 불가라 조용히 무시하면 "로그인 성공인데 토큰 없음"이 된다. 명확한 에러로 throw(로그인 흐름이
+// catch 해 사용자에 안내). remove(clear) 실패는 무해(다음 로그인이 덮어씀)하므로 흡수한다.
+function safeSet(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    throw new Error("로컬 스토리지 쓰기 실패 — 브라우저 저장소가 비활성일 수 있습니다");
+  }
+}
+
+function safeRemove(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* 정리 실패는 무해 */
+  }
+}
+
 export async function saveTokens(tokens: {
   access: string;
   refresh: string;
@@ -57,8 +76,8 @@ export async function saveTokens(tokens: {
     ]);
     return;
   }
-  localStorage.setItem(ACCESS_KEY, tokens.access);
-  localStorage.setItem(REFRESH_KEY, tokens.refresh);
+  safeSet(ACCESS_KEY, tokens.access);
+  safeSet(REFRESH_KEY, tokens.refresh);
 }
 
 export async function getAccessTokenRaw(): Promise<string | null> {
@@ -86,8 +105,8 @@ export async function clearTokens(): Promise<void> {
     ]);
     return;
   }
-  localStorage.removeItem(ACCESS_KEY);
-  localStorage.removeItem(REFRESH_KEY);
+  safeRemove(ACCESS_KEY);
+  safeRemove(REFRESH_KEY);
 }
 
 export async function saveVerifier(verifier: string): Promise<void> {
@@ -96,7 +115,7 @@ export async function saveVerifier(verifier: string): Promise<void> {
     await SecureStorage.setItem(VERIFIER_KEY, verifier);
     return;
   }
-  localStorage.setItem(VERIFIER_KEY, verifier);
+  safeSet(VERIFIER_KEY, verifier);
 }
 
 export async function getVerifier(): Promise<string | null> {
@@ -113,5 +132,5 @@ export async function clearVerifier(): Promise<void> {
     await SecureStorage.remove(VERIFIER_KEY);
     return;
   }
-  localStorage.removeItem(VERIFIER_KEY);
+  safeRemove(VERIFIER_KEY);
 }

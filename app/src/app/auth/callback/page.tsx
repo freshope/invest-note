@@ -2,9 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { exchangeCodeForSession } from "@/lib/auth";
 import { FullPageSpinner } from "@/components/base/FullPageSpinner";
-import { LOGIN_OAUTH_FAILED_PATH_WITH_SLASH } from "@/lib/auth/errors";
+import { exchangeAndRoute } from "@/lib/auth/exchange-and-route";
 
 // 웹 BE flow OAuth 콜백(개발 편의용). BE 가 일회용 code 를 ?code= 로 부착해 이 페이지로
 // 302 redirect 한다. URL 에서 code 를 읽어 PKCE verifier 와 함께 BE /auth/token 으로 교환한 뒤
@@ -22,14 +21,7 @@ export default function AuthCallbackPage() {
 
     // useSearchParams 는 static export 에서 Suspense 필요 → window.location.search 로 직접 읽음.
     const code = new URLSearchParams(window.location.search).get("code");
-    if (!code) {
-      router.replace(LOGIN_OAUTH_FAILED_PATH_WITH_SLASH);
-      return;
-    }
-
-    exchangeCodeForSession(code)
-      .then(() => router.replace("/"))
-      .catch(() => router.replace(LOGIN_OAUTH_FAILED_PATH_WITH_SLASH));
+    void exchangeAndRoute(code, router);
   }, [router]);
 
   return <FullPageSpinner />;
