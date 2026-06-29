@@ -216,17 +216,24 @@ class Settings(BaseSettings):
             raise ValueError(f"kis_env 는 'real' 또는 'mock' 이어야 합니다 (입력: {v!r})")
         return v
 
-    # B7 fail-fast: BE 토큰이 활성(signing key 있음)인데 be_token_audience 가 빈 값이면
-    # per-issuer aud 격리가 Supabase authenticated 로 조용히 폴백돼 격하된다(인수노트#1).
-    # → 활성 시 빈 aud 는 기동 실패. dormant(키 없음)는 무영향. field_validator 가 아니라
-    # model_validator(after) 인 이유: 필드 정의 순서상 audience 검증 시점에 signing_key 가
-    # 아직 info.data 에 없어 field 단위로는 교차 참조가 불가능하다.
+    # B7 fail-fast: BE 토큰이 활성(signing key 있음)이면 be_token_audience·be_token_issuer 가
+    # 둘 다 필수다(빈 값이면 기동 실패). audience 누락 → per-issuer aud 격리가 Supabase
+    # authenticated 로 조용히 격하(인수노트#1). issuer 누락 → oidc_issuer_registry 가
+    # `be_token_enabled and be_token_issuer` 로 게이트돼 공백이 되는데, 2c 로 Supabase default
+    # fallback 이 사라져 registry 가 인증의 유일 경로이므로 부팅은 통과하나 전원 401(검증-대칭 갭).
+    # dormant(키 없음)는 무영향. field_validator 가 아니라 model_validator(after) 인 이유:
+    # 필드 정의 순서상 검증 시점에 signing_key 가 아직 info.data 에 없어 field 단위 교차 참조 불가.
     @model_validator(mode="after")
-    def _validate_be_token_audience(self) -> "Settings":
+    def _validate_be_token_fields(self) -> "Settings":
         if self.be_token_enabled and not self.be_token_audience:
             raise ValueError(
                 "be_token_signing_key 설정 시 be_token_audience 는 필수입니다 "
                 "(빈 값이면 per-issuer aud 격리가 Supabase 'authenticated' 로 격하됨, B7)"
+            )
+        if self.be_token_enabled and not self.be_token_issuer:
+            raise ValueError(
+                "be_token_signing_key 설정 시 be_token_issuer 는 필수입니다 "
+                "(빈 값이면 oidc_issuer_registry 공백 → 전원 401, 2c fallback 제거 후)"
             )
         return self
 

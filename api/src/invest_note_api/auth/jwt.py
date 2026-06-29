@@ -24,9 +24,15 @@ def _verify_with_entry(token: str, entry: dict) -> AuthenticatedUser:
     issuer 를 전달해 iss 클레임 일치/존재를 강제한다. audience 가 빈 값이면 기본 AUTH_ROLE 로
     정규화한다. BE entry 는 B7 가 빈 aud 를 기동 단계에서 차단한다.
     """
+    # BE entry 는 항상 verify_key 를 갖는다(_registry_with_be_key 주입). 단 향후 non-BE issuer 가
+    # verify_key 없이 registry 에 추가되면 하드 subscript 는 KeyError(→500)가 되므로, get_current_user
+    # 가 잡는 InvalidTokenError(→401)로 방어한다.
+    verify_key = entry.get("verify_key")
+    if verify_key is None:
+        raise jwt.InvalidTokenError("registry entry 에 verify_key 가 없습니다")
     payload = jwt.decode(
         token,
-        entry["verify_key"],
+        verify_key,
         algorithms=JWT_ALGORITHMS,
         audience=entry.get("audience") or AUTH_ROLE,
         issuer=entry.get("issuer") or None,
