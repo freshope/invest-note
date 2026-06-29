@@ -46,7 +46,6 @@ PROVIDER_UIDS = {p: uuid4() for p in PROVIDER_SUBS}
 def _settings() -> Settings:
     return Settings(
         supabase_url=TEST_SUPABASE_URL,
-        oidc_issuer=f"{TEST_SUPABASE_URL}/auth/v1",
         be_token_signing_key=_be_pem,
         be_token_issuer=BE_ISSUER,
         be_token_audience=BE_AUDIENCE,
@@ -241,25 +240,19 @@ def test_b6_profile_preserved_on_reauth_through_router(monkeypatch):
     assert p["last_sign_in"] > first_last  # 갱신
 
 
-# --- B9 expand hard gate: BE 활성에서도 Supabase 토큰 /me 200 ---
+# --- 2c contract: cutover 후 Supabase(레거시) 토큰은 거부 ---
 
 
-def test_b9_supabase_token_valid_when_be_active(monkeypatch):
-    # BE 토큰 발급이 활성인 운영 시뮬에서 구 앱(Supabase 토큰) /me 가 여전히 200 = lockout 0.
-    from unittest.mock import MagicMock, patch
-    from tests.conftest import _kid, _private_key, _public_key, TEST_USER_ID, TEST_EMAIL
+def test_legacy_supabase_token_rejected_when_be_active(monkeypatch):
+    # 2c 불변식 역전(구 B9 expand gate 의 반전): Supabase fallback 제거 후, BE 활성 운영에서
+    # 레거시 Supabase 토큰(BE registry 미등록 iss)은 /me 401. cutover 후 구 앱 거부 = 의도된 동작.
+    from tests.conftest import _kid, _private_key, TEST_USER_ID, TEST_EMAIL
     from invest_note_api.auth.constants import AUTH_ROLE
-    import json as _json
-    from jwt import PyJWK
-    from jwt.algorithms import ECAlgorithm
 
     settings = _settings()
     app = create_app(settings)
     app.dependency_overrides[get_settings] = lambda: settings
 
-    sup_jwk = PyJWK.from_dict(
-        {**_json.loads(ECAlgorithm.to_jwk(_public_key)), "kid": _kid, "alg": "ES256"}
-    )
     now = int(time.time())
     sup_token = jwt.encode(
         {"sub": TEST_USER_ID, "email": TEST_EMAIL, "aud": AUTH_ROLE,
@@ -267,13 +260,6 @@ def test_b9_supabase_token_valid_when_be_active(monkeypatch):
         _private_key, algorithm="ES256", headers={"kid": _kid},
     )
 
-    def factory(uri):
-        c = MagicMock()
-        c.get_signing_key_from_jwt.return_value = sup_jwk
-        return c
-
-    with patch("invest_note_api.auth.jwt._get_jwks_client", MagicMock(side_effect=factory)):
-        with TestClient(app) as client:
-            r = client.get("/me", headers={"Authorization": f"Bearer {sup_token}"})
-            assert r.status_code == 200
-            assert r.json()["user_id"] == TEST_USER_ID
+    with TestClient(app) as client:
+        r = client.get("/me", headers={"Authorization": f"Bearer {sup_token}"})
+        assert r.status_code == 401

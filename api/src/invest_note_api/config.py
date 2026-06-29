@@ -3,8 +3,6 @@ from functools import lru_cache
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from invest_note_api.auth.constants import AUTH_ROLE
-
 # 공급자 체인 기본값 — 단일 출처. 도메인 모듈(quotes/stock_seed)의 함수 기본 인자도
 # 이 상수를 import 해 사용한다(Settings 기본 문자열과의 drift 방지).
 DEFAULT_QUOTE_PROVIDERS = ("naver", "yahoo")
@@ -120,14 +118,6 @@ class Settings(BaseSettings):
     # 어드민 패널(신규 /admin CRUD) allowlist — 쉼표구분 이메일. Supabase JWT email 클레임과
     # 정확 비교(admin_email_set property). 빈 값이면 어떤 계정도 require_admin 통과 못 함.
     admin_emails: str = ""
-
-    # OIDC 토큰 검증 — IdP 교체 시 어댑터 seam. 현재 IdP=Supabase.
-    # oidc_issuer: 빈 값이면 iss 검증을 스킵한다(fail-safe). 실제 Supabase iss 는
-    # f"{supabase_url}/auth/v1" — 정확한 문자열 검증 후 prod 에서만 활성화한다.
-    # 잘못 설정하면 전체 인증이 붕괴하므로 기본은 비활성(빈 값).
-    oidc_issuer: str = ""
-    # oidc_audience: 토큰 aud 클레임 기대값. 기본은 Supabase 컨벤션(authenticated).
-    oidc_audience: str = AUTH_ROLE
 
     # BE 자체 토큰(Phase 2a) — token-broker 모델의 BE 발급 토큰 검증/서명 설정.
     # 2a 는 dormant: 클라이언트가 BE 토큰을 발급받지 않으며, 검증 경로만 추가(유닛 전용).
@@ -245,12 +235,11 @@ class Settings(BaseSettings):
             and self.r2_secret_access_key
         )
 
-    @property
-    def jwks_uri(self) -> str:
-        return f"{self.supabase_url}/auth/v1/.well-known/jwks.json"
-
     # BE 자체 토큰 검증용 JWKS URI(BE 가 스스로 서빙하는 /auth/.well-known/jwks.json).
-    # registry 빌드 시 BE entry 의 jwks_uri 로 쓰인다. dormant 라 prod 도달성은 nominal.
+    # registry BE entry 의 jwks_uri nominal 메타로 실린다 — 자기검증은 in-process verify_key
+    # 직접 주입이라 이 URI 를 self-fetch 하지 않는다(2c fallback 제거 후 JWKS HTTP 경로 소멸).
+    # ⚠️ supabase_url 파생 placeholder 호스트 → 향후 클라우드 정리 시 be_oauth_redirect_base
+    # 기준으로 재유도 필요(supabase_url 자체는 delete_user 때문에 유지).
     @property
     def be_jwks_uri(self) -> str:
         return f"{self.supabase_url}/auth/.well-known/jwks.json"
@@ -261,11 +250,10 @@ class Settings(BaseSettings):
         return bool(self.be_token_signing_key)
 
     # issuer registry — iss discriminator 기반 검증 설정.
-    # ⚠️ dict-lookup-reject 아님(그건 dormant prod 에서 Supabase 토큰을 iss-miss 로 거부 →
-    # 전원 lockout). 검증 분기(decode_oidc_jwt)는 **Supabase=default / BE=명시 매칭** 으로
-    # 구현한다. 이 property 는 BE entry(있을 때만)를 iss→{jwks_uri,issuer,audience} 로 노출 →
-    # decode_oidc_jwt 가 peek 한 iss 가 BE iss 와 정확히 일치하면 BE entry 선택, 아니면 Supabase.
-    # Supabase entry 의 issuer 는 oidc_issuer(빈 값이면 iss 검증 스킵, Phase 1 동일).
+    # ⚠️ 2c: Supabase default fallback 제거 → decode_oidc_jwt 는 registry 에 등록된 issuer 만
+    # 통과시키고 나머지는 401(dict-lookup-reject). 이 property 는 BE entry(활성일 때만)를
+    # iss→{jwks_uri,issuer,audience} 로 노출한다. registry 가 비면(dormant) 전원 401(불변식 역전).
+    # jwks_uri 는 nominal 메타 — 자기검증은 in-process verify_key(_registry_with_be_key 주입).
     @property
     def oidc_issuer_registry(self) -> dict[str, dict[str, str]]:
         registry: dict[str, dict[str, str]] = {}
@@ -278,15 +266,6 @@ class Settings(BaseSettings):
                 "audience": self.be_token_audience,
             }
         return registry
-
-    # Supabase(default) issuer entry — registry 에서 BE iss 가 매칭되지 않은 모든 토큰의 검증 설정.
-    @property
-    def supabase_issuer_entry(self) -> dict[str, str | None]:
-        return {
-            "jwks_uri": self.jwks_uri,
-            "issuer": self.oidc_issuer or None,
-            "audience": self.oidc_audience or AUTH_ROLE,
-        }
 
     # admin_emails(쉼표 문자열) → 정규화(소문자/trim) set. require_admin 이 email 클레임을
     # 동일 정규화 후 `in` 으로 정확 비교한다. raw 문자열 substring 매칭(함정)을 피하기 위해 set 화.

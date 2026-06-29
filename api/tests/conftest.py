@@ -1,18 +1,17 @@
-import json
 import os
 import time
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, generate_private_key
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    NoEncryption,
+    PrivateFormat,
+)
 from fastapi.testclient import TestClient
-from jwt import PyJWK
-from jwt.algorithms import ECAlgorithm
-
-from invest_note_api.auth.constants import AUTH_ROLE
 
 TEST_USER_ID = str(uuid4())
 
@@ -33,39 +32,46 @@ from invest_note_api.config import Settings as _Settings  # noqa: E402
 _Settings.model_config["env_file"] = None
 os.environ.setdefault("SUPABASE_URL", TEST_SUPABASE_URL)
 
-# 테스트용 EC 키쌍 (세션당 1회 생성)
+# 테스트용 EC 키쌍 (세션당 1회 생성). 미등록(non-registry) issuer/foreign-key 음성 케이스용.
 _private_key = generate_private_key(SECP256R1())
 _public_key = _private_key.public_key()
 _kid = "test-key-id"
 
-
-def _make_mock_jwks_client() -> MagicMock:
-    """네트워크 없이 테스트 키로 서명 검증하는 mock PyJWKClient."""
-    signing_key = PyJWK.from_dict(
-        {**json.loads(ECAlgorithm.to_jwk(_public_key)), "kid": _kid, "alg": "ES256"}
-    )
-    mock_client = MagicMock()
-    mock_client.get_signing_key_from_jwt.return_value = signing_key
-    # _get_jwks_client(uri) 호출 형태이므로 callable로 감쌈
-    return MagicMock(return_value=mock_client)
+# BE issuer 토큰 발급용 키/설정(2c: Supabase fallback 제거 후 유일한 통과 경로).
+# make_jwt 가 이 키로 서명한 BE 토큰을 발급하고, auth_client 가 동일 signing key 를 Settings 에
+# 실어 registry BE entry(in-process verify_key)로 검증한다.
+BE_ISSUER = "https://api.invest-note.example/be"
+BE_AUDIENCE = "invest-note-app"
+BE_KID = "be-test-key"
+_be_private_key = generate_private_key(SECP256R1())
+_be_private_pem = _be_private_key.private_bytes(
+    Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
+).decode()
 
 
 def make_jwt(
     user_id: str = TEST_USER_ID,
     email: str = TEST_EMAIL,
     expires_delta: int = 3600,
-    iss: str | None = None,
+    iss: str | None = BE_ISSUER,
+    aud: str = BE_AUDIENCE,
 ) -> str:
+    """BE issuer 토큰 발급(ES256, BE signing key). auth_client registry 로 검증되는 유효 토큰.
+
+    iss=None 으로 호출하면 iss 클레임 없는 토큰(2c: registry 미매칭 → 401 음성 케이스).
+    """
     payload = {
         "sub": user_id,
         "email": email,
-        "aud": AUTH_ROLE,
+        "aud": aud,
         "iat": int(time.time()),
         "exp": int(time.time()) + expires_delta,
     }
     if iss is not None:
         payload["iss"] = iss
-    return jwt.encode(payload, _private_key, algorithm="ES256", headers={"kid": _kid})
+    return jwt.encode(
+        payload, _be_private_pem, algorithm="ES256", headers={"kid": BE_KID}
+    )
 
 
 def _make_app():
@@ -74,6 +80,19 @@ def _make_app():
 
     settings = Settings(supabase_url=TEST_SUPABASE_URL)
     return create_app(settings)
+
+
+def _be_settings():
+    """BE issuer registry 가 활성화된 Settings — 실제 토큰 검증 경로 테스트용(auth_client)."""
+    from invest_note_api.config import Settings
+
+    return Settings(
+        supabase_url=TEST_SUPABASE_URL,
+        be_token_signing_key=_be_private_pem,
+        be_token_issuer=BE_ISSUER,
+        be_token_audience=BE_AUDIENCE,
+        be_token_kid=BE_KID,
+    )
 
 
 @pytest.fixture
@@ -141,13 +160,16 @@ def trades_client():
 
 @pytest.fixture
 def auth_client():
-    """실제 JWT 검증을 수행하는 클라이언트 — 401 케이스 테스트에 사용."""
-    from invest_note_api.auth.jwt import _get_jwks_client
+    """실제 JWT 검증을 수행하는 클라이언트 — 401 케이스 + 유효 BE 토큰 200 테스트에 사용.
 
-    app = _make_app()
+    BE issuer registry 활성(_be_settings) → make_jwt 가 발급한 BE 토큰이 in-process verify_key
+    로 검증된다. 2c fallback 제거로 registry 미등록 토큰(non-BE iss·iss 누락)은 전원 401.
+    """
+    from invest_note_api.config import get_settings
+    from invest_note_api.main import create_app
 
-    with patch("invest_note_api.auth.jwt._get_jwks_client", _make_mock_jwks_client()):
-        with TestClient(app) as c:
-            yield c
-
-    _get_jwks_client.cache_clear()
+    settings = _be_settings()
+    app = create_app(settings)
+    app.dependency_overrides[get_settings] = lambda: settings
+    with TestClient(app) as c:
+        yield c
