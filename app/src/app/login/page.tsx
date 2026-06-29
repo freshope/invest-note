@@ -7,7 +7,6 @@ import { signInWithOAuth } from "@/lib/auth";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { OAUTH_BROWSER_FINISHED_EVENT } from "@/components/providers/CapacitorDeepLinkHandler";
 import { getPlatform, isNativePlatform } from "@/lib/platform";
-import { NATIVE_REDIRECT_URL, WEB_CALLBACK_PATH } from "@/lib/auth/oauth-config";
 import { LEGAL_LINKS } from "@/lib/legal-links";
 
 const KAKAO_BG = "#FEE500";
@@ -65,14 +64,7 @@ function LoginForm() {
     setPending(provider);
     try {
       const native = isNativePlatform();
-      const redirectTo = native
-        ? NATIVE_REDIRECT_URL
-        : `${window.location.origin}${WEB_CALLBACK_PATH}`;
-
-      const { url } = await signInWithOAuth(provider, {
-        redirectTo,
-        skipBrowserRedirect: native,
-      });
+      const { url } = await signInWithOAuth(provider);
 
       if (native && url) {
         const { Browser } = await import("@capacitor/browser");

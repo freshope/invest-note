@@ -2,8 +2,6 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { getUser, subscribe, type AuthUser } from "@/lib/auth";
-import { ensureBeAuthFlagLoaded } from "@/lib/api/app-config";
-import { isNativePlatform } from "@/lib/platform";
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -28,34 +26,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
     };
 
-    (async () => {
-      // ⚠️ 2b-4 race fix: 네이티브는 auth flow 결정(isBeAuthFlow=isNativePlatform && beAuthEnabled)이
-      // 비동기 app-config 에 의존한다. subscribe()/getUser() 는 1회 등록·조회이므로, 플래그 로드 전
-      // (beAuthEnabled=false) 실행되면 Supabase 채널을 잡아 BE flow 로그인 emit 을 영영 못 받는다.
-      // 플래그를 먼저 resolve(세션 고정)한 뒤 초기화한다. ensureBeAuthFlagLoaded 는 bounded(timeout)
-      // 라 오프라인에서도 hang 하지 않는다. 웹은 isBeAuthFlow 가 항상 false 라 대기 불필요.
-      if (isNativePlatform()) {
-        await ensureBeAuthFlagLoaded();
+    getUser()
+      .then((u) => {
         if (!mounted) return;
-      }
-
-      getUser()
-        .then((u) => {
-          if (!mounted) return;
-          applyUser(u);
-          setLoading(false);
-        })
-        .catch(() => {
-          if (!mounted) return;
-          applyUser(null);
-          setLoading(false);
-        });
-
-      unsubscribe = subscribe((u) => {
         applyUser(u);
         setLoading(false);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        applyUser(null);
+        setLoading(false);
       });
-    })();
+
+    unsubscribe = subscribe((u) => {
+      applyUser(u);
+      setLoading(false);
+    });
 
     return () => {
       mounted = false;

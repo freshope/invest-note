@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// ── mock 대상: platform·foundation 모듈·supabase-client ──
+// ── mock 대상: platform·foundation 모듈(pkce·be-client·token-store) ──
+// signInWithOAuth 가 platform 분기(네이티브=url 반환, 웹=window.location.assign)하므로 제어.
 const mockIsNative = vi.fn(() => true);
 vi.mock("@/lib/platform", () => ({
   isNativePlatform: () => mockIsNative(),
@@ -14,7 +15,8 @@ vi.mock("../pkce", () => ({
 
 const beClient = {
   buildLoginUrl: vi.fn(
-    (p: string, c: string) => `https://be/auth/login?provider=${p}&code_challenge=${c}`,
+    (p: string, c: string, client?: string) =>
+      `https://be/auth/login?provider=${p}&code_challenge=${c}${client ? `&client=${client}` : ""}`,
   ),
   exchangeToken: vi.fn(),
   refreshToken: vi.fn(),
@@ -24,7 +26,8 @@ const beClient = {
   isExpiringSoon: vi.fn((_t: string, _s: number) => false),
 };
 vi.mock("../be-client", () => ({
-  buildLoginUrl: (p: string, c: string) => beClient.buildLoginUrl(p, c),
+  buildLoginUrl: (p: string, c: string, client?: string) =>
+    beClient.buildLoginUrl(p, c, client),
   exchangeToken: (c: string, v: string) => beClient.exchangeToken(c, v),
   refreshToken: (r: string) => beClient.refreshToken(r),
   decodeClaims: (t: string) => beClient.decodeClaims(t),
@@ -62,25 +65,7 @@ vi.mock("../token-store", () => ({
   }),
 }));
 
-// supabase-client mock(웹 가지 보존 검증용 C8)
-const supabaseAuth = {
-  signInWithOAuth: vi.fn(async () => ({ data: { url: "https://supabase/oauth" }, error: null })),
-  getSession: vi.fn(async () => ({
-    data: { session: { access_token: "sb-access", user: { id: "sb-id", email: "sb@x.com" } } },
-  })),
-  signOut: vi.fn(async () => ({ error: null })),
-  onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
-  setSession: vi.fn(async () => ({ error: null })),
-  exchangeCodeForSession: vi.fn(async () => ({ error: null })),
-};
-vi.mock("../supabase-client", () => ({
-  getSupabaseClient: () => ({ auth: supabaseAuth }),
-}));
-
 import * as auth from "../index";
-// 실제 app-config 모듈의 sync 캐시 setter(seam). mock 하지 않고 setter 로만 플래그를 제어해
-// "필드 부재→OFF"·"fetch 실패→OFF" 가 검증하는 실제 ?? false 경로를 보존한다.
-import { __setBeAuthEnabledForTest } from "@/lib/api/app-config";
 
 function resetStore() {
   tokenStore.access = null;
@@ -88,28 +73,41 @@ function resetStore() {
   tokenStore.verifier = null;
 }
 
-describe("lib/auth index — 네이티브 BE flow", () => {
+describe("lib/auth index — BE flow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStore();
     // 모듈 스코프 캐시/epoch/listeners 누수 차단(G1).
     auth.__resetNativeSessionForTest();
-    mockIsNative.mockReturnValue(true);
-    // 2b-4: BE flow 는 네이티브 + 플래그 ON. 이 describe 는 BE flow 분기를 검증하므로 ON 고정.
-    __setBeAuthEnabledForTest(true);
     beClient.isExpiringSoon.mockReturnValue(false);
-    // clearAllMocks 가 구현을 지우므로 기본 read 동작 복원.
+    // clearAllMocks 가 구현을 지우므로 기본 동작 복원(네이티브 기본 + storage read).
+    mockIsNative.mockReturnValue(true);
     storeMock.getAccessTokenRaw.mockImplementation(async () => tokenStore.access);
   });
 
-  it("signInWithOAuth: verifier 저장 + BE login url(C1/C2)", async () => {
-    const { url } = await auth.signInWithOAuth("google", {
-      redirectTo: "x",
-      skipBrowserRedirect: true,
-    });
+  it("signInWithOAuth(네이티브): verifier 저장 + BE login url 반환(C1/C2)", async () => {
+    const { url } = await auth.signInWithOAuth("google");
     expect(tokenStore.verifier).toBe("verifier-fixed");
     expect(url).toContain("code_challenge=challenge-fixed");
     expect(url).toContain("provider=google");
+    expect(url).not.toContain("client="); // 네이티브는 client 생략(BE default)
+  });
+
+  it("signInWithOAuth(웹): client=web full-page redirect, url null", async () => {
+    mockIsNative.mockReturnValue(false);
+    const assign = vi.fn();
+    vi.stubGlobal("window", { location: { assign } });
+
+    const { url } = await auth.signInWithOAuth("google");
+    expect(url).toBeNull(); // 웹은 페이지 이탈 → url 불요
+    expect(tokenStore.verifier).toBe("verifier-fixed");
+    expect(assign).toHaveBeenCalledTimes(1);
+    const target = assign.mock.calls[0][0] as string;
+    expect(target).toContain("client=web");
+    expect(target).toContain("code_challenge=challenge-fixed");
+    expect(target).toContain("provider=google");
+
+    vi.unstubAllGlobals();
   });
 
   it("exchangeCodeForSession: token 저장 + verifier 삭제 + emit(C2)", async () => {
@@ -138,6 +136,15 @@ describe("lib/auth index — 네이티브 BE flow", () => {
   it("exchangeCodeForSession: verifier 없으면 throw", async () => {
     tokenStore.verifier = null;
     await expect(auth.exchangeCodeForSession("code")).rejects.toThrow();
+  });
+
+  it("exchangeCodeForSession: 세션 미확립(decodeClaims null)이면 throw(어드민 미러링)", async () => {
+    tokenStore.verifier = "verifier-fixed";
+    // access "" → decodeClaims null → persistAndEmit null → 명시적 throw(콜백 /login?error 유도).
+    beClient.exchangeToken.mockResolvedValue({ access: "", refresh: "ref" });
+    await expect(auth.exchangeCodeForSession("code-x")).rejects.toThrow();
+    expect(tokenStore.access).toBeNull(); // 토큰 미저장
+    expect(tokenStore.verifier).toBeNull(); // code 소진됨 → verifier 정리
   });
 
   it("getAccessToken: 유효 토큰이면 그대로 반환(refresh 미발생)", async () => {
@@ -295,7 +302,6 @@ describe("lib/auth index — 네이티브 BE flow", () => {
     await auth.signOut();
     expect(tokenStore.access).toBeNull();
     expect(received).toEqual([null]);
-    expect(supabaseAuth.signOut).not.toHaveBeenCalled();
   });
 
   it("subscribe 해제 함수가 listener 제거(누수 차단)", async () => {
@@ -304,97 +310,5 @@ describe("lib/auth index — 네이티브 BE flow", () => {
     unsub();
     await auth.signOut(); // emit(null) 발화하지만 해제됐으니 미수신
     expect(received).toEqual([]);
-  });
-});
-
-describe("lib/auth index — 웹 무회귀(C8)", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    resetStore();
-    mockIsNative.mockReturnValue(false);
-    // 플래그 캐시는 auth 모듈 밖(app-config 싱글톤)이라 케이스 간 누수됨 → 명시 리셋.
-    // 웹은 isNativePlatform=false 라 값과 무관히 Supabase 지만 누수 차단 위해 OFF 고정.
-    __setBeAuthEnabledForTest(false);
-  });
-
-  it("signInWithOAuth: 기존 supabase signInWithOAuth 호출", async () => {
-    const { url } = await auth.signInWithOAuth("kakao", {
-      redirectTo: "r",
-      skipBrowserRedirect: false,
-    });
-    expect(supabaseAuth.signInWithOAuth).toHaveBeenCalled();
-    expect(url).toBe("https://supabase/oauth");
-    expect(tokenStore.verifier).toBeNull(); // 네이티브 PKCE 경로 미진입
-  });
-
-  it("getAccessToken: 기존 supabase getSession", async () => {
-    expect(await auth.getAccessToken()).toBe("sb-access");
-  });
-
-  it("getUser: 기존 supabase session.user", async () => {
-    expect(await auth.getUser()).toEqual({ id: "sb-id", email: "sb@x.com" });
-  });
-
-  it("signOut: 기존 supabase signOut({scope:local})", async () => {
-    await auth.signOut();
-    expect(supabaseAuth.signOut).toHaveBeenCalledWith({ scope: "local" });
-  });
-
-  it("exchangeCodeForSession: 기존 supabase exchangeCodeForSession", async () => {
-    await auth.exchangeCodeForSession("code");
-    expect(supabaseAuth.exchangeCodeForSession).toHaveBeenCalledWith("code");
-    expect(beClient.exchangeToken).not.toHaveBeenCalled();
-  });
-
-  it("subscribe: 기존 supabase onAuthStateChange", () => {
-    auth.subscribe(() => {});
-    expect(supabaseAuth.onAuthStateChange).toHaveBeenCalled();
-  });
-});
-
-// 2b-4 fail-safe 본체: 네이티브이지만 플래그 OFF(미수신/fetch 실패/필드 부재 포함) →
-// BE flow 미진입, Supabase flow 로 폴백(현재 라이브 무회귀). isBeAuthFlow seam 의 핵심 보증.
-describe("lib/auth index — 네이티브 + 플래그 OFF fail-safe(2b-4)", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    resetStore();
-    auth.__resetNativeSessionForTest();
-    mockIsNative.mockReturnValue(true); // 네이티브 환경
-    __setBeAuthEnabledForTest(false); // 플래그 OFF(default = fetch 미완/실패/필드 부재와 동치)
-  });
-
-  it("signInWithOAuth: BE 미진입 → supabase 호출, verifier 미저장", async () => {
-    const { url } = await auth.signInWithOAuth("google", {
-      redirectTo: "r",
-      skipBrowserRedirect: true,
-    });
-    expect(supabaseAuth.signInWithOAuth).toHaveBeenCalled();
-    expect(url).toBe("https://supabase/oauth");
-    expect(tokenStore.verifier).toBeNull();
-    expect(beClient.buildLoginUrl).not.toHaveBeenCalled();
-  });
-
-  it("getAccessToken: supabase getSession 폴백", async () => {
-    expect(await auth.getAccessToken()).toBe("sb-access");
-  });
-
-  it("getUser: supabase session.user 폴백", async () => {
-    expect(await auth.getUser()).toEqual({ id: "sb-id", email: "sb@x.com" });
-  });
-
-  it("signOut: supabase signOut({scope:local}) 폴백", async () => {
-    await auth.signOut();
-    expect(supabaseAuth.signOut).toHaveBeenCalledWith({ scope: "local" });
-  });
-
-  it("exchangeCodeForSession: supabase 교환 폴백, BE 미호출", async () => {
-    await auth.exchangeCodeForSession("code");
-    expect(supabaseAuth.exchangeCodeForSession).toHaveBeenCalledWith("code");
-    expect(beClient.exchangeToken).not.toHaveBeenCalled();
-  });
-
-  it("subscribe: supabase onAuthStateChange 폴백", () => {
-    auth.subscribe(() => {});
-    expect(supabaseAuth.onAuthStateChange).toHaveBeenCalled();
   });
 });

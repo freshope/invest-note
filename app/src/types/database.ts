@@ -90,32 +90,3 @@ export type AccountUpdate = Partial<Omit<Account, 'id' | 'user_id' | 'created_at
 
 export type TradeInsert = Omit<Trade, 'id' | 'total_amount' | 'created_at' | 'updated_at'>;
 export type TradeUpdate = Partial<Omit<Trade, 'id' | 'user_id' | 'total_amount' | 'created_at' | 'updated_at'>>;
-
-// ============================================================
-// Supabase Database 타입 (클라이언트용)
-// ============================================================
-
-export interface Database {
-  public: {
-    Tables: {
-      accounts: {
-        Row: Account;
-        Insert: AccountInsert;
-        Update: AccountUpdate;
-      };
-      trades: {
-        Row: Trade;
-        Insert: TradeInsert;
-        Update: TradeUpdate;
-      };
-    };
-    Enums: {
-      market_type: MarketType;
-      trade_type: TradeType;
-      strategy_type: StrategyType;
-      reasoning_tag: ReasoningTag;
-      emotion_type: EmotionType;
-      trade_result: TradeResult;
-    };
-  };
-}

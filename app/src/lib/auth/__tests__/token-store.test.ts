@@ -1,66 +1,104 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// secure storage 플러그인 mock — 인메모리 맵으로 native Keychain/Keystore 대체.
-const store = new Map<string, string>();
+// platform 분기 제어: 웹=localStorage, 네이티브=secure storage.
+const mockIsNative = vi.fn(() => false);
+vi.mock("@/lib/platform", () => ({
+  isNativePlatform: () => mockIsNative(),
+}));
+
+// 네이티브 secure storage 모킹(in-memory Map 백킹).
+const secure = {
+  store: new Map<string, string>(),
+  setItem: vi.fn(async (k: string, v: string) => {
+    secure.store.set(k, v);
+  }),
+  getItem: vi.fn(async (k: string) => secure.store.get(k) ?? null),
+  remove: vi.fn(async (k: string) => {
+    secure.store.delete(k);
+  }),
+};
 vi.mock("@aparajita/capacitor-secure-storage", () => ({
   SecureStorage: {
-    setItem: vi.fn(async (key: string, value: string) => {
-      store.set(key, value);
-    }),
-    getItem: vi.fn(async (key: string) => store.get(key) ?? null),
-    remove: vi.fn(async (key: string) => {
-      const had = store.has(key);
-      store.delete(key);
-      return had;
-    }),
+    setItem: (k: string, v: string) => secure.setItem(k, v),
+    getItem: (k: string) => secure.getItem(k),
+    remove: (k: string) => secure.remove(k),
   },
 }));
 
-import {
-  saveTokens,
-  getAccessTokenRaw,
-  getRefreshToken,
-  clearTokens,
-  saveVerifier,
-  getVerifier,
-  clearVerifier,
-} from "../token-store";
-import { SecureStorage } from "@aparajita/capacitor-secure-storage";
+import * as store from "../token-store";
 
-describe("token-store", () => {
+const ACCESS = "auth.access_token";
+const REFRESH = "auth.refresh_token";
+const VERIFIER = "auth.pkce_verifier";
+
+describe("token-store — 웹 localStorage 분기", () => {
   beforeEach(() => {
-    store.clear();
     vi.clearAllMocks();
+    mockIsNative.mockReturnValue(false);
+    localStorage.clear();
   });
 
-  it("saveTokens → getAccessTokenRaw / getRefreshToken round-trip", async () => {
-    await saveTokens({ access: "acc-1", refresh: "ref-1" });
-    expect(await getAccessTokenRaw()).toBe("acc-1");
-    expect(await getRefreshToken()).toBe("ref-1");
+  it("saveTokens → localStorage, getAccessTokenRaw/getRefreshToken 회수", async () => {
+    await store.saveTokens({ access: "a", refresh: "r" });
+    expect(localStorage.getItem(ACCESS)).toBe("a");
+    expect(localStorage.getItem(REFRESH)).toBe("r");
+    expect(await store.getAccessTokenRaw()).toBe("a");
+    expect(await store.getRefreshToken()).toBe("r");
+    expect(secure.setItem).not.toHaveBeenCalled(); // secure storage 미사용
   });
 
-  it("clearTokens 후 access/refresh 모두 null", async () => {
-    await saveTokens({ access: "acc-1", refresh: "ref-1" });
-    await clearTokens();
-    expect(await getAccessTokenRaw()).toBeNull();
-    expect(await getRefreshToken()).toBeNull();
+  it("clearTokens → localStorage 제거", async () => {
+    await store.saveTokens({ access: "a", refresh: "r" });
+    await store.clearTokens();
+    expect(await store.getAccessTokenRaw()).toBeNull();
+    expect(await store.getRefreshToken()).toBeNull();
   });
 
-  it("verifier 는 토큰과 별도 키로 저장·조회·삭제(C2)", async () => {
-    await saveTokens({ access: "acc-1", refresh: "ref-1" });
-    await saveVerifier("verifier-xyz");
-    expect(await getVerifier()).toBe("verifier-xyz");
-    // verifier clear 가 토큰을 건드리지 않음
-    await clearVerifier();
-    expect(await getVerifier()).toBeNull();
-    expect(await getAccessTokenRaw()).toBe("acc-1");
+  it("verifier 저장/조회/삭제 → localStorage", async () => {
+    await store.saveVerifier("v");
+    expect(localStorage.getItem(VERIFIER)).toBe("v");
+    expect(await store.getVerifier()).toBe("v");
+    await store.clearVerifier();
+    expect(await store.getVerifier()).toBeNull();
   });
 
-  it("모든 쓰기가 secure storage(SecureStorage) 경유 — localStorage 미사용(C5)", async () => {
-    await saveTokens({ access: "acc-1", refresh: "ref-1" });
-    await saveVerifier("v");
-    expect(SecureStorage.setItem).toHaveBeenCalledWith("auth.access_token", "acc-1");
-    expect(SecureStorage.setItem).toHaveBeenCalledWith("auth.refresh_token", "ref-1");
-    expect(SecureStorage.setItem).toHaveBeenCalledWith("auth.pkce_verifier", "v");
+  it("localStorage 접근 throw(private mode 등) → read 는 null graceful", async () => {
+    const spy = vi
+      .spyOn(Storage.prototype, "getItem")
+      .mockImplementation(() => {
+        throw new Error("private mode");
+      });
+    expect(await store.getAccessTokenRaw()).toBeNull();
+    expect(await store.getVerifier()).toBeNull();
+    spy.mockRestore();
+  });
+});
+
+describe("token-store — 네이티브 secure storage 분기(C5 불변)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockIsNative.mockReturnValue(true);
+    secure.store.clear();
+  });
+
+  it("saveTokens → secure storage, getAccessTokenRaw 회수", async () => {
+    await store.saveTokens({ access: "a", refresh: "r" });
+    expect(secure.setItem).toHaveBeenCalledWith(ACCESS, "a");
+    expect(secure.setItem).toHaveBeenCalledWith(REFRESH, "r");
+    expect(await store.getAccessTokenRaw()).toBe("a");
+  });
+
+  it("clearTokens → secure storage remove", async () => {
+    await store.saveTokens({ access: "a", refresh: "r" });
+    await store.clearTokens();
+    expect(secure.remove).toHaveBeenCalledWith(ACCESS);
+    expect(await store.getAccessTokenRaw()).toBeNull();
+  });
+
+  it("verifier secure storage 경유(C2)", async () => {
+    await store.saveVerifier("v");
+    expect(secure.setItem).toHaveBeenCalledWith(VERIFIER, "v");
+    expect(await store.getVerifier()).toBe("v");
   });
 });
