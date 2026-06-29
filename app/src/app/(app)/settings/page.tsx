@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { accountsApi } from "@/lib/api-client";
+import { accountsApi, boardApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
+import type { MyPostBoardType } from "@/lib/api-client";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { Button } from "@/components/base/Button";
 import {
@@ -18,6 +19,7 @@ import {
 import { AccountList } from "@/components/settings/AccountList";
 import { SettingsMenuRow } from "@/components/settings/SettingsMenuRow";
 import { NoticePanel } from "@/components/settings/NoticePanel";
+import { MyPostsListPanel } from "@/components/settings/MyPostsListPanel";
 import { FeedbackPanel } from "@/components/settings/FeedbackPanel";
 import { BugReportPanel } from "@/components/settings/BugReportPanel";
 import { DeleteAccountSection } from "@/components/settings/DeleteAccountSection";
@@ -40,10 +42,50 @@ export default function SettingsPage() {
 
   const [accountsOpen, setAccountsOpen] = useState(false);
   const [noticeOpen, setNoticeOpen] = useState(false);
+  // 메뉴 진입 = 목록 패널. 그 위에 "작성" 으로 write 폼 패널을 스택한다.
+  const [feedbackListOpen, setFeedbackListOpen] = useState(false);
+  const [bugReportListOpen, setBugReportListOpen] = useState(false);
+  const [brokerListOpen, setBrokerListOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [brokerStatementOpen, setBrokerStatementOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+
+  // unread 점/뱃지 — 인증 사용자만 조회. 목록 패널과 queryKey 공유(dedup).
+  const myPostsQuery = useQuery({
+    queryKey: queryKeys.myPosts,
+    queryFn: () => boardApi.myPosts(),
+    enabled: !!user,
+  });
+  const noticesQuery = useQuery({
+    queryKey: queryKeys.notices,
+    queryFn: () => boardApi.listNotices(),
+    enabled: !!user,
+  });
+
+  // board_type 별 unread 점 — 서버 플래그(post.unread) 단일 출처. invalidate 로 자연 갱신.
+  const myPostsUnread = useMemo<Record<MyPostBoardType, boolean>>(() => {
+    const items = myPostsQuery.data?.items ?? [];
+    const result: Record<MyPostBoardType, boolean> = {
+      feedback: false,
+      bug_report: false,
+      broker_statement: false,
+    };
+    for (const p of items) {
+      if (!result[p.board_type] && p.unread === true) {
+        result[p.board_type] = true;
+      }
+    }
+    return result;
+  }, [myPostsQuery.data]);
+
+  // 공지 점 — 서버 EXISTS 판정(has_unread). BE-lag 시 필드 부재면 점 미표시로 degrade.
+  const noticeUnread = noticesQuery.data?.has_unread === true;
+
+  // 메뉴 진입 = 목록 패널 오픈. 읽음은 상세 진입 시 서버에 기록되고 my-posts invalidate 로 점이 갱신된다.
+  const openListPanel = (setOpen: (open: boolean) => void) => {
+    setOpen(true);
+  };
 
   async function handleSignOut() {
     setSigningOut(true);
@@ -90,7 +132,21 @@ export default function SettingsPage() {
           <div className={MENU_GROUP}>
             <SettingsMenuRow
               label="공지사항"
-              onClick={() => setNoticeOpen(true)}
+              dot={noticeUnread}
+              onClick={() => {
+                // 진입 시 서버 읽음 처리 → notices 재조회로 has_unread 갱신(점 해제). NoticePanel 무변경.
+                // POST 성공 후 invalidate(race 회피: 미커밋 상태에서 refetch 시 has_unread=true 유지 방지).
+                // 안읽은 공지가 없으면(점 꺼짐) seen 갱신이 무의미 → 진입마다 중복 쓰기/재조회 skip.
+                if (noticeUnread) {
+                  void boardApi
+                    .markNoticesSeen()
+                    .then(() =>
+                      queryClient.invalidateQueries({ queryKey: queryKeys.notices }),
+                    )
+                    .catch(() => {});
+                }
+                setNoticeOpen(true);
+              }}
             />
           </div>
         </section>
@@ -101,15 +157,18 @@ export default function SettingsPage() {
           <div className={MENU_GROUP}>
             <SettingsMenuRow
               label="의견 보내기"
-              onClick={() => setFeedbackOpen(true)}
+              dot={myPostsUnread.feedback}
+              onClick={() => openListPanel(setFeedbackListOpen)}
             />
             <SettingsMenuRow
               label="오류 신고"
-              onClick={() => setBugReportOpen(true)}
+              dot={myPostsUnread.bug_report}
+              onClick={() => openListPanel(setBugReportListOpen)}
             />
             <SettingsMenuRow
               label="거래내역서 제보"
-              onClick={() => setBrokerStatementOpen(true)}
+              dot={myPostsUnread.broker_statement}
+              onClick={() => openListPanel(setBrokerListOpen)}
             />
           </div>
         </section>
@@ -157,6 +216,30 @@ export default function SettingsPage() {
       {/* 패널들 — 각 메뉴 진입점 */}
       <AccountListPanel open={accountsOpen} onOpenChange={setAccountsOpen} />
       <NoticePanel open={noticeOpen} onOpenChange={setNoticeOpen} />
+      {/* 목록(메인) 패널 — 위에 작성 폼 패널이 스택된다. unread 점은 서버 플래그 + invalidate 로 갱신. */}
+      <MyPostsListPanel
+        open={feedbackListOpen}
+        onOpenChange={setFeedbackListOpen}
+        boardType="feedback"
+        title="의견 보내기"
+        onCompose={() => setFeedbackOpen(true)}
+      />
+      <MyPostsListPanel
+        open={bugReportListOpen}
+        onOpenChange={setBugReportListOpen}
+        boardType="bug_report"
+        title="오류 신고"
+        onCompose={() => setBugReportOpen(true)}
+      />
+      <MyPostsListPanel
+        open={brokerListOpen}
+        onOpenChange={setBrokerListOpen}
+        boardType="broker_statement"
+        title="거래내역서 제보"
+        onCompose={() => setBrokerStatementOpen(true)}
+      />
+
+      {/* 작성 폼 패널(write 전용) — 목록 패널 위에 스택. 제출 성공 시 myPosts invalidate 됨. */}
       <FeedbackPanel open={feedbackOpen} onOpenChange={setFeedbackOpen} />
       <BugReportPanel open={bugReportOpen} onOpenChange={setBugReportOpen} />
       <BrokerStatementPanel

@@ -28,7 +28,7 @@ export function TriageDetail({
             <AuthorCell
               avatarUrl={data.author_avatar_url}
               displayName={data.author_display_name}
-              fallback={data.user_id ?? "작성자 미상"}
+              fallback="회원 미상"
             />{" "}
             · {fmtDateTime(data.created_at)}
           </p>

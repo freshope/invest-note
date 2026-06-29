@@ -5,9 +5,12 @@ true 동시성은 실 DB 가 필요하나, "이미 매핑이 있으면 재생성
 중복 user/매핑을 막는 불변식이므로 이를 단위로 행사한다.
 """
 from contextlib import asynccontextmanager
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from invest_note_api.services.auth_identity import create_user_identity
+from invest_note_api.services.auth_identity import (
+    create_user_identity,
+    link_user_by_verified_email,
+)
 
 
 class _Conn:
@@ -94,10 +97,118 @@ class _RaceConn(_Conn):
 
 
 async def test_backfill_race_no_orphan_user():
-    from uuid import uuid4
-
     winner = uuid4()
     conn = _RaceConn(winner)
     uid = await create_user_identity(conn, "google", "sub-r")
     assert uid == winner  # 승자 UUID 채택(중복 user 생성 안 함)
     assert conn.users == set()  # 방금 INSERT 한 new_id 고아가 DELETE 로 정리됨
+
+
+class _LinkConn:
+    """link_user_by_verified_email 이 치는 SQL(user_profiles SELECT + auth_identities INSERT/SELECT)만 해석."""
+
+    def __init__(self, profiles=(), identities=None):
+        # profiles: [(email, email_verified, user_id), ...]
+        self.profiles = list(profiles)
+        self.identities: dict[tuple[str, str], UUID] = dict(identities or {})
+
+    async def fetch(self, sql, *args):
+        # WHERE lower(email)=lower($1) AND email_verified IS TRUE → distinct user_id.
+        assert "FROM public.user_profiles" in sql
+        email = args[0]
+        seen: list[UUID] = []
+        for e, verified, uid in self.profiles:
+            if e is not None and e.lower() == email.lower() and verified is True and uid not in seen:
+                seen.append(uid)
+        return [{"user_id": u} for u in seen]
+
+    async def fetchrow(self, sql, *args):
+        if "INSERT INTO public.auth_identities" in sql:
+            provider, sub, uid = args
+            if (provider, sub) in self.identities:
+                return None  # ON CONFLICT DO NOTHING → 경쟁자 선점
+            self.identities[(provider, sub)] = uid
+            return {"user_id": uid}
+        assert "FROM auth_identities" in sql  # resolve_user_id 재조회
+        uid = self.identities.get((args[0], args[1]))
+        return {"user_id": uid} if uid else None
+
+
+async def test_link_single_verified_match():
+    # 카카오로 만든 verified 프로필 1개 → 구글 첫 로그인이 같은 user 에 연결(중복 user 생성 안 함).
+    target = uuid4()
+    conn = _LinkConn(profiles=[("a@x.com", True, target)])
+    uid = await link_user_by_verified_email(
+        conn, "google", "g-sub", email="a@x.com", email_verified=True
+    )
+    assert uid == target
+    assert conn.identities[("google", "g-sub")] == target
+
+
+async def test_link_new_side_unverified_returns_none():
+    # 가드: 새 IdP 이메일 미인증 → 연결 안 함(하이재킹 방지). 신규 생성으로 폴백.
+    conn = _LinkConn(profiles=[("a@x.com", True, uuid4())])
+    uid = await link_user_by_verified_email(
+        conn, "google", "g-sub", email="a@x.com", email_verified=False
+    )
+    assert uid is None
+    assert conn.identities == {}
+
+
+async def test_link_new_side_no_email_returns_none():
+    # 가드: 카카오 email scope 미동의(email=None) → 연결 안 함.
+    conn = _LinkConn(profiles=[("a@x.com", True, uuid4())])
+    uid = await link_user_by_verified_email(
+        conn, "google", "g-sub", email=None, email_verified=True
+    )
+    assert uid is None
+
+
+async def test_link_existing_side_unverified_excluded():
+    # 가드: 기존 계정이 email_verified=False/null → 후보 제외. 신고 케이스(카카오 먼저)는 카카오가
+    # is_email_verified=true 를 줄 때만 연결됨을 명시 검증.
+    conn = _LinkConn(profiles=[("a@x.com", False, uuid4()), ("a@x.com", None, uuid4())])
+    uid = await link_user_by_verified_email(
+        conn, "google", "g-sub", email="a@x.com", email_verified=True
+    )
+    assert uid is None
+
+
+async def test_link_no_match_returns_none():
+    conn = _LinkConn(profiles=[])
+    uid = await link_user_by_verified_email(
+        conn, "google", "g-sub", email="a@x.com", email_verified=True
+    )
+    assert uid is None
+
+
+async def test_link_ambiguous_multiple_matches_returns_none():
+    # 이미 중복 계정이 2개 존재 → 어디 붙일지 모호 → 자동 연결 보류(오연결 방지).
+    conn = _LinkConn(profiles=[("a@x.com", True, uuid4()), ("a@x.com", True, uuid4())])
+    uid = await link_user_by_verified_email(
+        conn, "google", "g-sub", email="a@x.com", email_verified=True
+    )
+    assert uid is None
+
+
+async def test_link_case_insensitive_and_provider_lowercased():
+    target = uuid4()
+    conn = _LinkConn(profiles=[("A@X.com", True, target)])
+    uid = await link_user_by_verified_email(
+        conn, "GOOGLE", "g-sub", email="a@x.COM", email_verified=True
+    )
+    assert uid == target
+    assert ("google", "g-sub") in conn.identities
+
+
+async def test_link_race_existing_mapping_adopted():
+    # 동시 첫 로그인: 경쟁자가 같은 (provider,sub) 선점 → INSERT None → resolve 재조회로 승자 채택.
+    winner = uuid4()
+    conn = _LinkConn(
+        profiles=[("a@x.com", True, uuid4())],
+        identities={("google", "g-sub"): winner},
+    )
+    uid = await link_user_by_verified_email(
+        conn, "google", "g-sub", email="a@x.com", email_verified=True
+    )
+    assert uid == winner

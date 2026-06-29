@@ -2,6 +2,7 @@
 import {
   LayoutDashboard,
   Users,
+  UserMinus,
   Wallet,
   ArrowLeftRight,
   Tags,
@@ -43,6 +44,7 @@ const BOARD_GROUP: NavGroup = {
 export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "대시보드", icon: LayoutDashboard },
   { href: "/users", label: "사용자", icon: Users },
+  { href: "/withdrawals", label: "탈퇴 통계", icon: UserMinus },
   { href: "/accounts", label: "계좌", icon: Wallet },
   { href: "/trades", label: "거래", icon: ArrowLeftRight },
   { href: "/custom-tags", label: "커스텀 태그", icon: Tags },

@@ -22,6 +22,7 @@ class PositionResponse(CamelModel):
     country: str
     currency: str
     asset_name: str
+    name_ko: str | None = None  # 표시용 한글명(US). 직렬화 시 nameKo. 없으면 FE 가 assetName fallback.
     exchange: str
     holding_quantity: float
     avg_buy_price: float            # KRW (primary)

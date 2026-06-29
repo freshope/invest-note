@@ -64,6 +64,7 @@ _PAGE_SIZE = 1000
 _DATA_GO_KR_TIMEOUT = 60
 _NAVER_CONCURRENCY = 8          # Naver 자동완성 동시 호출 상한(rate-limit 가드)
 _NAVER_STOCK_BATCH = 1500       # 종목별 교차검증 1회 run 당 처리 상한(첫 전수 검증은 여러 run 분산)
+_US_ALIAS_BATCH = 500           # US name_ko/alias 백필 1회 run 당 네이버 조회 상한(전수는 여러 run 분산)
 _BASDT_MAX_LOOKBACK = 7         # basDt 직전 영업일 fallback 최대 거슬러 일수(주말/휴장 대응)
 
 
@@ -170,6 +171,25 @@ async def upsert_aliases(
     if not tuples:
         return 0
     await conn.executemany(_UPSERT_ALIAS_SQL, tuples)
+    return len(tuples)
+
+
+async def set_name_ko(
+    conn: Any, names: dict[str, str], *, country_code: str = DEFAULT_COUNTRY
+) -> int:
+    """ticker→한글명 매핑을 stocks.name_ko 로 UPDATE. 빈/None 한글명은 skip.
+
+    stocks row 가 없는 ticker 는 UPDATE 가 0행이라 자연히 무시된다(미seed 종목 → 표시 fallback).
+    """
+    tuples = [
+        (country_code, name, ticker) for ticker, name in names.items() if ticker and name
+    ]
+    if not tuples:
+        return 0
+    await conn.executemany(
+        "update stocks set name_ko = $2 where country_code = $1 and ticker = $3",
+        tuples,
+    )
     return len(tuples)
 
 
@@ -668,14 +688,16 @@ async def _naver_us_korean_names(
 async def backfill_us_aliases(
     conn: Any, *, client: httpx.AsyncClient | None = None
 ) -> int:
-    """US 종목 한글 별칭 백필 — (인기 리스트 ∪ 거래이력 ∪ 인덱스 편입) ∩ 활성 US 종목.
+    """US 종목 한글 별칭 백필 — 활성 US 전 종목을 우선순위 순서로 점진 적재.
 
     Naver 에서 한글명을 받아 stock_aliases(source='naver') 에 멱등 적재한다. alias_chosung 은
     upsert_aliases 가 계산 → 초성 검색도 자동 지원. seed_us 말미(update_us_index 직후)에서 호출.
 
-    인덱스 편입(us_index)은 "유동성 상위 청크" 커버리지의 주력 — 미보유 종목 첫 검색도 한글로
-    덮는다. naver_checked_at(KR 교차검증과 공유, provider 무관 "Naver 조회 완료 시각") 으로 종목당
-    1회만 조회한다 — 한글명이 없어 별칭이 안 생긴 종목도 checked 로 기록해 매 run 재조회를 막는다.
+    대상은 활성 US 전 종목이며 보유/인기(_US_POPULAR_TICKERS ∪ 거래이력) → SP500(us_index) →
+    롱테일 순으로 정렬해 run 당 _US_ALIAS_BATCH 만 조회한다(전수는 여러 run 에 분산, 주기 seed_us
+    실행이 frontier 를 전진). naver_checked_at(KR 교차검증과 공유, provider 무관 "Naver 조회 완료
+    시각") 으로 종목당 1회만 조회 — 한글명이 없어 별칭이 안 생긴 종목도 checked 로 기록해 매 run
+    재조회를 막는다.
     """
     traded = await conn.fetch(
         "select distinct ticker_symbol from trades "
@@ -684,12 +706,19 @@ async def backfill_us_aliases(
         COUNTRY_US,
     )
     target = set(_US_POPULAR_TICKERS) | {r["ticker_symbol"] for r in traded}
+    # 활성 US 전 종목을 대상으로 하되 보유/인기(0) → SP500(1) → 롱테일(2) 우선순위로 정렬하고
+    # run 당 _US_ALIAS_BATCH 만 처리한다(전수는 여러 run 에 분산). naver_checked_at 커서가
+    # frontier 를 전진시키므로 다음 run 이 다음 batch 를 이어받는다.
     pending = await conn.fetch(
         "select ticker from stocks "
-        "where country_code = $1 and naver_checked_at is null "
-        "and (ticker = any($2::text[]) or us_index is not null)",
+        "where country_code = $1 and is_active and naver_checked_at is null "
+        "order by (case when ticker = any($2::text[]) then 0 "
+        "               when us_index is not null     then 1 "
+        "               else 2 end), ticker "
+        "limit $3",
         COUNTRY_US,
         list(target),
+        _US_ALIAS_BATCH,
     )
     tickers = [r["ticker"] for r in pending]
     if not tickers:
@@ -697,6 +726,8 @@ async def backfill_us_aliases(
     names, checked = await _naver_us_korean_names(sorted(tickers), client=client)
     aliases = [{"ticker": t, "alias": n, "source": "naver"} for t, n in names.items()]
     n = await upsert_aliases(conn, aliases, country_code=COUNTRY_US)
+    # alias(검색용)와 별개로 표시용 canonical 한글명을 stocks.name_ko 에도 적재.
+    await set_name_ko(conn, names, country_code=COUNTRY_US)
     # 확정 조회된 종목만 checked 로 기록 → 한글명 없음(None)은 박제(다음 run skip)하되,
     # 일시 실패(예외)는 제외해 다음 run 에 재시도한다(전체 outage 의 영구 오염 방지).
     if checked:

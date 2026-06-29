@@ -5,12 +5,10 @@ import logging
 import re
 import uuid
 from collections import defaultdict
-from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 
 import asyncpg
-import cachetools
-from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 
 from invest_note_api.auth.dependency import get_current_user
@@ -22,8 +20,15 @@ from invest_note_api.db_ops.custom_tags_repo import (
     delete_custom_tag,
     list_custom_tags,
 )
+from invest_note_api.db_ops.import_staging_repo import (
+    STAGING_TTL_SECONDS,
+    delete_import_staging,
+    get_import_staging,
+    put_import_staging,
+)
 from invest_note_api.db_ops.pnl_sync import recalc_group_pnl
 from invest_note_api.db_ops.trades_repo import (
+    IMPORT_LOCKED_FIELDS,
     PNL_AFFECTING_FIELDS,
     acquire_trade_group_lock,
     assert_account_exists,
@@ -89,25 +94,9 @@ from invest_note_api.schemas.trade_import import (
 from invest_note_api.schemas.trade_response import TradeSummaryResponse
 from invest_note_api.broker_import import PARSERS
 from invest_note_api.broker_import.ticker_resolver import resolve_tickers
+from invest_note_api.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class TradeStagingState:
-    """import preview → commit 사이의 staging cache.
-
-    값 형식: {staging_id: {"user_id": str, "rows": list[dict], "parse_errors": list[dict], ...}}
-    `app.state.trade_staging` 에 보관하고 라우터에서 `Depends(get_trade_staging_state)` 로 주입.
-    """
-
-    cache: cachetools.TTLCache = field(
-        default_factory=lambda: cachetools.TTLCache(maxsize=256, ttl=600)
-    )
-
-
-def get_trade_staging_state(request: Request) -> TradeStagingState:
-    return request.app.state.trade_staging
 
 
 router = APIRouter(prefix="/trades")
@@ -467,6 +456,11 @@ async def update_trade(
         if existing is None:
             raise APIError(ERR_TRADE_NOT_FOUND, 404)
 
+        # 거래내역서(import) 거래의 금액(사실) 필드는 불변 — 잠금 5필드 patch 시도 거부.
+        # 메타(전략/감정/태그/메모)는 그대로 허용해 사용자 저널링 여지를 남긴다.
+        if existing.origin == "IMPORT" and fields & IMPORT_LOCKED_FIELDS:
+            raise APIError("거래내역서에서 가져온 거래는 금액 정보를 수정할 수 없어요.", 422)
+
         patch, fields = strip_sell_auto_derived(patch, fields, existing.trade_type)
         if not patch:
             return Response(status_code=204)
@@ -657,7 +651,7 @@ async def import_preview(
     account_id: str | None = None,
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
-    staging: TradeStagingState = Depends(get_trade_staging_state),
+    settings: Settings = Depends(get_settings),
 ) -> ImportPreviewResponse:
     """파일을 파싱해 중복 체크 후 staging cache에 저장한다. commit 전에 호출."""
     filename = file.filename or ""
@@ -682,11 +676,29 @@ async def import_preview(
     now_utc = datetime.now(timezone.utc)
 
     # ticker 해결 (로컬 stocks 마스터 조회 — public 테이블이라 plain connection)
-    asset_names = {t.asset_name for t in parse_result.trades}
-    ticker_hints = {t.asset_name: t.ticker_hint for t in parse_result.trades if t.ticker_hint}
+    # (country_code, asset_name) 키로 country-scoped 매칭 — US 종목명이 KR alias 에
+    # 오매칭(예: 애플→PLUS 애플채권혼합)되는 것을 막는다.
+    resolve_items = {(t.country_code, t.asset_name) for t in parse_result.trades}
+    ticker_hints = {
+        (t.country_code, t.asset_name): t.ticker_hint
+        for t in parse_result.trades
+        if t.ticker_hint
+    }
+    # ISIN(토스 해외 USD 행) 은 ticker_hint 와 분리 — OpenFIGI 로 해소(ISIN 매칭 우선).
+    isins = {
+        (t.country_code, t.asset_name): t.isin
+        for t in parse_result.trades
+        if t.isin
+    }
 
     async with pool.acquire() as conn:
-        ticker_map = await resolve_tickers(asset_names, ticker_hints, conn=conn)
+        ticker_map = await resolve_tickers(
+            resolve_items,
+            ticker_hints,
+            conn=conn,
+            isins=isins,
+            openfigi_api_key=settings.openfigi_api_key or None,
+        )
 
     # 기존 거래에서 시그니처 셋 구성 (중복 판단용)
     # 파싱 결과의 KST 일자 min/max 범위로만 fetch — 사용자 전체 trades fetch 회피.
@@ -722,7 +734,7 @@ async def import_preview(
     ]
 
     for pt in parse_result.trades:
-        resolved = ticker_map.get(pt.asset_name)
+        resolved = ticker_map.get((pt.country_code, pt.asset_name))
         if resolved is None:
             unresolved_ticker_count += 1
             parse_errors.append(ImportError(
@@ -768,7 +780,8 @@ async def import_preview(
             "traded_at_kst_full": kst_full,  # 시각 정보 있을 때만 (머지 traded_at 갱신용)
             "commission": pt.commission,
             "tax": pt.tax,
-            "country_code": DEFAULT_COUNTRY,
+            "country_code": pt.country_code,
+            "exchange_rate": pt.exchange_rate,
             "exchange": resolved["exchange"],
             "_sig_date": kst_str,
             "_sig_ticker": ticker,
@@ -776,15 +789,28 @@ async def import_preview(
         }
         rows_to_stage.append(row_data)
 
+    # staged 중 해외(country_code != KR) 행 수. resolved(ticker 매칭된) 행만 집계되므로
+    # ISIN 미해결 USD 종목은 포함되지 않는다 — FE 의 "해외 N건 포함" 안내 분기에 사용.
+    foreign_count = sum(1 for r in rows_to_stage if r["country_code"] != DEFAULT_COUNTRY)
+
     staging_id = str(uuid.uuid4())
-    staging.cache[staging_id] = {
-        "user_id": str(user.id),
-        "rows": rows_to_stage,
-        "parse_errors": [e.model_dump() for e in parse_errors],
-        "usd_skip_count": parse_result.usd_skip_count,
-        "broker_key": broker_key,
-        "account_hint": parse_result.account_hint,
-    }
+    # acquire_for_user 로 users 행 프로비저닝(FK) 후 같은 conn 으로 staging 저장.
+    # expires_at 은 (느릴 수 있는) OpenFIGI 해소가 끝난 지금 기준으로 잡는다 — preview 시작
+    # 시각(now_utc)으로 잡으면 해외 해소 시간만큼 commit 창이 깎인다.
+    async with acquire_for_user(pool, user.id) as conn:
+        await put_import_staging(
+            conn,
+            staging_id,
+            str(user.id),
+            {
+                "rows": rows_to_stage,
+                "parse_errors": [e.model_dump() for e in parse_errors],
+                "usd_skip_count": parse_result.usd_skip_count,
+                "broker_key": broker_key,
+                "account_hint": parse_result.account_hint,
+            },
+            datetime.now(timezone.utc) + timedelta(seconds=STAGING_TTL_SECONDS),
+        )
 
     # 계좌가 지정되었으면 사용자에게 commit 전에 정합성 위반을 노출한다.
     validation_errors: list[ImportError] = []
@@ -803,6 +829,7 @@ async def import_preview(
         duplicate_count=dup_count,
         error_count=len(parse_errors),
         usd_skip_count=parse_result.usd_skip_count,
+        foreign_count=foreign_count,
         unresolved_ticker_count=unresolved_ticker_count,
         errors=parse_errors,
         validation_errors=validation_errors,
@@ -815,23 +842,23 @@ async def import_commit(
     body: ImportCommitRequest,
     user: AuthenticatedUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool),
-    staging: TradeStagingState = Depends(get_trade_staging_state),
 ) -> ImportCommitResponse:
     """preview에서 staging된 거래를 실제로 INSERT한다."""
-    staged = staging.cache.get(body.staging_id)
-    if staged is None:
-        raise APIError("staging이 만료되었거나 존재하지 않습니다. 파일을 다시 업로드해주세요.", 400)
-    if staged["user_id"] != str(user.id):
-        raise APIError("권한이 없습니다.", 403)
-
-    rows: list[dict] = staged["rows"]
-    usd_skip_count: int = staged["usd_skip_count"]
     commit_errors: list[ImportError] = []
     inserted_count = 0
     merged_count = 0
     skipped_count = 0
 
     async with acquire_for_user(pool, user.id) as conn:
+        staged = await get_import_staging(conn, body.staging_id)
+        if staged is None:
+            raise APIError("staging이 만료되었거나 존재하지 않습니다. 파일을 다시 업로드해주세요.", 400)
+        if staged["user_id"] != str(user.id):
+            raise APIError("권한이 없습니다.", 403)
+
+        rows: list[dict] = staged["rows"]
+        usd_skip_count: int = staged["usd_skip_count"]
+
         await assert_account_exists(conn, body.account_id, user.id)
 
         # staged rows를 (account_id, ticker, country) 그룹으로 분할 후 그룹별로 처리
@@ -900,15 +927,20 @@ async def import_commit(
                     continue
 
                 # 방어 가드: import 경로는 create 의 _foreign_requires_exchange_rate validator 를
-                # 우회한다. 현재 staging 은 country_code=KR 하드코딩이라 가드가 발동하지 않지만,
-                # Phase C(해외 import) 추가 시 exchange_rate(미설정→DB default 1.0) 누락이 조용히
-                # 통과해 해외 원가가 왜곡되는 것을 막는다. 해외 import 도입 시 이 가드가 강제로
-                # exchange_rate 처리를 재검토하게 한다. KR 하드코딩 전제를 코드로 못박는다.
-                if currency_for_country(row["country_code"]) != CURRENCY_KRW:
-                    raise APIError(
-                        "해외(비-KRW) 거래 import 는 거래 시점 환율(exchange_rate)이 필요합니다.",
-                        400,
-                    )
+                # 우회한다. 해외(비-KRW) 행은 exchange_rate(원/달러)를 반드시 실어 INSERT 한다.
+                # exchange_rate 가 1.0/누락이면 native USD 금액이 KRW 로 오인 집계되므로(원가
+                # ~환율배 부풀림), 그 행만 commit_error 로 처리하고 배치는 계속한다(침묵 통과 금지).
+                row_country = row["country_code"]
+                row_rate = row.get("exchange_rate", 1.0)
+                if (
+                    currency_for_country(row_country) != CURRENCY_KRW
+                    and row_rate == 1.0
+                ):
+                    commit_errors.append(ImportError(
+                        row_no=0,
+                        reason=f"{row['asset_name']} 해외 거래 환율 누락 — exchange_rate 가 필요합니다.",
+                    ))
+                    continue
                 insert_row = {
                     "account_id": str(body.account_id),
                     "asset_name": row["asset_name"],
@@ -920,8 +952,10 @@ async def import_commit(
                     "traded_at": traded_at_utc,
                     "commission": row["commission"],
                     "tax": row["tax"],
-                    "country_code": row["country_code"],
+                    "country_code": row_country,
+                    "exchange_rate": row_rate,
                     "exchange": row["exchange"],
+                    "origin": "IMPORT",
                 }
                 to_insert.append(insert_row)
                 seen_sigs.add(sig)
@@ -1006,7 +1040,10 @@ async def import_commit(
                 logger.exception("import commit 처리 오류 user_id=%s asset=%s", user.id, err_asset)
                 commit_errors.append(ImportError(row_no=0, reason=f"{err_asset} 처리 오류 — 잠시 후 다시 시도해주세요."))
 
-    del staging.cache[body.staging_id]
+        # 모든 그룹이 오류 없이 처리됐을 때만 staging 제거 — transient 실패가 섞여 있으면
+        # 보존해 사용자가 재업로드(+OpenFIGI 재해소) 없이 commit 재시도할 수 있게 한다.
+        if not commit_errors:
+            await delete_import_staging(conn, body.staging_id)
 
     return ImportCommitResponse(
         inserted_count=inserted_count,

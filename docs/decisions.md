@@ -4,6 +4,104 @@
 
 ---
 
+## 2026-06-28 | 해외 종목 한글명 — 백필 대상을 인기/SP500/거래이력 → 활성 US 전 종목 점진 적재
+
+- **맥락:** name_ko 결정(이 문서 아래)의 트레이드오프 ⓒ "커버리지는 naver 백필분(인기+SP500+거래이력)에 한정 → 롱테일 US 는 영문(구조적 상한)" 을 해소한다. `backfill_us_aliases` 가 `(_US_POPULAR_TICKERS ∪ 거래이력) ∪ us_index` 로만 pending 을 골라, nasdaqtrader 전 유니버스(~8–10천)의 롱테일은 `name_ko`(표시)·`stock_aliases`(검색) 둘 다 영영 빈 채였다.
+- **결정 ① 대상을 활성 US 전 종목으로 확대하되, KR 교차검증의 batch-커서 패턴을 그대로 미러링.** pending 쿼리만 교체: `where is_active and naver_checked_at is null` + `ORDER BY (보유/인기 0 → SP500 1 → 롱테일 2), ticker` + `LIMIT _US_ALIAS_BATCH(=500)`. 적재(`set_name_ko`/`upsert_aliases`)·rate가드(`_NAVER_CONCURRENCY=8`)·커서(`naver_checked_at`, found/not-found 모두 박제) 전부 무수정 재사용.
+- **결정 ② 점진 적재는 주기 `stock_seed us` 실행에 의존.** `naver_checked_at` 커서가 run 마다 frontier 를 전진시켜 ~16일에 걸쳐 전 유니버스를 sweep. 우선순위 ORDER BY 로 사용자 체감(보유/인기/SP500)이 항상 먼저 채워진다. (US seed cron 은 운영에 등록됨.)
+- **이유:** 제약(① 리미트 회피 ② 기존 로직 재사용·수정 최소 ③ 점진 ④ 불필요 호출 차단 ⑤ 회귀 최소)을 한 번에 만족하는 최소 변경 — KR 이 이미 `_NAVER_STOCK_BATCH=1500` 로 "첫 전수검증 여러 run 분산" 을 검증한 선례라 신규 메커니즘 0. backfill 이 alias 와 name_ko 를 같은 네이버 조회로 동시 적재하므로 확장이 **표시·검색 양쪽**을 함께 개선한다(엉뚱한 곳 수정 아님, advisor 검토).
+- **트레이드오프:** ⓐ 롱테일 다수는 한글명 0건 → 네거티브 캐시만 채움(1회 조회 후 박제, 재호출 없음 — "불필요 호출"은 1종목 1회로 상한). ⓑ batch 500/일 → 전수 sweep 에 ~16일(즉시성 포기, 점진성 채택). 참조: [[project_stock_name_ko]]·[[project_naver_checked_at_dual_use]].
+
+---
+
+## 2026-06-28 | 게시판 읽음 상태 — localStorage → DB 이전 (공지 high-water mark + 내 글 per-post)
+
+- **맥락:** 직전 board-notify 결정②(이 문서 아래)가 읽음을 기기 `localStorage`(`board-seen.ts`)에만 둬서 ⓐ 기기 변경·재설치 시 모든 글이 안읽음으로 부활, ⓑ 신규 가입자가 `last-seen-notice=null` 이라 가입 전 옛 공지까지 전부 안읽음으로 보였다(공지 메뉴 점). 그 결정의 트레이드오프 "read receipt deferred"를 해소하며 판정을 DB로 옮긴다. **운영 미적용 구간이라 데이터 마이그레이션/backfill 불필요.**
+- **결정 ① 두 메커니즘 그대로 DB 이전, 통합 안 함.** 공지 = per-user **high-water mark**(`user_notice_state.notices_seen_at`), 내 글(feedback/bug_report/broker_statement) + 거래내역서 팝업 = **per-(user,post)**(`board_post_reads.read_at` / `popup_acked_at` 두 nullable 컬럼, 마이그레이션 0012). 통합하지 않은 이유: 공지를 per-post 로 만들면 신규 가입자에게 가입 전 전체 공지의 read 행을 backfill 해야 하는데, high-water mark 가 이 문제를 구조적으로 회피한다. 읽음과 팝업 ack 는 독립 이벤트(상세 안 열고 팝업만 닫기 가능)라 같은 행의 두 컬럼으로 분리.
+- **결정 ② 신규 가입자 = `COALESCE(notices_seen_at, users.created_at)` fallback.** `user_notice_state` 행은 **lazy 생성**(공지 메뉴 첫 열람 시 upsert)이라 hot path `acquire_for_user` 무변경. 행이 없으면 가입 시각으로 떨어져 가입 전 공지는 점이 안 뜬다(problem ⓑ 구조적 해결, provisioning 변경·backfill 0).
+- **결정 ③ unread 는 서버가 판정해 플래그로 내려줌(FE `isMyPostUnread` 제거).** my-posts item += `unread`/`popup_acked`, notices += `has_unread`(서버 EXISTS — `pinned_first` 정렬로 인한 client-side 오판도 해소). 서버 unread 는 기존 규칙을 정확히 복제: 어드민 댓글 `created_at` + (status≠'open' 일 때만) `updated_at` 을 활동시각으로, `read_at` 과 수치 비교. 신규 엔드포인트 `POST /board/{notices/seen, posts/{id}/read, posts/{id}/ack-popup}`(전부 204, 소유권 미충족 404).
+- **이유:** 목적이 기기간 동기화 + 신규 가입자 옛 공지 점 제거 둘 뿐이라 단일 timestamp(공지)·소형 per-post 테이블(내 글)로 충분. 서버가 단일 출처로 판정하면 FE 의 비반응형 localStorage 강제 재계산(`recomputeTick`)이 사라지고 invalidate 로 자연 갱신된다.
+- **트레이드오프:** ⓐ FE 가 read/seen/ack 를 fire-and-forget POST(.then→invalidate, `.catch(()=>{})`)로 보내 **실패 시 점이 안 꺼진다 — 그러나 이는 서버에 실제로 기록 안 된 진실과 일치**(localStorage 의 "항상 성공"이 오히려 비정상). 오프라인 재시도 큐는 범위 밖(best-effort), 이미 읽음/안읽음 없음일 때 POST 를 막는 no-op 가드로 실패 표면을 축소. ⓑ `popup_acked` 는 OTA 선행(FE>BE) 구간에 필드가 없어 `!popup_acked` 면 매 진입 팝업 오발 → **`=== false` 명시 비교 + 타입 optional** 로 안전 degrade(`unread` 도 `=== true`). ⓒ 비-UUID `post_id` 는 `post_is_owned_by` 의 UUID 가드로 404(이전엔 asyncpg 인코딩 500). ⓓ 진입 팝업 dedup 도 기기 로컬(`acked-resolved-post-ids`)에서 서버 `popup_acked` 로 이전 → 기기 무관 1회. 참조: [[project_board_structure]]·[[project_broker_statement_submission]]·[[project_alembic_migrations]].
+
+---
+
+## 2026-06-28 | 해외 종목 한글 표시명 — name_ko 별도 컬럼 오버레이(저장값 불변) + 적재 이원화
+
+- **맥락:** US 종목은 `stocks.asset_name` 이 영문(nasdaqtrader Security Name)이라, 개별 등록은 "Apple Inc."(검색 영문명)·토스 일괄등록은 "애플"(PDF 파싱 한글명)이 각각 `trades.asset_name` 에 박제돼 같은 종목이 등록 경로별로 다르게 표시됐다. 한글명은 마스터 canonical 이 아니라 검색 전용 `stock_aliases(source='naver')` 에만 존재. 거래/보유 표시를 한글 우선으로 통일하려 했다.
+- **결정 ① 표시명은 `stocks.name_ko`(마이그레이션 0011) 별도 nullable 컬럼 오버레이.** `asset_name` 을 덮어쓰지 않고 조회 응답에 `name_ko` 를 추가, 표시 = `COALESCE(name_ko, asset_name)`(FE `name_ko || asset_name` — 빈문자열도 fallback). 거래는 `trades_repo` 두 read 에 `LEFT JOIN stocks ON (country_code, ticker)`, 포트폴리오는 그 로더(`list_trades_with_account`)를 이미 써서 `domain/portfolio.py` Lot/Position carry-through 만 추가. KR 은 asset_name 이 이미 한글이라 name_ko 비움.
+- **결정 ② 적재 이원화 — 기존분은 마이그레이션 일회성 복사, 신규분은 `set_name_ko`.** 기존 US 한글명은 이미 `stock_aliases(naver)` 에 있어 0011 `upgrade()` 가 `min(alias)` 로 `stocks.name_ko` 에 일회성 복사. 신규 종목은 `backfill_us_aliases` 가 `set_name_ko` 로 적재.
+- **이유:** `asset_name` 은 FE 그룹핑/매칭 키(holdings·realized-pnl·concentration)·BE lot 키라, 응답값을 덮으면 계산 키가 오염된다 → 표시 전용 필드 분리가 안전. 한글명을 stocks canonical(name_ko)로 끌어올리면 표시·검색이 같은 출처를 공유. 마이그레이션 복사가 **필수**인 이유: `set_name_ko` 는 `naver_checked_at IS NULL` 신규 종목만 도는 `backfill_us_aliases` 안에서만 호출돼, 이미 조회된 인기주(AAPL·SP500 = 사용자 보유 대부분)는 영영 제외 → 복사 없으면 기능이 기존 데이터에 무효과(advisor 가 지적, 로컬 532 checked/495 한글별칭 실증).
+- **트레이드오프:** ⓐ 토스 거래가 파싱한 한글명과 마스터 name_ko 가 다른 변형이면 표시는 **마스터명 우선**(의도된 canonical 화, 크래시·영문퇴행 아님). ⓑ name_ko 는 `list_trades_with_account` JOIN 경로에서만 채워져 `list_trades`(SELECT *) 로 만든 Position(분석 탭 집중도)은 항상 None → 같은 US 종목이 홈(한글)/분석(영문)으로 갈림(`Position.name_ko` 주석으로 트랩 명시, 후속). ⓒ 커버리지는 naver 백필분(인기+SP500+거래이력)에 한정 → 롱테일 US 는 영문(구조적 상한). ⓓ ticker 조인은 case-sensitive(US 대문자 관례, 미스매치 시 영문 graceful fallback). ⓔ **배포 시 0011 선/동시 적용 필수** — 코드가 `s.name_ko` 무조건 참조라 미적용 시 거래/포트폴리오/자산 조회 500.
+
+---
+
+## 2026-06-28 | 거래내역서 제보 알림 — 인앱(앱 진입) + 클라이언트 로컬 읽음 + 어드민 활동 트리거
+
+- **맥락:** 사용자가 거래내역서를 제보하면 그 증권사 일괄등록이 실제 추가됐을 때 알릴 방법이 전혀 없었고, 사용자가 쓴 게시판 글(의견/오류/제보)에 어드민이 단 답변을 앱에서 되읽을 경로조차 없었다(답변은 어드민 콘솔에서만). 푸시·이메일 인프라 전무 — 서버→사용자 능동 채널은 강제 업데이트 게이트 하나뿐.
+- **결정 ① 푸시 없이 인앱(앱 진입 시점) 방식.** `GET /board/my-posts`(본인 글+어드민 답변+첨부 presigned GET, **user_id 토큰 스코프**가 유일 격리)로 read-back. 의견/오류/거래내역서 제보 메뉴 → 목록 메인 패널(공지 스타일 행: 상태·미리보기·글별 읽기 점) → 상세(첨부 이미지 라이트박스/PDF·엑셀 `openExternal` 다운로드, 어드민 답변·보기 전용). 앱 진입 시 미확인 resolved 제보 1건을 바텀시트 팝업(`MySubmissionsPopupGate`, **강제업데이트 판정 우선**·`useUpdateRequired` 공유 훅, resolved post-id 집합으로 1회 dedup).
+- **결정 ② 읽음 상태 = 클라이언트 로컬(localStorage), 서버 읽음 테이블 신설 안 함.** 글별 읽기 점 = **어드민 활동(is_admin 답변 OR status≠'open')이 있고** 마지막 상세 열람(`lastReadMyPost[postId]`) 이후이면 점 — 갓 쓴 본인 글(open+댓글0)은 점 없음. 메뉴 점은 그 type 안읽은 글에서 파생.
+- **결정 ③ 트리거 = 어드민이 status→resolved / 답변 댓글(is_admin=true) / 공지 작성(사람 판정).** `metadata.broker`는 자유 텍스트라 증권사명 **자동 문자열 매칭 금지**(오매칭 시 거짓 "지원됨" 고지). 어드민 거래내역서 제보 댓글 작성 UI 추가(기존 `BoardCommentThread`/`Form` 재사용, 반려 사유). 작성자 표시 raw UUID → "회원 미상", `[unsupported_broker]`/`[overseas_trade]` prefix 사용자 노출 제거.
+- **이유:** 푸시/이메일은 단일 유스케이스엔 인프라 0 대비 과투자. 읽음을 서버에 두면 기기간 동기화·어드민 읽음 확인이 가능하나, 목적이 "네가 부탁한 게 됐다" 통지지 읽음 증명이 아니라 client-local 로 충분(스키마 무변경). 작성자 UUID 하드닝은 `user_profiles` 가 Supabase 인증 경로에서 런타임 미수집이라 프로필 없는 작성자가 raw UUID 로 노출되던 것 차단 — 이름 표시는 auth cutover 가 BE flow 로그인마다 프로필을 채우며 자연 해결([[project_auth_cutover_exec_method]]).
+- **트레이드오프:** ⓐ 읽음=기기 로컬 → 재설치/타 기기서 unread·팝업 재노출, 어드민 개별 읽음 확인 불가(read receipt deferred). ⓑ 첨부 presigned GET 을 매 my-posts 호출 발급(비용 수용). ⓒ 기존 profile-less 글은 작성자가 BE flow 재로그인(2c force-update 가 강제) 전까지 "회원 미상" — 즉시 보정은 user_profiles 백필 1회. ⓓ Apple 은 재인증 시 이름 미전송 → 프로필 있어도 display_name null 가능 → UUID fallback 하드닝이 2c 후에도 유효. 참조: [[project_broker_statement_submission]]·[[project_board_structure]].
+
+---
+
+## 2026-06-28 | 회원 탈퇴 — 하드삭제 유지 + 감사 로그(account_deletions)
+
+- **맥락:** 기존 탈퇴는 하드삭제(DELETE /me → `public.users` 삭제 → FK cascade + Supabase Auth 삭제)라 탈퇴자가 아무 흔적도 남기지 않아 탈퇴율·생존기간·사유를 사후 집계할 데이터가 0이었다. 탈퇴 비중·이유를 측정해야 한다는 요구.
+- **결정:** 하드삭제 정책은 그대로 두고, 삭제 직전 PII 없는 감사 행 1건을 `public.account_deletions`(마이그레이션 0009, 컬럼 user_id/signup_at/reason/deleted_at, **users FK 없음**)에 남긴다. reason 은 BE 에서 `Literal["not_useful","not_using","privacy","other"] | None` 강제. 기록은 `INSERT ... SELECT FROM users WHERE id=$1`(멱등). 어드민 패널 `/withdrawals`(`GET /admin/deletion-stats`)로 누적/탈퇴율/평균 사용기간/사유 분포/일별 추이 조회. churn_rate 분모 = `total_users + total_deletions`.
+- **이유:** 소프트삭제/익명화 전환은 PII 보존 리스크 + 복잡도만 늘리고, 측정 목적만이면 감사 로그로 충분. FK 를 빼는 건 users(id) FK ON DELETE CASCADE 면 감사 행이 함께 지워져 목적을 잃기 때문. reason Literal 강제는 변조 클라이언트의 임의 문자열이 어드민 사유 분포 버킷을 오염시키는 것 차단(FE 에 자유 텍스트 입력 없음). churn 분모를 "가입한 적 있는 전체(현재 가입자+탈퇴자)"로 둔 건 현재 `users` 가 탈퇴자를 이미 제외하므로 그래야 누적 이탈률이 의미를 가져서.
+- **트레이드오프:** delete→재가입 사용자는 churn 분모 양쪽에 카운트되어 이탈률이 약간 과대(cosmetic, 재가입 추적 미구현). Auth 정리 실패(502) 시 데이터는 삭제됐으나 Auth 신원이 잠시 잔존 — FE 는 502 를 정상 종료(로그아웃→로그인)로 처리해 사용자 혼란을 막되, 신원 물리 잔존은 재로그인 시 빈 계정 재프로비저닝으로 흡수(기존 설계). PostHog `account_deleted` 이벤트(대안 1단계)는 BE 권위 집계로 충분해 미도입.
+
+---
+
+## 2026-06-27 | 토스 해외 ISIN 코드 매칭 (OpenFIGI) — 종목명 매칭 → ISIN 정확 매칭
+
+- **맥락:** 직전 "토스 해외(USD) 일괄등록"(아래 엔트리)은 달러 행을 **한글 종목명**으로 매칭했다 — 원리적 오매칭 리스크 + 미해결 노이즈. QA-A2 실측: 토스 대형 샘플 USD 중 **101건 미해결**(알파벳 A 이름포맷 54·더치 브로스 master 부재 47). 토스가 행에 ISIN(`US69608A1088`)을 주므로 이를 권위 식별자로 써 정확 매칭한다. [[project_broker_import_parsers]] Phase 2 의 정밀도 보강.
+- **결정 ① import 시점 ISIN→ticker 해소 + `isin_ticker_map` 캐시 (마스터 ISIN 백필 아님).** OpenFIGI `/v3/mapping` 은 ISIN **입력 전용** — 응답에 ISIN 이 없어(ticker·exchCode 만 반환) `stocks` 마스터에 ISIN 컬럼을 전수 백필할 방법이 없다. 따라서 **import 가 만난 미해결 ISIN 만 그 시점에 해소**하고 `isin_ticker_map`(isin PK·ticker·exch_code·country_code·name·resolved·source·resolved_at)에 캐시한다. `resolved=false` 는 **negative cache** — 미해결 ISIN 의 매 import 재호출(rate limit 소모)을 막는다. 마이그레이션 0008(head, 0007 위), 컬럼/신규테이블이라 superuser 불요·로컬 적용만(운영 confirm).
+- **결정 ② 소스 = OpenFIGI(FIGI), license-clean.** FIGI 는 public domain·상업 이용·재배포 허용·출처표기 불요. CUSIP(라이선스 함정)을 출력하지 않아 구조적으로 회피. Rate: 무키 25req/분·10건/요청, 옵션 무료키(`OPENFIGI_API_KEY`) 시 25req/6초·100건/요청. 키 미설정이어도 무키 경로로 동작(graceful) — 옵션 env 단일.
+- **결정 ③ ISIN 매칭 > 종목명 폴백 (우선순위 고정).** `resolve_tickers` 가 ISIN 있는 항목은 캐시→OpenFIGI 배치→캐시 upsert→ticker 로 `stocks` 조회(exchange 채움) 순으로 해소하고, **해소 성공 시 그 ticker 가 권위**(`stocks` 마스터에 없어도 `exchange=""` 로 성공 — ticker_hint 와 동일 사상). OpenFIGI 가 아무것도 못 줬을 때(+negative cache hit)에만 기존 종목명 매칭으로 폴백. `ParsedTrade.isin` 은 `ticker_hint` 와 **별도 필드**(ticker_hint="이미 ticker"=KR 6자리, isin="조회 필요" — 혼용 시 resolver 가 ISIN 을 code 로 오용).
+- **결정 ④ picker = `exchCode=='US'`(합성) ∩ `securityType ∈ {Common Stock, ETP, ...}` 우선, `data[0]` 직사용 금지.** OpenFIGI 는 ISIN 1건당 글로벌 거래소·통화별 후보 수백 행 반환(PLTR 229행: PLTRCHF/0A7R(런던)/TL0 등 외국상장 혼재). **`data[0]` 신뢰 불가** — AMZN 의 `data[0]` exchCode 가 `PE`(페루)다. `_choose` 가 후보를 (US거래소 ∩ 우선타입)=rank0 으로 점수화해 `min()` 선택 → 외국상장 silent 오해소 방지(QA 실측: 11 ISIN 각 rank0 후보 정확히 1 ticker, flip-risk 0). **exchCode 용도는 ticker 디스앰비규에이션 전용** — country 는 파서가 달러 섹션 행에 이미 `country_code="US"` 스탬프(`exch_code_to_country` 는 현재 항상 US 반환, 유일 해외 마스터).
+- **성과 (QA #18 실 OpenFIGI 무키 + 실 dev DB 실측):**
+  - **미해결 101 → 0** — 종목명 매칭 시절 미해결 101건이 ISIN 경로로 토스 대형 샘플 USD 전건 해소(0 미해결).
+  - **share-class 정밀도** — 알파벳 A(`US02079K3059`) → **GOOGL**(NASDAQ, GOOG Class C 아님). 종목명 "알파벳 A" 가 보장 못 하는 정밀도를 ISIN 이 디스앰비규에이트.
+  - 종목명 매칭으론 미해결이던 케이맨 게임하우스(`KYG3731B1086`)→GMHS(NASDAQ), 더치 브로스(`US26701L1008`)→BROS(NYSE) 정확 해소·US 마스터 존재.
+  - 캐시 positive(2회차 OpenFIGI 0회)·negative(합성 미해결 2회차 0회·resolved=false 저장)·폴백 양성(애플+가짜ISIN→종목명 폴백 AAPL)·KRW 무회귀·preview→commit 실 INSERT read-back(GMHS·US·rate=1380.5·origin=IMPORT) 전건 통과. 전체 pytest 896 passed/3 skipped.
+- **트레이드오프/교훈:**
+  - ⓐ **import 시점 외부 의존:** 해소가 OpenFIGI 가용성에 묶인다. 네트워크/non-200/JSON/shape 실패·429 는 전부 graceful(해당 배치 None→종목명 폴백, 429 백오프 최대 2회) — import preview 전체가 5xx 되면 안 됨. 외부 장애 시 정밀도만 한시 저하(종목명 경로로 복귀), 등록 자체는 유지.
+  - ⓑ **캐시 staleness:** ISIN→ticker 매핑은 거의 불변이라 무TTL 영구 캐시. 드문 ticker 변경(상장 이전/리네이밍) 시 `isin_ticker_map` 수동 무효화 필요(현재 자동 만료 없음 — 빈도 낮아 YAGNI).
+  - ⓒ **`exch_code_to_country` 단일 US:** 유일 해외 마스터가 US 라 모든 exchCode 를 US 로 매핑. 향후 비-US 해외 마스터 도입 시 이 함수가 분기점([[project_stock_data_sources]]).
+  - ⓓ **FE/PnL 무영향:** import 결과는 기존 US 거래 경로로 staged/렌더(ISIN 은 BE 내부에서 ticker 로 치환). PnL 재계산·BUY meta cascade 무관(staging→commit insert 경로 그대로).
+- 참조: 아래 "2026-06-27 토스 해외(USD) 일괄등록"(전신·101 출처), [[project_broker_import_parsers]]·[[project_stock_data_sources]].
+
+## 2026-06-27 | 토스 해외(USD) 일괄등록 — USD 네이티브 복원 + country-scoped 매칭
+
+- **맥락:** [[project_broker_import_parsers]] Phase 2(해외)의 첫 구현. `toss_pdf.py` 가 달러 섹션 행을 6자리 KRX 코드 정규식으로만 매칭해, ISIN(`US69608A1088`) 종목은 정규식에 안 걸려 `usd_skip_count` 조차 안 오르고 "신규 0·중복 0·건너뜀 0·에러 0"의 **침묵 누락**이 났다. 토스 달러 섹션을 USD 네이티브 거래로 임포트한다.
+- **결정 ① 금액 컬럼은 전부 원화 환산값 → 환율로 나눠 USD 네이티브 복원, `price·commission·tax` 세 필드 전부.** 토스 달러 섹션의 모든 금액 컬럼은 원화로 적힌다(괄호줄 `($ ...)` 에 USD 병기). `domain/trade_types.py:krw_normalized_trade` 가 셋을 모두 `×exchange_rate` 로 KRW 환원하므로, 하나라도 KRW 로 남기면 원가가 ~환율배(≈1370x)로 부풀고 `build_merge_patch` 비교가 깨진다. **괄호줄 USD 를 파싱하지 않고 ÷환율로 복원** — 그래야 `price_usd × rate == 원화단가` 가 정확히 라운드트립(괄호줄은 토스가 별도 라운딩해 미세 drift, cost basis 보존 불가).
+- **결정 ② `exchange_rate` = 행의 환율(원/달러), `country_code="US"` 가 통화 권위.** 다운스트림 통화 판단은 `currency_for_country(country_code)` 지 `ParsedTrade.currency` 가 아니다(currency 는 표시/디버그용). `schemas/trade.py:exchange_rate_error` 규칙상 US 거래는 `exchange_rate != 1.0` 필수(1.0/누락이면 native 를 KRW 로 오인 집계). insert_row 에 `exchange_rate` 키 누락 시 repo default 1.0 → KRW 오인이라 commit 가드가 US+rate==1.0 행을 commit_error 로 막는다(배치 raise 아님 — 행 단위).
+- **결정 ③ ISIN 은 ticker_hint 로 쓰지 않는다(`None` → name 매칭 폴백).** mirae `A0080G0` 선례와 동일 — KRX 표준 숫자코드가 아닌 식별자를 ticker 로 적재하면 같은 종목이 다른 증권사 코드와 보유 분리된다. 섹션 기준으로 country=US 를 정한다(ISIN 접두사 KY/US 로 국가 유도 금지 — 케이맨 ISIN `KYG3731B1086` 도 달러 섹션이면 US).
+- **결정 ④ USD 전용 컬럼맵/정규식 분리(KRW 무회귀).** USD 헤더는 거래세 컬럼이 없고 환율 컬럼이 값으로 채워진다(KRW 는 비어 토큰화 안 됨) → `_USD_HEADER_EXCLUDED`(환율 미제외)·`_USD_DEFAULT_COLUMN_MAP` 분리. 사양은 "`_DATA_LINE_RE` 확장"이라 했으나 KRW 29개 무회귀를 위해 **USD 전용 `_USD_DATA_LINE_RE`·`_parse_usd_line` 로 분리**(결과 동일, KRW 경로 무수정).
+- **결정 ⑤ glued 토큰 인덱싱 전 디-글루.** `1,370.300.004568`(환율+소수수량 공백 없이 붙음, 간헐) 을 환율 앵커 `\d{1,3}(,\d{3})*\.\d{2}`(소수 2자리)로 컬럼 인덱싱 **전에** 분리. 인덱싱 후 디-글루하면 환율 이후 모든 컬럼이 한 칸씩 밀린다.
+- **결정 ⑥ `usd_skip_count` 재정의(필드 유지) + `foreign_count` 신설.** 임포트된 USD 는 더 이상 skip 아님(country=US 로 staging) — `usd_skip_count` 는 하위호환 카운터로 남기되 토스 USD 경로에선 비거래 행이 무카운트 스킵돼 보통 0. `ImportPreviewResponse.foreign_count`(staged 중 country!=KR) 신설 → FE "해외 N건 포함(USD)" 분기.
+- **결정 ⑦ ticker 매칭을 거래 country 로 스코프 분리(🔴 차단결함 수정, QA #9).** `resolve_tickers` 가 `lookup_by_names` 를 country_code 없이(KR 기본) 호출 → US 종목명이 KR alias(US master 한글 alias 부재 + KR 테마 ETF 한글명)에 오매칭. dev DB 실측: 토스 648 USD 중 **456건**이 `country=US·rate=1370` 인 채 KR ETF 티커(애플→447660 PLUS애플채권혼합, 테슬라→457480, 팔란티어→0047R0)로 staged→INSERT 되는 포트폴리오 손상. 게다가 `foreign_count` 가 비-0 이라 성공처럼 보여 손상을 가린다. 수정: `resolve_tickers(items: set[(country, name)])` 로 country 별 그룹핑 → `lookup_by_names(country_code=cc)` 호출, 반환 키 `(country, name)`(KR/US 동명 충돌 방지). 호출부 staging 조회도 동일 튜플 키(한쪽만 바꾸면 전건 None).
+- **트레이드오프/교훈:**
+  - ⓐ **US resolve 율 한계(QA-A2 실측):** US-scope 수정 후 토스 648 USD = resolve 547(84%)·unresolved 101(알파벳 A 54·더치 브로스 47 — US master 에 한글명/alias 부재 또는 prefix 불일치). 사양상 unresolved 가 의도 경로지만 수백 건 unresolved 노이즈 노출 방식은 제품 결정으로 남김. 자동 US 종목 등록/별칭 백필·ISIN→ticker 외부조회는 본 스펙 **제외**(backlog).
+  - ⓑ **실파일이 산술 불변식을 검증 못 함:** 두 토스 샘플의 USD 행은 수수료·제세금이 전부 0이라 `0÷환율==0` 으로 commission/tax 의 ÷환율 라운드트립이 공허(분할 누락 버그도 통과). **비-0 합성 단위테스트**로 별도 가드([[feedback_broker_parser_fixture_tests]] 의 실파일 규칙은 shape 버그용, 실데이터가 못 미치는 산술 불변식엔 보조 합성테스트 정당). price 라운드트립은 648행 전수 + 환율 밴드(1000~2000)로 de-glue 컬럼시프트 가드.
+  - ⓒ **pytest 187 passed 가 #12 를 못 잡았다:** 단위 테스트가 `lookup_by_names` 를 목킹해 실 DB country 스코프를 안 타서, 재키잉만으로 가짜 green. dev DB 실측 + country_code 기록 spy 테스트(`test_lookup_is_country_scoped`)로 잠금.
+- 참조: [[project_be_buy_meta_cascades_to_sell]]·[[feedback_fe_trade_sort_for_calc]](USD 머지/정렬 영향 없음 확인), [[project_broker_import_parsers]].
+
+## 2026-06-27 | 거래 출처(origin) 도입 + 일괄등록 거래 금액 잠금
+
+- **맥락:** 거래내역서 일괄등록(import)과 손입력 거래가 데이터·UI상 구분되지 않아, 증권사가 준 "사실에 가까운" 금액을 사용자가 수정하면 기록 신뢰도가 떨어졌다. PostHog상 import는 소수(4명/57건)지만 사실 보호 가치가 있다.
+- **결정 ① 컬럼명 `origin`(`source` 아님), 값 `MANUAL`/`IMPORT`.** 코드 전반의 `source`는 전부 analytics용이라 `trade.source`로 두면 혼동.
+- **결정 ② 잠금 = "사실 5필드만"(`price, quantity, exchange_rate, commission, tax`), 분석 메타(전략/감정/태그/메모)는 수정 허용.** import가 메타를 안 채우므로 사용자 저널링 여지를 남긴다. `market_type`/`trade_type`은 **절대 잠금집합 제외** — FE가 항상 변경없이 전송하므로 끼면 메타 수정까지 false-reject.
+- **결정 ③ BE 서버단 강제(presence-based 422) + FE read-only/omit 이중 방어.** `origin=="IMPORT" and fields & IMPORT_LOCKED_FIELDS`면 422. FE만 막으면 "이 화면에서만 불가"라 불변식이 안 됨. presence-based(값 비교 아님)는 의도적 — explicit null도 거부.
+- **결정 ④ forward-only(소급 backfill 없음).** 기존 import 57건은 출처 신호 미저장이라 식별 불가 → 전부 `MANUAL`로 남는다. `origin`은 INSERT 시에만 설정(불변, PATCH 화이트리스트 제외).
+- **결정 ⑤ origin 컬럼은 마이그레이션 0007에만, baseline_schema.sql(0001 동결 스냅샷)에는 넣지 않음.** 둘 다 넣으면 신규 DB에서 `alembic upgrade head`가 DuplicateColumn으로 실패(코드리뷰에서 발견·수정). 후속 마이그레이션은 새 객체만 추가하는 컨벤션.
+- **트레이드오프:** ⓐ 배포 skew — presence-based 422라 omit 로직 없는 구버전/캐시 웹 클라가 IMPORT 거래 메타 편집 시 422 가능(IMPORT는 OTA 후 생성·FE도 같은 OTA라 창은 좁음). ⓑ 해외(Phase 2) 일괄등록 도입 시, 잠긴 금액필드가 zod 검증을 통과 못하면 메타 저장이 막히는 잠복 결함(현재 KR 전용이라 미발생). ⓒ 잠금 5필드가 BE frozenset·FE omit·readOnly 3곳에 중복 — 향후 필드 추가 시 동기화 필요.
+
+---
+
 ## 2026-06-26 | 어드민 패널 인증 — Supabase → BE 토큰-브로커 교체(탈-Supabase 2c 선행)
 
 - **맥락:** [[탈-Supabase Auth]] cutover 운영 완료 후 어드민 패널(`admin/` standalone SPA)이 남은 Supabase 의존 중 하나였다. 2c(Supabase 물리 제거) 전에 어드민을 BE OAuth flow 로 교체하지 않으면 Supabase 제거 시 `/admin/*` 전부 401. `app/`(네이티브)의 BE flow 를 **웹용으로 미러링**하되, lib/auth/ 격리 경계 덕에 `api.ts`·`AuthProvider` 무변경.

@@ -8,18 +8,20 @@ import { MoneyText } from "@/components/shared/MoneyText";
 import { getTradeTypeAccent } from "@/lib/constants/colors";
 import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import { TradeTypeBadge } from "@/components/shared/TradeTypeBadge";
+import { ImportSourceBadge } from "@/components/shared/ImportSourceBadge";
 import { StockMetaBadges } from "@/components/stocks/StockMetaBadges";
 import { useStockMeta, isMetaCode } from "@/hooks/useStockMeta";
 import {
   MarketTypeBadge,
   getQuantityUnit,
+  tradeDisplayName,
 } from "./trade-display";
 import type { Trade, TradeType } from "@/types/database";
 
 interface TradeHeaderCardProps {
   trade: Pick<
     Trade,
-    "asset_name" | "ticker_symbol" | "market_type" | "country_code" | "exchange" | "exchange_rate"
+    "asset_name" | "name_ko" | "ticker_symbol" | "market_type" | "country_code" | "exchange" | "exchange_rate" | "origin"
   >;
   tradeType: TradeType;
   totalAmount: number;
@@ -60,17 +62,17 @@ export function TradeHeaderCard({
               onClick={onStockPress}
               className="min-w-0 break-words text-[20px] font-bold text-foreground underline-offset-2 hover:underline text-left"
             >
-              {trade.asset_name}
+              {tradeDisplayName(trade)}
             </button>
           ) : stockHref ? (
             <Link
               href={stockHref}
               className="min-w-0 break-words text-[20px] font-bold text-foreground underline-offset-2 hover:underline"
             >
-              {trade.asset_name}
+              {tradeDisplayName(trade)}
             </Link>
           ) : (
-            <span className="min-w-0 break-words text-[20px] font-bold text-foreground">{trade.asset_name}</span>
+            <span className="min-w-0 break-words text-[20px] font-bold text-foreground">{tradeDisplayName(trade)}</span>
           )}
           {trade.ticker_symbol && (
             <span className="text-[13px] font-mono text-muted-foreground">
@@ -78,6 +80,7 @@ export function TradeHeaderCard({
             </span>
           )}
           <TradeTypeBadge tradeType={tradeType} size="md" />
+          <ImportSourceBadge origin={trade.origin} size="md" />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <MarketTypeBadge marketType={trade.market_type} />

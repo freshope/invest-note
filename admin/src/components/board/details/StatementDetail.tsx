@@ -3,6 +3,8 @@
 import type { BoardDetail } from "@/lib/api";
 import { fmtText, fmtDateTime } from "@/lib/format";
 import { BoardStatusControls } from "@/components/board/BoardStatusControls";
+import { BoardCommentThread } from "@/components/board/BoardCommentThread";
+import { BoardCommentForm } from "@/components/board/BoardCommentForm";
 import { statementTypeLabel } from "@/components/board/constants";
 import { AuthorCell } from "@/components/AuthorCell";
 import { BoardDetailShell } from "./BoardDetailShell";
@@ -39,20 +41,25 @@ export function StatementDetail({
               <AuthorCell
                 avatarUrl={data.author_avatar_url}
                 displayName={data.author_display_name}
-                fallback={data.user_id ?? "작성자 미상"}
+                fallback="회원 미상"
               />{" "}
               · {fmtDateTime(data.created_at)}
             </p>
           </div>
         </div>
 
-        <BoardStatusControls
-          postId={data.id}
-          boardType={data.board_type}
-          status={data.status}
-          isPinned={data.is_pinned}
-          showPin={false}
-        />
+        <div className="space-y-1">
+          <BoardStatusControls
+            postId={data.id}
+            boardType={data.board_type}
+            status={data.status}
+            isPinned={data.is_pinned}
+            showPin={false}
+          />
+          <p className="text-[12px] text-muted-foreground">
+            반려 시 사유는 아래 댓글로 남겨주세요.
+          </p>
+        </div>
 
         <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
           <Field label="제보 유형" value={statementTypeLabel(m.type)} />
@@ -63,6 +70,18 @@ export function StatementDetail({
       </section>
 
       <BoardAttachments attachments={data.attachments} emphasis />
+
+      <section className="space-y-3">
+        <h2 className="text-[15px] font-semibold">
+          댓글 ({data.comments.length})
+        </h2>
+        <BoardCommentThread
+          postId={data.id}
+          boardType={data.board_type}
+          comments={data.comments}
+        />
+        <BoardCommentForm postId={data.id} boardType={data.board_type} />
+      </section>
     </BoardDetailShell>
   );
 }

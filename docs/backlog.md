@@ -33,6 +33,18 @@ MVP 이후 구현할 작업 후보 목록.
       선행 BUY 없는 해외 SELL 단독 입력의 처리 규칙은 KR 과 동일(walker `running_qty>0` 가드)이라
       포지션은 안 생기나, 수동 입력 시 사용자 안내 UX 검토.
 
+### name_ko(US 한글 표시명) 후속 — 2026-06-28 거래/보유 표시 한글화 완료 (`docs/decisions.md` 참고)
+
+- [ ] **분석 탭 집중도 한글화** — `lib/analysis/concentration.ts` 는 `list_trades`(JOIN 없는 SELECT *) 경로라
+      `Position.name_ko` 가 항상 None → 집중도 라벨이 영문 유지(같은 US 종목이 홈=한글/분석=영문). 해소하려면
+      `list_trades` SQL 을 `SELECT t.*, s.name_ko + LEFT JOIN stocks` 로 재작성(calc-path라 신중) + FE 라벨
+      `nameKo || assetName`. `domain/portfolio.py` `Position.name_ko` 주석에 트랩 명시됨.
+- [ ] **토스 import 영문 저장 통일 + 한글명 수확** — 일괄등록도 영문 asset_name 으로 저장(저장 일관성)하고,
+      토스가 파싱한 한글명을 `stocks.name_ko` 로 수확(commit 단계, 미seed ticker 는 stocks upsert 선행 필요).
+      현재는 naver 백필분만 name_ko 적재라 사용자 보유 롱테일 US 는 영문.
+- [ ] **검색 name_ko 매칭** — `/stocks/search` 가 US 한글 검색을 `stock_aliases(naver)` 에만 의존. name_ko 를
+      검색 매칭 대상에 포함할지 검토(표시·검색 출처 통일).
+
 ## 분석 탭 성능 / 유지보수
 
 - [ ] 분석 대시보드 시세 분리 (옵션 B 동일 패턴) — `/analysis/dashboard` 도 요청 안에서 시세를 동기 fetch(concentration 계산용, `fetch_quotes_by_keys`)한다. 2026-05-27 `/portfolio/summary` 분리(`docs/decisions.md` 참고)와 동일하게 `withQuotes` opt-in + FE overlay 적용 검토. 단 concentration(HHI/top3/비중)은 시세 없으면 `cost_basis` fallback 이라 FE 로 옮기려면 concentration 계산까지 FE 중복이 필요 → 표면적이 summary 보다 큼. 트리거: summary 분리 효과 확인 후, 또는 분석 탭 응답 지연 체감 시.
@@ -100,13 +112,16 @@ MVP 이후 구현할 작업 후보 목록.
 
 ### 본구현 — 해외 일괄등록 (US/USD)
 
-- [ ] **파서 USD 섹션 파싱** — ① 종목코드 정규식 6자리→ISIN(12자리 영숫자) 허용, ② 한 거래=2줄(KRW행 + `($…)` USD행) 연결 파싱, ③ 환율·USD 단가 추출, ④ `ParsedTrade` 에 `exchange_rate` 필드 추가(`base.py`). ⚠️ **샘플엔 구매(BUY) 행만 존재 — 판매(SELL) 행 포맷은 미관측**, SELL 포함 실샘플 확보 후 검증 필요.
-- [ ] **종목 식별 (핵심 병목)** — 파일은 ISIN(`KYG3731B1086`)만 제공하나 시스템은 해외 종목을 **Yahoo 티커 + country_code** 로 식별·시세조회한다(`external/quotes.py` US 경로). ISIN→(티커·거래소·국가) 매핑 부재 시 전건 미해결. ISIN 접두는 설립지(KY=케이맨)라 상장국가도 도출 불가. `resolve_tickers→lookup_by_names` 는 `country_code=KR` 기본값으로만 검색하고 파일은 한글명이라 영문 US 마스터와도 불일치. 선택지: ① stocks 마스터에 ISIN 매핑 자료원 확보(예탁원/KRX), ② 종목명 매칭, ③ 미해결 종목 수동 매칭 UI(아래 후속 과제 항목)로 사용자가 직접 검색·매칭. **현실적 1차안: ③(+②).**
-- [ ] **커밋 환율 가드 충족** — `import_commit` 이 비-KRW 거래에 `exchange_rate` 강제(`trades.py:866` 방어 가드). 파서가 추출한 환율을 staging→`insert_row` 까지 배선하고, `country_code` 하드코딩(KR, `trades.py:730`)을 해외 실국가로 해소.
-- [ ] **삼성증권 USD** — `samsung_xlsx.py:96` 동일 skip 존재. 동일 silent-loss 여부 검증 후 같은 안내 가드·본구현 적용. (삼성 USD 샘플 확보 후)
+**파서·import·staging·응답·FE 고지는 2026-06-27 구현 완료** (`docs/spec-history/2026-06-27-toss-overseas-import.md` 예정, `docs/decisions.md` 2026-06-27). 토스 달러 섹션을 USD 네이티브(`country_code=US`·`exchange_rate=행환율`·price/commission/tax÷환율)로 import. 실측: 토스 USD 648건 중 547 import(84%)·101 미해결. **남은 핵심 follow-up은 종목 식별을 종목명 매칭 → ISIN 코드 매칭으로 전환하는 것(아래).**
+
+- [x] **파서 USD 섹션 파싱 (2026-06-27 완료)** — ISIN(12자리 영숫자) 허용, USD 전용 컬럼맵(거래세 컬럼 없음), glued 토큰(`1,370.300.004568`) 디-글루, `ParsedTrade` 에 `country_code`/`exchange_rate` 추가. ⚠️ **샘플은 구매(BUY)만 — SELL 행 포맷 미관측**, SELL 포함 실샘플 확보 후 회귀 보강 필요.
+- [x] **커밋 환율 가드 충족 (2026-06-27 완료)** — 파서 환율을 staging→`insert_row` 배선, `country_code` KR 하드코딩 해소, US 행 `exchange_rate≠1.0` 가드(`exchange_rate_error`).
+- [ ] 🔴 **종목 식별 — 종목명 매칭 → ISIN 코드 매칭 전환 (해외 종목 마스터 적재 시 수정 / 사용자 요청 2026-06-27)** — **현재 interim 은 종목명 매칭이라 오매칭 우려를 원리적으로 벗어나지 못한다.** `resolve_tickers` 는 거래 country 로 스코프 분리(#12, 2026-06-27)되어 US→KR ETF 같은 **국가 간** 오매칭은 제거됐으나, **US 스코프 안에서는 여전히 한글 종목명/별칭 매칭**(`stock_aliases` alias-prefix·trgm 부분일치, `stocks_repo._SEARCH_SQL` rank 3~5)이라 틀린 US 종목으로 해소될 잠재 리스크가 남는다. 실측(토스 648, distinct 10종목): 8종목 alias-prefix(rank 3) 해소(QA 스팟체크 정확), 2종목 미해결(더치 브로스=마스터 부재, 알파벳 A=이름 포맷 갭), 미해결 101행은 import 제외(PreviewStep 고지). **근본 해결 = 종목코드(ISIN) 매칭.** 단 현재 `stocks` 테이블에 **ISIN 컬럼이 없고**(US 종목은 `ticker`=영문심볼 PLTR/AAPL, 한글명은 `stock_aliases`), 토스가 주는 코드는 ISIN(`US69608A1088`)이라 형식 불일치로 코드 매칭 불가. **→ 해외 종목 정보 적재(`seed_us` 등) 시 `stocks`(또는 매핑 테이블)에 ISIN 컬럼 추가·저장**하고, `broker_import` 의 ISIN→`ticker_hint` 경로를 활성화(현재 ISIN 은 hint 미사용, mirae 영숫자 코드 선례 따름)하여 종목명 매칭을 코드 매칭으로 대체한다. 이 한 작업이 **오매칭 리스크와 미해결 노이즈(101건)를 동시에 근본 해소**한다. (ISIN 접두는 설립지라 상장국가 도출은 불가 — 자료원에 거래소/country 동반 필요.) 자료원 후보: 예탁원/KRX. 보조: 미해결 종목 수동 매칭 UI(아래 "거래내역서 임포트 후속 과제" 항목).
+- [ ] **삼성증권 USD** — `samsung_xlsx.py` 동일 skip 존재. 동일 silent-loss 여부 검증 후 같은 안내 가드·본구현 적용. (삼성 USD 샘플 확보 후)
 - [ ] 업로드 파일 형식 ↔ 선택 증권사 일치 검증 — 파일명 자동감지(`detect_broker`/`match`)는 2026-06-12 제거(사용자가 계좌=증권사 직접 선택). 향후 필요 시 "토스 계좌인데 삼성 xlsx 업로드" 같은 불일치를 경고하는 검증으로 재설계.
 
 **Phase C 착수 가능성 검토 (2026-06-25):** **결론 — 가능·저위험. 신규 인프라 0, 파서+import 경로만.** 데이터/계산 토대는 직접입력 US 거래로 이미 운영 중(per-trade `exchange_rate`, `to_krw`, `currency_for_country`, walker FX 차원, 포트폴리오 KRW 합산, US 시세/seed/검색 — Phase A·B 완료). 부족한 건 import 경로뿐: ① 파서가 해외 행을 `currency=USD`+`exchange_rate=거래내역서 환율`+`country=US` 로 추출(현재 skip), ② `import_commit` 의 비-KRW 방어 가드(`trades.py:902`)를 "파서 환율 사용·누락 시만 에러"로 완화 + `country_code` KR 하드코딩 해소, ③ 종목 식별(위 ISIN/티커 병목). 거래내역서 환율은 **체결환율(settled)** 이라 직접입력 당일 잠정환율 이슈 없음.
+
 - **증권사별 준비도:** **토스 = 즉시 착수 후보**(해외포함 샘플 보유 + 행 구조 위 문서화 + 환율 컬럼). **신한**(`단가/환율`·`수량/외화`)·**미래에셋**(`환율`·`통화코드`·`외화거래금액`)·**삼성**(`외화*` 컬럼)은 포맷에 환율 보유하나 **실제 해외 행 샘플 없음** → 해외 거래 포함 샘플 확보 후 구현·fixture. 권장 순서: 토스부터.
 
 ## 자산 추이 페이지 — 운영 잔여 (페이지 자체는 2026-06-04 출시)
@@ -122,6 +137,9 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [ ] 목표가(%), 손절 및 익절 계획을 입력하고 그것을 지켰는지 여부를 분석
 - [ ] 관심 종목 추가 (보유하지 않은 종목도 볼 수 있게)
+- [ ] 보유종목 카드에 오늘 등락 표시
+- [ ] 자산추이에 일, 주, 월, 6개월, 올해 1년, 5년, all 선택 표시
+- [ ] 자산추이에 차트 기준점 s&p500, 코스피 지수등과 비교
 
 ## v2 — KIS API 연동 (2026-06-07 사전 조사 완료, 2-트랙 분리)
 

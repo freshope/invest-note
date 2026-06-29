@@ -14,18 +14,11 @@ import { EmptyCard } from "@/components/shared/EmptyCard";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { boardApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
+import { formatDateOnly } from "@/lib/format";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(
-    d.getDate(),
-  ).padStart(2, "0")}`;
 }
 
 export function NoticePanel({ open, onOpenChange }: Props) {
@@ -77,7 +70,7 @@ export function NoticePanel({ open, onOpenChange }: Props) {
                           </span>
                         </span>
                         <span className="mt-0.5 block text-[12px] text-muted-foreground tabular-nums">
-                          {formatDate(item.created_at)}
+                          {formatDateOnly(item.created_at)}
                         </span>
                       </span>
                       <ChevronRightIcon className="size-5 shrink-0 text-muted-foreground" />
@@ -143,7 +136,7 @@ function NoticeDetailContent({ id }: { id: string }) {
               {data.title}
             </h1>
             <p className="text-[12px] text-muted-foreground tabular-nums">
-              {formatDate(data.created_at)}
+              {formatDateOnly(data.created_at)}
             </p>
             <div className="mt-2 whitespace-pre-wrap text-[15px] leading-relaxed text-foreground/90">
               {data.body}

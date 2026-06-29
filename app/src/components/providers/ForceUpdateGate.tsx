@@ -1,48 +1,44 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getPlatform, isNativePlatform } from "@/lib/platform";
-import { isUpdateRequired } from "@/lib/version";
+import { getPlatform } from "@/lib/platform";
 import { fetchAppConfig } from "@/lib/api/app-config";
+import { useUpdateRequired } from "@/hooks/useUpdateRequired";
 import { Button } from "@/components/base/Button";
 
 /**
  * 네이티브 앱 실행 시 현재 버전이 BE 의 최소 지원 버전보다 낮으면
  * 해제 불가능한 전체 화면 오버레이를 띄워 스토어 업데이트를 강제한다.
- * - web 플랫폼은 체크하지 않는다.
+ * - web 플랫폼은 체크하지 않는다(useUpdateRequired 가 false).
  * - 네트워크/조회 실패 시 강제하지 않는다(fail-open).
  * - ESC·외부 클릭은 plain overlay 라 동작하지 않고, Android 백버튼은 swallow 한다.
  */
 export function ForceUpdateGate() {
-  const [required, setRequired] = useState(false);
+  const required = useUpdateRequired();
   const [storeUrl, setStoreUrl] = useState("");
 
+  // 강제 확정 시에만 스토어 URL 해결(fetchAppConfig 메모이즈 — 추가 네트워크 없음).
   useEffect(() => {
-    if (!isNativePlatform()) return;
+    if (required !== true) return;
     let cancelled = false;
     (async () => {
       try {
         const platform = getPlatform();
         if (platform === "web") return;
-        const { App } = await import("@capacitor/app");
-        const [config, info] = await Promise.all([fetchAppConfig(), App.getInfo()]);
-        if (cancelled) return;
-        if (isUpdateRequired(info.version, config.minSupportedVersion)) {
-          setStoreUrl(config.storeUrl[platform]);
-          setRequired(true);
-        }
+        const config = await fetchAppConfig();
+        if (!cancelled) setStoreUrl(config.storeUrl[platform]);
       } catch {
-        // fail-open: 조회 실패 시 강제하지 않는다.
+        // fail-open: URL 조회 실패는 무시(버튼만 비활성).
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [required]);
 
   // 강제 상태 동안 Android 하드웨어 백버튼을 무력화(swallow)한다.
   useEffect(() => {
-    if (!required) return;
+    if (required !== true) return;
     let remove: (() => void) | undefined;
     (async () => {
       const { App } = await import("@capacitor/app");
@@ -52,7 +48,7 @@ export function ForceUpdateGate() {
     return () => remove?.();
   }, [required]);
 
-  if (!required) return null;
+  if (required !== true) return null;
 
   const openStore = () => {
     if (!storeUrl) return;

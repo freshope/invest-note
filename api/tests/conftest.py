@@ -119,7 +119,7 @@ def trades_client():
     """인증 + pool이 override된 클라이언트 — trades/portfolio/stocks 엔드포인트 테스트용.
 
     `with TestClient(...)` 으로 진입해 lifespan 을 트리거한다 — `app.state.quote_cache` /
-    `app.state.trade_staging` 가 초기화되어야 라우터의 dependency 해석이 성공한다.
+    `app.state.fx_cache` 가 초기화되어야 라우터의 dependency 해석이 성공한다.
     """
     from invest_note_api.auth.dependency import get_current_user
     from invest_note_api.auth.jwt import AuthenticatedUser

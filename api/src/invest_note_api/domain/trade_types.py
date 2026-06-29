@@ -139,8 +139,14 @@ class Trade(BaseModel):
     avg_buy_price: float | None = None
     holding_days: int | None = None
 
+    # 거래 출처. "MANUAL"=개별등록(기본), "IMPORT"=거래내역서 일괄등록. INSERT 시에만 설정(불변).
+    origin: str = "MANUAL"
+
     country_code: str = DEFAULT_COUNTRY
     exchange: str = ""
+    # 종목 마스터(stocks)에서 읽기 시점 LEFT JOIN 으로 채우는 표시용 한글명(US 영문 asset_name 보완).
+    # 저장 컬럼이 아니라 조회 응답 전용 — calc 경로(SELECT *)에는 부재 → None. 표시는 name_ko ?? asset_name.
+    name_ko: str | None = None
     # 거래 시점 환율(native→KRW). KR=1.0. KRW 금액 = native × exchange_rate.
     exchange_rate: float = 1.0
 

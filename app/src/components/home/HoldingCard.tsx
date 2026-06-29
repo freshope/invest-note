@@ -27,6 +27,7 @@ export const HoldingCard = memo(function HoldingCard({ position, meta, onPress }
 
   const {
     assetName,
+    nameKo,
     ticker,
     country,
     exchange,
@@ -40,6 +41,10 @@ export const HoldingCard = memo(function HoldingCard({ position, meta, onPress }
     unrealizedPnL,
     lastNote,
   } = position;
+
+  // 표시명 한글 우선 — name_ko(US 한글명) 있으면 한글, 없으면 assetName(영문/원본). 계산 키는 assetName.
+  // `||`: 빈 문자열 nameKo 도 assetName 으로 fallback(빈 이름 렌더 방지).
+  const displayName = nameKo || assetName;
 
   const hasMultipleLines = lastNote?.includes("\n") ?? false;
   const firstLine = lastNote?.split("\n")[0] ?? "";
@@ -56,7 +61,7 @@ export const HoldingCard = memo(function HoldingCard({ position, meta, onPress }
     <div
       role="button"
       tabIndex={0}
-      aria-label={`${assetName} 보유 종목 상세`}
+      aria-label={`${displayName} 보유 종목 상세`}
       onClick={() => onPress?.(position)}
       onPointerDown={() => setPressing(true)}
       onPointerUp={() => setPressing(false)}
@@ -75,7 +80,7 @@ export const HoldingCard = memo(function HoldingCard({ position, meta, onPress }
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="min-w-0 break-words text-[16px] font-bold text-foreground">
-            {assetName}{" "}
+            {displayName}{" "}
             <span className="text-[12px] font-mono font-normal text-muted-foreground">{ticker}</span>
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">

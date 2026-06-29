@@ -61,8 +61,16 @@ class ParsedTrade:
     price: float
     commission: float = 0.0
     tax: float = 0.0
+    # 다운스트림 통화 권위는 country_code (currency_for_country): US=USD, 그 외=KRW.
+    # currency 는 표시/디버그용 — country_code 와 drift 시 country_code 가 이긴다.
     currency: str = "KRW"
-    ticker_hint: str | None = None   # 파일에서 직접 추출한 코드 (있을 때만)
+    country_code: str = "KR"
+    exchange_rate: float = 1.0       # 원/달러 (해외 행만 1.0 != ); KR 행은 1.0
+    ticker_hint: str | None = None   # 파일에서 직접 추출한 코드 (있을 때만, "이미 ticker")
+    # ISIN 코드 (있을 때만, "조회 필요"). ticker_hint 와 의미 분리: ticker_hint 는 이미 ticker
+    # (KR 6자리)라 권위로 쓰지만, isin 은 OpenFIGI 해소를 거쳐야 ticker 가 된다(둘을 섞으면
+    # resolver 가 ISIN 을 code 로 오용). 토스 USD 행에서 추출.
+    isin: str | None = None
     account_hint: str | None = None  # 파일 메타에서 추출한 계좌번호 문자열
     raw: dict = field(default_factory=dict)
 

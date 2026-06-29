@@ -27,6 +27,7 @@ function makePreview(overrides: Partial<ImportPreviewResponse> = {}): ImportPrev
     duplicate_count: 0,
     error_count: 0,
     usd_skip_count: 0,
+    foreign_count: 0,
     unresolved_ticker_count: 0,
     errors: [],
     validation_errors: [],
@@ -126,5 +127,48 @@ describe("PreviewStep", () => {
     expect(excludedLabels.length).toBe(1);
     const excludedValue = excludedLabels[0].previousElementSibling;
     expect(excludedValue?.textContent).toBe("4"); // error_count 1 + excluded_count 3
+  });
+
+  it("foreign_count > 0 이면 '해외 N건 포함(USD)' 안내 노출, 미지원 고지/제보 버튼 미노출", () => {
+    render(
+      <PreviewStep
+        preview={makePreview({ broker_key: "toss_pdf", broker_name: "토스증권", foreign_count: 2 })}
+        account={makeAccount()}
+        onCommit={vi.fn()}
+        onReportOverseas={vi.fn()}
+        isLoading={false}
+      />,
+    );
+    expect(screen.getByText(/해외 거래 2건 포함됨\(USD\)/)).not.toBeNull();
+    expect(screen.queryByText(/아직 일괄 등록을 지원하지 않습니다/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "해외 거래내역서 제보" })).toBeNull();
+  });
+
+  it("foreign_count === 0 + 해외 지원 브로커(toss)면 어떤 해외 고지도 미노출", () => {
+    render(
+      <PreviewStep
+        preview={makePreview({ broker_key: "toss_pdf", broker_name: "토스증권", foreign_count: 0 })}
+        account={makeAccount()}
+        onCommit={vi.fn()}
+        onReportOverseas={vi.fn()}
+        isLoading={false}
+      />,
+    );
+    expect(screen.queryByText(/해외 거래 .*포함됨\(USD\)/)).toBeNull();
+    expect(screen.queryByText(/아직 일괄 등록을 지원하지 않습니다/)).toBeNull();
+  });
+
+  it("foreign_count === 0 + 해외 미지원 브로커면 기존 미지원 고지 + 제보 버튼 노출", () => {
+    render(
+      <PreviewStep
+        preview={makePreview({ broker_key: "samsung_xlsx", foreign_count: 0 })}
+        account={makeAccount()}
+        onCommit={vi.fn()}
+        onReportOverseas={vi.fn()}
+        isLoading={false}
+      />,
+    );
+    expect(screen.getByText(/아직 일괄 등록을 지원하지 않습니다/)).not.toBeNull();
+    expect(screen.getByRole("button", { name: "해외 거래내역서 제보" })).not.toBeNull();
   });
 });

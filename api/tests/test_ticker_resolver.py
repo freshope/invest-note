@@ -11,7 +11,11 @@ from invest_note_api.external import naver_search
 
 
 def _patch_lookup(fake_db: dict[str, dict]):
-    """stocks_repo.lookup_by_names 대체 — 매칭된 이름만 담은 dict 반환(미해결은 키 없음)."""
+    """stocks_repo.lookup_by_names 대체 — 매칭된 이름만 담은 dict 반환(미해결은 키 없음).
+
+    country 스코프를 무시하는 단순 버전(KR 전용 테스트용). country-scoped 동작은
+    `_patch_lookup_by_country` spy 로 별도 검증한다.
+    """
     async def fake_lookup(_conn, names, **_kw):
         return {n: fake_db[n] for n in names if n in fake_db}
 
@@ -25,12 +29,12 @@ async def test_ticker_hint_provides_code_lookup_provides_exchange():
 
     with _patch_lookup(fake_db):
         result = await resolve_tickers(
-            asset_names={"삼성전자"},
-            ticker_hints={"삼성전자": "005930"},
+            items={("KR", "삼성전자")},
+            ticker_hints={("KR", "삼성전자"): "005930"},
             conn=None,
         )
 
-    assert result == {"삼성전자": {"code": "005930", "exchange": "KOSPI"}}
+    assert result == {("KR", "삼성전자"): {"code": "005930", "exchange": "KOSPI"}}
 
 
 @pytest.mark.asyncio
@@ -38,12 +42,12 @@ async def test_ticker_hint_keeps_code_when_lookup_misses():
     """hint 코드가 있는데 로컬 매칭이 없으면 code 는 유지, exchange 만 빈 값."""
     with _patch_lookup({}):
         result = await resolve_tickers(
-            asset_names={"삼성전자"},
-            ticker_hints={"삼성전자": "005930"},
+            items={("KR", "삼성전자")},
+            ticker_hints={("KR", "삼성전자"): "005930"},
             conn=None,
         )
 
-    assert result == {"삼성전자": {"code": "005930", "exchange": ""}}
+    assert result == {("KR", "삼성전자"): {"code": "005930", "exchange": ""}}
 
 
 @pytest.mark.asyncio
@@ -52,9 +56,9 @@ async def test_lookup_match_short_alias():
     fake_db = {"현대차": {"code": "005380", "name": "현대자동차", "market": "KR", "exchange": "KOSPI"}}
 
     with _patch_lookup(fake_db):
-        result = await resolve_tickers(asset_names={"현대차"}, ticker_hints={}, conn=None)
+        result = await resolve_tickers(items={("KR", "현대차")}, ticker_hints={}, conn=None)
 
-    assert result == {"현대차": {"code": "005380", "exchange": "KOSPI"}}
+    assert result == {("KR", "현대차"): {"code": "005380", "exchange": "KOSPI"}}
 
 
 @pytest.mark.asyncio
@@ -63,18 +67,18 @@ async def test_lookup_match_etf_full_name():
     fake_db = {"TIGER 미국S&P500": {"code": "360750", "name": "TIGER 미국S&P500", "market": "KR", "exchange": "ETF"}}
 
     with _patch_lookup(fake_db):
-        result = await resolve_tickers(asset_names={"TIGER 미국S&P500"}, ticker_hints={}, conn=None)
+        result = await resolve_tickers(items={("KR", "TIGER 미국S&P500")}, ticker_hints={}, conn=None)
 
-    assert result == {"TIGER 미국S&P500": {"code": "360750", "exchange": "ETF"}}
+    assert result == {("KR", "TIGER 미국S&P500"): {"code": "360750", "exchange": "ETF"}}
 
 
 @pytest.mark.asyncio
 async def test_lookup_no_match_returns_none():
     """로컬 매칭 없으면 미해결 (None)."""
     with _patch_lookup({}):
-        result = await resolve_tickers(asset_names={"존재하지않는종목"}, ticker_hints={}, conn=None)
+        result = await resolve_tickers(items={("KR", "존재하지않는종목")}, ticker_hints={}, conn=None)
 
-    assert result == {"존재하지않는종목": None}
+    assert result == {("KR", "존재하지않는종목"): None}
 
 
 @pytest.mark.asyncio
@@ -87,15 +91,15 @@ async def test_lookup_for_multiple_names():
 
     with _patch_lookup(fake_db):
         result = await resolve_tickers(
-            asset_names={"삼성전자", "카카오", "없는종목"},
+            items={("KR", "삼성전자"), ("KR", "카카오"), ("KR", "없는종목")},
             ticker_hints={},
             conn=None,
         )
 
     assert result == {
-        "삼성전자": {"code": "005930", "exchange": "KOSPI"},
-        "카카오": {"code": "035720", "exchange": "KOSPI"},
-        "없는종목": None,
+        ("KR", "삼성전자"): {"code": "005930", "exchange": "KOSPI"},
+        ("KR", "카카오"): {"code": "035720", "exchange": "KOSPI"},
+        ("KR", "없는종목"): None,
     }
 
 
@@ -109,15 +113,76 @@ async def test_mixed_hints_and_lookup():
 
     with _patch_lookup(fake_db):
         result = await resolve_tickers(
-            asset_names={"삼성전자", "현대차"},
-            ticker_hints={"삼성전자": "005930"},
+            items={("KR", "삼성전자"), ("KR", "현대차")},
+            ticker_hints={("KR", "삼성전자"): "005930"},
             conn=None,
         )
 
     assert result == {
-        "삼성전자": {"code": "005930", "exchange": "KOSPI"},
-        "현대차": {"code": "005380", "exchange": "KOSPI"},
+        ("KR", "삼성전자"): {"code": "005930", "exchange": "KOSPI"},
+        ("KR", "현대차"): {"code": "005380", "exchange": "KOSPI"},
     }
+
+
+@pytest.mark.asyncio
+async def test_lookup_is_country_scoped():
+    """🔴 핵심 회귀 가드: 거래 country 별로 lookup_by_names 가 해당 country_code 로 호출된다.
+
+    과거엔 country 무관(KR 기본) 호출이라 US 섹션 종목명이 KR alias 에 오매칭됐다
+    (애플→PLUS 애플채권혼합). country 스코프가 lookup 까지 실제로 전파되는지 spy 로 단언.
+    """
+    # (country_code, name) 별 매칭 — 같은 이름이라도 country 스코프에 따라 다른 결과.
+    by_country: dict[tuple[str, str], dict] = {
+        ("US", "애플"): {"code": "AAPL", "name": "Apple", "market": "US", "exchange": "NASDAQ"},
+        ("KR", "애플"): {"code": "950210", "name": "PLUS 애플채권혼합", "market": "KR", "exchange": "ETF"},
+        ("KR", "삼성전자"): {"code": "005930", "name": "삼성전자", "market": "KR", "exchange": "KOSPI"},
+    }
+    seen_country_by_name: dict[str, str] = {}
+
+    async def spy_lookup(_conn, names, *, country_code="KR"):
+        out = {}
+        for n in names:
+            seen_country_by_name[n] = country_code
+            match = by_country.get((country_code, n))
+            if match:
+                out[n] = match
+        return out
+
+    with patch("invest_note_api.db_ops.stocks_repo.lookup_by_names", spy_lookup):
+        result = await resolve_tickers(
+            items={("US", "애플"), ("KR", "삼성전자")},
+            ticker_hints={},
+            conn=None,
+        )
+
+    # US 종목명은 US 스코프로, KR 종목명은 KR 스코프로 조회됐다.
+    assert seen_country_by_name["애플"] == "US"
+    assert seen_country_by_name["삼성전자"] == "KR"
+    # US '애플' 은 KR ETF(PLUS 애플채권혼합)가 아니라 US Apple 로 매칭된다.
+    assert result[("US", "애플")] == {"code": "AAPL", "exchange": "NASDAQ"}
+    assert result[("KR", "삼성전자")] == {"code": "005930", "exchange": "KOSPI"}
+
+
+@pytest.mark.asyncio
+async def test_same_name_kr_and_us_no_collision():
+    """같은 종목명이 KR/US 양쪽 거래에 있어도 (country, name) 키로 충돌 없이 분리된다."""
+    by_country: dict[tuple[str, str], dict] = {
+        ("US", "애플"): {"code": "AAPL", "name": "Apple", "market": "US", "exchange": "NASDAQ"},
+        ("KR", "애플"): {"code": "950210", "name": "PLUS 애플채권혼합", "market": "KR", "exchange": "ETF"},
+    }
+
+    async def spy_lookup(_conn, names, *, country_code="KR"):
+        return {n: by_country[(country_code, n)] for n in names if (country_code, n) in by_country}
+
+    with patch("invest_note_api.db_ops.stocks_repo.lookup_by_names", spy_lookup):
+        result = await resolve_tickers(
+            items={("US", "애플"), ("KR", "애플")},
+            ticker_hints={},
+            conn=None,
+        )
+
+    assert result[("US", "애플")] == {"code": "AAPL", "exchange": "NASDAQ"}
+    assert result[("KR", "애플")] == {"code": "950210", "exchange": "ETF"}
 
 
 @pytest.mark.asyncio
@@ -172,6 +237,237 @@ async def test_find_first_empty_search_returns_none():
 
     with patch.object(naver_search, "search_kr", fake_search):
         assert await naver_search.find_first_kr_match("없는종목") is None
+
+
+# ─────────────────────────── ISIN 우선 해소 (OpenFIGI) ───────────────────────────
+
+
+def _patch_isin(
+    *,
+    cached: dict | None = None,
+    fetched: dict | None = None,
+    stock_by_ticker: dict | None = None,
+):
+    """ISIN 경로 의존성 3종을 한 번에 mock.
+
+    - isin_cache_repo.fetch_cached → `cached`
+    - openfigi.map_isins → `fetched` (그리고 upsert 는 no-op 으로 캡처)
+    - stocks_repo.lookup_by_tickers → `stock_by_ticker`(country 무시 단순화)
+    """
+    cached = cached or {}
+    fetched = fetched or {}
+    stock_by_ticker = stock_by_ticker or {}
+    upserted: list[list[dict]] = []
+
+    async def fake_fetch_cached(_conn, isins):
+        return {i: cached[i] for i in isins if i in cached}
+
+    async def fake_upsert(_conn, rows):
+        upserted.append(rows)
+
+    async def fake_map_isins(isins, *, api_key=None):
+        return {i: fetched.get(i) for i in isins}
+
+    async def fake_lookup_tickers(_conn, tickers, *, country_code="KR"):
+        return {t.upper(): stock_by_ticker[t.upper()] for t in tickers if t.upper() in stock_by_ticker}
+
+    patches = [
+        patch("invest_note_api.broker_import.ticker_resolver.isin_cache_repo.fetch_cached", fake_fetch_cached),
+        patch("invest_note_api.broker_import.ticker_resolver.isin_cache_repo.upsert", fake_upsert),
+        patch("invest_note_api.broker_import.ticker_resolver.map_isins", fake_map_isins),
+        patch("invest_note_api.db_ops.stocks_repo.lookup_by_tickers", fake_lookup_tickers),
+    ]
+    return patches, upserted
+
+
+def _enter(patches):
+    for p in patches:
+        p.start()
+
+
+def _exit(patches):
+    for p in patches:
+        p.stop()
+
+
+@pytest.mark.asyncio
+async def test_isin_resolves_to_ticker_with_exchange():
+    """ISIN → OpenFIGI ticker(PLTR), stocks 매칭으로 exchange 채움."""
+    patches, _ = _patch_isin(
+        fetched={"US69608A1088": {"ticker": "PLTR", "exch_code": "UN", "name": "PALANTIR", "security_type": "Common Stock"}},
+        stock_by_ticker={"PLTR": {"code": "PLTR", "name": "Palantir", "market": "US", "exchange": "NASDAQ"}},
+    )
+    _enter(patches)
+    try:
+        result = await resolve_tickers(
+            items={("US", "팔란티어")},
+            ticker_hints={},
+            conn=None,
+            isins={("US", "팔란티어"): "US69608A1088"},
+        )
+    finally:
+        _exit(patches)
+
+    assert result == {("US", "팔란티어"): {"code": "PLTR", "exchange": "NASDAQ"}}
+
+
+@pytest.mark.asyncio
+async def test_isin_resolved_but_no_local_stock_still_success():
+    """ISIN 해소 성공 + stocks 미보유 → ticker 권위, exchange="" (종목명 폴백 아님)."""
+    patches, _ = _patch_isin(
+        fetched={"KYG3731B1086": {"ticker": "GMHS", "exch_code": "UW", "name": "GAMEHAUS", "security_type": "Common Stock"}},
+        stock_by_ticker={},  # 마스터에 없음
+    )
+    _enter(patches)
+    try:
+        result = await resolve_tickers(
+            items={("US", "게임하우스 홀딩스")},
+            ticker_hints={},
+            conn=None,
+            isins={("US", "게임하우스 홀딩스"): "KYG3731B1086"},
+        )
+    finally:
+        _exit(patches)
+
+    assert result == {("US", "게임하우스 홀딩스"): {"code": "GMHS", "exchange": ""}}
+
+
+@pytest.mark.asyncio
+async def test_isin_unresolved_falls_back_to_name_match():
+    """OpenFIGI 가 미해결 → 종목명 매칭 폴백(+negative cache 저장)."""
+    patches, upserted = _patch_isin(fetched={"XX0000000000": None})
+    fake_db = {"애플": {"code": "AAPL", "name": "Apple", "market": "US", "exchange": "NASDAQ"}}
+    _enter(patches)
+    try:
+        with _patch_lookup(fake_db):
+            result = await resolve_tickers(
+                items={("US", "애플")},
+                ticker_hints={},
+                conn=None,
+                isins={("US", "애플"): "XX0000000000"},
+            )
+    finally:
+        _exit(patches)
+
+    # 종목명 폴백으로 AAPL 매칭.
+    assert result == {("US", "애플"): {"code": "AAPL", "exchange": "NASDAQ"}}
+    # negative cache 저장됨(resolved=False).
+    assert upserted == [[{
+        "isin": "XX0000000000", "ticker": None, "exch_code": None,
+        "country_code": None, "name": None, "resolved": False,
+    }]]
+
+
+@pytest.mark.asyncio
+async def test_isin_transient_failure_not_negative_cached():
+    """OpenFIGI 일시 장애(map_isins 가 ISIN 을 omit) → negative cache 에 기록하지 않는다
+    (genuine not-found 와 달리 다음 import 재조회 가능 — 영구 미해결 박제 방지). 이번 import
+    는 종목명 폴백으로 살린다."""
+    upserted: list[list[dict]] = []
+
+    async def fake_fetch_cached(_conn, isins):
+        return {}
+
+    async def fake_upsert(_conn, rows):
+        upserted.append(rows)
+
+    async def fake_map_isins_omit(isins, *, api_key=None):
+        return {}  # 일시 장애 — 배치 전건 omit(키 없음)
+
+    fake_db = {"애플": {"code": "AAPL", "name": "Apple", "market": "US", "exchange": "NASDAQ"}}
+    patches = [
+        patch("invest_note_api.broker_import.ticker_resolver.isin_cache_repo.fetch_cached", fake_fetch_cached),
+        patch("invest_note_api.broker_import.ticker_resolver.isin_cache_repo.upsert", fake_upsert),
+        patch("invest_note_api.broker_import.ticker_resolver.map_isins", fake_map_isins_omit),
+    ]
+    _enter(patches)
+    try:
+        with _patch_lookup(fake_db):
+            result = await resolve_tickers(
+                items={("US", "애플")},
+                ticker_hints={},
+                conn=None,
+                isins={("US", "애플"): "XX0000000000"},
+            )
+    finally:
+        _exit(patches)
+
+    # 이번 import 는 종목명 폴백으로 매칭.
+    assert result == {("US", "애플"): {"code": "AAPL", "exchange": "NASDAQ"}}
+    # 핵심: 일시 장애 ISIN 은 어떤 캐시 행에도 기록되지 않는다(다음 import 재조회).
+    assert all(
+        row["isin"] != "XX0000000000" for batch in upserted for row in batch
+    )
+
+
+@pytest.mark.asyncio
+async def test_isin_cache_hit_skips_openfigi():
+    """캐시 positive hit 이면 OpenFIGI 호출 안 함(캐시 ticker 사용)."""
+    async def boom(_isins, **_kw):
+        raise AssertionError("map_isins 가 호출됨 (캐시 hit 인데)")
+
+    patches, upserted = _patch_isin(
+        cached={"US69608A1088": {"ticker": "PLTR", "exch_code": "UN", "country_code": "US", "name": "P", "resolved": True}},
+        stock_by_ticker={"PLTR": {"code": "PLTR", "name": "Palantir", "market": "US", "exchange": "NASDAQ"}},
+    )
+    _enter(patches)
+    try:
+        with patch("invest_note_api.broker_import.ticker_resolver.map_isins", boom):
+            result = await resolve_tickers(
+                items={("US", "팔란티어")},
+                ticker_hints={},
+                conn=None,
+                isins={("US", "팔란티어"): "US69608A1088"},
+            )
+    finally:
+        _exit(patches)
+
+    assert result == {("US", "팔란티어"): {"code": "PLTR", "exchange": "NASDAQ"}}
+    assert upserted == []  # 미스 없음 → upsert 안 함
+
+
+@pytest.mark.asyncio
+async def test_isin_negative_cache_hit_skips_openfigi_and_falls_back():
+    """캐시 negative hit(resolved=False)이면 OpenFIGI 재호출 없이 종목명 폴백."""
+    async def boom(_isins, **_kw):
+        raise AssertionError("map_isins 가 호출됨 (negative cache hit 인데)")
+
+    patches, _ = _patch_isin(
+        cached={"XX0000000000": {"ticker": None, "exch_code": None, "country_code": None, "name": None, "resolved": False}},
+    )
+    fake_db = {"애플": {"code": "AAPL", "name": "Apple", "market": "US", "exchange": "NASDAQ"}}
+    _enter(patches)
+    try:
+        with patch("invest_note_api.broker_import.ticker_resolver.map_isins", boom):
+            with _patch_lookup(fake_db):
+                result = await resolve_tickers(
+                    items={("US", "애플")},
+                    ticker_hints={},
+                    conn=None,
+                    isins={("US", "애플"): "XX0000000000"},
+                )
+    finally:
+        _exit(patches)
+
+    assert result == {("US", "애플"): {"code": "AAPL", "exchange": "NASDAQ"}}
+
+
+@pytest.mark.asyncio
+async def test_no_isins_skips_isin_path_entirely():
+    """isins 없으면 OpenFIGI/캐시 경로 미진입(conn=None 무회귀) — 종목명만."""
+    async def boom_fetch(_conn, _isins):
+        raise AssertionError("fetch_cached 가 호출됨 (isins 없는데)")
+
+    fake_db = {"삼성전자": {"code": "005930", "name": "삼성전자", "market": "KR", "exchange": "KOSPI"}}
+    with patch("invest_note_api.broker_import.ticker_resolver.isin_cache_repo.fetch_cached", boom_fetch):
+        with _patch_lookup(fake_db):
+            result = await resolve_tickers(
+                items={("KR", "삼성전자")},
+                ticker_hints={},
+                conn=None,
+            )
+
+    assert result == {("KR", "삼성전자"): {"code": "005930", "exchange": "KOSPI"}}
 
 
 @pytest.mark.asyncio

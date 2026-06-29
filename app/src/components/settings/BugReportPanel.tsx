@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ImageIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/base/Button";
 import { Textarea } from "@/components/base/Textarea";
 import { boardApi, ApiError } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 
 interface Props {
   open: boolean;
@@ -47,6 +48,7 @@ function errorMessage(err: unknown): string {
 }
 
 export function BugReportPanel({ open, onOpenChange }: Props) {
+  const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [body, setBody] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -95,6 +97,7 @@ export function BugReportPanel({ open, onOpenChange }: Props) {
     },
     onSuccess: () => {
       toast.success("오류 신고가 접수되었습니다. 감사합니다!");
+      queryClient.invalidateQueries({ queryKey: queryKeys.myPosts });
       setBody("");
       setFiles([]);
       onOpenChange(false);

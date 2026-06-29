@@ -26,6 +26,8 @@
 certificates
 .gstack/
 .claude/
+.agents/
+.codex/
 .dev/
 .makerc
 /docs/store/

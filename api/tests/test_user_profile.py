@@ -52,11 +52,16 @@ class _FakeProfileTable:
         merged_providers = list(existing["providers"])
         if provider and provider not in merged_providers:
             merged_providers.append(provider)
+        # email 이 새 값으로 바뀌면 verified 도 그 로그인의 값으로 교체(stale true 차단). 동일/미제공이면 COALESCE.
+        if email is not None and email != existing["email"]:
+            new_verified = email_verified
+        else:
+            new_verified = coalesce(email_verified, existing["email_verified"])
         self.rows[user_id] = {
             "email": coalesce(email, existing["email"]),
             "display_name": coalesce(display_name, existing["display_name"]),
             "avatar_url": coalesce(avatar_url, existing["avatar_url"]),
-            "email_verified": coalesce(email_verified, existing["email_verified"]),
+            "email_verified": new_verified,
             "providers": merged_providers,
             "last_sign_in": last_sign_in,  # 항상 갱신
         }
@@ -112,6 +117,25 @@ async def test_b6_new_value_overwrites_when_provided():
     assert row["display_name"] == "새이름"
     assert row["avatar_url"] == "https://cdn/new.png"
     assert row["email_verified"] is True
+
+
+@pytest.mark.asyncio
+async def test_email_verified_not_stale_after_email_change():
+    # 보안(하이재킹 방지): 이메일이 새 값(미인증)으로 바뀌면 이전 이메일의 verified=true 가 남으면 안 됨.
+    # cross-provider 자동연결(link_user_by_verified_email)이 이 값을 신뢰하므로 stale true 는 치명적.
+    conn = _FakeProfileTable()
+    await upsert_profile(
+        conn, U1, email="a@x.com", display_name=None, avatar_url=None,
+        email_verified=True, provider="google", last_sign_in=dt("2026-06-01T00:00:00"),
+    )
+    # 다른 IdP 가 새 이메일을 미인증(null)으로 제공 → verified 가 stale true 로 따라오면 안 됨.
+    await upsert_profile(
+        conn, U1, email="victim@gmail.com", display_name=None, avatar_url=None,
+        email_verified=None, provider="kakao", last_sign_in=dt("2026-06-02T00:00:00"),
+    )
+    row = conn.rows[U1]
+    assert row["email"] == "victim@gmail.com"
+    assert row["email_verified"] is None  # 핵심: 이전 이메일의 true 가 새 이메일로 이월되지 않음
 
 
 @pytest.mark.asyncio

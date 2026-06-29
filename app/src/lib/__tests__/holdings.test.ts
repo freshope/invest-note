@@ -29,6 +29,7 @@ function makeSell(overrides: Partial<Trade> = {}): Trade {
     exchange: "",
     commission: 0,
     tax: 0,
+    origin: "MANUAL",
     created_at: "2024-01-01T00:00:00Z",
     updated_at: "2024-01-01T00:00:00Z",
     ...overrides,

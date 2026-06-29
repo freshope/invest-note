@@ -78,7 +78,11 @@ const ROUTES = {
     presign: "/board/broker-statement/presign",
     submit: "/board/broker-statement",
     notices: "/board/notices",
+    noticesSeen: "/board/notices/seen",
     noticeById: (id: string) => `/board/notices/${id}`,
+    myPosts: "/board/my-posts",
+    postRead: (id: string) => `/board/posts/${id}/read`,
+    ackPopup: (id: string) => `/board/posts/${id}/ack-popup`,
     feedback: "/board/feedback",
     bugReport: "/board/bug-report",
     bugReportPresign: "/board/bug-report/presign",
@@ -277,7 +281,10 @@ export interface ImportPreviewResponse {
   new_count: number;
   duplicate_count: number;
   error_count: number;
+  /** 임포트되지 않은 진짜 비거래 USD 행(환전·이체 등) 수. 임포트된 USD 거래(country_code=US)는 더 이상 skip 으로 집계하지 않는다. */
   usd_skip_count: number;
+  /** staged 된 해외(country_code != "KR") 거래 수. ticker 가 resolved 된 행만 집계 — ISIN 미해결 USD 종목은 미포함. */
+  foreign_count: number;
   unresolved_ticker_count: number;
   errors: ImportErrorItem[];
   /** 선택 계좌 기준 정합성 위반 (oversell 등). 해당 종목 그룹은 commit 시 BE 가 skip; FE 는 사용자에게 노출만 한다. */
@@ -525,7 +532,11 @@ export const assetsApi = {
 // ============================================================
 
 export const meApi = {
-  deleteAccount: () => apiFetch<void>(ROUTES.me.base, { method: "DELETE" }),
+  deleteAccount: (reason?: string) =>
+    apiFetch<void>(ROUTES.me.base, {
+      method: "DELETE",
+      body: JSON.stringify({ reason: reason ?? null }),
+    }),
 };
 
 // ============================================================
@@ -620,6 +631,8 @@ export interface NoticeListResponse {
   items: NoticeListItem[];
   total: number;
   page: number;
+  // 서버 EXISTS 판정(notices_seen_at high-water mark, 가입시각 fallback). 공지 메뉴 점 단일 출처.
+  has_unread: boolean;
 }
 
 /** 공지 상세 — BE 화이트리스트(6개 키)와 1:1. comments/attachments/user_id 금지. */
@@ -645,12 +658,83 @@ export interface BugReportInput {
   attachments?: (BrokerStatementAttachmentMeta & { storage_key: string })[];
 }
 
+/** 내 제보/문의 — 본인이 쓴 글만(feedback/bug_report/broker_statement, notice 제외). */
+export type MyPostBoardType = "broker_statement" | "feedback" | "bug_report";
+
+/** open=검토중 / resolved=완료 / closed=반려. 어드민이 flip. */
+export type MyPostStatus = "open" | "resolved" | "closed";
+
+/** 어드민 답변 댓글(is_admin=true 만 노출). created_at asc. */
+export interface MyPostComment {
+  id: string;
+  body: string;
+  is_admin: boolean;
+  created_at: string;
+}
+
+/** broker_statement 일 때 broker(자유 텍스트 증권사명)·type 존재. 키 부재 가능. */
+export interface MyPostMetadata {
+  type?: string;
+  broker?: string;
+  country?: string;
+  source?: string;
+}
+
+/** 첨부파일. url=소유자 스코프 presigned GET(Content-Disposition=attachment). 첨부 없으면 빈 배열. */
+export interface MyPostAttachment {
+  id: string;
+  original_name: string;
+  content_type: string | null;
+  size_bytes: number | null;
+  url: string;
+}
+
+/** BE 응답 1:1(snake_case wire, 변환 없음). 글 created_at desc / 댓글 created_at asc. */
+export interface MyPost {
+  id: string;
+  board_type: MyPostBoardType;
+  title: string;
+  body: string;
+  status: MyPostStatus;
+  metadata: MyPostMetadata;
+  created_at: string;
+  updated_at: string;
+  comments: MyPostComment[];
+  // BE 가 아직 응답에 안 싣는 단계 → optional. 소비처(상세 패널)에서 `?? []` 가드 강제.
+  attachments?: MyPostAttachment[];
+  // 서버 read 판정(board_post_reads.read_at 기준, isMyPostUnread 규칙 복제). 안읽음 점 단일 출처.
+  // BE-lag(OTA 선행) 시 필드 부재 → optional. 소비처는 `=== true` 로 비교(undefined → 점 미표시, 안전).
+  unread?: boolean;
+  // resolved 거래내역서 진입 팝업 1회 dedup(board_post_reads.popup_acked_at). 기기 무관.
+  // BE-lag 시 필드 부재 → optional. 소비처는 `=== false` 로 비교(undefined → 팝업 미노출, 안전).
+  popup_acked?: boolean;
+}
+
+export interface MyPostsResponse {
+  items: MyPost[];
+}
+
 export const boardApi = {
   listNotices: (page = 1) =>
     apiFetch<NoticeListResponse>(`${ROUTES.board.notices}?page=${page}`),
 
   getNotice: (id: string) =>
     apiFetch<NoticeDetail>(ROUTES.board.noticeById(id)),
+
+  // 내 제보/문의 — 인증 필요(401). 본인 글만, notice 제외, 어드민 답변 합본.
+  myPosts: () => apiFetch<MyPostsResponse>(ROUTES.board.myPosts),
+
+  // 공지 메뉴 열 때 읽음 처리 — notices_seen_at = now() upsert. 이후 notices 재조회로 has_unread 갱신.
+  markNoticesSeen: () =>
+    apiFetch<void>(ROUTES.board.noticesSeen, { method: "POST" }),
+
+  // 내 글 상세 진입 시 읽음 처리 — read_at = now() upsert. 이후 my-posts 재조회로 unread 갱신.
+  markPostRead: (id: string) =>
+    apiFetch<void>(ROUTES.board.postRead(id), { method: "POST" }),
+
+  // resolved 진입 팝업 확인 — popup_acked_at = now() upsert. 기기 무관 1회 dedup.
+  ackPopup: (id: string) =>
+    apiFetch<void>(ROUTES.board.ackPopup(id), { method: "POST" }),
 
   submitFeedback: (body: FeedbackInput) =>
     apiFetch<{ post_id: string }>(ROUTES.board.feedback, {

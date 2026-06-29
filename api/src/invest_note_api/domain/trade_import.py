@@ -176,5 +176,7 @@ class ImportSummary:
     new_count: int = 0
     duplicate_count: int = 0
     error_count: int = 0
+    # 진짜 비거래 USD 행(환전·이체 등) skip 수. 토스 USD 임포트 도입 후 임포트된 USD 거래는
+    # 더 이상 skip 이 아니다(USD 네이티브로 staging) — 이 카운터는 비거래 행만 센다.
     usd_skip_count: int = 0
     errors: list[ImportError] = field(default_factory=list)

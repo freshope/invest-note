@@ -47,6 +47,7 @@ class Lot:
     ticker: str
     country: str
     asset_name: str
+    name_ko: str | None
     account_id: str
     exchange: str
     running_qty: float
@@ -83,6 +84,10 @@ class Position:
     last_note: str | None
     last_traded_at: str
     account_ids: list[str] = field(default_factory=list)
+    # 표시용 한글명(US). asset_name(계산 키)과 별개, 표시 전용.
+    # ⚠️ trades 로더가 stocks.name_ko 를 실어줄 때만 채워진다(list_trades_with_account 의 LEFT JOIN).
+    # JOIN 없는 list_trades(SELECT *)로 들어온 거래로 만든 Position 은 항상 None(분석 탭 경로 — 의도).
+    name_ko: str | None = None
 
 
 @dataclass(frozen=True)
@@ -180,6 +185,7 @@ def _build_lot_map(trades: list["Trade"]) -> LotMap:
             ticker=trade_identifier(first),
             country=trade_country(first),
             asset_name=first.asset_name,
+            name_ko=first.name_ko,
             account_id=str(first.account_id),
             exchange=exchange,
             running_qty=running_qty,
@@ -205,6 +211,7 @@ def _lot_to_positions(lot_map: LotMap) -> list[Position]:
                 "ticker": lot.ticker,
                 "country": lot.country,
                 "asset_name": lot.asset_name,
+                "name_ko": lot.name_ko,
                 "exchange": lot.exchange,
                 "running_qty": 0.0,
                 "running_cost": 0.0,
@@ -242,6 +249,7 @@ def _lot_to_positions(lot_map: LotMap) -> list[Position]:
             country=pos["country"],
             currency=currency_for_country(pos["country"]),
             asset_name=pos["asset_name"],
+            name_ko=pos["name_ko"],
             exchange=pos["exchange"],
             holding_quantity=holding_qty,
             avg_buy_price=avg_buy_price,

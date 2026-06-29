@@ -17,10 +17,12 @@ board 는 기본적으로 require_admin 이지만, 이 한 흐름만 get_current
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import asyncpg
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from starlette.concurrency import run_in_threadpool
 
 from invest_note_api.auth.dependency import get_current_user
@@ -29,7 +31,11 @@ from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import get_pool
 from invest_note_api.db_ops import board_repo
 from invest_note_api.errors import APIError
-from invest_note_api.schemas.board import BugReportCreate, FeedbackCreate
+from invest_note_api.schemas.board import (
+    BugReportCreate,
+    FeedbackCreate,
+    MyPostsResponse,
+)
 from invest_note_api.schemas.broker_statement import PresignRequest, SubmitRequest
 from invest_note_api.storage import r2
 
@@ -69,6 +75,22 @@ _NOTICE_DETAIL_FIELDS = ("id", "title", "body", "created_at", "is_pinned", "meta
 # 본문(body)은 목록에서 제외하고 상세에서만 노출한다.
 _NOTICE_LIST_FIELDS = ("id", "title", "created_at", "is_pinned")
 
+# "내 제보/문의" 글 화이트리스트 — 본인 글이라 user_id 등은 비노출. comments 는 별도 합본.
+_MY_POST_FIELDS = (
+    "id",
+    "board_type",
+    "title",
+    "body",
+    "status",
+    "metadata",
+    "created_at",
+    "updated_at",
+)
+# 어드민 답변 댓글 화이트리스트 — 작성자(admin) user_id·post_id 비노출.
+_MY_POST_COMMENT_FIELDS = ("id", "body", "is_admin", "created_at")
+# 첨부 메타 화이트리스트 — storage_key 비노출. url(presigned GET)은 라우터가 발급해 더한다.
+_MY_POST_ATTACHMENT_FIELDS = ("id", "original_name", "content_type", "size_bytes")
+
 ERR_BAD_EXT = "지원하지 않는 파일 형식입니다 (xlsx, xls, pdf만 허용)."
 ERR_BAD_CONTENT_TYPE = "지원하지 않는 파일 형식입니다."
 ERR_TOO_LARGE = "파일 크기가 너무 큽니다 (최대 20 MB)."
@@ -78,6 +100,7 @@ ERR_FORBIDDEN_KEY = "잘못된 첨부 참조입니다."
 ERR_DUP_ATTACHMENT = "중복된 첨부가 있습니다."
 ERR_RATE_LIMITED = "너무 많은 제보가 접수되었습니다. 잠시 후 다시 시도해주세요."
 ERR_NOTICE_NOT_FOUND = "공지를 찾을 수 없습니다."
+ERR_POST_NOT_FOUND = "글을 찾을 수 없습니다."
 
 
 def _ext_of(name: str) -> str:
@@ -224,13 +247,16 @@ async def list_notices(
     """공지 목록 — board_type='notice' 만. status 는 publish 게이트가 아니므로 필터하지 않는다.
 
     items 는 화이트리스트 필드만(D-2 — admin user_id·내부 필드 비노출). 본문은 상세에서만.
+    has_unread 는 서버 EXISTS(state 없으면 가입 시각 fallback) — pinned_first 정렬로 인한
+    client-side 오판을 피한다.
     """
     async with pool.acquire() as conn:
         rows, total = await board_repo.list_posts(
             conn, board_type="notice", page=page, page_size=page_size, pinned_first=True
         )
+        has_unread = await board_repo.has_unread_notice(conn, user.id)
     items = [{k: r[k] for k in _NOTICE_LIST_FIELDS} for r in rows]
-    return {"items": items, "total": total, "page": max(page, 1)}
+    return {"items": items, "total": total, "page": max(page, 1), "has_unread": has_unread}
 
 
 @router.get("/notices/{post_id}")
@@ -248,6 +274,105 @@ async def get_notice(
     if detail is None or detail.get("board_type") != "notice":
         raise APIError(ERR_NOTICE_NOT_FOUND, 404)
     return {k: detail[k] for k in _NOTICE_DETAIL_FIELDS}
+
+
+# ─────────────────────────── 내 제보/문의 읽기 ───────────────────────────
+
+
+def _my_post_attachment(att: dict, settings: Settings) -> dict:
+    """첨부 메타(화이트리스트) + 소유자 스코프 presigned GET url. storage_key 비노출.
+
+    어드민 다운로드와 동일한 r2.generate_get_url 재사용(행별 bucket 우선). my-posts 가 이미
+    user_id 로 스코프돼 본인 글 첨부만 도달하므로 추가 소유권 검사 불필요.
+    """
+    return {
+        **{k: att[k] for k in _MY_POST_ATTACHMENT_FIELDS},
+        "url": r2.generate_get_url(
+            settings,
+            att["storage_key"],
+            filename=att["original_name"],
+            bucket=att.get("bucket"),
+        ),
+    }
+
+
+@router.get("/my-posts", response_model=MyPostsResponse)
+async def list_my_posts(
+    user: AuthenticatedUser = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> MyPostsResponse:
+    """본인이 쓴 글(feedback/bug_report/broker_statement)을 어드민 답변·첨부와 함께 최신순으로.
+
+    user_id 는 토큰에서만 취한다(body/query 무시). notice·타인 글은 절대 비노출 — repo 의
+    user_id 스코프 + board_type 화이트리스트가 유일한 가드다. 응답 필드는 화이트리스트로 통제.
+    첨부는 storage_key 대신 presigned GET url 만 노출(R2 미설정 시 발급 단계에서 503).
+    """
+    async with pool.acquire() as conn:
+        posts = await board_repo.list_my_posts(conn, user.id)
+    items = [
+        {
+            **{k: p[k] for k in _MY_POST_FIELDS},
+            "unread": p["unread"],
+            "popup_acked": p["popup_acked"],
+            "comments": [
+                {k: c[k] for k in _MY_POST_COMMENT_FIELDS} for c in p["comments"]
+            ],
+            "attachments": [
+                _my_post_attachment(a, settings) for a in p["attachments"]
+            ],
+        }
+        for p in posts
+    ]
+    return MyPostsResponse(items=items)
+
+
+# ─────────────────────────── 읽음/알림 상태 쓰기 ───────────────────────────
+
+
+@router.post("/notices/seen")
+async def mark_notices_seen(
+    user: AuthenticatedUser = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> Response:
+    """공지 메뉴 열람 — notices_seen_at = now() upsert(high-water mark). 본문 없음(204)."""
+    async with pool.acquire() as conn:
+        await board_repo.set_notices_seen_at(conn, user.id)
+    return Response(status_code=204)
+
+
+async def _mark_post_marker(
+    pool: asyncpg.Pool,
+    post_id: str,
+    user_id: Any,
+    upsert: Callable[[Any, Any, str], Awaitable[None]],
+) -> Response:
+    """read/ack-popup 공통: 소유권 게이트(미충족 404) → upsert → 204. 두 엔드포인트가 공유한다."""
+    async with pool.acquire() as conn:
+        if not await board_repo.post_is_owned_by(conn, post_id, user_id):
+            raise APIError(ERR_POST_NOT_FOUND, 404)
+        await upsert(conn, user_id, post_id)
+    return Response(status_code=204)
+
+
+@router.post("/posts/{post_id}/read")
+async def mark_post_read(
+    post_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> Response:
+    """내 글 상세 열람 — read_at = now() upsert. 본인 글만 허용(소유권 미충족 404). 본문 없음(204)."""
+    return await _mark_post_marker(pool, post_id, user.id, board_repo.upsert_post_read)
+
+
+@router.post("/posts/{post_id}/ack-popup")
+async def ack_post_popup(
+    post_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> Response:
+    """바텀시트 팝업 확인 — popup_acked_at = now() upsert. 본인 글만 허용(404). 본문 없음(204)."""
+    return await _mark_post_marker(pool, post_id, user.id, board_repo.upsert_popup_ack)
 
 
 # ─────────────────────────── 의견(feedback) 쓰기 ───────────────────────────

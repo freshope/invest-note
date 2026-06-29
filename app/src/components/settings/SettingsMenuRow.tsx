@@ -10,6 +10,8 @@ interface SettingsMenuRowProps {
   onClick: () => void;
   variant?: SettingsMenuRowVariant;
   description?: string;
+  /** 라벨 옆 unread 점(새 답변·새 공지 등). */
+  dot?: boolean;
 }
 
 /**
@@ -22,6 +24,7 @@ export function SettingsMenuRow({
   onClick,
   variant = "default",
   description,
+  dot = false,
 }: SettingsMenuRowProps) {
   const isDestructive = variant === "destructive";
 
@@ -38,7 +41,12 @@ export function SettingsMenuRow({
       )}
     >
       <span className="min-w-0">
-        <span className="block truncate text-[15px] font-medium">{label}</span>
+        <span className="flex items-center gap-1.5">
+          <span className="truncate text-[15px] font-medium">{label}</span>
+          {dot ? (
+            <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-label="새 알림" />
+          ) : null}
+        </span>
         {description ? (
           <span className="mt-0.5 block truncate text-[12px] text-muted-foreground">
             {description}

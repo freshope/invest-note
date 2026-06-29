@@ -69,6 +69,15 @@ export function formatFxRate(rate: number): string {
   })}`;
 }
 
+/** ISO 시각 → "yyyy.mm.dd"(로컬). 잘못된 입력이면 빈 문자열. */
+export function formatDateOnly(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
+}
+
 /**
  * ISO 시각 → 한국시각(KST) "HH:mm". timeZone 고정으로 디바이스/CI TZ 무관하게 KST 기준 표시.
  * 잘못된 입력이면 null.
