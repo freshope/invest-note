@@ -2,10 +2,9 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { exchangeCodeForSession } from "@/lib/auth";
 import { isNativePlatform } from "@/lib/platform";
 import { NATIVE_URL_SCHEME, NATIVE_CALLBACK_HOST } from "@/lib/auth/oauth-config";
-import { LOGIN_OAUTH_FAILED_PATH_WITH_SLASH } from "@/lib/auth/errors";
+import { exchangeAndRoute } from "@/lib/auth/exchange-and-route";
 
 export const OAUTH_BROWSER_FINISHED_EVENT = "oauth:browser-finished";
 
@@ -52,19 +51,9 @@ export function CapacitorDeepLinkHandler() {
       }
 
       // BE flow: 딥링크엔 일회용 code 만 온다(access/refresh 직접 미노출, C6/B4).
-      // exchangeCodeForSession 이 BE /auth/token 에 code+PKCE verifier 를 제출한다.
+      // 웹 콜백 페이지와 동일한 post-code 라우팅(exchangeAndRoute 단일 출처).
       const code = url.searchParams.get("code");
-      if (!code) {
-        router.replace(LOGIN_OAUTH_FAILED_PATH_WITH_SLASH);
-        return;
-      }
-
-      try {
-        await exchangeCodeForSession(code);
-        router.replace("/");
-      } catch {
-        router.replace(LOGIN_OAUTH_FAILED_PATH_WITH_SLASH);
-      }
+      await exchangeAndRoute(code, router);
     };
 
     (async () => {

@@ -18,15 +18,21 @@ interface TokenResponse {
 }
 
 /**
- * 인앱 브라우저용 BE 로그인 URL(C1). 앱이 challenge(S256) 를 BE 에 전달하면
- * BE 가 IdP 중개 후 딥링크로 일회용 code 를 돌려준다.
+ * BE 로그인 URL(C1). 앱이 challenge(S256) 를 BE 에 전달하면 BE 가 IdP 중개 후
+ * 일회용 code 를 돌려준다. 네이티브는 딥링크(client 생략 = BE default native),
+ * 웹은 `client=web` 으로 `be_app_web_redirect_url` 로 돌려받는다(개발 편의용).
  */
-export function buildLoginUrl(provider: string, codeChallenge: string): string {
+export function buildLoginUrl(
+  provider: string,
+  codeChallenge: string,
+  client?: "web",
+): string {
   const params = new URLSearchParams({
     provider,
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
   });
+  if (client) params.set("client", client);
   return `${API_BASE}/auth/login?${params.toString()}`;
 }
 

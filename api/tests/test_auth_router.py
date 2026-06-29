@@ -689,3 +689,85 @@ def test_native_callback_still_deeplink(patch_provider):
     cb = _do_callback(client, state)
     assert cb.status_code == 302
     assert cb.headers["location"].startswith("app.pixelwave.investnote://")
+
+
+# --- client=web (개발 편의용 app 웹 BE flow — admin 패턴 미러링, 값만 상이) ---
+
+WEB_REDIRECT_URL = "http://localhost:3000/auth/callback"
+
+
+def _web_settings() -> Settings:
+    return Settings(
+        supabase_url=TEST_SUPABASE_URL,
+        be_token_signing_key=_be_pem,
+        be_token_issuer=BE_ISSUER,
+        be_token_audience=BE_AUDIENCE,
+        be_token_kid=BE_KID,
+        be_oauth_redirect_base="https://api.invest-note.example",
+        be_app_web_redirect_url=WEB_REDIRECT_URL,
+        google_client_id="gid",
+        google_client_secret="gsec",
+    )
+
+
+def _web_client(store):
+    settings = _web_settings()
+    app = create_app(settings)
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_pool] = lambda: _FakePool(store)
+    app.dependency_overrides[get_http_client] = lambda: None
+    return TestClient(app)
+
+
+def test_web_login_stores_client_in_state(patch_provider):
+    # client=web & env 설정 → 302 IdP, state payload 에 client=="web" 저장.
+    store = _new_store()
+    client = _web_client(store)
+    r = client.get(
+        "/auth/login",
+        params={"provider": "google", "code_challenge": _challenge("v-web-login-0001"),
+                "client": "web"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 302
+    state = parse_qs(urlparse(r.headers["location"]).query)["state"][0]
+    assert store["transient"][state]["payload"]["client"] == "web"
+
+
+def test_web_login_empty_env_fails_fast(patch_provider):
+    # client=web 인데 be_app_web_redirect_url 빈 값(_settings) → 503, state 저장 안 함(dormant).
+    store = _new_store()
+    client = _client(store)  # 기본 settings = be_app_web_redirect_url 빈 값
+    r = client.get(
+        "/auth/login",
+        params={"provider": "google", "code_challenge": _challenge("v-web-noenv-01"),
+                "client": "web"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 503
+    assert store["transient"] == {}  # IdP 왕복·state 소모 전 fail-fast
+
+
+def test_web_callback_redirects_to_web_url(patch_provider):
+    # web client callback → be_app_web_redirect_url?code=... 로 302(딥링크 아님).
+    store = _new_store()
+    client = _web_client(store)
+    verifier = "v-web-callback-001"
+    r = client.get(
+        "/auth/login",
+        params={"provider": "google", "code_challenge": _challenge(verifier),
+                "client": "web"},
+        follow_redirects=False,
+    )
+    state = parse_qs(urlparse(r.headers["location"]).query)["state"][0]
+    cb = _do_callback(client, state)
+    assert cb.status_code == 302
+    loc = cb.headers["location"]
+    assert loc.startswith(WEB_REDIRECT_URL)
+    assert not loc.startswith("app.pixelwave.investnote://")  # 딥링크 아님
+    code = parse_qs(urlparse(loc).query)["code"][0]
+    assert code  # 일회용 code 부착
+    # 교환 가능(기존 shape 유지) — web flow 도 동일 /auth/token.
+    tok = client.post("/auth/token", json={"code": code, "code_verifier": verifier})
+    assert tok.status_code == 200
+    assert "access_token" in tok.json()
