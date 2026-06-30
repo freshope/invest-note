@@ -183,8 +183,15 @@ async def get_post(conn: Any, post_id: Any, *, with_relations: bool = True) -> d
     return detail
 
 
-async def list_my_posts(conn: Any, user_id: Any) -> list[dict]:
-    """본인이 쓴 글(feedback/bug_report/broker_statement) + 어드민 답변 댓글 합본.
+async def list_my_posts(
+    conn: Any,
+    user_id: Any,
+    *,
+    board_type: str | None = None,
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
+) -> tuple[list[dict], int]:
+    """본인이 쓴 글(feedback/bug_report/broker_statement) + 어드민 답변 댓글 합본 → (rows, total).
 
     사용자 격리는 posts 의 `user_id = $1` 과 comments 의 `post_id = any(<내 글 id>)` 가 전부다
     (RLS 제거됨). notice 는 board_type 화이트리스트로 제외한다. 각 글에 is_admin=true 댓글만
@@ -196,18 +203,51 @@ async def list_my_posts(conn: Any, user_id: Any) -> list[dict]:
     각 글에 board_post_reads(현재 user)를 LEFT JOIN 해 read_at/popup_acked_at 을 끌어와
     unread(_compute_unread)·popup_acked(popup_acked_at IS NOT NULL)를 계산해 더한다. 별도
     fetch 가 아닌 단일 쿼리 JOIN 이라 호출 횟수는 늘지 않는다.
+
+    board_type None(레거시 무인자 호출) → 3종 전량, LIMIT 미적용, total=len. 라이브 v1.3.4 가
+    무인자로 호출하므로 이 동작을 보존한다. board_type 지정 → 해당 한 타입만 count(total) +
+    LIMIT/OFFSET 페이지네이션. 화이트리스트 외 board_type(notice 등)은 ([], 0)(권한 경계 보호).
     """
-    posts = await conn.fetch(
-        "select board_posts.*, r.read_at, r.popup_acked_at from board_posts "
-        "left join board_post_reads r "
-        "on r.post_id = board_posts.id and r.user_id = $1 "
-        "where board_posts.user_id = $1 and board_posts.board_type = any($2) "
-        "order by board_posts.created_at desc",
-        user_id,
-        list(_MY_POST_BOARD_TYPES),
-    )
+    if board_type is not None and board_type not in _MY_POST_BOARD_TYPES:
+        return [], 0
+
+    if board_type is None:
+        posts = await conn.fetch(
+            "select board_posts.*, r.read_at, r.popup_acked_at from board_posts "
+            "left join board_post_reads r "
+            "on r.post_id = board_posts.id and r.user_id = $1 "
+            "where board_posts.user_id = $1 and board_posts.board_type = any($2) "
+            "order by board_posts.created_at desc",
+            user_id,
+            list(_MY_POST_BOARD_TYPES),
+        )
+        total = len(posts)
+    else:
+        page = max(page, 1)
+        page_size = max(1, min(page_size, MAX_PAGE_SIZE))
+        offset = (page - 1) * page_size
+        total = int(
+            await conn.fetchval(
+                "select count(*) from board_posts "
+                "where user_id = $1 and board_type = $2",
+                user_id,
+                board_type,
+            )
+            or 0
+        )
+        posts = await conn.fetch(
+            "select board_posts.*, r.read_at, r.popup_acked_at from board_posts "
+            "left join board_post_reads r "
+            "on r.post_id = board_posts.id and r.user_id = $1 "
+            "where board_posts.user_id = $1 and board_posts.board_type = $2 "
+            "order by board_posts.created_at desc limit $3 offset $4",
+            user_id,
+            board_type,
+            page_size,
+            offset,
+        )
     if not posts:
-        return []
+        return [], total
 
     # raw row 의 UUID id 로 합본 대상을 조회한다(_post_row_to_dict 가 str 로 바꾸기 전 값).
     post_ids = [row["id"] for row in posts]
@@ -243,7 +283,63 @@ async def list_my_posts(conn: Any, user_id: Any) -> list[dict]:
         d["unread"] = _compute_unread(d, read_at)
         d["popup_acked"] = popup_acked_at is not None
         result.append(d)
-    return result
+    return result, total
+
+
+async def unread_summary(conn: Any, user_id: Any) -> dict:
+    """내 글 미확인 신호 집계 — board_type별 unread bool + 진입 팝업 1건. page 비의존(전량 스캔).
+
+    list_my_posts 페이지네이션 위에 얹지 않는다 — page1-only 버그 재발 방지를 위해 본인 글
+    3종 **전체**를 스캔한다. 첨부/R2 서명은 생략(경량) — unread 판정에 불필요. unread 규칙은
+    list_my_posts 와 동일하게 `_compute_unread`(FE isMyPostUnread 미러)를 재사용한다.
+
+    popup: resolved broker_statement 중 popup_acked_at IS NULL 인 글을 created_at desc 첫 건만
+    반환({post_id, broker}), 없으면 None. broker 는 metadata.broker(없으면 null → FE fallback).
+    FE MySubmissionsPopupGate 조건(status=='resolved' && broker_statement && popup_acked===false)을
+    정확히 복제한다.
+    """
+    posts = await conn.fetch(
+        "select board_posts.*, r.read_at, r.popup_acked_at from board_posts "
+        "left join board_post_reads r "
+        "on r.post_id = board_posts.id and r.user_id = $1 "
+        "where board_posts.user_id = $1 and board_posts.board_type = any($2) "
+        "order by board_posts.created_at desc",
+        user_id,
+        list(_MY_POST_BOARD_TYPES),
+    )
+    unread: dict[str, bool] = {bt: False for bt in _MY_POST_BOARD_TYPES}
+    popup: dict | None = None
+    if not posts:
+        return {"unread": unread, "popup": None}
+
+    post_ids = [row["id"] for row in posts]
+    comments = await conn.fetch(
+        "select * from board_comments "
+        "where post_id = any($1) and is_admin = true "
+        "order by created_at asc",
+        post_ids,
+    )
+    comments_by_post: dict[str, list[dict]] = {}
+    for c in comments:
+        cd = _comment_row_to_dict(c)
+        comments_by_post.setdefault(cd["post_id"], []).append(cd)
+
+    for row in posts:
+        d = _post_row_to_dict(row)
+        read_at = d.pop("read_at", None)
+        popup_acked_at = d.pop("popup_acked_at", None)
+        d["comments"] = comments_by_post.get(d["id"], [])
+        if _compute_unread(d, read_at):
+            unread[d["board_type"]] = True
+        # posts 는 created_at desc → 첫 매칭이 곧 created_at desc 첫 건.
+        if (
+            popup is None
+            and d["board_type"] == "broker_statement"
+            and d["status"] == "resolved"
+            and popup_acked_at is None
+        ):
+            popup = {"post_id": d["id"], "broker": d["metadata"].get("broker")}
+    return {"unread": unread, "popup": popup}
 
 
 async def create_post(

@@ -115,9 +115,32 @@ class MyPostItem(BaseModel):
 
 
 class MyPostsResponse(BaseModel):
-    """GET /board/my-posts 응답 — 본인 글 목록(최신순). notice/타인 글 비포함."""
+    """GET /board/my-posts 응답 — 본인 글 목록(최신순). notice/타인 글 비포함.
+
+    total/page 는 additive — 라이브 v1.3.4 는 `.items` 만 읽어 무해. board_type 무인자(레거시)
+    호출은 전량 반환 + total=len + page=1.
+    """
 
     items: list[MyPostItem]
+    total: int = 0
+    page: int = 1
+
+
+class PopupTarget(BaseModel):
+    """진입 팝업 1건 — resolved broker_statement 미확인 글. broker 없으면 null(FE fallback)."""
+
+    post_id: str
+    broker: str | None = None
+
+
+class UnreadSummaryResponse(BaseModel):
+    """GET /board/unread-summary 응답 — board_type별 unread bool + 진입 팝업 1건(page 비의존).
+
+    unread 는 feedback/bug_report/broker_statement 3키 bool. popup 은 PopupTarget 또는 null.
+    """
+
+    unread: dict[str, bool]
+    popup: PopupTarget | None = None
 
 
 class BugReportCreate(BaseModel):

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { ChevronRightIcon } from "lucide-react";
 import {
@@ -49,15 +49,32 @@ export function MyPostsListPanel({
   // 스냅샷 객체 대신 id 보관 후 live items 에서 조회 → 상세 열린 중 refetch 되면 새 답변 반영.
   const [detailId, setDetailId] = useState<string | null>(null);
 
-  const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: queryKeys.myPosts,
-    queryFn: () => boardApi.myPosts(),
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: queryKeys.myPostsList(boardType),
+    queryFn: ({ pageParam }) => boardApi.myPosts(boardType, pageParam),
     enabled: open,
+    initialPageParam: 1,
+    // 누적 건수가 total 미만이면 다음 페이지 존재. BE-lag(total/page 부재) 시 next 없음으로 degrade.
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((sum, p) => sum + p.items.length, 0);
+      return loaded < (lastPage.total ?? loaded)
+        ? (lastPage.page ?? allPages.length) + 1
+        : undefined;
+    },
   });
 
+  // 서버가 이미 board_type 으로 필터한 결과 — 클라 필터 불필요. 페이지 평탄화만.
   const items = useMemo(
-    () => (data?.items ?? []).filter((p) => p.board_type === boardType),
-    [data, boardType],
+    () => data?.pages.flatMap((p) => p.items) ?? [],
+    [data],
   );
   // 서버 unread 플래그로 행 점 구성(단일 출처). invalidate 로 자연 갱신.
   const unreadIds = useMemo(
@@ -108,16 +125,28 @@ export function MyPostsListPanel({
                   description="상단 ‘작성’ 으로 보내주시면 이곳에서 처리 상태와 답변을 확인할 수 있어요."
                 />
               ) : (
-                <div className="rounded-2xl bg-muted/60 overflow-hidden">
-                  {items.map((post) => (
-                    <PostRow
-                      key={post.id}
-                      post={post}
-                      unread={unreadIds.has(post.id)}
-                      onClick={() => setDetailId(post.id)}
-                    />
-                  ))}
-                </div>
+                <>
+                  <div className="rounded-2xl bg-muted/60 overflow-hidden">
+                    {items.map((post) => (
+                      <PostRow
+                        key={post.id}
+                        post={post}
+                        unread={unreadIds.has(post.id)}
+                        onClick={() => setDetailId(post.id)}
+                      />
+                    ))}
+                  </div>
+                  {hasNextPage ? (
+                    <button
+                      type="button"
+                      onClick={() => fetchNextPage()}
+                      disabled={isFetchingNextPage}
+                      className="mt-3 w-full rounded-xl bg-muted/60 py-3 text-[14px] font-medium text-muted-foreground transition-colors hover:bg-foreground/5 disabled:opacity-60"
+                    >
+                      {isFetchingNextPage ? "불러오는 중…" : "더 보기"}
+                    </button>
+                  ) : null}
+                </>
               )}
             </div>
           </FullScreenPanelBody>

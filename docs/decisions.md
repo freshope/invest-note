@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-06-30 | 게시판 my-posts 페이지네이션 + unread 신호 분리(unread-summary 신설)
+
+- **맥락:** my-posts 계열만 무페이지네이션 전량 반환이라 글이 쌓이면 첨부 presigned URL 재서명 포함 응답 비용이 선형 증가했다. notices 는 이미 `list_notices` + `useInfiniteQuery` 로 페이지네이션됨 → my-posts 도 동일 패턴(board_type 필터 + page/page_size/total)으로 통일한다. 단, my-posts 를 페이지네이션하면 목록 전량 순회로 파생되던 unread/popup 신호(settings 3-dot, MySubmissionsPopupGate)가 page1 만 보고 깨진다.
+- **결정 ① unread/popup 을 목록에서 분리 — 신규 경량 `GET /board/unread-summary`.** my-posts 페이지네이션 위에 unread 를 얹지 않고(page1-only 버그 재발), 본인 글 3종 **전체를 스캔**하는 별도 엔드포인트로 뺀다. `{unread:{feedback,bug_report,broker_statement}(bool), popup:{post_id,broker}|null}`. 첨부/R2 서명은 생략(경량) — unread 판정에 불필요. FE 는 목록에서 unread 를 파생하지 않고 이 엔드포인트가 board_type별 점·진입 팝업의 단일 출처.
+- **결정 ② unread 규칙 단일 정의 — `_compute_unread` 재사용(SQL 집계 미채택).** unread-summary 는 list_my_posts 와 동일하게 Python `_compute_unread`(FE `isMyPostUnread` 미러)를 글+어드민 댓글+`board_post_reads` JOIN 위에서 재실행한다. SQL EXISTS 집계로 규칙을 3번째 복제하면 BUY/SELL 활동시각·tz 수치비교 등 규칙이 drift 한다 → 첨부/서명만 빼고 판정 코드는 공유. 트레이드오프: 전량 스캔(글 수 선형)이나 첨부/서명 없어 비용은 목록보다 작고, page 비의존이 정확성의 핵심.
+- **결정 ③ board_type Optional — 레거시 하위호환(가장 빡빡한 제약).** 라이브 네이티브 v1.3.4 는 `/board/my-posts` 를 **무인자**로 호출하고 `.items` 만 읽는다. `board_type` 을 필수화하면 422 로 라이브 앱 파손 → **반드시 Optional**(기본 None). None → 3종 전량(LIMIT 미적용, total=len, page=1, 레거시 동작 보존). 지정 → 해당 타입만 count(total) + LIMIT/OFFSET. 응답은 **additive** `{items, total, page}`(구 클라이언트는 `.items` 만 읽어 무해). 화이트리스트 외 board_type(notice 등)은 ([], 0)로 권한 경계 보호.
+- **결정 ④ query-key `["my-posts"]` 루트 prefix 보존 — invalidator 무수정.** FE reader 만 하위 키(`["my-posts","list",boardType]`, `["my-posts","unread-summary"]`)로 이동하고, invalidation 루트는 `["my-posts"]` 유지 → 기존 invalidator 5곳(FeedbackPanel/BugReportPanel/BrokerStatementPanel/MyPostDetailPanel/MySubmissionsPopupGate)이 루트 무효화 시 list·summary 가 함께 cascade. invalidator 측 수정 0.
+- **트레이드오프/잔여:** ⓐ unread-summary 전량 스캔은 글 수에 선형(첨부/서명 제외라 목록 페이지네이션보다 저렴, page 정확성 위해 의도적 선택). ⓑ **롤아웃 순서 — BE 선배포 필수.** unread-summary 는 신규 엔드포인트라 FE OTA 보다 먼저 배포돼야 한다. FE 는 BE-lag 시 summary 부재 → 점 미표시 안전 degrade. ⓒ DB 스키마 변경 없음(페이지네이션=LIMIT/OFFSET, 필터=WHERE, 기존 `board_post_reads` 컬럼 재사용) → Alembic 마이그레이션 불필요. ⓓ notices 경로(list_notices/has_unread_notice/markNoticesSeen) 무변경 — 서버 EXISTS 라 page 무관, unread-summary 로 통합 안 함(blast radius 대비 정합 이득 없음). 참조: [[project_board_structure]]·[[project_broker_statement_submission]]·[[project_alembic_migrations]].
+
+---
+
 ## 2026-06-29 | 탈-Supabase Auth Phase 2c — Supabase 검증 fallback 제거 + 웹 BE flow 복구(localStorage C5 예외)
 
 - **맥락:** cutover 운영 완료(2026-06-26, [[project_auth_cutover_exec_method]]) + force-update bump(`MIN_SUPPORTED_VERSION=1.3.0`, 2026-06-29, [[project_force_update]]) 이후, Supabase 는 ⓐ BE 토큰 검증 default fallback, ⓑ FE 웹 분기(supabase-js) 두 경로로만 잔존했다. 2c "가역 코드 제거" 단계로 둘을 정리한다([[project_auth_decoupling]] Phase 2 의 마지막 가역 코드 작업, 비가역 클라우드 정리는 별도 후속). backlog ④(2c contract)·⑤(isNativePlatform 이중화) 등재 항목.
