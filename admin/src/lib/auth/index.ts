@@ -129,10 +129,10 @@ async function doRefresh(): Promise<string | null> {
 
 /**
  * 구글 OAuth 로그인 시작. verifier 생성·저장 → S256 challenge → BE login URL 로
- * full-page 리다이렉트(반환 없음, 페이지 이탈). redirectTo 는 무시(BE 가 고정 식별자
- * client=admin 으로 env redirect 매핑 — 클라가 URL 미전송).
+ * full-page 리다이렉트(반환 없음, 페이지 이탈). redirectTo 는 받지 않는다(BE 가 고정
+ * 식별자 client=admin 으로 env redirect 매핑 — 클라가 URL 미전송).
  */
-export async function signInWithGoogle(_redirectTo?: string): Promise<void> {
+export async function signInWithGoogle(): Promise<void> {
   // WebCrypto(S256) 부재면 silent 사망 대신 명시적 throw → 호출부(login)가 에러 라우팅.
   if (!isWebCryptoAvailable()) {
     throw new Error("WebCrypto unavailable: PKCE S256 not supported");

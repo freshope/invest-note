@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
@@ -62,9 +62,11 @@ export function MySubmissionsPopupGate() {
   // 한 번 ack 한 id 는 다시 노출하지 않는다(같은 세션 재오픈 방지).
   const [acked, setAcked] = useState(false);
 
-  useEffect(() => {
-    if (target && !acked) setOpen(true);
-  }, [target, acked]);
+  // target 이 나타나면(미ack) 자동 오픈. effect 동기 setState 대신 렌더 중 조정(React 공식 패턴).
+  // !open 가드로 1회만 set → 무한 렌더 없음. ack 후엔 acked=true 라 재오픈 안 됨.
+  if (target && !acked && !open) {
+    setOpen(true);
+  }
 
   if (!target) return null;
 

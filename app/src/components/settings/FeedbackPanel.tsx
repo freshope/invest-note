@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -32,12 +32,14 @@ function errorMessage(err: unknown): string {
 export function FeedbackPanel({ open, onOpenChange }: Props) {
   const queryClient = useQueryClient();
   const [body, setBody] = useState("");
+  const [wasOpen, setWasOpen] = useState(open);
 
-  // 진입(open) 시마다 폼을 초기 상태로 — 패널 컴포넌트는 항상 마운트되어 있어
-  // 직전 입력값이 useState 에 남기 때문.
-  useEffect(() => {
+  // 진입(open false→true) 시마다 폼을 초기 상태로 — 패널 컴포넌트는 항상 마운트되어 있어
+  // 직전 입력값이 useState 에 남기 때문. effect 동기 setState 대신 렌더 중 조정(React 공식 패턴).
+  if (open !== wasOpen) {
+    setWasOpen(open);
     if (open) setBody("");
-  }, [open]);
+  }
 
   const mutation = useMutation({
     mutationFn: (input: FeedbackInput) => boardApi.submitFeedback(input),

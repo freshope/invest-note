@@ -68,6 +68,9 @@ export function TradeList({ trades, accounts }: TradeListProps) {
   // "지금 가져오기" 딥링크 소비. 교차 라우트는 마운트 시 1회 consume,
   // 동일 라우트(이미 /records)는 listener 로 즉시 consume → 양쪽 다 플래그 잔존 없음.
   useEffect(() => {
+    // 외부 모듈 플래그를 읽고-소비(consume)하는 동기화 — useSyncExternalStore(읽기 전용)에
+    // 맞지 않고 마운트 전 set 된 플래그도 consume 해야 해 effect 가 정석. 룰 과발화.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (consumeImportOpen()) openImport();
     return subscribeImportOpen(() => {
       if (consumeImportOpen()) openImport();
