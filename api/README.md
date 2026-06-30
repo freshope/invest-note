@@ -72,26 +72,26 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/me
 
 ```bash
 # 계좌 목록
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/accounts
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/v1/accounts
 
 # 계좌 생성
-curl -i -X POST http://localhost:8000/api/accounts \
+curl -i -X POST http://localhost:8000/v1/accounts \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"name":"테스트","broker":"키움","cash_balance":"1,000,000"}'
 # → 201
 
 # 계좌 수정
-curl -i -X PATCH "http://localhost:8000/api/accounts/<id>" \
+curl -i -X PATCH "http://localhost:8000/v1/accounts/<id>" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"broker":"미래에셋"}'
 # → 200 (빈 body {} → 204)
 
 # 계좌 삭제 (거래 없는 계좌)
-curl -i -X DELETE -H "Authorization: Bearer $TOKEN" "http://localhost:8000/api/accounts/<id>"
+curl -i -X DELETE -H "Authorization: Bearer $TOKEN" "http://localhost:8000/v1/accounts/<id>"
 # → 204 (거래 있으면 409)
 
 # 거래 수
-curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/api/accounts/<id>/trade-count"
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/v1/accounts/<id>/trade-count"
 # → {"count": 0}
 ```
 
@@ -99,14 +99,14 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/api/accounts/<id>/
 
 ```bash
 # 거래 목록
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/trades
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/v1/trades
 
 # ticker + country 필터
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/trades?ticker=005930&country=KR"
+  "http://localhost:8000/v1/trades?ticker=005930&country=KR"
 
 # 거래 생성 (BUY)
-curl -i -X POST http://localhost:8000/api/trades \
+curl -i -X POST http://localhost:8000/v1/trades \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{
     "trade_type": "BUY",
@@ -125,21 +125,21 @@ curl -i -X POST http://localhost:8000/api/trades \
 # → 201, {id, trade_type, ...}
 
 # 거래 단건 조회
-curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/api/trades/<trade_id>"
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/v1/trades/<trade_id>"
 
 # 거래 수정 (PnL 영향 필드 포함 시 recalc 실행)
-curl -i -X PATCH "http://localhost:8000/api/trades/<trade_id>" \
+curl -i -X PATCH "http://localhost:8000/v1/trades/<trade_id>" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"price": 71000}'
 # → 204
 
 # 거래 삭제
-curl -i -X DELETE -H "Authorization: Bearer $TOKEN" "http://localhost:8000/api/trades/<trade_id>"
+curl -i -X DELETE -H "Authorization: Bearer $TOKEN" "http://localhost:8000/v1/trades/<trade_id>"
 # → 204
 
 # 매도 거래 요약 (PnL + 보유일 + 전략 평가)
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/trades/<sell_trade_id>/summary"
+  "http://localhost:8000/v1/trades/<sell_trade_id>/summary"
 # → {pnl, result, holdingDays, strategyEvaluation, breakdown}
 ```
 
@@ -148,11 +148,11 @@ curl -H "Authorization: Bearer $TOKEN" \
 ```bash
 # 보유 수량 조회
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/portfolio/holding?accountId=<id>&assetName=삼성전자&ticker=005930&country=KR"
+  "http://localhost:8000/v1/portfolio/holding?accountId=<id>&assetName=삼성전자&ticker=005930&country=KR"
 # → {quantity, avgBuyPrice}
 
 # 포트폴리오 요약 (positions + snapshots + totals + 실시간 시세)
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/portfolio/summary
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/v1/portfolio/summary
 # → {totals, positions, snapshots, hasAccounts, hasTrades}
 ```
 
@@ -161,21 +161,21 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/portfolio/summa
 ```bash
 # 시세 조회 (복수 가능, KR/US 혼합)
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/stocks/quote?symbols=005930:KR,AAPL:US"
+  "http://localhost:8000/v1/stocks/quote?symbols=005930:KR,AAPL:US"
 # → {"005930:KR": {price, currency, as_of}, "AAPL:US": {price, currency, as_of}}
 
 # 종목 검색 (한글/종목코드 → KR, 영문 → US)
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/stocks/search?q=삼성"
+  "http://localhost:8000/v1/stocks/search?q=삼성"
 # → [{code, name, market, exchange}, ...]
 
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/stocks/search?q=apple"
+  "http://localhost:8000/v1/stocks/search?q=apple"
 # → [{code, name, market, exchange}, ...]
 
 # Analysis (period: 1m | 3m | 6m | ytd | all)
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/analysis/dashboard?period=3m"
+  "http://localhost:8000/v1/analysis/dashboard?period=3m"
 # → {
 #   period,
 #   summary:     {totalTrades, sellTrades, winRate, totalProfitLoss, byStrategy[], byEmotion[], byTag[], ...},
