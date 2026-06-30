@@ -451,3 +451,6 @@ class TestAnalysisDashboard:
         assert resp.status_code == 200
         trade_queries = [q for q in fetch_queries if "FROM TRADES" in q.upper()]
         assert len(trade_queries) == 1, fetch_queries
+        # name_ko 운반 로더(list_trades_with_account) 사용을 SQL 로 고정 — 향후 읽기경로
+        # 최적화가 조용히 가벼운 list_trades 로 되돌려 집중도 라벨을 영문 퇴행시키는 것을 가드.
+        assert "name_ko" in trade_queries[0].lower(), trade_queries[0]
