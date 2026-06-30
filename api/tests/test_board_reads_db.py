@@ -162,14 +162,14 @@ async def test_list_my_posts_unread_cleared_by_read_join():
             "VALUES ($1::uuid, true, '반영')",
             post_id,
         )
-        posts = await board_repo.list_my_posts(conn, user_id)
+        posts, _ = await board_repo.list_my_posts(conn, user_id)
         assert len(posts) == 1
         assert posts[0]["unread"] is True
         assert posts[0]["popup_acked"] is False
 
         # 상세 열람(read=now() > 댓글 시각) → 해제.
         await board_repo.upsert_post_read(conn, user_id, post_id)
-        posts = await board_repo.list_my_posts(conn, user_id)
+        posts, _ = await board_repo.list_my_posts(conn, user_id)
         assert posts[0]["unread"] is False
     finally:
         # board_posts.user_id ON DELETE SET NULL — 시드 글 명시 삭제(댓글/reads 는 post CASCADE).

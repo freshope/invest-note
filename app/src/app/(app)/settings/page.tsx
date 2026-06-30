@@ -1,13 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { accountsApi, boardApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
-import type { MyPostBoardType } from "@/lib/api-client";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { Button } from "@/components/base/Button";
 import {
@@ -51,10 +50,10 @@ export default function SettingsPage() {
   const [brokerStatementOpen, setBrokerStatementOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
-  // unread 점/뱃지 — 인증 사용자만 조회. 목록 패널과 queryKey 공유(dedup).
-  const myPostsQuery = useQuery({
-    queryKey: queryKeys.myPosts,
-    queryFn: () => boardApi.myPosts(),
+  // unread 점/뱃지 — 인증 사용자만 조회. 3종 unread 단일 출처(page 비의존 전량 스캔 summary).
+  const unreadSummaryQuery = useQuery({
+    queryKey: queryKeys.unreadSummary,
+    queryFn: () => boardApi.unreadSummary(),
     enabled: !!user,
   });
   const noticesQuery = useQuery({
@@ -63,21 +62,13 @@ export default function SettingsPage() {
     enabled: !!user,
   });
 
-  // board_type 별 unread 점 — 서버 플래그(post.unread) 단일 출처. invalidate 로 자연 갱신.
-  const myPostsUnread = useMemo<Record<MyPostBoardType, boolean>>(() => {
-    const items = myPostsQuery.data?.items ?? [];
-    const result: Record<MyPostBoardType, boolean> = {
-      feedback: false,
-      bug_report: false,
-      broker_statement: false,
-    };
-    for (const p of items) {
-      if (!result[p.board_type] && p.unread === true) {
-        result[p.board_type] = true;
-      }
-    }
-    return result;
-  }, [myPostsQuery.data]);
+  // board_type 별 unread 점 — unread-summary 단일 출처. invalidate(myPosts 루트 prefix)로 자연 갱신.
+  // BE-lag(summary 부재) 시 모두 false → 점 미표시 안전 degrade.
+  const myPostsUnread = unreadSummaryQuery.data?.unread ?? {
+    feedback: false,
+    bug_report: false,
+    broker_statement: false,
+  };
 
   // 공지 점 — 서버 EXISTS 판정(has_unread). BE-lag 시 필드 부재면 점 미표시로 degrade.
   const noticeUnread = noticesQuery.data?.has_unread === true;

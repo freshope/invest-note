@@ -538,7 +538,7 @@ def test_my_posts_empty_returns_empty_list():
     client = _client(_r2_settings(), pool=FakePool(conn))
     resp = client.get("/v1/board/my-posts")
     assert resp.status_code == 200
-    assert resp.json() == {"items": []}
+    assert resp.json() == {"items": [], "total": 0, "page": 1}
 
 
 def test_my_posts_post_without_admin_comment_has_empty_comments():
@@ -551,6 +551,81 @@ def test_my_posts_post_without_admin_comment_has_empty_comments():
     items = resp.json()["items"]
     assert len(items) == 1
     assert items[0]["comments"] == []
+
+
+def test_my_posts_legacy_no_args_returns_items_total_page():
+    """무인자 호출(레거시 v1.3.4) → 전량 반환 + additive {items, total, page}. board_type None 경로."""
+    pid = str(uuid4())
+    # board_type None: fetch(posts) → fetch(comments) → fetch(attachments). count fetchval 없음.
+    conn = FakeConnection([_my_post_row(pid, board_type="feedback")], [], [])
+    client = _client(_r2_settings(), pool=FakePool(conn))
+    resp = client.get("/v1/board/my-posts")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 1  # 레거시 total=len
+    assert body["page"] == 1
+    assert len(body["items"]) == 1
+
+
+def test_my_posts_board_type_paginates_shape():
+    """board_type 지정 → count(fetchval) 선행 + {items, total, page}. total 은 count 값."""
+    pid = str(uuid4())
+    # board_type 경로: fetchval(count=5) → fetch(posts) → fetch(comments) → fetch(attachments).
+    conn = FakeConnection(5, [_my_post_row(pid, board_type="feedback")], [], [])
+    client = _client(_r2_settings(), pool=FakePool(conn))
+    resp = client.get("/v1/board/my-posts?board_type=feedback&page=1&page_size=20")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 5  # count 값(page 행 수 아님)
+    assert body["page"] == 1
+    assert len(body["items"]) == 1
+    assert body["items"][0]["board_type"] == "feedback"
+
+
+# ─────────────────────────── unread-summary ───────────────────────────
+
+
+def test_unread_summary_shape_with_popup():
+    """unread map 3키 + popup {post_id, broker}. fetch(posts) → fetch(comments)."""
+    bs_pid = str(uuid4())
+    fb_pid = str(uuid4())
+    posts = [
+        _my_post_row(bs_pid, board_type="broker_statement", status="resolved",
+                     metadata='{"broker": "삼성증권"}'),
+        _my_post_row(fb_pid, board_type="feedback"),
+    ]
+    conn = FakeConnection(posts, [_comment_row(fb_pid)])
+    client = _client(_r2_settings(), pool=FakePool(conn))
+    resp = client.get("/v1/board/unread-summary")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert set(body["unread"].keys()) == {"feedback", "bug_report", "broker_statement"}
+    assert body["unread"]["feedback"] is True  # 어드민 댓글 + read 없음
+    assert body["unread"]["broker_statement"] is True  # status=resolved
+    assert body["unread"]["bug_report"] is False
+    assert body["popup"] == {"post_id": bs_pid, "broker": "삼성증권"}
+
+
+def test_unread_summary_empty_popup_null():
+    """글 0건 → unread 전부 False + popup null."""
+    conn = FakeConnection([])
+    client = _client(_r2_settings(), pool=FakePool(conn))
+    resp = client.get("/v1/board/unread-summary")
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "unread": {"feedback": False, "bug_report": False, "broker_statement": False},
+        "popup": None,
+    }
+
+
+def test_unread_summary_requires_auth_401():
+    """Authorization 헤더 없으면 401(get_current_user override 미설치)."""
+    settings = _r2_settings()
+    app = create_app(settings)
+    app.dependency_overrides[get_settings] = lambda: settings
+    client = TestClient(app)
+    resp = client.get("/v1/board/unread-summary")
+    assert resp.status_code == 401
 
 
 def test_my_posts_requires_auth_401():

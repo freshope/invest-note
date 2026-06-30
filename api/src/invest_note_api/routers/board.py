@@ -35,6 +35,7 @@ from invest_note_api.schemas.board import (
     BugReportCreate,
     FeedbackCreate,
     MyPostsResponse,
+    UnreadSummaryResponse,
 )
 from invest_note_api.schemas.broker_statement import PresignRequest, SubmitRequest
 from invest_note_api.storage import r2
@@ -298,6 +299,9 @@ def _my_post_attachment(att: dict, settings: Settings) -> dict:
 
 @router.get("/my-posts", response_model=MyPostsResponse)
 async def list_my_posts(
+    board_type: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
     user: AuthenticatedUser = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
     pool: asyncpg.Pool = Depends(get_pool),
@@ -307,9 +311,15 @@ async def list_my_posts(
     user_id 는 토큰에서만 취한다(body/query 무시). notice·타인 글은 절대 비노출 — repo 의
     user_id 스코프 + board_type 화이트리스트가 유일한 가드다. 응답 필드는 화이트리스트로 통제.
     첨부는 storage_key 대신 presigned GET url 만 노출(R2 미설정 시 발급 단계에서 503).
+
+    board_type 은 Optional(불변식) — 무인자 호출(라이브 v1.3.4)은 3종 전량 반환(레거시). 지정 시
+    해당 타입만 page/page_size 페이지네이션. 응답은 additive `{items, total, page}` 이라 구
+    클라이언트는 `.items` 만 읽어 무해. 첨부 presign 은 반환된 page 행에만 발급한다.
     """
     async with pool.acquire() as conn:
-        posts = await board_repo.list_my_posts(conn, user.id)
+        posts, total = await board_repo.list_my_posts(
+            conn, user.id, board_type=board_type, page=page, page_size=page_size
+        )
     items = [
         {
             **{k: p[k] for k in _MY_POST_FIELDS},
@@ -324,7 +334,23 @@ async def list_my_posts(
         }
         for p in posts
     ]
-    return MyPostsResponse(items=items)
+    return MyPostsResponse(items=items, total=total, page=max(page, 1))
+
+
+@router.get("/unread-summary", response_model=UnreadSummaryResponse)
+async def get_unread_summary(
+    user: AuthenticatedUser = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> UnreadSummaryResponse:
+    """내 글 미확인 신호 — board_type별 unread bool + 진입 팝업 1건(page 비의존, 전량 스캔).
+
+    my-posts 가 페이지네이션되며 page1-only 로 깨지던 unread/popup 신호의 단일 출처다. 본인 글
+    3종 전체를 스캔해 집계한다(첨부/R2 서명 생략 = 경량). user_id 토큰 스코프 + board_type
+    화이트리스트로 notice·타인 글은 절대 비포함.
+    """
+    async with pool.acquire() as conn:
+        summary = await board_repo.unread_summary(conn, user.id)
+    return UnreadSummaryResponse(**summary)
 
 
 # ─────────────────────────── 읽음/알림 상태 쓰기 ───────────────────────────

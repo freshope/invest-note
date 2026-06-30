@@ -81,6 +81,7 @@ const ROUTES = {
     noticesSeen: "/board/notices/seen",
     noticeById: (id: string) => `/board/notices/${id}`,
     myPosts: "/board/my-posts",
+    unreadSummary: "/board/unread-summary",
     postRead: (id: string) => `/board/posts/${id}/read`,
     ackPopup: (id: string) => `/board/posts/${id}/ack-popup`,
     feedback: "/board/feedback",
@@ -712,6 +713,22 @@ export interface MyPost {
 
 export interface MyPostsResponse {
   items: MyPost[];
+  // additive(BE A4). board_type 무인자=레거시 전량(total=len, page=1), 지정 시 페이지네이션.
+  // BE-lag(OTA 선행) 시 부재 가능 → optional. 무한스크롤 getNextPageParam 에서 `?? items.length` 가드.
+  total?: number;
+  page?: number;
+}
+
+/** unread-summary popup 대상. broker 는 metadata.broker 부재 시 null(FE fallback). */
+export interface PopupTarget {
+  post_id: string;
+  broker: string | null;
+}
+
+/** GET /board/unread-summary — 3종 board_type unread 점 + resolved 거래내역서 진입 팝업 단일 출처. */
+export interface UnreadSummary {
+  unread: Record<MyPostBoardType, boolean>;
+  popup: PopupTarget | null;
 }
 
 export const boardApi = {
@@ -722,7 +739,17 @@ export const boardApi = {
     apiFetch<NoticeDetail>(ROUTES.board.noticeById(id)),
 
   // 내 제보/문의 — 인증 필요(401). 본인 글만, notice 제외, 어드민 답변 합본.
-  myPosts: () => apiFetch<MyPostsResponse>(ROUTES.board.myPosts),
+  // boardType 없으면 무인자 경로 유지(레거시 전량 반환 — 하위호환). 지정 시 page 페이지네이션.
+  myPosts: (boardType?: MyPostBoardType, page = 1) => {
+    if (!boardType) return apiFetch<MyPostsResponse>(ROUTES.board.myPosts);
+    return apiFetch<MyPostsResponse>(
+      `${ROUTES.board.myPosts}?board_type=${boardType}&page=${page}`,
+    );
+  },
+
+  // 3종 unread 점 + 진입 팝업 단일 출처(page 비의존 전량 스캔). BE-lag 시 404 → 소비처 degrade.
+  unreadSummary: () =>
+    apiFetch<UnreadSummary>(ROUTES.board.unreadSummary),
 
   // 공지 메뉴 열 때 읽음 처리 — notices_seen_at = now() upsert. 이후 notices 재조회로 has_unread 갱신.
   markNoticesSeen: () =>
