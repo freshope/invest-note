@@ -12,7 +12,9 @@ import {
 } from "@/components/base/FullScreenPanel";
 import { EmptyCard } from "@/components/shared/EmptyCard";
 import { ErrorState } from "@/components/shared/ErrorState";
+import { LoadMoreButton } from "@/components/shared/LoadMoreButton";
 import { boardApi, type MyPost, type MyPostBoardType } from "@/lib/api-client";
+import { offsetNextPageParam } from "@/lib/infinite-list";
 import { queryKeys } from "@/lib/query-keys";
 import { requestImportOpen } from "@/lib/import-deeplink";
 import {
@@ -62,19 +64,17 @@ export function MyPostsListPanel({
     queryFn: ({ pageParam }) => boardApi.myPosts(boardType, pageParam),
     enabled: open,
     initialPageParam: 1,
-    // 누적 건수가 total 미만이면 다음 페이지 존재. BE-lag(total/page 부재) 시 next 없음으로 degrade.
-    getNextPageParam: (lastPage, allPages) => {
-      const loaded = allPages.reduce((sum, p) => sum + p.items.length, 0);
-      return loaded < (lastPage.total ?? loaded)
-        ? (lastPage.page ?? allPages.length) + 1
-        : undefined;
-    },
+    getNextPageParam: offsetNextPageParam,
   });
 
-  // 서버가 이미 board_type 으로 필터한 결과 — 클라 필터 불필요. 페이지 평탄화만.
+  // 서버가 board_type 으로 필터하지만, BE-lag(구버전 BE 가 board_type 무시 → 3종 전량) 시
+  // 타 게시판 글 혼입을 막는 방어 필터. 페이지 평탄화 + board_type 일치만.
   const items = useMemo(
-    () => data?.pages.flatMap((p) => p.items) ?? [],
-    [data],
+    () =>
+      (data?.pages.flatMap((p) => p.items) ?? []).filter(
+        (p) => p.board_type === boardType,
+      ),
+    [data, boardType],
   );
   // 서버 unread 플래그로 행 점 구성(단일 출처). invalidate 로 자연 갱신.
   const unreadIds = useMemo(
@@ -136,16 +136,11 @@ export function MyPostsListPanel({
                       />
                     ))}
                   </div>
-                  {hasNextPage ? (
-                    <button
-                      type="button"
-                      onClick={() => fetchNextPage()}
-                      disabled={isFetchingNextPage}
-                      className="mt-3 w-full rounded-xl bg-muted/60 py-3 text-[14px] font-medium text-muted-foreground transition-colors hover:bg-foreground/5 disabled:opacity-60"
-                    >
-                      {isFetchingNextPage ? "불러오는 중…" : "더 보기"}
-                    </button>
-                  ) : null}
+                  <LoadMoreButton
+                    hasNextPage={hasNextPage}
+                    isFetchingNextPage={isFetchingNextPage}
+                    onClick={() => fetchNextPage()}
+                  />
                 </>
               )}
             </div>

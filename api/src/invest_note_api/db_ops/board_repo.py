@@ -183,6 +183,21 @@ async def get_post(conn: Any, post_id: Any, *, with_relations: bool = True) -> d
     return detail
 
 
+async def _admin_comments_by_post(conn: Any, post_ids: list) -> dict[str, list[dict]]:
+    """post_id 들의 어드민 댓글을 post_id별로 그룹핑. list_my_posts·unread_summary 공유."""
+    comments = await conn.fetch(
+        "select * from board_comments "
+        "where post_id = any($1) and is_admin = true "
+        "order by created_at asc",
+        post_ids,
+    )
+    by_post: dict[str, list[dict]] = {}
+    for c in comments:
+        cd = _comment_row_to_dict(c)
+        by_post.setdefault(cd["post_id"], []).append(cd)
+    return by_post
+
+
 async def list_my_posts(
     conn: Any,
     user_id: Any,
@@ -251,16 +266,7 @@ async def list_my_posts(
 
     # raw row 의 UUID id 로 합본 대상을 조회한다(_post_row_to_dict 가 str 로 바꾸기 전 값).
     post_ids = [row["id"] for row in posts]
-    comments = await conn.fetch(
-        "select * from board_comments "
-        "where post_id = any($1) and is_admin = true "
-        "order by created_at asc",
-        post_ids,
-    )
-    comments_by_post: dict[str, list[dict]] = {}
-    for c in comments:
-        cd = _comment_row_to_dict(c)
-        comments_by_post.setdefault(cd["post_id"], []).append(cd)
+    comments_by_post = await _admin_comments_by_post(conn, post_ids)
 
     # 첨부도 내 글 id 로만 스코프(post_id=any) — 타인 첨부 발급 경로 없음.
     attachments = await conn.fetch(
@@ -313,16 +319,7 @@ async def unread_summary(conn: Any, user_id: Any) -> dict:
         return {"unread": unread, "popup": None}
 
     post_ids = [row["id"] for row in posts]
-    comments = await conn.fetch(
-        "select * from board_comments "
-        "where post_id = any($1) and is_admin = true "
-        "order by created_at asc",
-        post_ids,
-    )
-    comments_by_post: dict[str, list[dict]] = {}
-    for c in comments:
-        cd = _comment_row_to_dict(c)
-        comments_by_post.setdefault(cd["post_id"], []).append(cd)
+    comments_by_post = await _admin_comments_by_post(conn, post_ids)
 
     for row in posts:
         d = _post_row_to_dict(row)

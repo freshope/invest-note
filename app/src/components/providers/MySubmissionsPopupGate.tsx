@@ -48,12 +48,14 @@ export function MySubmissionsPopupGate() {
   const target = data?.popup ?? null;
 
   const [open, setOpen] = useState(false);
-  // 한 번 ack 한 id 는 다시 노출하지 않는다(같은 세션 재오픈 방지).
-  const [acked, setAcked] = useState(false);
+  // 이번 세션에 ack 한 post_id 집합. post_id 별로 가려 같은 세션 재오픈만 막고,
+  // ack 후 서버가 내려주는 다른 미확인 제보(다른 post_id)는 정상 노출한다.
+  // (세션 전역 boolean 이면 첫 ack 후 후속 팝업이 세션 내내 차단됨.)
+  const [ackedIds, setAckedIds] = useState<Set<string>>(() => new Set());
 
   // target 이 나타나면(미ack) 자동 오픈. effect 동기 setState 대신 렌더 중 조정(React 공식 패턴).
-  // !open 가드로 1회만 set → 무한 렌더 없음. ack 후엔 acked=true 라 재오픈 안 됨.
-  if (target && !acked && !open) {
+  // !open 가드로 1회만 set → 무한 렌더 없음. ack 한 post_id 는 ackedIds 가 가린다.
+  if (target && !ackedIds.has(target.post_id) && !open) {
     setOpen(true);
   }
 
@@ -68,7 +70,7 @@ export function MySubmissionsPopupGate() {
         queryClient.invalidateQueries({ queryKey: queryKeys.myPosts }),
       )
       .catch(() => {});
-    setAcked(true);
+    setAckedIds((prev) => new Set(prev).add(target.post_id));
     setOpen(false);
   };
 

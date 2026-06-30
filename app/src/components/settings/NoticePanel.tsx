@@ -12,7 +12,9 @@ import {
 } from "@/components/base/FullScreenPanel";
 import { EmptyCard } from "@/components/shared/EmptyCard";
 import { ErrorState } from "@/components/shared/ErrorState";
+import { LoadMoreButton } from "@/components/shared/LoadMoreButton";
 import { boardApi } from "@/lib/api-client";
+import { offsetNextPageParam } from "@/lib/infinite-list";
 import { queryKeys } from "@/lib/query-keys";
 import { formatDateOnly } from "@/lib/format";
 
@@ -38,11 +40,7 @@ export function NoticePanel({ open, onOpenChange }: Props) {
     queryFn: ({ pageParam }) => boardApi.listNotices(pageParam),
     enabled: open,
     initialPageParam: 1,
-    // 로드한 누적 건수가 total 미만이면 다음 페이지 존재. page_size 는 서버 기본(20).
-    getNextPageParam: (lastPage, allPages) => {
-      const loaded = allPages.reduce((sum, p) => sum + p.items.length, 0);
-      return loaded < lastPage.total ? lastPage.page + 1 : undefined;
-    },
+    getNextPageParam: offsetNextPageParam,
   });
 
   const items = data?.pages.flatMap((p) => p.items) ?? [];
@@ -94,16 +92,11 @@ export function NoticePanel({ open, onOpenChange }: Props) {
                     </button>
                   ))}
                 </div>
-                {hasNextPage ? (
-                  <button
-                    type="button"
-                    onClick={() => fetchNextPage()}
-                    disabled={isFetchingNextPage}
-                    className="mt-3 w-full rounded-xl bg-muted/60 py-3 text-[14px] font-medium text-muted-foreground transition-colors hover:bg-foreground/5 disabled:opacity-60"
-                  >
-                    {isFetchingNextPage ? "불러오는 중…" : "더 보기"}
-                  </button>
-                ) : null}
+                <LoadMoreButton
+                  hasNextPage={hasNextPage}
+                  isFetchingNextPage={isFetchingNextPage}
+                  onClick={() => fetchNextPage()}
+                />
                 </>
               )}
             </div>
