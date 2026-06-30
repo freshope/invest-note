@@ -75,7 +75,7 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## API 라우터 prefix 마이그레이션
 
-- [ ] BE legacy `/api/*` alias 제거 (sunset) — 2026-05-21 `docs/spec-history/2026-05-21-be-dual-api-prefix.md` 에서 신/구 prefix 동시 지원 등록 (legacy 는 `include_in_schema=False`). FE/웹은 이미 새 경로 전환. 강제 업데이트 메커니즘은 2026-05-26 머지(`docs/spec-history/2026-05-26-force-update.md`). **남은 선행 조건**: 양 스토어 승인 + 옛 번들 사용자가 새 번들로 모두 이동 + 운영 로그에서 `/api/*` 트래픽이 충분히 줄어든 시점. 작업: `api/src/invest_note_api/main.py` 의 legacy `include_router` 루프 제거 + `tests/test_legacy_api_prefix.py` 폐기.
+- [x] **BE legacy alias 제거 (sunset) — 2026-06-30 완료** (`feature/sunset-legacy-api-prefix`). `/api/*`(2026-05-21 dual-prefix legacy)와 bare(`/xxx`, 2026-06-12 `/v1` 정식화로 뒤늦게 alias화)를 **둘 다** 제거하고 정식 `/v1/*` 단일화. 선행조건은 `MIN_SUPPORTED_VERSION=1.3.0` floor 로 충족(현행 FE 는 1.2.1부터 `/v1` 사용 → bare/`/api` 는 ≤1.2.0 락아웃 구버전 전용 dead alias, 살아있는 클라이언트 없음). 작업: `main.py` legacy `include_router` 루프 제거 + `tests/test_legacy_api_prefix.py` 폐기 + 테스트 bare 호출 208곳 `/v1` 마이그레이션(10파일). 검증: pytest 962 passed(baseline 965 − legacy 3).
 
 ## 거래내역서 임포트 — 후속 과제
 

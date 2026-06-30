@@ -38,12 +38,12 @@ class _RecordingConn(FakeConnection):
 
 
 def test_me_no_header(auth_client: TestClient) -> None:
-    r = auth_client.get("/me")
+    r = auth_client.get("/v1/me")
     assert r.status_code == 401
 
 
 def test_me_invalid_token(auth_client: TestClient) -> None:
-    r = auth_client.get("/me", headers={"Authorization": "Bearer invalid.token.here"})
+    r = auth_client.get("/v1/me", headers={"Authorization": "Bearer invalid.token.here"})
     assert r.status_code == 401
 
 
@@ -63,13 +63,13 @@ def test_me_expired_token(auth_client: TestClient) -> None:
         algorithm="ES256",
         headers={"kid": BE_KID},
     )
-    r = auth_client.get("/me", headers={"Authorization": f"Bearer {expired}"})
+    r = auth_client.get("/v1/me", headers={"Authorization": f"Bearer {expired}"})
     assert r.status_code == 401
 
 
 def test_me_valid_token(auth_client: TestClient) -> None:
     token = make_jwt()
-    r = auth_client.get("/me", headers={"Authorization": f"Bearer {token}"})
+    r = auth_client.get("/v1/me", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200
     data = r.json()
     assert data["user_id"] == TEST_USER_ID
@@ -79,21 +79,21 @@ def test_me_valid_token(auth_client: TestClient) -> None:
 def test_me_unknown_issuer_rejected(auth_client: TestClient) -> None:
     # 2c: registry 에 없는 iss → 401(Supabase default fallback 제거). 서명은 BE 키지만 iss 미등록.
     token = make_jwt(iss="https://evil.example.com/auth/v1")
-    r = auth_client.get("/me", headers={"Authorization": f"Bearer {token}"})
+    r = auth_client.get("/v1/me", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 401
 
 
 def test_me_missing_issuer_rejected(auth_client: TestClient) -> None:
     # 2c: iss 클레임 없는 토큰 → 401(registry 미매칭). fallback 제거로 iss 누락은 더 이상 허용 안 됨.
     token = make_jwt(iss=None)
-    r = auth_client.get("/me", headers={"Authorization": f"Bearer {token}"})
+    r = auth_client.get("/v1/me", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 401
 
 
 def test_me_wrong_audience_rejected(auth_client: TestClient) -> None:
     # 등록 iss + 잘못된 aud → 401(per-issuer aud 격리). iss 게이트 통과 후 aud 검증에서 거부.
     token = make_jwt(aud="authenticated")
-    r = auth_client.get("/me", headers={"Authorization": f"Bearer {token}"})
+    r = auth_client.get("/v1/me", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 401
 
 
@@ -129,7 +129,7 @@ def _make_delete_client(
 
 
 def test_delete_me_no_auth(auth_client: TestClient) -> None:
-    r = auth_client.delete("/me")
+    r = auth_client.delete("/v1/me")
     assert r.status_code == 401
 
 
@@ -141,7 +141,7 @@ def test_delete_me_service_key_missing() -> None:
         return httpx.Response(204)
 
     client = _make_delete_client(secret_key="", handler=handler)
-    r = client.delete("/me")
+    r = client.delete("/v1/me")
     assert r.status_code == 503
     assert "비활성화" in r.json()["error"]
     assert captured == []  # Supabase 호출 안 됨
@@ -155,7 +155,7 @@ def test_delete_me_success() -> None:
         return httpx.Response(200, json={"id": TEST_USER_ID})
 
     client = _make_delete_client(secret_key="test-service-key", handler=handler)
-    r = client.delete("/me")
+    r = client.delete("/v1/me")
     assert r.status_code == 204
     assert len(captured) == 1
     req = captured[0]
@@ -175,7 +175,7 @@ def test_delete_me_records_audit_with_reason() -> None:
     client = _make_delete_client(
         secret_key="test-service-key", handler=handler, conn=conn
     )
-    r = client.request("DELETE", "/me", json={"reason": "not_useful"})
+    r = client.request("DELETE", "/v1/me", json={"reason": "not_useful"})
     assert r.status_code == 204
 
     inserts = [q for q in conn.executed if "INSERT INTO public.account_deletions" in q[0]]
@@ -200,7 +200,7 @@ def test_delete_me_records_audit_without_reason() -> None:
     client = _make_delete_client(
         secret_key="test-service-key", handler=handler, conn=conn
     )
-    r = client.delete("/me")
+    r = client.delete("/v1/me")
     assert r.status_code == 204
 
     inserts = [q for q in conn.executed if "INSERT INTO public.account_deletions" in q[0]]
@@ -218,7 +218,7 @@ def test_delete_me_rejects_invalid_reason() -> None:
     client = _make_delete_client(
         secret_key="test-service-key", handler=handler, conn=conn
     )
-    r = client.request("DELETE", "/me", json={"reason": "spam_garbage"})
+    r = client.request("DELETE", "/v1/me", json={"reason": "spam_garbage"})
     assert r.status_code == 422
     assert conn.executed == []
 
@@ -229,7 +229,7 @@ def test_delete_me_supabase_error_status(status_code: int) -> None:
         return httpx.Response(status_code, json={"error": "boom"})
 
     client = _make_delete_client(secret_key="test-service-key", handler=handler)
-    r = client.delete("/me")
+    r = client.delete("/v1/me")
     assert r.status_code == 502
     assert "실패" in r.json()["error"]
 
@@ -239,5 +239,5 @@ def test_delete_me_network_error() -> None:
         raise httpx.ConnectError("connection refused")
 
     client = _make_delete_client(secret_key="test-service-key", handler=handler)
-    r = client.delete("/me")
+    r = client.delete("/v1/me")
     assert r.status_code == 502
