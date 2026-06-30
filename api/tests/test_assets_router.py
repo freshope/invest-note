@@ -103,7 +103,7 @@ class TestAssetHistory:
             with _patch_assets(conn):
                 with patch("invest_note_api.routers.assets.daily_price_seed.backfill_closes", mock_backfill):
                     with patch("invest_note_api.routers.assets.fetch_quotes_by_keys", mock_quotes):
-                        resp = trades_client.get("/assets/history")
+                        resp = trades_client.get("/v1/assets/history")
         finally:
             trades_client.app.dependency_overrides.pop(get_settings, None)
 
@@ -124,7 +124,7 @@ class TestAssetHistory:
         with _patch_assets(conn):
             with patch("invest_note_api.routers.assets.daily_price_seed.backfill_closes", _no_backfill):
                 with patch("invest_note_api.routers.assets.fetch_quotes_by_keys", mock_quotes):
-                    resp = trades_client.get("/assets/history")
+                    resp = trades_client.get("/v1/assets/history")
 
         assert resp.status_code == 200
         body = resp.json()
@@ -156,7 +156,7 @@ class TestAssetHistory:
             with patch("invest_note_api.routers.assets.daily_price_seed.backfill_closes", _no_backfill):
                 with patch("invest_note_api.routers.assets.fetch_quotes_by_keys", mock_quotes):
                     resp = trades_client.get(
-                        "/assets/history",
+                        "/v1/assets/history",
                         params={"ticker": "005930", "country": "KR"},
                     )
 
@@ -179,7 +179,7 @@ class TestAssetHistory:
         with _patch_assets(conn):
             with patch("invest_note_api.routers.assets.list_trades_with_account", capturing_list):
                 resp = trades_client.get(
-                    "/assets/history",
+                    "/v1/assets/history",
                     params={"ticker": "005930", "country": "KR"},
                 )
 
@@ -203,7 +203,7 @@ class TestAssetHistory:
         with _patch_assets(conn):
             with patch("invest_note_api.routers.assets.list_trades_with_account", capturing_list):
                 resp = trades_client.get(
-                    "/assets/history",
+                    "/v1/assets/history",
                     params={"accountId": "a1"},
                 )
 
@@ -215,7 +215,7 @@ class TestAssetHistory:
     def test_empty_trades_returns_empty_series(self, trades_client):
         conn = FakeConnection([])
         with _patch_assets(conn):
-            resp = trades_client.get("/assets/history")
+            resp = trades_client.get("/v1/assets/history")
         assert resp.status_code == 200
         body = resp.json()
         assert body["series"] == []
@@ -238,7 +238,7 @@ class TestAssetHistory:
         with _patch_assets(conn):
             with patch("invest_note_api.routers.assets.daily_price_seed.backfill_closes", incomplete_backfill):
                 with patch("invest_note_api.routers.assets.fetch_quotes_by_keys", mock_quotes):
-                    resp = trades_client.get("/assets/history")
+                    resp = trades_client.get("/v1/assets/history")
 
         assert resp.status_code == 200
         assert resp.json()["incomplete"] is True
@@ -255,7 +255,7 @@ class TestAssetHistory:
         with _patch_assets(conn):
             with patch("invest_note_api.routers.assets.daily_price_seed.backfill_closes", _no_backfill):
                 with patch("invest_note_api.routers.assets.fetch_quotes_by_keys", mock_quotes):
-                    resp = trades_client.get("/assets/history")
+                    resp = trades_client.get("/v1/assets/history")
 
         assert resp.status_code == 200
         dates = [p["date"] for p in resp.json()["series"]]
@@ -274,7 +274,7 @@ class TestAssetHistory:
         with _patch_assets(conn):
             with patch("invest_note_api.routers.assets.daily_price_seed.backfill_closes", _no_backfill):
                 with patch("invest_note_api.routers.assets.fetch_quotes_by_keys", mock_quotes):
-                    resp = trades_client.get("/assets/history")
+                    resp = trades_client.get("/v1/assets/history")
 
         assert resp.status_code == 200
         series = resp.json()["series"]
@@ -298,7 +298,7 @@ class TestAssetHistory:
         with _patch_assets(conn):
             with patch("invest_note_api.routers.assets.daily_price_seed.backfill_closes", _no_backfill):
                 with patch("invest_note_api.routers.assets.fetch_quotes_by_keys", mock_quotes):
-                    resp = trades_client.get("/assets/history")
+                    resp = trades_client.get("/v1/assets/history")
 
         assert resp.status_code == 200
         assert resp.json()["investedAmount"] is None
@@ -329,7 +329,7 @@ class TestAssetHistory:
             with patch("invest_note_api.routers.assets.daily_price_seed.backfill_closes", _no_backfill):
                 with patch("invest_note_api.routers.assets.fetch_quotes_by_keys", mock_quotes):
                     with patch("invest_note_api.routers.assets.usdkrw_if_foreign", mock_fx):
-                        resp = trades_client.get("/assets/history")
+                        resp = trades_client.get("/v1/assets/history")
 
         assert resp.status_code == 200
         body = resp.json()
@@ -365,7 +365,7 @@ class TestAssetHistory:
             with patch("invest_note_api.routers.assets.daily_price_seed.backfill_closes", _no_backfill):
                 with patch("invest_note_api.routers.assets.fetch_quotes_by_keys", mock_quotes):
                     with patch("invest_note_api.routers.assets.usdkrw_if_foreign", mock_fx):
-                        resp = trades_client.get("/assets/history")
+                        resp = trades_client.get("/v1/assets/history")
 
         assert resp.status_code == 200
         body = resp.json()
@@ -378,5 +378,5 @@ class TestAssetHistory:
         assert body["investedAmount"] == 10 * 70000
 
     def test_401_without_auth(self, auth_client):
-        resp = auth_client.get("/assets/history")
+        resp = auth_client.get("/v1/assets/history")
         assert resp.status_code == 401

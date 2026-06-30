@@ -62,7 +62,7 @@ def client():
 class TestImportPreview:
     def test_unsupported_extension_415(self, client):
         resp = client.post(
-            "/trades/import/preview",
+            "/v1/trades/import/preview",
             files={"file": ("a.txt", b"x", "text/plain")},
             params={"broker_key": "toss_pdf"},
         )
@@ -70,7 +70,7 @@ class TestImportPreview:
 
     def test_unknown_broker_400(self, client):
         resp = client.post(
-            "/trades/import/preview",
+            "/v1/trades/import/preview",
             files={"file": ("a.pdf", b"%PDF-1.4", "application/pdf")},
             params={"broker_key": "does_not_exist"},
         )
@@ -78,7 +78,7 @@ class TestImportPreview:
 
     def test_missing_broker_400(self, client):
         resp = client.post(
-            "/trades/import/preview",
+            "/v1/trades/import/preview",
             files={"file": ("a.pdf", b"%PDF-1.4", "application/pdf")},
         )
         assert resp.status_code == 400
@@ -129,7 +129,7 @@ class TestImportPreview:
         )
 
         resp = client.post(
-            "/trades/import/preview",
+            "/v1/trades/import/preview",
             files={"file": ("toss.pdf", b"%PDF-1.4", "application/pdf")},
             params={"broker_key": "fake_broker"},
         )
@@ -155,7 +155,7 @@ class TestImportCommit:
             make_fake_acquire(FakeConnection()),
         )
         resp = client.post(
-            "/trades/import/commit",
+            "/v1/trades/import/commit",
             json={"staging_id": "nonexistent", "account_id": "a1"},
         )
         assert resp.status_code == 400
@@ -172,7 +172,7 @@ class TestImportCommit:
             "usd_skip_count": 0,
         }
         resp = client.post(
-            "/trades/import/commit",
+            "/v1/trades/import/commit",
             json={"staging_id": "sid-other", "account_id": "a1"},
         )
         assert resp.status_code == 403

@@ -64,7 +64,7 @@ def test_case1_be_issuer_valid():
     # ① BE iss + BE aud + BE 키 → 200(registry 가 in-process verify_key 로 검증).
     with _registry_client() as client:
         token = _be_jwt()
-        r = client.get("/me", headers={"Authorization": f"Bearer {token}"})
+        r = client.get("/v1/me", headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 200
         assert r.json()["user_id"] == TEST_USER_ID
 
@@ -73,7 +73,7 @@ def test_case2_unknown_issuer_rejected():
     # ② unknown iss → 401. fallback 제거 — Supabase 검증으로 새지 않고 iss 게이트에서 거부.
     with _registry_client() as client:
         token = _be_jwt(iss="https://evil.example.com/auth/v1")
-        r = client.get("/me", headers={"Authorization": f"Bearer {token}"})
+        r = client.get("/v1/me", headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 401
 
 
@@ -81,7 +81,7 @@ def test_case3_missing_issuer_rejected():
     # ③ iss 클레임 없음 → 401(registry 미매칭). 2c 전엔 Supabase default 로 흘렀음.
     with _registry_client() as client:
         token = _be_jwt(iss=None)
-        r = client.get("/me", headers={"Authorization": f"Bearer {token}"})
+        r = client.get("/v1/me", headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 401
 
 
@@ -89,7 +89,7 @@ def test_case4_be_iss_with_wrong_aud_rejected():
     # ④ BE iss + Supabase 컨벤션 aud(authenticated) → 401(per-issuer aud 격리, iss 게이트 통과 후).
     with _registry_client() as client:
         token = _be_jwt(aud="authenticated")
-        r = client.get("/me", headers={"Authorization": f"Bearer {token}"})
+        r = client.get("/v1/me", headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 401
 
 
@@ -98,5 +98,5 @@ def test_case5_dormant_registry_rejects_all():
     # be_token_signing_key 미설정 시 dev/test 인증 전멸 — 이 동작을 명시적으로 가드한다.
     with _dormant_client() as client:
         token = _be_jwt()
-        r = client.get("/me", headers={"Authorization": f"Bearer {token}"})
+        r = client.get("/v1/me", headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 401

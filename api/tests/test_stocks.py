@@ -28,7 +28,7 @@ class TestStocksQuote:
             return {"005930:KR": {"price": 75000.0, "currency": "KRW", "as_of": "2024-01-15"}}
 
         with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
-            resp = trades_client.get("/stocks/quote", params={"symbols": "005930:KR"})
+            resp = trades_client.get("/v1/stocks/quote", params={"symbols": "005930:KR"})
 
         assert resp.status_code == 200
         body = resp.json()
@@ -42,7 +42,7 @@ class TestStocksQuote:
             return {}
 
         with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
-            resp = trades_client.get("/stocks/quote", params={"symbols": ""})
+            resp = trades_client.get("/v1/stocks/quote", params={"symbols": ""})
 
         assert resp.status_code == 200
         assert resp.json() == {}
@@ -55,7 +55,7 @@ class TestStocksQuote:
             return {"AAPL:US": {"price": 195.5, "currency": "USD", "as_of": ""}}
 
         with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
-            resp = trades_client.get("/stocks/quote", params={"symbols": "AAPL:US"})
+            resp = trades_client.get("/v1/stocks/quote", params={"symbols": "AAPL:US"})
 
         assert resp.status_code == 200
         assert resp.json()["AAPL:US"]["currency"] == "USD"
@@ -76,7 +76,7 @@ class TestStocksQuote:
         )
         try:
             with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
-                resp = trades_client.get("/stocks/quote", params={"symbols": "005930:KR"})
+                resp = trades_client.get("/v1/stocks/quote", params={"symbols": "005930:KR"})
         finally:
             trades_client.app.dependency_overrides.pop(get_settings, None)
 
@@ -98,7 +98,7 @@ class TestStocksQuote:
         )
         try:
             with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
-                resp = trades_client.get("/stocks/quote", params={"symbols": "AAPL:US"})
+                resp = trades_client.get("/v1/stocks/quote", params={"symbols": "AAPL:US"})
         finally:
             trades_client.app.dependency_overrides.pop(get_settings, None)
 
@@ -115,7 +115,7 @@ class TestStocksQuote:
             }
 
         with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
-            resp = trades_client.get("/stocks/quote", params={"symbols": "005930:KR,AAPL:US"})
+            resp = trades_client.get("/v1/stocks/quote", params={"symbols": "005930:KR,AAPL:US"})
 
         assert resp.status_code == 200
         body = resp.json()
@@ -123,7 +123,7 @@ class TestStocksQuote:
         assert body["AAPL:US"] is None
 
     def test_quote_401(self, auth_client):
-        resp = auth_client.get("/stocks/quote", params={"symbols": "005930:KR"})
+        resp = auth_client.get("/v1/stocks/quote", params={"symbols": "005930:KR"})
         assert resp.status_code == 401
 
 
@@ -135,7 +135,7 @@ class TestStocksFx:
             return {"base": base, "quote": quote, "rate": 1350.0, "as_of": "2026-06-08"}
 
         with patch("invest_note_api.routers.stocks.get_fx_rate", mock_fx):
-            resp = trades_client.get("/stocks/fx", params={"base": "USD", "quote": "KRW"})
+            resp = trades_client.get("/v1/stocks/fx", params={"base": "USD", "quote": "KRW"})
 
         assert resp.status_code == 200
         body = resp.json()
@@ -158,7 +158,7 @@ class TestStocksFx:
         )
         try:
             with patch("invest_note_api.routers.stocks.get_fx_rate", mock_fx):
-                resp = trades_client.get("/stocks/fx")
+                resp = trades_client.get("/v1/stocks/fx")
         finally:
             trades_client.app.dependency_overrides.pop(get_settings, None)
 
@@ -175,7 +175,7 @@ class TestStocksFx:
             return {"base": base, "quote": quote, "rate": 1300.0, "as_of": ""}
 
         with patch("invest_note_api.routers.stocks.get_fx_rate", mock_fx):
-            resp = trades_client.get("/stocks/fx")
+            resp = trades_client.get("/v1/stocks/fx")
 
         assert resp.status_code == 200
         assert captured == {"base": "USD", "quote": "KRW"}
@@ -187,21 +187,21 @@ class TestStocksFx:
             return None
 
         with patch("invest_note_api.routers.stocks.get_fx_rate", mock_fx):
-            resp = trades_client.get("/stocks/fx")
+            resp = trades_client.get("/v1/stocks/fx")
 
         assert resp.status_code == 200
         assert resp.json() is None
 
     def test_fx_rejects_unsupported_pair(self, trades_client):
-        resp = trades_client.get("/stocks/fx", params={"base": "USD", "quote": "USD"})
+        resp = trades_client.get("/v1/stocks/fx", params={"base": "USD", "quote": "USD"})
         assert resp.status_code == 400
 
     def test_fx_rejects_unknown_currency(self, trades_client):
-        resp = trades_client.get("/stocks/fx", params={"base": "JPY", "quote": "KRW"})
+        resp = trades_client.get("/v1/stocks/fx", params={"base": "JPY", "quote": "KRW"})
         assert resp.status_code == 400
 
     def test_fx_401(self, auth_client):
-        resp = auth_client.get("/stocks/fx")
+        resp = auth_client.get("/v1/stocks/fx")
         assert resp.status_code == 401
 
 
@@ -215,7 +215,7 @@ class TestStocksMeta:
 
         _use_fake_pool(trades_client)
         with patch("invest_note_api.db_ops.stocks_repo.fetch_meta", mock_meta):
-            resp = trades_client.get("/stocks/meta", params={"codes": "005930"})
+            resp = trades_client.get("/v1/stocks/meta", params={"codes": "005930"})
 
         assert resp.status_code == 200
         body = resp.json()
@@ -238,7 +238,7 @@ class TestStocksMeta:
 
         _use_fake_pool(trades_client)
         with patch("invest_note_api.db_ops.stocks_repo.fetch_meta", mock_meta):
-            resp = trades_client.get("/stocks/meta", params={"codes": "BRK.B,BAC$B"})
+            resp = trades_client.get("/v1/stocks/meta", params={"codes": "BRK.B,BAC$B"})
 
         assert resp.status_code == 200
         # 점/달러 티커가 필터 없이 그대로 fetch_meta 로 전달됨(트랩 #1 가드).
@@ -248,12 +248,12 @@ class TestStocksMeta:
 
     def test_meta_empty_returns_empty(self, trades_client):
         _use_fake_pool(trades_client)
-        resp = trades_client.get("/stocks/meta", params={"codes": ""})
+        resp = trades_client.get("/v1/stocks/meta", params={"codes": ""})
         assert resp.status_code == 200
         assert resp.json() == {}
 
     def test_meta_401(self, auth_client):
-        resp = auth_client.get("/stocks/meta", params={"codes": "005930"})
+        resp = auth_client.get("/v1/stocks/meta", params={"codes": "005930"})
         assert resp.status_code == 401
 
 
@@ -267,7 +267,7 @@ class TestStocksSearchDb:
         _use_db_provider(trades_client)
         _use_fake_pool(trades_client)
         with patch("invest_note_api.db_ops.stocks_repo.search_multi", mock_search):
-            resp = trades_client.get("/stocks/search", params={"q": "삼성"})
+            resp = trades_client.get("/v1/stocks/search", params={"q": "삼성"})
 
         assert resp.status_code == 200
         assert resp.json()[0]["code"] == "005930"
@@ -280,7 +280,7 @@ class TestStocksSearchDb:
         _use_db_provider(trades_client)
         _use_fake_pool(trades_client)
         with patch("invest_note_api.db_ops.stocks_repo.search_multi", mock_search):
-            resp = trades_client.get("/stocks/search", params={"q": "005930"})
+            resp = trades_client.get("/v1/stocks/search", params={"q": "005930"})
 
         assert resp.status_code == 200
         assert resp.json()[0]["market"] == "KR"
@@ -296,7 +296,7 @@ class TestStocksSearchDb:
         _use_db_provider(trades_client)
         _use_fake_pool(trades_client)
         with patch("invest_note_api.db_ops.stocks_repo.search_multi", mock_search):
-            resp = trades_client.get("/stocks/search", params={"q": "a"})
+            resp = trades_client.get("/v1/stocks/search", params={"q": "a"})
 
         assert resp.status_code == 200
         markets = [r["market"] for r in resp.json()]
@@ -309,7 +309,7 @@ class TestStocksSearchDb:
         _use_db_provider(trades_client)
         _use_fake_pool(trades_client)
         with patch("invest_note_api.db_ops.stocks_repo.search_multi", mock_search):
-            resp = trades_client.get("/stocks/search", params={"q": "apple"})
+            resp = trades_client.get("/v1/stocks/search", params={"q": "apple"})
         assert resp.status_code == 200
         assert resp.json() == []
 
@@ -326,7 +326,7 @@ class TestStocksSearchNaver:
 
         # 기본값(provider 미설정)이 naver 임을 검증 — get_settings override 없음.
         with patch("invest_note_api.routers.stocks.search_kr", mock_naver):
-            resp = trades_client.get("/stocks/search", params={"q": "삼성"})
+            resp = trades_client.get("/v1/stocks/search", params={"q": "삼성"})
 
         assert resp.status_code == 200
         assert captured["q"] == "삼성"
@@ -337,17 +337,17 @@ class TestStocksSearchNaver:
             return []
 
         with patch("invest_note_api.routers.stocks.search_kr", mock_naver):
-            resp = trades_client.get("/stocks/search", params={"q": "apple"})
+            resp = trades_client.get("/v1/stocks/search", params={"q": "apple"})
         assert resp.status_code == 200
         assert resp.json() == []
 
 
 class TestStocksSearch:
     def test_search_empty_query_empty_result(self, trades_client):
-        resp = trades_client.get("/stocks/search", params={"q": ""})
+        resp = trades_client.get("/v1/stocks/search", params={"q": ""})
         assert resp.status_code == 200
         assert resp.json() == []
 
     def test_search_401(self, auth_client):
-        resp = auth_client.get("/stocks/search", params={"q": "삼성"})
+        resp = auth_client.get("/v1/stocks/search", params={"q": "삼성"})
         assert resp.status_code == 401

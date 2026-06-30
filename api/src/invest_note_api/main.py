@@ -71,7 +71,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.add_exception_handler(RequestValidationError, validation_error_handler)
     application.add_exception_handler(LockNotAvailableError, lock_not_available_handler)
 
-    # 앱(인증) 라우터 — 정식 경로는 /v1/*, 기존 경로는 하위호환 숨김 alias.
+    # 앱(인증) 라우터 — 정식 경로는 /v1/*.
     app_routers = (me.router, accounts.router, trades.router, portfolio.router, stocks.router, analysis.router, assets.router, board.router)
 
     application.include_router(health.router)
@@ -79,7 +79,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # health(JWKS) 다음, 인증 보호 라우터(/v1·/me) 앞에 mount.
     application.include_router(auth.router)
     application.include_router(app_config.router)
-    # OTA 매니페스트 — public(인증 없음). app_config 처럼 legacy `/api` alias 미등록
+    # OTA 매니페스트 — public(인증 없음). prefix 미적용
     # (FE 플러그인이 절대경로 `/live-update/manifest` 를 굽는다 — _workspace/03_fe_changes.md).
     application.include_router(live_update.router)
 
@@ -91,15 +91,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # table="boards" 로 흡수하므로 반드시 admin.router 보다 **먼저** include 한다(테스트로 가드).
     application.include_router(admin_board.router)
 
-    # admin 트리거 라우터 — 정식 `/admin/*`(관리용). 앱 alias 들과 무관.
+    # admin 트리거 라우터 — 정식 `/admin/*`(관리용). 앱 라우터(/v1)와 무관.
     application.include_router(admin.router)
-
-    # Legacy alias — 배포된 구버전 앱 호환용. 스키마 중복 노출 방지로 include_in_schema=False.
-    # bare(/xxx): 현행 FE 가 쓰던 경로. /api/xxx: 더 오래된 alias.
-    # FE/모바일 앱이 모두 /v1 로 마이그레이션 완료되면 제거 예정.
-    for legacy_router in app_routers:
-        application.include_router(legacy_router, include_in_schema=False)
-        application.include_router(legacy_router, prefix="/api", include_in_schema=False)
 
     return application
 

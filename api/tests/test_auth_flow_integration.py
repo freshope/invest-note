@@ -261,5 +261,5 @@ def test_legacy_supabase_token_rejected_when_be_active(monkeypatch):
     )
 
     with TestClient(app) as client:
-        r = client.get("/me", headers={"Authorization": f"Bearer {sup_token}"})
+        r = client.get("/v1/me", headers={"Authorization": f"Bearer {sup_token}"})
         assert r.status_code == 401
