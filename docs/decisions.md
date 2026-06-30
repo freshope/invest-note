@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-06-30 | 분석 탭 집중도 한글화 — 로더 교체로 name_ko 운반(SQL 신규 작성 회피)
+
+- **맥락:** name_ko(2026-06-28) 트레이드오프 ⓑ "분석 탭 집중도는 `list_trades`(SELECT *) 경로라 `Position.name_ko` 항상 None → 같은 US 종목이 홈=한글/분석=영문" 의 후속. backlog 는 `list_trades` SQL 에 `LEFT JOIN stocks` 추가(SELECT t.*, s.name_ko)를 제안했었다.
+- **결정 ① `list_trades` SQL 수정 대신 `/analysis/dashboard` 로더를 `list_trades_with_account` 로 교체.** 후자는 포트폴리오가 이미 쓰는 name_ko-운반 로더(accounts+stocks LEFT JOIN)이고 `build_positions` 가 `first.name_ko → Lot → Position` carry-through 를 이미 구현. 단일 호출지점 1줄 교체로 끝나고, `Trade`(name_ko 필드 기존재)·`TradeWithAccount`(Trade 서브클래스, 추가필드 옵셔널)라 다운스트림 calc 함수 무변경.
+- **결정 ② 라벨만 한글화, 계산은 무변경.** `concentration.py` top3 라벨을 `p.name_ko or p.asset_name`. HHI/비중/country/market 집계는 전부 `position_key` 기반이라 name_ko 는 표시 전용으로만 흐름(계산 키 오염 없음 — name_ko 불변식 유지). FE 무변경(BE `top3[].asset` 그대로 `WeightBar` 라벨).
+- **이유:** backlog 의 `list_trades` SQL 수정안은 **모든** `list_trades` 호출자에 JOIN 비용 + name_ko 적재를 강제(blast radius 큼). 로더 교체는 영향이 analysis 한 곳, 검증된 기존 로더 재사용, SQL/모델 변경 0. analysis 가 추가로 얻는 accounts JOIN 1개는 무시 가능.
+- **트레이드오프:** ⓐ `missing_quote_tickers`(line 175) 라벨·FE dead `concentration.ts` 는 영문 잔존(범위 밖, 후속). ⓑ name_ko 가 분석 calc 경로 객체에 실리지만 표시 전용이라 무해(불변식의 목적은 "계산 키 오염 방지"이고 그룹핑은 key 기반 유지). 참조: [[project_stock_name_ko]].
+
+---
+
 ## 2026-06-30 | KIS API 연동 — 트랙 전체 종결(트랙1 완료 / 트랙1-B·2 미진행 확정)
 
 - **맥락:** 2026-06-07 deep-research 로 KIS 연동을 2-트랙 분리(`docs/spec-history/2026-06-07-kis-data-providers.md`·`-kis-token-persistence.md`). backlog 잔존 항목 처리 여부를 재점검하며 종결 판정한다.

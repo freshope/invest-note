@@ -41,6 +41,7 @@ export type TradePayload = {
 
 export type StockPayload = {
   assetName: string;
+  nameKo?: string | null;
   ticker: string;
   country: string;
   allTrades: TradeWithAccount[];
@@ -211,6 +212,7 @@ function TradePanelContent({ open, payload, onClose, onMutated, onSaved, openSto
             openStock(
               {
                 assetName: trade.asset_name,
+                nameKo: trade.name_ko,
                 ticker: trade.ticker_symbol!,
                 country: trade.country_code ?? DEFAULT_COUNTRY_CODE,
                 allTrades,
@@ -219,7 +221,7 @@ function TradePanelContent({ open, payload, onClose, onMutated, onSaved, openSto
               "trade_detail",
             )
         : undefined,
-    [trade.ticker_symbol, trade.asset_name, trade.country_code, allTrades, accounts, openStock],
+    [trade.ticker_symbol, trade.asset_name, trade.name_ko, trade.country_code, allTrades, accounts, openStock],
   );
 
   return (
@@ -299,7 +301,7 @@ interface StockPanelContentProps {
 }
 
 function StockPanelContent({ payload, onClose, openTrade, openAssetHistory, openTradeForm, onSwitchStock }: StockPanelContentProps) {
-  const { assetName, ticker, country, allTrades: initialTrades, accounts: initialAccounts } = payload;
+  const { assetName, nameKo, ticker, country, allTrades: initialTrades, accounts: initialAccounts } = payload;
 
   // 거래 mutation 후 queryKeys.trades 가 invalidate 되면 prefix 매칭으로 함께 refetch 되도록
   // 종목 필터 리스트를 react-query 로 구독한다. 패널 오픈 시 이미 가져온 데이터는 initialData 로 주입.
@@ -403,6 +405,7 @@ function StockPanelContent({ payload, onClose, openTrade, openAssetHistory, open
   return (
     <StockDetail
       assetName={assetName}
+      nameKo={nameKo}
       ticker={ticker}
       country={country}
       trades={filteredTrades}

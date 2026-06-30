@@ -32,18 +32,6 @@ MVP 이후 구현할 작업 후보 목록.
       선행 BUY 없는 해외 SELL 단독 입력의 처리 규칙은 KR 과 동일(walker `running_qty>0` 가드)이라
       포지션은 안 생기나, 수동 입력 시 사용자 안내 UX 검토.
 
-### name_ko(US 한글 표시명) 후속 — 2026-06-28 거래/보유 표시 한글화 완료 (`docs/decisions.md` 참고)
-
-- [ ] **분석 탭 집중도 한글화** — `lib/analysis/concentration.ts` 는 `list_trades`(JOIN 없는 SELECT *) 경로라
-      `Position.name_ko` 가 항상 None → 집중도 라벨이 영문 유지(같은 US 종목이 홈=한글/분석=영문). 해소하려면
-      `list_trades` SQL 을 `SELECT t.*, s.name_ko + LEFT JOIN stocks` 로 재작성(calc-path라 신중) + FE 라벨
-      `nameKo || assetName`. `domain/portfolio.py` `Position.name_ko` 주석에 트랩 명시됨.
-- [ ] **토스 import 영문 저장 통일 + 한글명 수확** — 일괄등록도 영문 asset_name 으로 저장(저장 일관성)하고,
-      토스가 파싱한 한글명을 `stocks.name_ko` 로 수확(commit 단계, 미seed ticker 는 stocks upsert 선행 필요).
-      현재는 naver 백필분만 name_ko 적재라 사용자 보유 롱테일 US 는 영문.
-- [ ] **검색 name_ko 매칭** — `/stocks/search` 가 US 한글 검색을 `stock_aliases(naver)` 에만 의존. name_ko 를
-      검색 매칭 대상에 포함할지 검토(표시·검색 출처 통일).
-
 ## 분석 탭 성능 / 유지보수
 
 - [ ] 분석 대시보드 시세 분리 (옵션 B 동일 패턴) — `/analysis/dashboard` 도 요청 안에서 시세를 동기 fetch(concentration 계산용, `fetch_quotes_by_keys`)한다. 2026-05-27 `/portfolio/summary` 분리(`docs/decisions.md` 참고)와 동일하게 `withQuotes` opt-in + FE overlay 적용 검토. 단 concentration(HHI/top3/비중)은 시세 없으면 `cost_basis` fallback 이라 FE 로 옮기려면 concentration 계산까지 FE 중복이 필요 → 표면적이 summary 보다 큼. 트리거: summary 분리 효과 확인 후, 또는 분석 탭 응답 지연 체감 시.

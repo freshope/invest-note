@@ -13,7 +13,7 @@ from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import acquire_for_user, get_pool
-from invest_note_api.db_ops.trades_repo import list_trades
+from invest_note_api.db_ops.trades_repo import list_trades_with_account
 from invest_note_api.domain.analysis.aggregate import compute_summary
 from invest_note_api.domain.analysis.concentration import compute_concentration
 from invest_note_api.domain.analysis.holding_period import compute_holding_days_map
@@ -97,7 +97,10 @@ async def get_analysis_dashboard(
     settings: Settings = Depends(get_settings),
 ) -> AnalysisDashboardResponse:
     async with acquire_for_user(pool, user.id) as conn:
-        all_trades = await list_trades(conn, user.id)
+        # list_trades 대신 _with_account 로더 — stocks.name_ko 를 실어 집중도 top3 라벨을
+        # 한글화한다(홈/포트폴리오와 동일 출처). 계산 키는 여전히 asset_name/position_key 라
+        # name_ko 는 표시 전용으로만 흐른다.
+        all_trades = await list_trades_with_account(conn, user.id)
     period_val = parse_period(period)
     trades = filter_by_period(all_trades, period_val)
 
