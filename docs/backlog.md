@@ -110,15 +110,14 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [ ] **토스 USD SELL 행 회귀 보강** — 파서는 구매(BUY) 행만 실샘플 검증됨(SELL 행 포맷 미관측). SELL 포함 토스 해외 거래내역서 확보 후 파싱·회귀 테스트 보강.
 - [ ] **삼성증권 USD** — `samsung_xlsx.py` 동일 skip 존재. 동일 silent-loss 여부 검증 후 같은 안내 가드·본구현 적용. (삼성 USD 샘플 확보 후)
-- [x] ~~업로드 파일 형식 ↔ 선택 증권사 일치 검증~~ — 2026-06-30 완료. `FileStep.tsx` 가 선택/드롭 파일 확장자를 증권사별 `accept`(.pdf 또는 .xlsx,.xls)와 대조해 불일치 시 인라인 에러 + 진행 차단(`isAcceptedExtension` 헬퍼 + 단위 테스트). `accept` 가 힌트일 뿐 드래그-드롭/일부 모바일 피커에서 강제 안 되는 갭 보완. (증권사명-파일내용 정합 같은 더 깊은 검증은 별도.)
 
 - **타 증권사 해외(USD) 준비도:** **신한**(`단가/환율`·`수량/외화`)·**미래에셋**(`환율`·`통화코드`·`외화거래금액`)·**삼성**(`외화*` 컬럼)은 포맷에 환율 컬럼은 있으나 **실제 해외 행 샘플 없음** → 해외 거래 포함 샘플 확보 후 구현·fixture. 데이터/계산 토대(per-trade `exchange_rate`·`to_krw`·`currency_for_country`·walker FX·포트폴리오 KRW 합산)는 토스 구현으로 검증 완료.
 
 ## 자산 추이 페이지 — 운영 잔여 (페이지 자체는 2026-06-04 출시)
 
-- [ ] **일별 종가 자동 적재 + 2년 prune 운영** — 현재 종가 백필은 페이지 진입 시 동기 실행(종목별 watermark 증분), 전체 사전적재는 `POST /admin/seed/daily-prices`(수동/cron). 콜드스타트 지연 완화·stale 방지를 위해 Coolify scheduled task 로 주기 실행 + `prune_older_than`(2년 윈도우) 운영 연결 검토. (`seed_daily_prices` 가 prune 까지 수행하므로 cron 만 걸면 됨.)
-  - **2026-06-04 갱신:** 진입 backfill 에 `daily_price_sync_state` 마커 + 종목 병렬화 적용(`docs/decisions.md` 참고). 휴장/발행지연 무한 재질의 제거·data.go.kr 호출수 상한 고정·신규 종목 자동 처리로 **cron 우선순위 하향**. cron 은 콜드스타트 첫-오픈 지연을 더 줄이고 싶을 때의 옵션으로 남음.
-- [ ] **오늘 점 시세 소스 정합 (자산추이 ↔ 대시보드)** — 2026-06-11 자산추이 KRW 환산 BE 이관 후 잔여. 자산추이 오늘 점 총액은 BE `fetch_quotes_by_keys` 로, 대시보드 합계는 `/portfolio/summary` + FE overlay 시세로 계산돼 **오늘 점 총액이 미세하게 어긋날 수 있다**(포함범위·usdkrw 소스는 일치, finding A 해소됨). 같은 시세 소스로 통일하거나 허용 오차를 명시. 트리거: 사용자가 두 화면 오늘 값 차이를 체감하거나 시세 변동성 큰 종목에서 괴리 보고 시.
+- [x] **운영 잔여 2건 닫음 (2026-06-30)**
+  - **① 일별 종가 자동 적재 + 2년 prune** — 코드 완비(`services/daily_price_seed.py`: 진입 backfill watermark 증분·`daily_price_sync_state` 마커·종목 병렬화·`prune_older_than` 2년 윈도우, `POST /admin/seed/daily-prices` pre-warm 트리거). 2026-06-04 결정으로 진입 backfill 이 콜드스타트/stale 을 흡수해 **cron 필수성 소멸** → Coolify cron 은 "첫-오픈 더 단축" 선택 옵션으로만 잔존하고, 그 처분은 상단 *미사용 admin 라우터 제거* 항목의 `seed_daily_prices` 보존 결정에 위임.
+  - **② 오늘 점 시세 소스 정합 (자산추이 ↔ 대시보드)** — finding A(포함범위·usdkrw 소스 불일치)는 2026-06-11 BE 환산 일원화로 해소. 잔여는 오늘 점 총액이 자산추이=BE `fetch_quotes_by_keys`, 대시보드=FE overlay 시세로 갈려 변동성 큰 종목에서 미세하게 어긋날 수 있는 점뿐 → **허용 오차로 수용·종료**. 사용자가 두 화면 오늘 값 차이를 체감/보고하면 그때 소스 통일로 재오픈(트레이드오프 `docs/decisions.md` 2026-06-11).
 
 - [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리
 - [ ] iOS 상태바 색 동기화 — @capacitor/status-bar 도입 후 다크/라이트 전환 시 status bar style 동기화
@@ -130,20 +129,7 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 보유종목 카드에 오늘 등락 표시
 - [ ] 자산추이에 일, 주, 월, 6개월, 올해 1년, 5년, all 선택 표시
 - [ ] 자산추이에 차트 기준점 s&p500, 코스피 지수등과 비교
-
-## v2 — KIS API 연동 (2026-06-07 사전 조사 완료, 2-트랙 분리)
-
-2026-06-07 deep-research 사전 조사 결과를 바탕으로 2개 트랙으로 분리. **트랙 1 먼저 진행.**
-
-- [ ] **KIS 트랙 1: 활성화(env 전환)** — 구현은 2026-06-07 완료(`docs/spec-history/2026-06-07-kis-data-providers.md`): 시세(`QUOTE_PROVIDERS` 에 kis)·일별 종가(`DAILY_PRICE_PROVIDER`/`DAILY_PRICE_GAP_PROVIDER`)·종목마스터(`STOCK_SEED_SOURCES` 에 kis)·교차검증(`CROSSVALIDATE_PROVIDER`) 전부 registry 등록 + 실호출 검증 완료. **활성화 진행 상태(2026-06-14): 종목마스터 seed·일별종가 primary·시세 보조 fallback 까지 운영 적용·검증 완료. 시세 primary=kis 전환은 보조 유지로 보류(B 휴장일 API 선행 필요, 급하지 않음) — 활성화 트랙 사실상 마무리.**
-  - **활성화 선행 조건:** ① 시세 화면 노출의 약관/KRX 라이선스 리스크 — KIS 공식 확인 권장(2026-06-07 사용자 인지 후 구현 포함 결정), ② **레이트리밋 — 공식 기본 유량 18건/초(실전, 계좌=앱키 단위, 2026-04-20 공지 기준)**. 실측 2건/초(2026-06-07, EGW00201)는 **신규 고객 3일 제한(2026-04-03 시행, 신규 신청 후 3일간 초당 3건)** 기간 측정이었음이 **2026-06-14 재실측으로 확정**(발급 7일 경과, 국내 현재가 동시 20건 버스트 ×2 → 20/20 성공·EGW00201 0건 → 기본 유량 ≥20/초 복귀). `kis.py` 페이싱 상수 `_RATE_MAX_CALLS` **2→18 상향 완료**(`docs/decisions.md` 2026-06-07 ① 재실측 메모 참고). ✅ **레이트리밋 선행조건 해소.** 잔여: 페이싱은 per-process — **Coolify replica=1 확인됨(2026-06-14)**, replica 증설 시 공유 리미터(Redis 등) 재검토(멀티워커/레플리카 공유 상태 계열). 추가 유량은 다른 계좌 앱키 발급이 공식 우회로(유량 확대/과금 계획 없음), ③ 운영 env 에 `KIS_APP_KEY`/`KIS_APP_SECRET` 주입 — **완료**(실유효 키 확인: 2026-06-14 토큰 발급+시세 호출 성공), ④ **토큰 1일 1회 발급 원칙 — 해소됨(2026-06-07 `kis_tokens` DB 영속화 구현, `docs/decisions.md` 참고)**. 잔여: ~~운영 배포 후 토큰 영속 동작 1회 확인~~ **확인됨(2026-06-14: 일별종가 kis 전환 후 운영 BE 에서 신규 종목 백필이 토큰 발급·영속 성공)**, cron 배치(`seed_daily_prices` 등 별도 프로세스)가 KIS 를 쓰게 되면 해당 진입점에도 `configure_kis(settings, pool=...)` 배선 필요(현재 lifespan 만). 종목마스터·교차검증은 키 불필요 경로라 무관. ⑤ 멀티워커/멀티 replica 전환 시 토큰 거부 응답 → DB 재조회(타 워커 신규 토큰 픽업) 로직 추가 필요 — 현재 replica=1 전제.
-  - 권장 활성화 순서(위험 낮은 것부터): ✅ `STOCK_SEED_SOURCES` 에 kis 추가(키 불필요, data.go.kr 대체선) — **env 적용됨**(`STOCK_SEED_SOURCES=data_go_kr,stock_prices,securities,kis`) → ✅ 일별 종가 `DAILY_PRICE_PROVIDER=kis` + `DAILY_PRICE_GAP_PROVIDER=none` — **운영 적용·검증 완료(2026-06-14: 부팅 OK, 신규 종목 KIS 백필+토큰 발급 확인)** → ✅ 시세는 우선 **보조 공급자**(`QUOTE_PROVIDERS=naver,kis,yahoo`)로 **적용됨(2026-06-14 확인, kis=naver 실패 시 fallback)**. 레이트리밋 재실측·페이싱 상향이 끝나(위 ② 해소) 1차 전환도 기술적으로 가능해졌으나, KIS 시세는 traded_on=None 휴장판정 degrade(아래 휴장일 API 항목) 때문에 우선 보조 포지셔닝 권장.
-  - **자산 추이 단순화(2026-06-07 검토): primary=kis 전환 시 gap 단계 자체가 제거된다** — gap 은 data.go.kr T+1 발행 지연이 만든 인공물인데 KIS 일봉은 어제 종가가 즉시(T+0) 반영되어 primary 가 어제까지 한 번에 채움. 구성요소 3개(primary+gap+현재가)→2개. 부수 이득: naver 비공식·data.go.kr 간헐 404 의존 동시 해소, ETN 커버(시장코드 J), cold-start 도 data.go.kr(14~18s)보다 빨라질 수 있음(18건/초 기준 2년×20종목≈100콜≈6s). **오늘 점 현재가까지 KIS 일봉으로 대체하는 것은 비권장** — ① 일봉 경로엔 시세의 TTLCache 45s+single-flight 완충이 없어 매 요청 종목 수만큼 호출(계좌 단위 한도 소모), ② 당일 행은 watermark 오염 방지 가드가 일부러 잘라냄(분리 취급은 코드 재설계), ③ 시세 인프라는 포트폴리오 요약 등이 어차피 사용해 절감 없음, ④ 휴장일 판정(`market_open_today`의 traded_on) 대체 변경 수반.
-- [ ] KIS 휴장일 조회 API(CTCA0903R) 도입 검토 — 현재 휴장일 판정이 휴리스틱 2곳: ① `market_open_today`(시세 `traded_on` 신호 — KIS 시세는 항상 None), ② marcap `basDt` lookback("빈 응답이면 하루 더"). 공식 캘린더(일 1콜 수준)로 대체/보강 가능. 단독으론 작은 개선이지만 **시세 1차 공급자 kis 전환의 선행 문제(traded_on=None 휴장 판정 degrade)를 해소하는 연계 가치** — 시세 1차 전환 검토 시 함께 진행. 신규 구현 필요(실전 전용 TR, 모의 미지원 유의). **2026-06-14: 시세 primary=kis 전환을 보류(보조 유지)하기로 결정 → B 도 함께 보류. 독립적인 휴장일 판정 개선이 필요해지면 단독 진행.**
-- [ ] KIS 트랙 2: 사용자 개인 데이터 자동화 — 사용자 본인 appkey 입력(BYOK)으로 매매내역·예수금·잔고 자동 동기화. 파일 업로드 임포트의 "대체"가 아닌 "KIS 사용자용 자동 동기화 옵션"으로 병행. 트랙 1 과 독립된 대형 feature.
-  - 조회 API(2026-06-07 조사, 국내 실전 기준): 체결내역 `inquire-daily-ccld`(TTTC8001R, **최근 3개월**, 초과분 CTSC9215R) / 보유잔고 `inquire-balance`(TTTC8434R, 예수금 포함) / 매수가능현금 `inquire-psbl-order`(TTTC8908R) / 해외잔고 `inquire-present-balance`(CTRP6504R). 해외 체결내역 TR ID·기간 제한은 미확정.
-  - 과거 이력 초기 적재는 3개월 제한 때문에 구체결 API 페이징 또는 기존 파일 업로드 병행 필요.
-  - **선행 리스크(도입 전 KIS 공식 확인 필수):** ① 제3자 서비스가 사용자 키로 대신 호출(BYOK)하는 구조가 개인 약관 범위인지 — 가장 큰 리스크, ② appkey 에 주문 권한 포함(읽기 전용 스코프 불가로 보임) → 키 유출 시 주문 실행 가능, 키 보관 위치(서버 암호화 vs 디바이스 Keychain/Keystore + 디바이스 직접 호출) 설계 결정 필요, ③ 사용자별 KIS Developers 가입·앱키 발급 UX 마찰.
+- [ ] 다크 테마 추가
 
 ## v2 — UX
 
@@ -152,7 +138,6 @@ MVP 이후 구현할 작업 후보 목록.
 ## v2 — 성능 / 스케일
 
 - [ ] trades 페이지네이션 (BE+FE 동반) — `GET /trades` 에 cursor/limit 도입 + records 화면 `useInfiniteQuery` 무한스크롤. records 가 현재 전량 fetch 후 메모리 group-by-date / account filter 구조라, 페이지네이션 시 그룹핑·`allTrades` (상세 패널) ·`accounts` 응답 분리까지 함께 재설계 필요. 트리거: 거래 수 분포 측정에서 첫 페인트/메모리 영향이 체감되면 도입. ticker SQL push (2026-05-03 `docs/spec-history/2026-05-03-be-simplify-trades-ticker-sql-push.md`) 로 HoldingsList 측은 이미 행 수만 fetch 중.
-- [x] ~~게시판 목록 페이지네이션 통합~~ — 2026-06-30 완료. notices(`NoticePanel` `useInfiniteQuery`+"더 보기", `noticesList` 키)에 이어 my-posts(의견/오류/제보)도 `board_type` 필터+페이지네이션(`total`/`page`, board_type Optional 하위호환) 적용 + `GET /v1/board/unread-summary` 신설로 미확인 점·진입 팝업 신호를 목록에서 분리(page 비의존 full-scan). FE reader 3종(MyPostsListPanel 무한스크롤·settings 3-dot·PopupGate)을 unread-summary 단일출처로 이행, query-key `["my-posts"]` 루트 prefix 보존(invalidator 무수정). DB 스키마 변경 없음. 상세: `docs/spec-history/2026-06-30-board-list-unify.md`·`docs/decisions.md`. **잔여(비차단):** ① MyPostsListPanel OFFSET+flatMap dedup 부재 → 페이지 로드 사이 insert 시 행 1개 중복 가능(React key 경고 수준, NoticePanel 동일 패턴), ② FE 공통 무한목록 스캐폴드는 과설계 회피로 보류(호출부 3+ 또는 shape 수렴 시 재검토).
 - [ ] 포트폴리오/분석 읽기 경로 전량 로드 최적화 (2026-05-26 API 성능 분석 #4) — `GET /portfolio/summary`·`GET /analysis/dashboard` 가 매 호출마다 사용자 전체 거래를 `SELECT *` 로 로드하고 row 마다 `Trade(**dict(row))` Pydantic 검증을 돈다. 거래 누적 시 O(전체 거래수)로 선형 악화. 작업: ① 계산에 안 쓰는 텍스트 컬럼(`reflection_note`/`buy_reason`/`sell_reason`/`improvement_note` 등)을 `SELECT` 목록에서 제외, ② 읽기 전용 경로는 `Trade.model_construct(**dict(row))` 로 검증 스킵(DB 데이터 신뢰), ③ 위 trades 페이지네이션과 연계해 분석/요약 계산을 증분화 가능한지 검토. 트리거: 헤비 유저(대량 시드/실데이터)에서 응답시간·메모리 체감 또는 `pg_stat_statements` 의 rows/평균시간 상승. 측정 없이 선제 적용 시 micro-opt 수준.
 
 ## v3 — AI 분석

@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-06-30 | KIS API 연동 — 트랙 전체 종결(트랙1 완료 / 트랙1-B·2 미진행 확정)
+
+- **맥락:** 2026-06-07 deep-research 로 KIS 연동을 2-트랙 분리(`docs/spec-history/2026-06-07-kis-data-providers.md`·`-kis-token-persistence.md`). backlog 잔존 항목 처리 여부를 재점검하며 종결 판정한다.
+- **결정 ① 트랙1(데이터 공급처 활성화) = 완료.** 시세(`QUOTE_PROVIDERS` 에 kis, 보조 fallback)·일별종가(`DAILY_PRICE_PROVIDER=kis` primary)·종목마스터(`STOCK_SEED_SOURCES` 에 kis)·교차검증 전부 registry 등록 + 운영 적용·검증 완료. 레이트리밋 선행조건 해소(`kis.py` `_RATE_MAX_CALLS` 2→18, 신규고객 3일 제한 만료 후 재실측), `kis_tokens` DB 영속화, 운영 키 주입 확인. 의도적 보류 항목(시세 primary=kis 전환, replica 증설 시 공유 리미터)도 현 상태를 합리적 종착점으로 보고 종결에 포함.
+- **결정 ② 트랙1-B(휴장일 조회 API CTCA0903R) = 미진행 종결.** 공식 캘린더 대체의 주 가치가 "시세 primary=kis 전환의 traded_on=None degrade 해소"였는데 그 전환을 보류(2026-06-14)했으므로 연계 가치 소멸. 휴장일 판정은 현 휴리스틱 2곳(`market_open_today` traded_on 신호 + marcap `basDt` lookback)으로 동작. 독립적 개선 필요 시 신규 spec 단독 착수(실전 전용 TR, 모의 미지원).
+- **결정 ③ 트랙2(사용자 개인 데이터 자동화·BYOK) = 미진행 종결.** 사용자 appkey 로 매매내역·예수금·잔고 자동 동기화하는 대형 feature. 종결 사유: ⓐ 착수 전 BYOK 구조의 KIS 개인 약관 허용 여부 공식 확인이 하드 선행조건(최대 리스크), ⓑ appkey 가 주문 권한 포함(읽기전용 스코프 불가로 보임) → 키 유출 시 주문 실행 가능한 보안 부담, ⓒ 사용자별 발급 UX 마찰. 사용자 수요 확인 전 선제 착수 비권장. **부활 시 참고(2026-06-07 조사):** 체결내역 `inquire-daily-ccld`(TTTC8001R, 최근 3개월·초과분 CTSC9215R)·보유잔고 `inquire-balance`(TTTC8434R)·매수가능현금 `inquire-psbl-order`(TTTC8908R)·해외잔고 `inquire-present-balance`(CTRP6504R). `kis_tokens.scope='user:{id}'` 확장 여지는 토큰 스토어 주석으로 잔존.
+- **트레이드오프:** backlog 의 "v2 — KIS API 연동" 섹션은 본 종결로 삭제(완료/미진행 모두 backlog "다음 작업 후보" 성격에 안 맞음). 트랙1 구현 상세는 spec-history, 종결 근거는 본 항목이 SSOT. 참조: [[project_kis_rate_limits]].
+
+---
+
 ## 2026-06-30 | 게시판 my-posts 페이지네이션 + unread 신호 분리(unread-summary 신설)
 
 - **맥락:** my-posts 계열만 무페이지네이션 전량 반환이라 글이 쌓이면 첨부 presigned URL 재서명 포함 응답 비용이 선형 증가했다. notices 는 이미 `list_notices` + `useInfiniteQuery` 로 페이지네이션됨 → my-posts 도 동일 패턴(board_type 필터 + page/page_size/total)으로 통일한다. 단, my-posts 를 페이지네이션하면 목록 전량 순회로 파생되던 unread/popup 신호(settings 3-dot, MySubmissionsPopupGate)가 page1 만 보고 깨진다.
@@ -448,7 +458,7 @@
 - **결정:**
   - ① **환산 책임을 FE → BE 로 이관.** `compute_asset_history` 가 `usdkrw` 인자를 받아 종목별 `to_krw` 로 KRW 합산(직접 곱 금지 — USD+usdkrw=None 은 None 전파로 기여 제외+incomplete, silent USD-as-KRW 합산 구조적 차단). 종목 식별 키를 `position_key(ticker, country)` 로 일관화(steps/closes/live_quotes 3축 동기, US/KR ticker 충돌 방지). `assets.py` 는 전체/계좌뷰에서 country 필터를 제거하고 country 별 파이프라인(backfill/get_closes/quotes)을 분리·합산, `usdkrw` 는 해외 보유 시 1회 조회. 응답에 `usdkrw`/`has_foreign` 노출. FE 는 `asset-history-convert.ts` 삭제하고 BE KRW 값을 그대로 사용.
   - ② **환율 정책: 현재 환율(spot) 일괄 적용**(일자별 historical FX 아님). 모든 과거 일자 US 평가액에 '오늘 usdkrw' 하나를 곱한다. FE 에 '현재 환율 기준(일자별 아님)' 고지 유지.
-- **트레이드오프:** spot 일괄이라 과거 곡선 모양이 오늘 환율로 왜곡됨(USD 가격 변동만 반영) — 정확한 일자별 환산은 USD/KRW 일별 시계열 적재라는 별도 대형 작업이 필요해 **보류**. 오늘 점 총액은 자산추이(BE `fetch_quotes_by_keys`)와 대시보드(FE overlay)의 시세 소스가 갈려 미세 불일치 가능(포함범위·usdkrw 소스는 일치 — backlog 후속).
+- **트레이드오프:** spot 일괄이라 과거 곡선 모양이 오늘 환율로 왜곡됨(USD 가격 변동만 반영) — 정확한 일자별 환산은 USD/KRW 일별 시계열 적재라는 별도 대형 작업이 필요해 **보류**. 오늘 점 총액은 자산추이(BE `fetch_quotes_by_keys`)와 대시보드(FE overlay)의 시세 소스가 갈려 미세 불일치 가능(포함범위·usdkrw 소스는 일치). **2026-06-30: 이 미세 불일치는 허용 오차로 수용·백로그 종료** — 변동성 큰 종목에서만 표시 시점 차이로 발생하는 cosmetic 수준이라, 사용자가 두 화면 오늘 값 차이를 체감/보고할 때 소스 통일로 재오픈.
 
 ---
 
