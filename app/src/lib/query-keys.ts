@@ -35,7 +35,10 @@ export const queryKeys = {
     ["analysis", "dashboard", period] as const,
 
   // 공지사항(게시판 notice) — 목록/상세. 읽기 전용이라 긴 staleTime.
+  // notices: 설정 점(has_unread)용 단건 useQuery. noticesList: 패널 무한스크롤용
+  // (shape 가 달라 키 분리). 둘 다 ["notices"] prefix 라 한 번의 invalidate 로 갱신.
   notices: ["notices"] as const,
+  noticesList: ["notices", "list"] as const,
   notice: (id: string) => ["notice", id] as const,
 
   // 내 제보/문의(본인이 쓴 글 + 어드민 답변). 진입 팝업 게이트와 read-back 패널이 공유.

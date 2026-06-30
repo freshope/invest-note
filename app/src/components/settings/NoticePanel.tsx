@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { ChevronRightIcon, PinIcon } from "lucide-react";
 import {
   FullScreenPanel,
@@ -25,11 +25,27 @@ export function NoticePanel({ open, onOpenChange }: Props) {
   // 상세로 띄울 공지 id. null 이면 상세 패널 닫힘.
   const [detailId, setDetailId] = useState<string | null>(null);
 
-  const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: queryKeys.notices,
-    queryFn: () => boardApi.listNotices(),
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: queryKeys.noticesList,
+    queryFn: ({ pageParam }) => boardApi.listNotices(pageParam),
     enabled: open,
+    initialPageParam: 1,
+    // 로드한 누적 건수가 total 미만이면 다음 페이지 존재. page_size 는 서버 기본(20).
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((sum, p) => sum + p.items.length, 0);
+      return loaded < lastPage.total ? lastPage.page + 1 : undefined;
+    },
   });
+
+  const items = data?.pages.flatMap((p) => p.items) ?? [];
 
   return (
     <>
@@ -46,14 +62,15 @@ export function NoticePanel({ open, onOpenChange }: Props) {
                 </div>
               ) : isError ? (
                 <ErrorState onRetry={refetch} />
-              ) : !data || data.items.length === 0 ? (
+              ) : items.length === 0 ? (
                 <EmptyCard
                   title="등록된 공지가 없어요"
                   description="새로운 소식이 있으면 이곳에서 알려드릴게요."
                 />
               ) : (
+                <>
                 <div className="rounded-2xl bg-muted/60 overflow-hidden">
-                  {data.items.map((item) => (
+                  {items.map((item) => (
                     <button
                       key={item.id}
                       type="button"
@@ -77,6 +94,17 @@ export function NoticePanel({ open, onOpenChange }: Props) {
                     </button>
                   ))}
                 </div>
+                {hasNextPage ? (
+                  <button
+                    type="button"
+                    onClick={() => fetchNextPage()}
+                    disabled={isFetchingNextPage}
+                    className="mt-3 w-full rounded-xl bg-muted/60 py-3 text-[14px] font-medium text-muted-foreground transition-colors hover:bg-foreground/5 disabled:opacity-60"
+                  >
+                    {isFetchingNextPage ? "불러오는 중…" : "더 보기"}
+                  </button>
+                ) : null}
+                </>
               )}
             </div>
           </FullScreenPanelBody>
