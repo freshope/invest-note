@@ -89,3 +89,16 @@ export function findBrokerKeyByAccountBroker(
   const matched = BROKER_OPTIONS.find((b) => b.label === broker);
   return matched ? matched.key : null;
 }
+
+// 파일명 확장자가 accept(".pdf" 또는 ".xlsx,.xls") 중 하나와 일치하는지.
+// accept 는 native 피커의 힌트일 뿐 드래그-드롭/일부 모바일 피커에서 강제되지 않으므로
+// 선택 직후 한 번 더 검증해 잘못된 형식이 BE 분석까지 가는 것을 막는다.
+export function isAcceptedExtension(filename: string, accept: string): boolean {
+  const exts = accept
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  if (exts.length === 0) return true;
+  const lower = filename.toLowerCase();
+  return exts.some((ext) => lower.endsWith(ext));
+}

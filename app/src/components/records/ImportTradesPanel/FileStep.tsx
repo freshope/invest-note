@@ -5,7 +5,7 @@ import { ChevronDownIcon, ChevronUpIcon, ExternalLinkIcon, UploadCloudIcon } fro
 import { Button } from "@/components/base/Button";
 import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
 import { openExternal } from "@/lib/external-link";
-import type { BrokerDownloadGuide } from "./brokers";
+import { isAcceptedExtension, type BrokerDownloadGuide } from "./brokers";
 
 interface Props {
   brokerName: string;
@@ -20,10 +20,20 @@ export function FileStep({ brokerName, accept, downloadGuide, onFileSelect, onBa
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [formatError, setFormatError] = useState<string | null>(null);
   // 다운로드 절차를 모르는 사용자가 많아 기본 열림으로 안내.
   const [guideOpen, setGuideOpen] = useState(true);
 
+  const acceptLabel = accept.replace(/\./g, "").toUpperCase();
+
   const handleFile = (file: File) => {
+    // accept 는 힌트일 뿐 드래그-드롭/일부 피커에서 강제 안 됨 → 확장자 직접 검증.
+    if (!isAcceptedExtension(file.name, accept)) {
+      setFormatError(`${acceptLabel} 형식만 업로드할 수 있어요.`);
+      setSelectedFile(null);
+      return;
+    }
+    setFormatError(null);
     setSelectedFile(file);
     onFileSelect(file);
   };
@@ -56,7 +66,7 @@ export function FileStep({ brokerName, accept, downloadGuide, onFileSelect, onBa
               {brokerName} 거래내역서를 드래그하거나 클릭해서 선택하세요
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              {accept.replace(/\./g, "").toUpperCase()} 형식 지원
+              {acceptLabel} 형식 지원
             </p>
           </div>
           <input
@@ -70,6 +80,12 @@ export function FileStep({ brokerName, accept, downloadGuide, onFileSelect, onBa
             }}
           />
         </div>
+
+        {formatError && (
+          <p className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {formatError}
+          </p>
+        )}
 
         {selectedFile && (
           <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-4 py-3 text-sm">
