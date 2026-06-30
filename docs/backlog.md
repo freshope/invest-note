@@ -58,25 +58,6 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] **미사용 admin 라우터 + ADMIN_TOKEN 인프라 제거** — 현재 모든 seed 스케줄은 Coolify 에서 CLI(`python -m invest_note_api.services.{stock_seed,nps_seed}`)로 돌고, `POST /admin/seed/{stocks,nps,daily-prices}`·`/admin/reconcile/nps` HTTP 트리거는 실제로 호출되지 않는다(`daily-prices` 는 스케줄 미등록·비활성 옵션). 작업: `routers/admin.py` 삭제 + `main.py` 의 `include_router(admin.router)` 제거 + `auth/admin.py`(`require_admin_token`) 제거 + `config.py` `admin_token`·env `ADMIN_TOKEN` 정리 + 관련 테스트 폐기. **단 `services/daily_price_seed.py` 의 `seed_daily_prices`(pre-warm) 함수는 보존** — 자산 추이 콜드스타트 첫-오픈 지연을 더 줄이고 싶을 때 살릴 여지(현재 비활성, `docs/decisions.md` 2026-06-04 cron 우선순위 하향 참고). 트리거: 별도 관리자 페이지를 만들 때 그에 맞는 엔드포인트로 재설계하며 함께 정리.
 - [ ] PnL 저장값 검증 엔드포인트 (이슈 E) — `/admin/verify-pnl` 신설. SELL의 저장된 `profit_loss`/`avg_buy_price`/`holding_days`/`strategy_type`/`reasoning_tags`/`emotion`을 `compute_group_pnl()`로 재계산해 차이 검출. 사용자 단위 batch + 차이 리포트 + (옵션) 자동 보정. 권한은 admin scope. DB 직접 수정·마이그레이션 누락·mutation 경로 우회 시 분석 탭과 거래 기록 합계 불일치를 잡기 위함.
 
-## PostHog 제품 분석 — 출시 전 후속 (도입은 2026-06-12 완료)
-
-2026-06-12 PostHog(FE 전용, Cloud) 도입(`docs/decisions.md` 참고). 코드·tsc·build·정적 export 청크 로드까지 검증. 아래는 코드 외/실환경 잔여.
-
-- [ ] **실환경 검증** — ① 웹 dev 로그인 후 PostHog Activity 에서 `$pageview`·`$identify`·커스텀 이벤트(`trade_recorded`/`trades_imported`/`account_added`) 도착 + 이벤트 프로퍼티에 종목/금액 등 민감값 없는지 직접 점검, ② `environment` 필터로 dev/prod 분리 동작 확인, ③ Capacitor 실기기(iOS/Android) — 탭 이동 시 pageview 도착·앱 재시작 후 distinct_id 유지·로그인/로그아웃 identify/reset·웹뷰 네트워크 차단 회귀 없음.
-- [ ] **출시 전 개인정보 고지 (코드 외, 필수)** — 스토어 게시 금융 앱에 UUID 식별 서드파티 분석 도입에 따른 고지 의무. ① 개인정보처리방침 갱신(`invest-note.pixelwave.app`, 통합 저장소 freshope/pixelwave-web — PostHog 수집 항목·국외 이전 명시), ② Play Data Safety / App Store 개인정보 라벨("사용 데이터/식별자" 신고), ③ PIPA 동의·국외이전 검토. **불필요(확인됨):** posthog-js 는 1st-party JS — iOS ATT 프롬프트·`PrivacyInfo.xcprivacy` 번들 SDK 요건 미트리거.
-- [ ] **운영 키 주입 확인** — `app/.env.production` 의 `NEXT_PUBLIC_POSTHOG_KEY` 는 빌드타임 주입(Coolify env 아님). 출시 빌드에 키가 실제 박혔는지 1회 확인(빈값이면 운영에서도 조용히 no-op).
-
-## 배포 / 인프라
-
-- [ ] **운영 DB 접근/노출 잔여 (2026-06-17)** — 공개 포트는 제거함(스캐너/`pgadmin` 시도 차단). 남은 것: ① **`pgadmin` 반복 인증 실패 정체 + 백업 성공 여부 확인** — 그게 내 백업/모니터링 도구 오설정이면 지금도 실패 중일 수 있음(백업이 실제 도는지 필수 확인), ② Beekeeper가 컨테이너 IP(재시작 시 변동)로 접속 중 → Coolify 포트를 `127.0.0.1:5432` 바인드로 고정(외부 비노출+안정), ③ pg_hba `host all all all` 좁히기(보조 방어).
-- [ ] user-scoped 테이블 신규 추가 시 `on delete cascade` 가드 — `auth.users` 삭제 시 cascade 누락된 FK가 있으면 탈퇴가 FK 위반으로 실패. 향후 새 user_id 컬럼을 가진 테이블을 추가하는 마이그레이션은 PR 리뷰 시 cascade 옵션 확인을 체크리스트로 명시. 또는 통합 테스트로 데모 사용자 삭제→재시드 시나리오를 자동화 검토.
-- [ ] **OTA post-store 검증** — 2026-06-08 OTA v1(`docs/spec-history/2026-06-08-capacitor-ota-live-update.md`) 도입 후, 스토어 빌드 라이브 시점에 수행할 실검증. ① 실 R2 발행 1회(`node scripts/publish-ota.mjs`) 후 manifest/zip URL 200 + BE `POST /live-update/manifest` 분기 확인, ② 실기기 스큐 매트릭스 — 구네이티브+신웹(`required_native_version > version_build`) → OTA 차단되고 force-update 폴백 / 신네이티브+구웹 → OTA 적용 / 신규설치(`version_name="builtin"`) 중복 다운로드 없음, ③ 부팅 실패 번들 → `notifyAppReady()` 미달 시 자동 롤백, ④ capgo CLI checksum ↔ 플러그인 무결성 실디바이스 확인. v1 은 코드/pytest 까지라 실기기 항목이 미검증으로 남음.
-- [ ] **OTA v2 확장** — v1 에서 의도적으로 제외한 항목. ① 서명/E2E 암호화(v1 은 checksum 무결성 + TLS 만 — 출처 위변조 방지용 서명 키 도입), ② 단계 롤아웃(%)(v1 은 100% 일괄 + 자동롤백 + 빠른 재푸시 — 사용자 증가 후 매니페스트 결정 API 에 `device_id` 해시 % 게이팅 추가), ③ 델타(차등) 업데이트(현재 매 발행 풀 zip 다운로드 — `out/` 크기 커지면 검토), ④ 채택률/실패율 통계 대시보드(R2 JSON SSOT 는 이력·통계 없음 — 도입 시 Postgres SSOT 재검토, `decisions.md` 2026-06-08 OTA 결정 참고). 부수: `ota-publish` Makefile 타깃 위치 정리(현재 스크립트 직접 호출, thin wrapper 관례).
-
-## API 라우터 prefix 마이그레이션
-
-- [x] **BE legacy alias 제거 (sunset) — 2026-06-30 완료** (`feature/sunset-legacy-api-prefix`). `/api/*`(2026-05-21 dual-prefix legacy)와 bare(`/xxx`, 2026-06-12 `/v1` 정식화로 뒤늦게 alias화)를 **둘 다** 제거하고 정식 `/v1/*` 단일화. 선행조건은 `MIN_SUPPORTED_VERSION=1.3.0` floor 로 충족(현행 FE 는 1.2.1부터 `/v1` 사용 → bare/`/api` 는 ≤1.2.0 락아웃 구버전 전용 dead alias, 살아있는 클라이언트 없음). 작업: `main.py` legacy `include_router` 루프 제거 + `tests/test_legacy_api_prefix.py` 폐기 + 테스트 bare 호출 208곳 `/v1` 마이그레이션(10파일). 검증: pytest 962 passed(baseline 965 − legacy 3).
-
 ## 거래내역서 임포트 — 후속 과제
 
 - [ ] **종목 검색 provider db 복귀 + import/NPS stale 추적** (2026-06-03 Naver 임시 복귀, `docs/decisions.md` 참고) — data.go.kr 게이트웨이(~50% 성공률) 안정성 모니터링 후 `STOCK_SEARCH_PROVIDER=db` 로 복귀(코드 변경 없이 env 한 줄). **잔여 리스크:** 검색만 토글했으므로 seed 를 장기 중단하면 거래 import 매칭(`ticker_resolver.lookup_by_names`)·NPS(`stocks_repo.search`)·marcap 이 stale 로컬 stocks 에 의존해 조용히 낡음. 트리거: ① seed 게이트웨이 성공률 안정화 확인 시 db 복귀, 또는 ② import 매칭률 저하/NPS·시총 stale 체감 시 seed 재개 우선순위 상향.
@@ -114,10 +95,6 @@ MVP 이후 구현할 작업 후보 목록.
 - **타 증권사 해외(USD) 준비도:** **신한**(`단가/환율`·`수량/외화`)·**미래에셋**(`환율`·`통화코드`·`외화거래금액`)·**삼성**(`외화*` 컬럼)은 포맷에 환율 컬럼은 있으나 **실제 해외 행 샘플 없음** → 해외 거래 포함 샘플 확보 후 구현·fixture. 데이터/계산 토대(per-trade `exchange_rate`·`to_krw`·`currency_for_country`·walker FX·포트폴리오 KRW 합산)는 토스 구현으로 검증 완료.
 
 ## 자산 추이 페이지 — 운영 잔여 (페이지 자체는 2026-06-04 출시)
-
-- [x] **운영 잔여 2건 닫음 (2026-06-30)**
-  - **① 일별 종가 자동 적재 + 2년 prune** — 코드 완비(`services/daily_price_seed.py`: 진입 backfill watermark 증분·`daily_price_sync_state` 마커·종목 병렬화·`prune_older_than` 2년 윈도우, `POST /admin/seed/daily-prices` pre-warm 트리거). 2026-06-04 결정으로 진입 backfill 이 콜드스타트/stale 을 흡수해 **cron 필수성 소멸** → Coolify cron 은 "첫-오픈 더 단축" 선택 옵션으로만 잔존하고, 그 처분은 상단 *미사용 admin 라우터 제거* 항목의 `seed_daily_prices` 보존 결정에 위임.
-  - **② 오늘 점 시세 소스 정합 (자산추이 ↔ 대시보드)** — finding A(포함범위·usdkrw 소스 불일치)는 2026-06-11 BE 환산 일원화로 해소. 잔여는 오늘 점 총액이 자산추이=BE `fetch_quotes_by_keys`, 대시보드=FE overlay 시세로 갈려 변동성 큰 종목에서 미세하게 어긋날 수 있는 점뿐 → **허용 오차로 수용·종료**. 사용자가 두 화면 오늘 값 차이를 체감/보고하면 그때 소스 통일로 재오픈(트레이드오프 `docs/decisions.md` 2026-06-11).
 
 - [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리
 - [ ] iOS 상태바 색 동기화 — @capacitor/status-bar 도입 후 다크/라이트 전환 시 status bar style 동기화
