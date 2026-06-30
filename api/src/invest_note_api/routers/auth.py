@@ -90,13 +90,17 @@ async def login(
     """IdP authorize 리다이렉트. state+IdP verifier+앱 PKCE challenge 를 transient 저장(B11/B12).
 
     code_challenge = 앱↔BE PKCE(Layer2, B12) — 앱이 생성해 보낸다(2b-1 필수). S256 만 허용.
-    client = web/native 구분(기본 native=딥링크, 무회귀). "admin" = 어드민 웹 패널 →
-    callback 이 be_admin_redirect_url 로 2차 hop. state 에 저장해 callback 이 분기.
+    client = 클라 종류(기본 native=딥링크, 무회귀). "admin" = 어드민 웹 패널 → callback 이
+    be_admin_redirect_url 로 2차 hop. "web" = 개발 편의용 app 웹 BE flow → be_app_web_redirect_url
+    로 2차 hop(동형). state 에 저장해 callback 이 분기.
     """
     if code_challenge_method != "S256":
         raise APIError(ERR_REQUEST_FALLBACK, 400)
     # client=admin 인데 redirect env 가 빈 값이면 IdP 왕복·state 소모 전에 503(dormant-503).
     if client == "admin" and not settings.be_admin_redirect_url:
+        raise APIError(ERR_SERVICE_UNAVAILABLE, 503)
+    # client=web(개발 편의용 웹 BE flow)도 동일 dormant-503 — env 빈 값이면 운영에서 비활성.
+    if client == "web" and not settings.be_app_web_redirect_url:
         raise APIError(ERR_SERVICE_UNAVAILABLE, 503)
     try:
         provider_client = get_provider(provider, settings)
@@ -269,7 +273,7 @@ async def _handle_callback(
             )
 
     # client 별 2차 hop — code 만(B4). client 가 /auth/token 으로 교환.
-    # admin(웹) → be_admin_redirect_url, 그 외(default native) → 딥링크.
+    # admin/web(웹) → 각 redirect env, 그 외(default native) → 딥링크.
     if client_kind == "admin":
         # login 이 503 fail-fast 하므로 도달 시 env 가 채워져 있어야 한다. 방어적: 비어 있으면
         # (login~callback 사이 env 제거 등 극단) 브라우저가 못 여는 네이티브 딥링크로 폴백하지
@@ -277,6 +281,11 @@ async def _handle_callback(
         if not settings.be_admin_redirect_url:
             raise APIError(ERR_SERVICE_UNAVAILABLE, 503)
         target = _redirect_with_code(settings.be_admin_redirect_url, one_time)
+    elif client_kind == "web":
+        # 개발 편의용 웹 BE flow — admin 분기와 동형(방어적 빈-env 503).
+        if not settings.be_app_web_redirect_url:
+            raise APIError(ERR_SERVICE_UNAVAILABLE, 503)
+        target = _redirect_with_code(settings.be_app_web_redirect_url, one_time)
     else:
         target = _redirect_with_code(settings.be_deeplink_scheme, one_time)
     return RedirectResponse(target, status_code=302)

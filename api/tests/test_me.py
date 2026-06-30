@@ -1,6 +1,4 @@
 import time
-from contextlib import contextmanager
-from unittest.mock import patch
 from uuid import UUID
 
 import httpx
@@ -8,7 +6,6 @@ import jwt
 import pytest
 from fastapi.testclient import TestClient
 
-from invest_note_api.auth.constants import AUTH_ROLE
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.config import Settings, get_settings
@@ -16,12 +13,13 @@ from invest_note_api.db import get_pool
 from invest_note_api.external.http_client import get_http_client
 from invest_note_api.main import create_app
 from tests.conftest import (
+    BE_AUDIENCE,
+    BE_ISSUER,
+    BE_KID,
     TEST_EMAIL,
     TEST_SUPABASE_URL,
     TEST_USER_ID,
-    _kid,
-    _make_mock_jwks_client,
-    _private_key,
+    _be_private_pem,
     make_jwt,
 )
 from tests.fake_pool import FakeConnection, make_fake_pool
@@ -50,17 +48,20 @@ def test_me_invalid_token(auth_client: TestClient) -> None:
 
 
 def test_me_expired_token(auth_client: TestClient) -> None:
+    # 만료된 BE 토큰(등록 iss/aud) → 401 (ExpiredSignatureError). iss 게이트가 아니라 만료가
+    # 거부 사유가 되도록 등록 issuer 로 발급한다(2c: 음성 케이스 단락 방지).
     expired = jwt.encode(
         {
             "sub": TEST_USER_ID,
             "email": TEST_EMAIL,
-            "aud": AUTH_ROLE,
+            "aud": BE_AUDIENCE,
+            "iss": BE_ISSUER,
             "iat": int(time.time()) - 7200,
             "exp": int(time.time()) - 3600,
         },
-        _private_key,
+        _be_private_pem,
         algorithm="ES256",
-        headers={"kid": _kid},
+        headers={"kid": BE_KID},
     )
     r = auth_client.get("/me", headers={"Authorization": f"Bearer {expired}"})
     assert r.status_code == 401
@@ -75,72 +76,25 @@ def test_me_valid_token(auth_client: TestClient) -> None:
     assert data["email"] == TEST_EMAIL
 
 
-TEST_ISSUER = f"{TEST_SUPABASE_URL}/auth/v1"
-
-
-@contextmanager
-def _iss_client(*, oidc_issuer: str = "", oidc_audience: str | None = None):
-    """OIDC 검증 토글 테스트용 — 실제 JWKS decode 를 살리고 oidc 설정만 주입한다.
-
-    auth_client 는 get_settings 를 override 하지 않아 oidc 설정을 못 바꾸므로,
-    여기서 _get_jwks_client patch(실제 서명 검증, 요청 시점까지 유지) +
-    Settings(oidc_issuer/oidc_audience=...) override 를 함께 건다. oidc_audience 를
-    넘기지 않으면 Settings 기본값(AUTH_ROLE)을 쓴다.
-    """
-    from invest_note_api.auth.jwt import _get_jwks_client
-
-    overrides = {"supabase_url": TEST_SUPABASE_URL, "oidc_issuer": oidc_issuer}
-    if oidc_audience is not None:
-        overrides["oidc_audience"] = oidc_audience
-    settings = Settings(**overrides)
-    app = create_app(settings)
-    app.dependency_overrides[get_settings] = lambda: settings
-
-    with patch("invest_note_api.auth.jwt._get_jwks_client", _make_mock_jwks_client()):
-        with TestClient(app) as client:
-            yield client
-
-    _get_jwks_client.cache_clear()
-
-
-def test_me_iss_skipped_when_issuer_empty(auth_client: TestClient) -> None:
-    # oidc_issuer 빈 값(기본) → iss 클레임 없는 토큰도 200(기존 동작 보존).
-    token = make_jwt()
+def test_me_unknown_issuer_rejected(auth_client: TestClient) -> None:
+    # 2c: registry 에 없는 iss → 401(Supabase default fallback 제거). 서명은 BE 키지만 iss 미등록.
+    token = make_jwt(iss="https://evil.example.com/auth/v1")
     r = auth_client.get("/me", headers={"Authorization": f"Bearer {token}"})
-    assert r.status_code == 200
+    assert r.status_code == 401
 
 
-def test_me_iss_match_when_issuer_set() -> None:
-    # oidc_issuer 설정 + 일치 iss 토큰 → 200.
-    with _iss_client(oidc_issuer=TEST_ISSUER) as client:
-        token = make_jwt(iss=TEST_ISSUER)
-        r = client.get("/me", headers={"Authorization": f"Bearer {token}"})
-        assert r.status_code == 200
+def test_me_missing_issuer_rejected(auth_client: TestClient) -> None:
+    # 2c: iss 클레임 없는 토큰 → 401(registry 미매칭). fallback 제거로 iss 누락은 더 이상 허용 안 됨.
+    token = make_jwt(iss=None)
+    r = auth_client.get("/me", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 401
 
 
-def test_me_iss_mismatch_when_issuer_set() -> None:
-    # oidc_issuer 설정 + 불일치 iss 토큰 → 401 (InvalidIssuerError → InvalidTokenError).
-    with _iss_client(oidc_issuer=TEST_ISSUER) as client:
-        token = make_jwt(iss="https://evil.example.com/auth/v1")
-        r = client.get("/me", headers={"Authorization": f"Bearer {token}"})
-        assert r.status_code == 401
-
-
-def test_me_iss_missing_when_issuer_set() -> None:
-    # oidc_issuer 설정 + iss 클레임 없는 토큰 → 401 (MissingRequiredClaimError).
-    with _iss_client(oidc_issuer=TEST_ISSUER) as client:
-        token = make_jwt()
-        r = client.get("/me", headers={"Authorization": f"Bearer {token}"})
-        assert r.status_code == 401
-
-
-def test_me_audience_empty_normalized_to_default() -> None:
-    # OIDC_AUDIENCE 가 빈 문자열(present-but-empty)이어도 AUTH_ROLE 로 정규화돼
-    # 정상 토큰이 200 — 빈 env 값이 전체 인증을 깨뜨리지 않음을 보장.
-    with _iss_client(oidc_audience="") as client:
-        token = make_jwt()
-        r = client.get("/me", headers={"Authorization": f"Bearer {token}"})
-        assert r.status_code == 200
+def test_me_wrong_audience_rejected(auth_client: TestClient) -> None:
+    # 등록 iss + 잘못된 aud → 401(per-issuer aud 격리). iss 게이트 통과 후 aud 검증에서 거부.
+    token = make_jwt(aud="authenticated")
+    r = auth_client.get("/me", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 401
 
 
 def _make_delete_client(

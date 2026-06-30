@@ -155,15 +155,10 @@ def test_provider_list_properties_default_and_parse():
 
 def test_be_token_dormant_by_default():
     # 기본(BE signing key 빈 값) → BE 토큰 비활성. registry 에 BE entry 없음(dormant).
-    # Supabase 분기(default)만 살아 있어 기존 인증 무영향.
+    # ⚠️ 2c: Supabase default fallback 제거 → registry 빈 = 전원 401(불변식 역전).
     s = Settings(supabase_url=TEST_SUPABASE_URL)
     assert s.be_token_enabled is False
     assert s.oidc_issuer_registry == {}
-    # Supabase default entry: oidc_issuer 빈 값 → issuer=None(iss 검증 스킵, Phase 1 동일).
-    sup = s.supabase_issuer_entry
-    assert sup["issuer"] is None
-    assert sup["audience"] == "authenticated"
-    assert sup["jwks_uri"] == f"{TEST_SUPABASE_URL}/auth/v1/.well-known/jwks.json"
 
 
 def test_be_token_registry_entry_when_enabled():

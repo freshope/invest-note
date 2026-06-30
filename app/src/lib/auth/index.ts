@@ -1,10 +1,9 @@
 // Provider-neutral auth 인터페이스. 외부(컴포넌트·lib/api·페이지)는 이 모듈만 사용한다.
-// 네이티브는 BE OAuth flow(BE store/token), 웹은 expand 동안 Supabase 유지(C8 이중화).
-// @supabase/supabase-js 의 결합은 supabase-client.ts 뒤에 격리되어 있다(웹 전용).
-import { getSupabaseClient } from "./supabase-client";
+// 인증은 웹·네이티브 모두 BE OAuth flow(BE store/token) 단일 경로다. platform 분기는
+// 로그인 시작 방식(네이티브=인앱브라우저+딥링크, 웹=full-page redirect+https 콜백)과
+// 토큰 영속(token-store 내부)에만 있고, 세션 머시너리는 공통이다.
 import type { AuthUser, AuthChangeCallback } from "./types";
 import { isNativePlatform } from "@/lib/platform";
-import { getBeAuthEnabled } from "@/lib/api/app-config";
 import {
   generateVerifier,
   challengeFromVerifier,
@@ -30,26 +29,12 @@ import {
 
 export type { AuthUser, AuthChangeCallback } from "./types";
 
-function toAuthUser(
-  user: { id: string; email?: string } | null | undefined,
-): AuthUser | null {
-  if (!user) return null;
-  return { id: user.id, email: user.email ?? null };
-}
-
 type OAuthProvider = "google" | "kakao" | "apple";
-
-// BE OAuth flow 분기 단일 seam. 네이티브 + 서버 플래그 ON 일 때만 BE flow.
-// 플래그 미수신/OFF(default false) 면 네이티브도 Supabase flow 로 폴백(현재 라이브 무회귀).
-// 6함수가 이 한 곳만 보므로 && 흩뿌림 없이 분기 의미를 단일화한다.
-function isBeAuthFlow(): boolean {
-  return isNativePlatform() && getBeAuthEnabled();
-}
 
 // access token 만료 판정 skew(초). exp - skew 이내면 proactive refresh(C3).
 const REFRESH_SKEW_SEC = 60;
 
-// ── 네이티브: 자체 listener registry(subscribe 대체, supabase-js onAuthStateChange 상실 대체) ──
+// ── 자체 listener registry(subscribe 가 토큰 변화 시 emit 으로 통지) ──
 const listeners = new Set<AuthChangeCallback>();
 function emit(user: AuthUser | null): void {
   for (const cb of listeners) cb(user);
@@ -122,152 +107,112 @@ async function doRefresh(): Promise<string | null> {
 }
 
 /**
- * OAuth 로그인 시작. 네이티브는 BE flow URL(인앱 브라우저용)을 반환한다.
- * 웹은 supabase-js 가 skipBrowserRedirect 로 받은 url 을 반환.
+ * OAuth 로그인 시작. 네이티브는 인앱 브라우저용 BE login URL 을 반환하고(login 이 Browser.open),
+ * 웹은 `client=web` 으로 full-page redirect(window.location.assign)해 페이지를 이탈한다
+ * (어드민 signInWithGoogle 미러링). 웹은 반환 url 이 의미 없어 null 을 돌려준다.
  */
 export async function signInWithOAuth(
   provider: OAuthProvider,
-  options: { redirectTo: string; skipBrowserRedirect: boolean },
 ): Promise<{ url: string | null }> {
-  if (isBeAuthFlow()) {
-    // G3: WebCrypto(S256) 부재면 silent 사망 대신 명시적 throw → 호출부(login)가 에러 라우팅.
-    if (!isWebCryptoAvailable()) {
-      throw new Error("WebCrypto unavailable: PKCE S256 not supported");
-    }
-    // PKCE: verifier 생성 → secure storage 영속(cold-start 생존 C2) → S256 challenge.
-    const verifier = generateVerifier();
-    await saveVerifier(verifier);
-    const challenge = await challengeFromVerifier(verifier);
+  // G3: WebCrypto(S256) 부재면 silent 사망 대신 명시적 throw → 호출부(login)가 에러 라우팅.
+  if (!isWebCryptoAvailable()) {
+    throw new Error("WebCrypto unavailable: PKCE S256 not supported");
+  }
+  // PKCE: verifier 생성 → 영속 store(네이티브 cold-start·웹 redirect 왕복 생존 C2) → S256 challenge.
+  const verifier = generateVerifier();
+  await saveVerifier(verifier);
+  const challenge = await challengeFromVerifier(verifier);
+  if (isNativePlatform()) {
     return { url: buildLoginUrl(provider, challenge) };
   }
-  const { data, error } = await getSupabaseClient().auth.signInWithOAuth({
-    provider,
-    options: {
-      redirectTo: options.redirectTo,
-      skipBrowserRedirect: options.skipBrowserRedirect,
-    },
-  });
-  if (error) throw error;
-  return { url: data?.url ?? null };
+  window.location.assign(buildLoginUrl(provider, challenge, "web"));
+  return { url: null };
 }
 
 /** 현재 세션의 access token(Bearer 주입용). 없으면 null. */
 export async function getAccessToken(): Promise<string | null> {
-  if (isBeAuthFlow()) {
-    // hot path: 캐시 우선(F#1). 캐시 유효(만료 임박 아님)면 storage·디코드 생략.
-    if (cachedAccess && !isExpiringSoon(cachedAccess, REFRESH_SKEW_SEC)) {
-      return cachedAccess;
-    }
-    // 캐시 miss(cold start) → storage 1회 적재 후 캐시 채움.
-    if (!cachedAccess) {
-      // read 전 epoch 캡처: getAccessTokenRaw await 중 로그아웃이 완주하면(epoch++)
-      // pre-clear stale 토큰이 resolve 되더라도 캐시 부활(C#1) 없이 null 반환(persistAndEmit 와 동일 idiom).
-      const epoch = logoutEpoch;
-      const raw = await getAccessTokenRaw();
-      if (epoch !== logoutEpoch) return null;
-      if (!raw) return null;
-      const claims = decodeClaims(raw);
-      if (claims) setCache(raw, claims);
-      if (!isExpiringSoon(raw, REFRESH_SKEW_SEC)) return raw;
-    }
-    // 만료 임박 → single-flight refresh. 동시 호출은 같은 promise 공유(C3).
-    if (!refreshPromise) {
-      refreshPromise = doRefresh().finally(() => {
-        refreshPromise = null;
-      });
-    }
-    return refreshPromise;
+  // hot path: 캐시 우선(F#1). 캐시 유효(만료 임박 아님)면 storage·디코드 생략.
+  if (cachedAccess && !isExpiringSoon(cachedAccess, REFRESH_SKEW_SEC)) {
+    return cachedAccess;
   }
-  try {
-    const {
-      data: { session },
-    } = await getSupabaseClient().auth.getSession();
-    return session?.access_token ?? null;
-  } catch {
-    return null;
+  // 캐시 miss(cold start) → storage 1회 적재 후 캐시 채움.
+  if (!cachedAccess) {
+    // read 전 epoch 캡처: getAccessTokenRaw await 중 로그아웃이 완주하면(epoch++)
+    // pre-clear stale 토큰이 resolve 되더라도 캐시 부활(C#1) 없이 null 반환(persistAndEmit 와 동일 idiom).
+    const epoch = logoutEpoch;
+    const raw = await getAccessTokenRaw();
+    if (epoch !== logoutEpoch) return null;
+    if (!raw) return null;
+    const claims = decodeClaims(raw);
+    if (claims) setCache(raw, claims);
+    if (!isExpiringSoon(raw, REFRESH_SKEW_SEC)) return raw;
   }
+  // 만료 임박 → single-flight refresh. 동시 호출은 같은 promise 공유(C3).
+  if (!refreshPromise) {
+    refreshPromise = doRefresh().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
 }
 
 /** 현재 로그인 사용자(provider-neutral). 없으면 null. */
 export async function getUser(): Promise<AuthUser | null> {
-  if (isBeAuthFlow()) {
-    // refresh-aware 토큰 확보(C9). getAccessToken 이 캐시 claims 도 채우므로 재사용(F#2 이중 디코드 해소).
-    const token = await getAccessToken();
-    if (!token) return null;
-    // 캐시가 같은 토큰을 가리키면 claims 재사용, 아니면(드뭄) 디코드.
-    if (cachedAccess === token && cachedClaims) return cachedClaims;
-    return decodeClaims(token);
-  }
-  try {
-    const {
-      data: { session },
-    } = await getSupabaseClient().auth.getSession();
-    return toAuthUser(session?.user);
-  } catch {
-    return null;
-  }
+  // refresh-aware 토큰 확보(C9). getAccessToken 이 캐시 claims 도 채우므로 재사용(F#2 이중 디코드 해소).
+  const token = await getAccessToken();
+  if (!token) return null;
+  // 캐시가 같은 토큰을 가리키면 claims 재사용, 아니면(드뭄) 디코드.
+  if (cachedAccess === token && cachedClaims) return cachedClaims;
+  return decodeClaims(token);
 }
 
-/** 로그아웃. 네이티브는 store clear + logout emit(서버 미호출, C11). */
+/** 로그아웃. store clear + logout emit(서버 미호출, C11). */
 export async function signOut(): Promise<void> {
-  if (isBeAuthFlow()) {
-    // 동기 구간에서 먼저 세션 상태 전부 무효화(C#1). epoch 증가는 clearTokens await 전에 일어나
-    // in-flight doRefresh 가 persist 직전 epoch 불일치를 보고 토큰을 부활시키지 못하게 한다.
-    logoutEpoch++;
-    // 서버측 refresh revoke(best-effort) — clearTokens 전에 읽어야 토큰이 남아있다. 네트워크
-    // 실패해도 로컬 로그아웃은 무조건 진행(catch 흡수).
-    const refresh = await getRefreshToken();
-    if (refresh) {
-      try {
-        await revokeSession(refresh);
-      } catch {
-        /* 로컬 정리 우선 — revoke 실패 무시 */
-      }
+  // 동기 구간에서 먼저 세션 상태 전부 무효화(C#1). epoch 증가는 clearTokens await 전에 일어나
+  // in-flight doRefresh 가 persist 직전 epoch 불일치를 보고 토큰을 부활시키지 못하게 한다.
+  logoutEpoch++;
+  // 서버측 refresh revoke(best-effort) — clearTokens 전에 읽어야 토큰이 남아있다. 네트워크
+  // 실패해도 로컬 로그아웃은 무조건 진행(catch 흡수).
+  const refresh = await getRefreshToken();
+  if (refresh) {
+    try {
+      await revokeSession(refresh);
+    } catch {
+      /* 로컬 정리 우선 — revoke 실패 무시 */
     }
-    clearCache();
-    refreshPromise = null;
-    await clearTokens();
-    emit(null);
-    return;
   }
-  // 서버 호출 실패에도 로컬 세션은 무조건 비우도록 scope: "local" 고정.
-  await getSupabaseClient().auth.signOut({ scope: "local" });
+  clearCache();
+  refreshPromise = null;
+  await clearTokens();
+  emit(null);
 }
 
 /** 인증 상태 변화 구독. 해제 함수를 반환한다. */
 export function subscribe(callback: AuthChangeCallback): () => void {
-  if (isBeAuthFlow()) {
-    listeners.add(callback);
-    return () => {
-      listeners.delete(callback);
-    };
-  }
-  const {
-    data: { subscription },
-  } = getSupabaseClient().auth.onAuthStateChange((_event, session) => {
-    callback(toAuthUser(session?.user));
-  });
-  return () => subscription.unsubscribe();
+  listeners.add(callback);
+  return () => {
+    listeners.delete(callback);
+  };
 }
 
 /**
- * 인가 code 를 세션으로 교환. 실패 시 throw(딥링크 핸들러 라우팅용).
- * 네이티브는 BE /auth/token(code + PKCE verifier), 웹은 supabase PKCE.
+ * 인가 code 를 세션으로 교환. 실패 시 throw(딥링크 핸들러·웹 콜백 라우팅용).
+ * BE /auth/token(code + PKCE verifier)로 교환한다.
  */
 export async function exchangeCodeForSession(code: string): Promise<void> {
-  if (isBeAuthFlow()) {
-    const verifier = await getVerifier();
-    if (!verifier) throw new Error("missing PKCE verifier");
-    const epoch = logoutEpoch;
-    const tokens = await exchangeToken(code, verifier);
-    await persistAndEmit(tokens, epoch);
-    // 성공 시에만 verifier 삭제(G2/C2): transient 실패 시 보존해야 BE 재교환 가능
-    // (2b-1 BE 는 실패 시 code 미소진 — peek-before-consume). finally 금지.
-    await clearVerifier();
-    return;
-  }
-  const { error } = await getSupabaseClient().auth.exchangeCodeForSession(code);
-  if (error) throw error;
+  const verifier = await getVerifier();
+  if (!verifier) throw new Error("missing PKCE verifier");
+  const epoch = logoutEpoch;
+  // exchangeToken 이 throw(network/transient)하면 아래 clearVerifier 미도달 → verifier 보존
+  // (2b-1 BE 는 실패 시 code 미소진 — peek-before-consume → 재교환 가능). finally 금지.
+  const tokens = await exchangeToken(code, verifier);
+  // 교환 성공 = BE 가 code 소진 → verifier 재사용 불가하므로 persist 결과와 무관하게 정리.
+  await clearVerifier();
+  // persist 가 no-op(decodeClaims null·로그아웃 interleave) → 토큰 미저장. 이때 success 로
+  // resolve 하면 콜백이 "/"로 갔다가 즉시 /login 으로 무증상 튕김 → 명시적 throw 로
+  // 콜백이 /login?error 를 보이게 한다(어드민 index.ts 미러링).
+  const access = await persistAndEmit(tokens, epoch);
+  if (!access) throw new Error("session not established after token exchange");
 }
 
 /**

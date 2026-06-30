@@ -42,12 +42,11 @@ async def get_current_user(
 
     token = authorization.removeprefix("Bearer ")
     try:
-        # issuer registry 경유 검증 — Supabase(default) + BE(명시 매칭) 양 issuer.
-        # registry 가 비면(BE dormant) Supabase entry 단독으로 Phase 1 과 동일하게 동작.
+        # issuer registry 경유 검증 — registry 에 등록된 issuer(현재 BE issuer)만 통과.
+        # ⚠️ 2c: Supabase default fallback 제거. registry 가 비면(BE dormant) 전원 401.
         return decode_oidc_jwt(
             token,
             registry=_registry_with_be_key(settings),
-            supabase_entry=settings.supabase_issuer_entry,
         )
-    except (jwt.InvalidTokenError, jwt.exceptions.PyJWKClientError, ValueError):
+    except (jwt.InvalidTokenError, ValueError):
         raise APIError(ERR_UNAUTHORIZED, 401)

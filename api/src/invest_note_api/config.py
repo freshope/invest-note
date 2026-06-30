@@ -3,8 +3,6 @@ from functools import lru_cache
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from invest_note_api.auth.constants import AUTH_ROLE
-
 # 공급자 체인 기본값 — 단일 출처. 도메인 모듈(quotes/stock_seed)의 함수 기본 인자도
 # 이 상수를 import 해 사용한다(Settings 기본 문자열과의 drift 방지).
 DEFAULT_QUOTE_PROVIDERS = ("naver", "yahoo")
@@ -121,14 +119,6 @@ class Settings(BaseSettings):
     # 정확 비교(admin_email_set property). 빈 값이면 어떤 계정도 require_admin 통과 못 함.
     admin_emails: str = ""
 
-    # OIDC 토큰 검증 — IdP 교체 시 어댑터 seam. 현재 IdP=Supabase.
-    # oidc_issuer: 빈 값이면 iss 검증을 스킵한다(fail-safe). 실제 Supabase iss 는
-    # f"{supabase_url}/auth/v1" — 정확한 문자열 검증 후 prod 에서만 활성화한다.
-    # 잘못 설정하면 전체 인증이 붕괴하므로 기본은 비활성(빈 값).
-    oidc_issuer: str = ""
-    # oidc_audience: 토큰 aud 클레임 기대값. 기본은 Supabase 컨벤션(authenticated).
-    oidc_audience: str = AUTH_ROLE
-
     # BE 자체 토큰(Phase 2a) — token-broker 모델의 BE 발급 토큰 검증/서명 설정.
     # 2a 는 dormant: 클라이언트가 BE 토큰을 발급받지 않으며, 검증 경로만 추가(유닛 전용).
     # be_token_signing_key 가 빈 값이면 BE 토큰 발급/검증이 비활성(빈 JWKS) → Supabase 경로
@@ -171,6 +161,11 @@ class Settings(BaseSettings):
     # /auth/login?client=admin 이 503 fail-fast(dormant-503, be_token_audience 와 동일 사상 —
     # 강제 안 함). 클라가 URL 을 보내지 않고 이 고정 env 만 매핑 → open redirect 차단.
     be_admin_redirect_url: str = ""
+    # be_app_web_redirect_url: 개발 편의용 웹 BE flow(client=web)의 BE→client 2차 hop URL
+    # (예: http://localhost:3000/auth/callback). be_admin_redirect_url 과 동형이나 app 웹 전용.
+    # 빈 값이면 /auth/login?client=web 이 503(dormant). 운영은 빈 값 유지 — 웹은 배포 타깃 아님
+    # (Capacitor 단일), 보안 표면 증가 0. 클라가 URL 미전송·고정 env 만 매핑 → open redirect 차단.
+    be_app_web_redirect_url: str = ""
 
     # OAuth/refresh transient TTL(초). token_store 가 settings 에서 읽는다.
     # be_refresh_token_ttl: refresh token 수명(기본 30d). oauth_code_ttl: 일회용 code(딥링크↔
@@ -221,17 +216,24 @@ class Settings(BaseSettings):
             raise ValueError(f"kis_env 는 'real' 또는 'mock' 이어야 합니다 (입력: {v!r})")
         return v
 
-    # B7 fail-fast: BE 토큰이 활성(signing key 있음)인데 be_token_audience 가 빈 값이면
-    # per-issuer aud 격리가 Supabase authenticated 로 조용히 폴백돼 격하된다(인수노트#1).
-    # → 활성 시 빈 aud 는 기동 실패. dormant(키 없음)는 무영향. field_validator 가 아니라
-    # model_validator(after) 인 이유: 필드 정의 순서상 audience 검증 시점에 signing_key 가
-    # 아직 info.data 에 없어 field 단위로는 교차 참조가 불가능하다.
+    # B7 fail-fast: BE 토큰이 활성(signing key 있음)이면 be_token_audience·be_token_issuer 가
+    # 둘 다 필수다(빈 값이면 기동 실패). audience 누락 → per-issuer aud 격리가 Supabase
+    # authenticated 로 조용히 격하(인수노트#1). issuer 누락 → oidc_issuer_registry 가
+    # `be_token_enabled and be_token_issuer` 로 게이트돼 공백이 되는데, 2c 로 Supabase default
+    # fallback 이 사라져 registry 가 인증의 유일 경로이므로 부팅은 통과하나 전원 401(검증-대칭 갭).
+    # dormant(키 없음)는 무영향. field_validator 가 아니라 model_validator(after) 인 이유:
+    # 필드 정의 순서상 검증 시점에 signing_key 가 아직 info.data 에 없어 field 단위 교차 참조 불가.
     @model_validator(mode="after")
-    def _validate_be_token_audience(self) -> "Settings":
+    def _validate_be_token_fields(self) -> "Settings":
         if self.be_token_enabled and not self.be_token_audience:
             raise ValueError(
                 "be_token_signing_key 설정 시 be_token_audience 는 필수입니다 "
                 "(빈 값이면 per-issuer aud 격리가 Supabase 'authenticated' 로 격하됨, B7)"
+            )
+        if self.be_token_enabled and not self.be_token_issuer:
+            raise ValueError(
+                "be_token_signing_key 설정 시 be_token_issuer 는 필수입니다 "
+                "(빈 값이면 oidc_issuer_registry 공백 → 전원 401, 2c fallback 제거 후)"
             )
         return self
 
@@ -245,12 +247,11 @@ class Settings(BaseSettings):
             and self.r2_secret_access_key
         )
 
-    @property
-    def jwks_uri(self) -> str:
-        return f"{self.supabase_url}/auth/v1/.well-known/jwks.json"
-
     # BE 자체 토큰 검증용 JWKS URI(BE 가 스스로 서빙하는 /auth/.well-known/jwks.json).
-    # registry 빌드 시 BE entry 의 jwks_uri 로 쓰인다. dormant 라 prod 도달성은 nominal.
+    # registry BE entry 의 jwks_uri nominal 메타로 실린다 — 자기검증은 in-process verify_key
+    # 직접 주입이라 이 URI 를 self-fetch 하지 않는다(2c fallback 제거 후 JWKS HTTP 경로 소멸).
+    # ⚠️ supabase_url 파생 placeholder 호스트 → 향후 클라우드 정리 시 be_oauth_redirect_base
+    # 기준으로 재유도 필요(supabase_url 자체는 delete_user 때문에 유지).
     @property
     def be_jwks_uri(self) -> str:
         return f"{self.supabase_url}/auth/.well-known/jwks.json"
@@ -261,11 +262,10 @@ class Settings(BaseSettings):
         return bool(self.be_token_signing_key)
 
     # issuer registry — iss discriminator 기반 검증 설정.
-    # ⚠️ dict-lookup-reject 아님(그건 dormant prod 에서 Supabase 토큰을 iss-miss 로 거부 →
-    # 전원 lockout). 검증 분기(decode_oidc_jwt)는 **Supabase=default / BE=명시 매칭** 으로
-    # 구현한다. 이 property 는 BE entry(있을 때만)를 iss→{jwks_uri,issuer,audience} 로 노출 →
-    # decode_oidc_jwt 가 peek 한 iss 가 BE iss 와 정확히 일치하면 BE entry 선택, 아니면 Supabase.
-    # Supabase entry 의 issuer 는 oidc_issuer(빈 값이면 iss 검증 스킵, Phase 1 동일).
+    # ⚠️ 2c: Supabase default fallback 제거 → decode_oidc_jwt 는 registry 에 등록된 issuer 만
+    # 통과시키고 나머지는 401(dict-lookup-reject). 이 property 는 BE entry(활성일 때만)를
+    # iss→{jwks_uri,issuer,audience} 로 노출한다. registry 가 비면(dormant) 전원 401(불변식 역전).
+    # jwks_uri 는 nominal 메타 — 자기검증은 in-process verify_key(_registry_with_be_key 주입).
     @property
     def oidc_issuer_registry(self) -> dict[str, dict[str, str]]:
         registry: dict[str, dict[str, str]] = {}
@@ -278,15 +278,6 @@ class Settings(BaseSettings):
                 "audience": self.be_token_audience,
             }
         return registry
-
-    # Supabase(default) issuer entry — registry 에서 BE iss 가 매칭되지 않은 모든 토큰의 검증 설정.
-    @property
-    def supabase_issuer_entry(self) -> dict[str, str | None]:
-        return {
-            "jwks_uri": self.jwks_uri,
-            "issuer": self.oidc_issuer or None,
-            "audience": self.oidc_audience or AUTH_ROLE,
-        }
 
     # admin_emails(쉼표 문자열) → 정규화(소문자/trim) set. require_admin 이 email 클레임을
     # 동일 정규화 후 `in` 으로 정확 비교한다. raw 문자열 substring 매칭(함정)을 피하기 위해 set 화.
