@@ -16,22 +16,6 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] **어드민 BE-auth 코드리뷰 후속 (2026-06-26, 배포 완료)** — 어드민 패널 BE 토큰-브로커 전환(`feature/admin-be-auth` → develop)·운영 배포·라이브 완료(v1.3.2). **남은 스킵된 코드리뷰 후속(저severity, 내부 콘솔)**: #3 `_handle_callback` 실패 레그가 web 어드민에 raw JSON 노출(만료 state 는 client 식별 불가라 근본 수정 한계) / #4 `signInWithGoogle` full-page 이동이라 dormant-503 catch 불가(env 미설정 시에만, 배포 체크리스트가 커버). 트리거: 코드 품질 라운드.
 - [ ] **RLS 제거 후속 — 라우터 인라인 user_id 필터 e2e 회귀 가드 확대 (2026-06-18)** — RLS 제거(`0002_drop_rls`)로 DB 백스톱이 사라져 사용자 격리는 앱 레이어 `WHERE user_id` 가 유일 수단. 현재 회귀 가드 `tests/test_user_isolation_db.py` 는 **repo 함수(accounts/trades/custom_tags repo + pnl_sync)만** 커버하고, 라우터에 인라인된 user_id 필터(`routers/accounts.py` 의 `get_trade_count` 2쿼리·`list_accounts` 의 trades count·`create_account` INSERT)는 미커버. 후속: HTTP 레이어 + 실DB 픽스처로 두 사용자 시드 후 해당 엔드포인트의 cross-user 격리를 검증(인라인 쿼리에서 `AND user_id` 누락 시 실패하도록). 트리거: 라우터 인라인 SQL 추가/수정 시 또는 보안 강화 라운드.
 
-## 해외주식(US) 지원 — Phase C + 후속 (Phase A·B 완료)
-
-로드맵 v2 "해외 주식 지원". **Phase A(기반 plumbing)·B(정합성 슬라이스) 모두 2026-06-08 완료.**
-
-- Phase A: US 시세(`_fetch_yahoo_us`), USD/KRW 환율(`external/fx.py`+`GET /stocks/fx`), 검색
-  KR+US 병합(`search_multi`), US seed(`seed_us`), FE 통화 포맷 유틸.
-- Phase B: 해외 BUY 차단 해제, `domain/trade_types.to_krw`/`currency_for_country`,
-  KRW 환산 합산(`build_totals`/`build_account_snapshots`/`build_pnl_map_krw`/`concentration`,
-  라우터 `fetch_usdkrw` 주입), FE live overlay(`applyQuotesToTotals`/`applyQuotesToSnapshots` +
-  `useFxRate`), `StockSearchInput` 필터 해제, HoldingCard native 통화 표시. 표시 전략: **KRW 환산 단일 총액**.
-
-- [ ] **Phase C — import + 엣지.** 토스(`toss_pdf.py`) USD import 는 2026-06-27 완료. 잔여: Samsung(`samsung_xlsx.py`) USD skip 해제, 해외 거래세/수수료 규칙, 엣지케이스. (상세는 아래 "거래내역서 일괄등록 고도화 — 해외주식" 섹션)
-- [ ] **해외 SELL latent 경로 정리** — 해외 BUY 가 이제 허용되므로 정상 경로(BUY→SELL)가 열렸다.
-      선행 BUY 없는 해외 SELL 단독 입력의 처리 규칙은 KR 과 동일(walker `running_qty>0` 가드)이라
-      포지션은 안 생기나, 수동 입력 시 사용자 안내 UX 검토.
-
 ## 분석 탭 성능 / 유지보수
 
 - [ ] 분석 대시보드 시세 분리 (옵션 B 동일 패턴) — `/analysis/dashboard` 도 요청 안에서 시세를 동기 fetch(concentration 계산용, `fetch_quotes_by_keys`)한다. 2026-05-27 `/portfolio/summary` 분리(`docs/decisions.md` 참고)와 동일하게 `withQuotes` opt-in + FE overlay 적용 검토. 단 concentration(HHI/top3/비중)은 시세 없으면 `cost_basis` fallback 이라 FE 로 옮기려면 concentration 계산까지 FE 중복이 필요 → 표면적이 summary 보다 큼. 트리거: summary 분리 효과 확인 후, 또는 분석 탭 응답 지연 체감 시.
@@ -59,7 +43,7 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 거래내역서 일괄등록 고도화 — 해외주식(US/USD)
 
-2026-06-12 토스 해외포함 거래내역서 샘플(`sample/거래내역서_토스_해외포함_20250613_20260612_1.pdf`) 검토 결과 정리. 본체(US 직접입력·KRW 통합표시·거래시점 환율 저장)는 이미 출시됨 — 위 "해외주식(US) 지원" 섹션 **Phase C** 및 "거래내역서 임포트 — 후속 과제"의 "해외 주식 임포트 지원" 항목을 이 섹션으로 통합·상세화한다.
+해외 주식 지원 본체(US 직접입력·KRW 통합표시·거래시점 환율 저장·US 시세/환율/검색/seed·KRW 환산 합산·FE overlay)는 모두 출시 완료(2026-06-08 Phase A·B, decisions·spec-history 기록). 이 섹션은 **일괄등록(import) 경로의 해외 잔여 작업**만 추적한다.
 
 **확인된 토스 해외 행 구조(한 거래 = 2줄):**
 
@@ -82,11 +66,6 @@ MVP 이후 구현할 작업 후보 목록.
 
 - **타 증권사 해외(USD) 준비도:** **신한**(`단가/환율`·`수량/외화`)·**미래에셋**(`환율`·`통화코드`·`외화거래금액`)·**삼성**(`외화*` 컬럼)은 포맷에 환율 컬럼은 있으나 **실제 해외 행 샘플 없음** → 해외 거래 포함 샘플 확보 후 구현·fixture. 데이터/계산 토대(per-trade `exchange_rate`·`to_krw`·`currency_for_country`·walker FX·포트폴리오 KRW 합산)는 토스 구현으로 검증 완료.
 
-## 자산 추이 페이지 — 운영 잔여 (페이지 자체는 2026-06-04 출시)
-
-- [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리
-- [ ] iOS 상태바 색 동기화 — @capacitor/status-bar 도입 후 다크/라이트 전환 시 status bar style 동기화
-
 ## 사용자 요청 및 추가 기능
 
 - [ ] 목표가(%), 손절 및 익절 계획을 입력하고 그것을 지켰는지 여부를 분석
@@ -95,6 +74,8 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 자산추이에 일, 주, 월, 6개월, 올해 1년, 5년, all 선택 표시
 - [ ] 자산추이에 차트 기준점 s&p500, 코스피 지수등과 비교
 - [ ] 다크 테마 추가
+- [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리
+- [ ] iOS 상태바 색 동기화 — @capacitor/status-bar 도입 후 다크/라이트 전환 시 status bar style 동기화
 
 ## v2 — UX
 
