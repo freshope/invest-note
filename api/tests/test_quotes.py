@@ -700,3 +700,173 @@ def test_get_cached_force_refresh_failure_keeps_prior(quote_state: QuoteCacheSta
 
     results = asyncio.run(runner())
     assert all(r == {"price": 100.0, "currency": "USD", "as_of": "t0"} for r in results)
+
+
+# ──────────────── change_pct (오늘 등락율, 전일종가 대비 sign-safe) ────────────────
+
+
+def test_fetch_kr_price_naver_change_pct_falling_is_negative():
+    """Naver realtime 하락: prev = 현재가 - 전일대비(부호포함) → 음수 등락율 (live 005930 shape).
+
+    현재가 320500, 전일대비 -13500 → prev 334000, change_pct = -13500/334000*100 = -4.04%.
+    """
+    routes = {
+        "https://polling.finance.naver.com": httpx.Response(
+            200,
+            json={"datas": [{
+                "closePriceRaw": "320500",
+                "compareToPreviousClosePriceRaw": "-13500",
+                "fluctuationsRatio": "-4.04",
+            }]},
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_kr_price(client, "005930")
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["change_pct"] == pytest.approx(-4.04, abs=0.01)
+
+
+def test_fetch_kr_price_naver_change_pct_rising_is_positive():
+    """Naver realtime 상승: 전일대비 양수 → 양수 등락율 (부호 확정 검증)."""
+    routes = {
+        "https://polling.finance.naver.com": httpx.Response(
+            200,
+            json={"datas": [{
+                "closePriceRaw": "71500",
+                "compareToPreviousClosePriceRaw": "1500",
+            }]},
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_kr_price(client, "005930")
+
+    # prev = 71500 - 1500 = 70000, change_pct = 1500/70000*100 = 2.142857%
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["change_pct"] == pytest.approx(1500 / 70000 * 100, abs=0.001)
+
+
+def test_fetch_kr_price_naver_change_pct_none_when_no_prev_field():
+    """전일대비 필드 없는 Naver 응답 → change_pct None (degrade, 라이브 파손 없음)."""
+    routes = {
+        "https://polling.finance.naver.com": httpx.Response(
+            200, json={"datas": [{"closePriceRaw": "71500"}]}
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_kr_price(client, "005930")
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["change_pct"] is None
+
+
+def test_fetch_yahoo_us_change_pct_from_previous_close():
+    """Yahoo US: previousClose 있으면 그걸로 등락율 계산."""
+    routes = {
+        "https://query2.finance.yahoo.com/v8/finance/chart/AAPL": httpx.Response(
+            200,
+            json={"chart": {"result": [{"meta": {
+                "regularMarketPrice": 110.0, "previousClose": 100.0, "currency": "USD",
+            }}]}},
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_yahoo_us(client, "AAPL")
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["change_pct"] == pytest.approx(10.0)
+
+
+def test_fetch_yahoo_us_change_pct_falls_back_to_chart_previous_close():
+    """previousClose 없으면(None) chartPreviousClose 로 계산 (live AAPL shape)."""
+    routes = {
+        "https://query2.finance.yahoo.com/v8/finance/chart/AAPL": httpx.Response(
+            200,
+            json={"chart": {"result": [{"meta": {
+                "regularMarketPrice": 289.36,
+                "previousClose": None,
+                "chartPreviousClose": 281.74,
+                "currency": "USD",
+            }}]}},
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_yahoo_us(client, "AAPL")
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["change_pct"] == pytest.approx((289.36 - 281.74) / 281.74 * 100, abs=0.001)
+
+
+def test_fetch_yahoo_us_change_pct_none_when_no_prev():
+    """previousClose·chartPreviousClose 둘 다 없으면 change_pct None."""
+    routes = {
+        "https://query2.finance.yahoo.com/v8/finance/chart/AAPL": httpx.Response(
+            200,
+            json={"chart": {"result": [{"meta": {"regularMarketPrice": 100.0, "currency": "USD"}}]}},
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_yahoo_us(client, "AAPL")
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["change_pct"] is None
+
+
+def test_fetch_kr_price_yahoo_change_pct_computed():
+    """KR yahoo 경로도 _parse_yahoo_chart_price 공유 → change_pct 산출."""
+    routes = {
+        "https://polling.finance.naver.com": httpx.Response(503),
+        "https://api.stock.naver.com": httpx.Response(503),
+        "https://query2.finance.yahoo.com/v8/finance/chart/005930.KS": httpx.Response(
+            200,
+            json={"chart": {"result": [{"meta": {
+                "regularMarketPrice": 71000, "previousClose": 70000,
+            }}]}},
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_kr_price(client, "005930")
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["change_pct"] == pytest.approx(1000 / 70000 * 100, abs=0.001)
+
+
+def test_fetch_kr_price_kis_change_pct_none(kis_configured):
+    """KIS 는 change_pct 미확보 → None degrade (실응답 부호 컨벤션 미검증)."""
+    routes = {
+        f"{KIS_BASE}/oauth2/tokenP": httpx.Response(
+            200, json={"access_token": "tok-1", "expires_in": 86400}
+        ),
+        f"{KIS_BASE}/uapi/domestic-stock/v1/quotations/inquire-price": httpx.Response(
+            200, json={"rt_cd": "0", "output": {"stck_prpr": "71000", "prdy_ctrt": "-4.04"}}
+        ),
+    }
+
+    async def runner():
+        async with _build_mock_client(routes) as client:
+            return await _fetch_kr_price(client, "005930", ["kis"])
+
+    result = asyncio.run(runner())
+    assert result is not None
+    assert result["change_pct"] is None
