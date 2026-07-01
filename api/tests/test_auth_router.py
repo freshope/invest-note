@@ -417,6 +417,9 @@ def test_b11_forged_state_callback_rejected(patch_provider):
     # login 이 저장한 state 가 아닌 위조 state → 401.
     cb = _do_callback(client, "forged-state-not-stored")
     assert cb.status_code == 401
+    # #3: 콜백 실패는 raw JSON 이 아니라 generic HTML 안내 페이지로 응답(브라우저 노출 위생).
+    assert "text/html" in cb.headers["content-type"]
+    assert "application/json" not in cb.headers["content-type"]
 
 
 # --- B5: refresh 회전 ---

@@ -109,10 +109,6 @@ class Settings(BaseSettings):
     # NPS 보유내역 seed(services/nps_seed.py) 공급자. 등록: "odcloud".
     nps_provider: str = "odcloud"
 
-    # 관리자 트리거 라우터(POST /admin/seed/*) 인증 토큰. X-Admin-Token 헤더와 constant-time 비교.
-    # 빈 값이면 admin 엔드포인트는 항상 거부(미설정=차단).
-    admin_token: str = ""
-
     # 어드민 패널(신규 /admin CRUD) allowlist — 쉼표구분 이메일. Supabase JWT email 클레임과
     # 정확 비교(admin_email_set property). 빈 값이면 어떤 계정도 require_admin 통과 못 함.
     admin_emails: str = ""
