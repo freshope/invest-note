@@ -32,11 +32,17 @@ const schema = z.object({
     .trim()
     .min(1, "계좌명을 입력해주세요.")
     .max(VALIDATION_LIMITS.ACCOUNT_NAME_MAX),
-  broker: z.string().nullable(),
+  broker: z
+    .string()
+    .nullable()
+    .refine((v) => !!v, "증권사를 선택해주세요."),
   account_number: z
     .string()
     .trim()
-    .max(VALIDATION_LIMITS.ACCOUNT_NUMBER_MAX, `계좌번호는 ${VALIDATION_LIMITS.ACCOUNT_NUMBER_MAX}자 이내로 입력해주세요.`),
+    .max(VALIDATION_LIMITS.ACCOUNT_NUMBER_MAX, `계좌번호는 ${VALIDATION_LIMITS.ACCOUNT_NUMBER_MAX}자 이내로 입력해주세요.`)
+    // 선택 항목: 비어 있으면 통과. 입력했다면 숫자와 하이픈만, 숫자 6자리 이상.
+    .refine((v) => v === "" || /^[\d-]+$/.test(v), "계좌번호는 숫자와 하이픈(-)만 입력할 수 있어요.")
+    .refine((v) => v === "" || v.replace(/\D/g, "").length >= 6, "계좌번호를 정확히 입력해주세요."),
   cash_display: z.string(),
 });
 
@@ -154,38 +160,21 @@ export function AccountFormPanel({
               </div>
 
               <div className="space-y-1.5">
-                <Label>증권사</Label>
-                <div className="grid grid-cols-3 gap-2">
-                  {BROKERS.map((b) => {
-                    const isSelected = broker === b.name;
-                    return (
-                      <button
-                        key={b.name}
-                        type="button"
-                        onClick={() => setValue("broker", isSelected ? null : b.name)}
-                        className={cn(
-                          "flex flex-col items-center gap-1.5 rounded-xl border p-3 text-center transition-colors",
-                          isSelected
-                            ? "border-primary bg-primary/5 ring-2 ring-primary ring-offset-1"
-                            : "border-border hover:bg-muted/50"
-                        )}
-                      >
-                        <BrokerLogo broker={b.name} size={36} />
-                        <span className="text-xs leading-tight text-foreground">{b.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
                 <Label htmlFor="account_number">계좌번호</Label>
-                <Input
-                  id="account_number"
-                  placeholder="예: 123-45-678901 (선택)"
-                  inputMode="numeric"
-                  maxLength={VALIDATION_LIMITS.ACCOUNT_NUMBER_MAX}
-                  {...register("account_number")}
+                <Controller
+                  control={control}
+                  name="account_number"
+                  render={({ field }) => (
+                    <Input
+                      id="account_number"
+                      placeholder="예: 123-45-678901 (선택)"
+                      inputMode="numeric"
+                      maxLength={VALIDATION_LIMITS.ACCOUNT_NUMBER_MAX}
+                      value={field.value}
+                      // 숫자와 하이픈만 남긴다(영문·공백·특수문자 자유 입력 차단). 저장은 입력 원문 유지.
+                      onChange={(e) => field.onChange(e.target.value.replace(/[^\d-]/g, ""))}
+                    />
+                  )}
                 />
                 {errors.account_number && (
                   <p className="text-sm text-destructive">{errors.account_number.message}</p>
@@ -205,12 +194,42 @@ export function AccountFormPanel({
                       id="cash_display"
                       type="text"
                       inputMode="numeric"
-                      placeholder="0"
+                      placeholder="0 (선택)"
                       value={field.value}
                       onChange={(e) => field.onChange(formatNumberInput(e.target.value))}
                     />
                   )}
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>
+                  증권사 <span className="text-destructive">*</span>
+                </Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {BROKERS.map((b) => {
+                    const isSelected = broker === b.name;
+                    return (
+                      <button
+                        key={b.name}
+                        type="button"
+                        onClick={() => setValue("broker", isSelected ? null : b.name, { shouldValidate: true })}
+                        className={cn(
+                          "flex flex-col items-center gap-1.5 rounded-xl border p-3 text-center transition-colors",
+                          isSelected
+                            ? "border-primary bg-primary/5 ring-2 ring-primary ring-offset-1"
+                            : "border-border hover:bg-muted/50"
+                        )}
+                      >
+                        <BrokerLogo broker={b.name} size={36} />
+                        <span className="text-xs leading-tight text-foreground">{b.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {errors.broker && (
+                  <p className="text-sm text-destructive">{errors.broker.message}</p>
+                )}
               </div>
             </div>
 
