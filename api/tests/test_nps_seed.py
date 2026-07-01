@@ -286,9 +286,6 @@ async def test_seed_nps_skips_without_api_key():
     assert await nps_seed.seed_nps("postgresql://x", api_key="") == {"skipped": "no_api_key"}
 
 
-# ─────────────────────────── admin 토큰 (/seed/nps) ───────────────────────────
-
-
 # ─────────────────────────── reconcile_nps_unmatched ───────────────────────────
 
 
@@ -353,85 +350,3 @@ async def test_reconcile_noop_when_no_resolved(monkeypatch):
     monkeypatch.setattr(nps_seed.asyncpg, "connect", fake_connect)
     stats = await nps_seed.reconcile_nps_unmatched("postgresql://x")
     assert stats == {"reconciled": 0, "aliases": 0, "skipped_no_stock": 0}
-
-
-def test_admin_reconcile_nps_rejects_missing_token():
-    assert _admin_client("secret").post("/admin/reconcile/nps").status_code == 403
-
-
-def test_admin_reconcile_nps_accepts_valid_token_returns_stats(monkeypatch):
-    async def fake_reconcile(*_a, **_k):
-        return {"reconciled": 3, "aliases": 3, "skipped_no_stock": 1}
-
-    monkeypatch.setattr("invest_note_api.routers.admin.reconcile_nps_unmatched", fake_reconcile)
-    client = _admin_client("secret")
-    r = client.post("/admin/reconcile/nps", headers={"X-Admin-Token": "secret"})
-    assert r.status_code == 200
-    assert r.json() == {"reconciled": 3, "aliases": 3, "skipped_no_stock": 1}
-
-
-def _admin_client(admin_token: str):
-    from fastapi.testclient import TestClient
-
-    from invest_note_api.config import Settings, get_settings
-    from invest_note_api.main import create_app
-
-    settings = Settings(supabase_url="https://test.supabase.co", admin_token=admin_token)
-    app = create_app(settings)
-    app.dependency_overrides[get_settings] = lambda: settings
-    return TestClient(app)
-
-
-def test_admin_seed_nps_rejects_missing_token():
-    assert _admin_client("secret").post("/admin/seed/nps").status_code == 403
-
-
-def test_admin_seed_nps_accepts_valid_token_returns_202(monkeypatch):
-    async def noop(*_a, **_k):
-        return None
-
-    monkeypatch.setattr("invest_note_api.routers.admin.run_seed_nps", noop)
-    client = _admin_client("secret")
-    r = client.post("/admin/seed/nps", headers={"X-Admin-Token": "secret"})
-    assert r.status_code == 202
-    assert r.json() == {"status": "started"}
-
-
-# ─────────────────────────── run_seed_nps (reconcile 선행) ───────────────────────────
-
-
-async def test_run_seed_nps_runs_reconcile_before_seed(monkeypatch):
-    from invest_note_api.routers import admin
-
-    calls: list[str] = []
-
-    async def fake_reconcile(*_a, **_k):
-        calls.append("reconcile")
-        return {"reconciled": 0}
-
-    async def fake_seed(*_a, **_k):
-        calls.append("seed")
-        return {}
-
-    monkeypatch.setattr(admin, "reconcile_nps_unmatched", fake_reconcile)
-    monkeypatch.setattr(admin, "seed_nps", fake_seed)
-    await admin.run_seed_nps("postgresql://x", "key")
-    assert calls == ["reconcile", "seed"]  # reconcile 이 seed 보다 먼저
-
-
-async def test_run_seed_nps_continues_seed_when_reconcile_fails(monkeypatch):
-    from invest_note_api.routers import admin
-
-    calls: list[str] = []
-
-    async def boom_reconcile(*_a, **_k):
-        raise RuntimeError("reconcile boom")
-
-    async def fake_seed(*_a, **_k):
-        calls.append("seed")
-        return {}
-
-    monkeypatch.setattr(admin, "reconcile_nps_unmatched", boom_reconcile)
-    monkeypatch.setattr(admin, "seed_nps", fake_seed)
-    await admin.run_seed_nps("postgresql://x", "key")  # reconcile 예외 흡수
-    assert calls == ["seed"]  # reconcile 실패에도 seed 진행

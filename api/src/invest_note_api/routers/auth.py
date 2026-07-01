@@ -24,8 +24,8 @@ from urllib.parse import urlencode
 
 import asyncpg
 import httpx
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, Request, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
 from invest_note_api.auth import token_store
@@ -149,6 +149,30 @@ def _apple_user_display_name(user_field: str | None) -> str | None:
     return full or None
 
 
+# 콜백 실패 시 브라우저에 보여줄 generic 안내 페이지. 콜백은 web 어드민·네이티브 양쪽에서
+# full-page 리다이렉트로 도달하는데, state 를 소비하기 전 실패하면 client(web/native)를 식별할
+# 수 없어 분기 리다이렉트가 불가능하다 → client 무관 generic HTML 로 통일해 브라우저에 raw
+# 에러 JSON 이 노출되는 것을 막는다.
+_CALLBACK_ERROR_HTML = (
+    '<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">'
+    '<meta name="viewport" content="width=device-width, initial-scale=1">'
+    "<title>로그인 실패</title></head>"
+    '<body style="font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif;'
+    "margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;"
+    'background:#f7f8fa;color:#1a1a1a;padding:24px;box-sizing:border-box">'
+    '<div style="max-width:360px;text-align:center">'
+    '<h1 style="font-size:20px;margin:0 0 12px">로그인에 실패했습니다</h1>'
+    '<p style="font-size:14px;line-height:1.6;color:#555;margin:0">'
+    "인증 세션이 만료되었거나 유효하지 않습니다.<br>앱으로 돌아가 다시 시도해 주세요.</p>"
+    "</div></body></html>"
+)
+
+
+def _callback_error(exc: APIError) -> HTMLResponse:
+    """콜백 실패(state 만료/소비·미설정 등)를 raw JSON 대신 generic HTML 페이지로 응답."""
+    return HTMLResponse(_CALLBACK_ERROR_HTML, status_code=exc.status)
+
+
 @router.get("/callback", include_in_schema=False)
 async def callback_get(
     code: str,
@@ -156,9 +180,12 @@ async def callback_get(
     settings: Settings = Depends(get_settings),
     pool: asyncpg.Pool = Depends(get_pool),
     http: httpx.AsyncClient = Depends(get_http_client),
-) -> RedirectResponse:
+) -> Response:
     """Google/Kakao callback — query GET(authorization code 흐름)."""
-    return await _handle_callback(code, state, settings, pool, http)
+    try:
+        return await _handle_callback(code, state, settings, pool, http)
+    except APIError as exc:
+        return _callback_error(exc)
 
 
 @router.post("/callback", include_in_schema=False)
@@ -167,7 +194,7 @@ async def callback_post(
     settings: Settings = Depends(get_settings),
     pool: asyncpg.Pool = Depends(get_pool),
     http: httpx.AsyncClient = Depends(get_http_client),
-) -> RedirectResponse:
+) -> Response:
     """Apple callback — form_post(POST body). ⚠️ Apple 은 scope(name/email) 요청 시 callback 을
     application/x-www-form-urlencoded POST 로 보낸다(GET 아님). 첫 인증 시 `user`(이름 JSON)도 동봉.
     """
@@ -175,11 +202,14 @@ async def callback_post(
     code = form.get("code")
     state = form.get("state")
     if not code or not state:
-        raise APIError(ERR_REQUEST_FALLBACK, 400)
-    return await _handle_callback(
-        str(code), str(state), settings, pool, http,
-        apple_display_name=_apple_user_display_name(form.get("user")),
-    )
+        return _callback_error(APIError(ERR_REQUEST_FALLBACK, 400))
+    try:
+        return await _handle_callback(
+            str(code), str(state), settings, pool, http,
+            apple_display_name=_apple_user_display_name(form.get("user")),
+        )
+    except APIError as exc:
+        return _callback_error(exc)
 
 
 async def _handle_callback(
