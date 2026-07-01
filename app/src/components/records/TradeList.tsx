@@ -7,7 +7,7 @@ import { TradeCard } from "./TradeCard";
 import { tradeDisplayName } from "./trade-display";
 import { TradeFormPanel } from "./TradeFormPanel";
 import { useDetailPanel } from "@/components/panels/DetailPanelProvider";
-import { CsvUploadButton } from "./CsvUploadButton";
+import { RegisterChooser } from "./RegisterChooser";
 import { ImportTradesPanel } from "./ImportTradesPanel";
 import { Button } from "@/components/base/Button";
 import { AccountFilter } from "@/components/shared/AccountFilter";
@@ -21,9 +21,11 @@ import { useDialogState } from "@/hooks/useDialogState";
 import { useStockMeta, isMetaCode } from "@/hooks/useStockMeta";
 import { tradesApi } from "@/lib/api-client";
 import { consumeImportOpen, subscribeImportOpen } from "@/lib/import-deeplink";
+import { consumeTradeFormOpen, subscribeTradeFormOpen } from "@/lib/trade-form-deeplink";
 import { queryKeys } from "@/lib/query-keys";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
-import type { Account } from "@/types/database";
+import { TRADE_TYPE } from "@/lib/constants/trading";
+import type { Account, TradeType } from "@/types/database";
 import { ListChecks, PlusIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 
@@ -37,8 +39,10 @@ export function TradeList({ trades, accounts }: TradeListProps) {
   // open 자체로 unmount 하지 않고, 다시 열 때만 key 를 ++ 해 새 인스턴스를 마운트한다.
   const [formOpen, setFormOpen] = useState(false);
   const [formKey, setFormKey] = useState(0);
+  const [formTradeType, setFormTradeType] = useState<TradeType>(TRADE_TYPE.BUY);
   const [importOpen, setImportOpen] = useState(false);
   const [importKey, setImportKey] = useState(0);
+  const [chooserOpen, setChooserOpen] = useState(false);
   const { setSelectedAccountId } = useAccountFilter();
   const effectiveAccountId = useEffectiveAccountId(accounts);
   const { openTrade } = useDetailPanel();
@@ -55,7 +59,8 @@ export function TradeList({ trades, accounts }: TradeListProps) {
   const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
   useHideBottomNav(isSelectMode);
 
-  const openForm = useCallback(() => {
+  const openForm = useCallback((tradeType: TradeType = TRADE_TYPE.BUY) => {
+    setFormTradeType(tradeType);
     setFormKey((k) => k + 1);
     setFormOpen(true);
   }, []);
@@ -76,6 +81,15 @@ export function TradeList({ trades, accounts }: TradeListProps) {
       if (consumeImportOpen()) openImport();
     });
   }, [openImport]);
+
+  // 홈 빈 상태 CTA → /records 이동 후 거래 등록 폼(매수) 자동 오픈. import 딥링크와 동일 패턴.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (consumeTradeFormOpen()) openForm(TRADE_TYPE.BUY);
+    return subscribeTradeFormOpen(() => {
+      if (consumeTradeFormOpen()) openForm(TRADE_TYPE.BUY);
+    });
+  }, [openForm]);
 
   const filteredTrades = useMemo(
     () =>
@@ -227,19 +241,16 @@ export function TradeList({ trades, accounts }: TradeListProps) {
           <PageHeader
             title="기록"
             actions={
-              <div className="flex items-center gap-1.5">
-                <CsvUploadButton onClick={openImport} />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => enter()}
-                  disabled={filteredTrades.length === 0}
-                >
-                  <ListChecks />
-                  선택
-                </Button>
-              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => enter()}
+                disabled={filteredTrades.length === 0}
+              >
+                <ListChecks />
+                선택
+              </Button>
             }
             sticky={false}
           />
@@ -320,7 +331,7 @@ export function TradeList({ trades, accounts }: TradeListProps) {
       {!isSelectMode && (
         <button
           type="button"
-          onClick={openForm}
+          onClick={() => setChooserOpen(true)}
           className="fixed bottom-28 right-5 z-20 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg active:scale-95 transition-transform"
           aria-label="거래 등록"
         >
@@ -328,12 +339,22 @@ export function TradeList({ trades, accounts }: TradeListProps) {
         </button>
       )}
 
+      {/* 등록 진입점 chooser — 매수/매도/내역서 업로드 */}
+      <RegisterChooser
+        open={chooserOpen}
+        onOpenChange={setChooserOpen}
+        onSelectBuy={() => openForm(TRADE_TYPE.BUY)}
+        onSelectSell={() => openForm(TRADE_TYPE.SELL)}
+        onSelectImport={openImport}
+      />
+
       {/* 거래 등록 패널 */}
       <TradeFormPanel
         key={`form-${formKey}`}
         open={formOpen}
         onOpenChange={setFormOpen}
         accounts={accounts}
+        prefillTradeType={formTradeType}
       />
 
       {/* 거래내역서 일괄 import 패널 */}

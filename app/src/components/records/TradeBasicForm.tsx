@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useWatch, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -28,6 +28,9 @@ import { STORAGE_KEYS } from "@/lib/constants/storage";
 import { COUNTRY_CODES, DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import { StockSearchInput, type SelectedStock } from "./StockSearchInput";
 import { HoldingSelectInput } from "./HoldingSelectInput";
+import { StockQuickChips } from "./StockQuickChips";
+import { AccountFormPanel } from "@/components/settings/AccountFormPanel";
+import { PlusIcon } from "lucide-react";
 import { NumericInput } from "./NumericInput";
 import { CountryBadge } from "./trade-display";
 import { currencyForCountry, fmt, formatMoney } from "@/lib/format";
@@ -109,6 +112,16 @@ export function TradeBasicForm({
 }: TradeBasicFormProps) {
   const queryClient = useQueryClient();
 
+  // 인라인 계좌등록: 생성 직후 invalidate→refetch 착지 전까지 accounts prop 에 새 계좌가 없어
+  // Select 의 accounts.find 가 undefined 가 되는 ★타이밍 함정 → 로컬 옵티미스틱 병합으로 즉시 노출.
+  const [accountPanelOpen, setAccountPanelOpen] = useState(false);
+  const [createdAccounts, setCreatedAccounts] = useState<Account[]>([]);
+  const mergedAccounts = useMemo(() => {
+    if (createdAccounts.length === 0) return accounts;
+    const ids = new Set(accounts.map((a) => a.id));
+    return [...accounts, ...createdAccounts.filter((a) => !ids.has(a.id))];
+  }, [accounts, createdAccounts]);
+
   const {
     control,
     handleSubmit,
@@ -164,12 +177,35 @@ export function TradeBasicForm({
     setValue("amount_krw", 0);
   }, [setValue]);
 
+  // 인라인 생성된 계좌를 옵티미스틱 병합 + 폼에 즉시 주입 → refetch 착지 전에도 Select 에 선택 표시.
+  const handleAccountCreated = useCallback((account: Account) => {
+    setCreatedAccounts((prev) =>
+      prev.some((a) => a.id === account.id) ? prev : [...prev, account],
+    );
+    setValue("account_id", account.id, { shouldValidate: true });
+  }, [setValue]);
+
   const handleAssetNameChange = useCallback((value: string, onChange: (value: string) => void) => {
     onChange(value);
     if (value !== selectedAssetNameRef.current) {
       clearStockSelection();
     }
   }, [clearStockSelection]);
+
+  // 종목 선택 공통 경로 — 자동완성/보유선택/빠른선택 칩 모두 이 핸들러를 쓴다(칩에서 호출하려 hoist).
+  const handleStockSelect = useCallback((stock: SelectedStock) => {
+    selectedAssetNameRef.current = stock.name;
+    setValue("asset_name", stock.name);
+    setValue("ticker_symbol", stock.code);
+    setValue("country_code", stock.market);
+    setValue("exchange", stock.exchange);
+    // 해외 종목 전환 시 KR 자동계산 수수료/세금(원화 기준)을 비운다 —
+    // recalcFees 가 isForeign 에서 early-return 이라 stale KR 값이 남는 것을 방지.
+    if (currencyForCountry(stock.market) === "USD") {
+      setValue("commission", 0);
+      setValue("tax", 0);
+    }
+  }, [setValue]);
 
   // 매도 시 계좌별 보유 수량 조회 (계좌 + flexible ticker 기준)
   const holdingEnabled = tradeType === TRADE_TYPE.SELL && !!accountId && !!assetName;
@@ -271,6 +307,7 @@ export function TradeBasicForm({
   }
 
   return (
+    <>
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">
       <div className="flex-1 px-5 pt-2 pb-4 space-y-5">
         {firstError && <p className="text-sm text-destructive">{firstError}</p>}
@@ -348,51 +385,64 @@ export function TradeBasicForm({
         {/* 계좌 */}
         <div className="space-y-1.5">
           <Label>계좌 <span className="text-destructive">*</span></Label>
-          <Controller
-            control={control}
-            name="account_id"
-            render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
-                <SelectTrigger>
-                  {(() => {
-                    const acc = accounts.find((a) => a.id === field.value);
-                    if (!acc) return <span className="text-muted-foreground">계좌를 선택하세요</span>;
-                    return <AccountChip account={acc} size="md" className="flex-1 overflow-hidden" />;
-                  })()}
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((acc) => (
-                    <SelectItem key={acc.id} value={acc.id}>
-                      <AccountChip account={acc} size="md" className="overflow-hidden" />
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          />
+          {mergedAccounts.length === 0 ? (
+            // 0계좌: 빈 Select(막다른 길) 대신 새 계좌 추가 CTA.
+            <button
+              type="button"
+              onClick={() => setAccountPanelOpen(true)}
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-primary/50 bg-primary/5 text-[15px] font-medium text-primary"
+            >
+              <PlusIcon className="h-4 w-4" />
+              새 계좌 추가
+            </button>
+          ) : (
+            <Controller
+              control={control}
+              name="account_id"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger>
+                    {(() => {
+                      const acc = mergedAccounts.find((a) => a.id === field.value);
+                      if (!acc) return <span className="text-muted-foreground">계좌를 선택하세요</span>;
+                      return <AccountChip account={acc} size="md" className="flex-1 overflow-hidden" />;
+                    })()}
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mergedAccounts.map((acc) => (
+                      <SelectItem key={acc.id} value={acc.id}>
+                        <AccountChip account={acc} size="md" className="overflow-hidden" />
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          )}
+          {mergedAccounts.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setAccountPanelOpen(true)}
+              className="inline-flex items-center gap-1 text-[13px] font-medium text-primary"
+            >
+              <PlusIcon className="h-3.5 w-3.5" />
+              새 계좌 추가
+            </button>
+          )}
         </div>
 
         {/* 종목명 */}
         <div className="space-y-1.5">
           <Label>종목명 <span className="text-destructive">*</span></Label>
+          <StockQuickChips
+            tradeType={tradeType}
+            accountId={accountId}
+            onSelect={handleStockSelect}
+          />
           <Controller
             control={control}
             name="asset_name"
             render={({ field }) => {
-              const handleStockSelect = (stock: SelectedStock) => {
-                selectedAssetNameRef.current = stock.name;
-                field.onChange(stock.name);
-                setValue("ticker_symbol", stock.code);
-                setValue("country_code", stock.market);
-                setValue("exchange", stock.exchange);
-                // 해외 종목 전환 시 KR 자동계산 수수료/세금(원화 기준)을 비운다 —
-                // recalcFees 가 isForeign 에서 early-return 이라 stale KR 값이 남는 것을 방지.
-                if (currencyForCountry(stock.market) === "USD") {
-                  setValue("commission", 0);
-                  setValue("tax", 0);
-                }
-              };
-
               if (tradeType === TRADE_TYPE.SELL) {
                 return (
                   <HoldingSelectInput
@@ -584,5 +634,13 @@ export function TradeBasicForm({
         </Button>
       </FullScreenPanelFooter>
     </form>
+
+    {/* 인라인 계좌등록 — 생성 시 옵티미스틱 병합 + account_id 주입 (중첩 패널) */}
+    <AccountFormPanel
+      open={accountPanelOpen}
+      onOpenChange={setAccountPanelOpen}
+      onCreated={handleAccountCreated}
+    />
+    </>
   );
 }

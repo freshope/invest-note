@@ -7,6 +7,7 @@ from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.db import acquire_for_user, get_pool
 from invest_note_api.db_ops.accounts_repo import (
+    RETURNING_COLS,
     UPDATABLE_COLS,
     account_row_to_dict,
     list_accounts as repo_list_accounts,
@@ -46,13 +47,14 @@ async def create_account(
 ) -> dict:
     async with acquire_for_user(pool, user.id) as conn:
         row = await conn.fetchrow(
-            "INSERT INTO accounts (user_id, name, broker, cash_balance)"
-            " VALUES ($1, $2, $3, $4)"
-            " RETURNING id, user_id, name, broker, cash_balance, created_at, updated_at",
+            "INSERT INTO accounts (user_id, name, broker, cash_balance, account_number)"
+            " VALUES ($1, $2, $3, $4, $5)"
+            f" RETURNING {RETURNING_COLS}",
             user.id,
             data.name,
             data.broker,
             data.cash_balance,
+            data.account_number,
         )
 
     if row is None:

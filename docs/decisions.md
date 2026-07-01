@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-07-01 | accounts.account_number 추가 — 내역서→계좌 번호 매칭 (초안 defer 뒤집음)
+
+- **맥락:** 신규 가입자 활성화 개선(내역서 업로드 흐름). 초안은 "활성화 타깃=0계좌 신규 사용자엔 매칭 문제 없음"을 근거로 `account_number` 컬럼 추가를 **defer** 하고 0계좌 auto-create 로 처리하려 했다. 사용자 결정으로 이를 뒤집어 **컬럼을 추가하고 내역서 계좌번호로 사용자 계좌를 매칭**한다.
+- **결정 ① `accounts.account_number`(nullable text) 컬럼 추가** — Alembic 신규 리비전(head `0012_board_reads` 뒤). 인덱스/유니크 제약 없음(같은 번호 재사용·재발급 엣지 + 사용자별 스코프라 유니크 강제 부적절). ★**마이그레이션 적용(upgrade)은 사용자/리더 확인 후** — 리비전 파일 작성까지만.
+- **결정 ② BE 는 passthrough 만.** Account 응답에 `account_number` 노출, `AccountCreate`/`AccountUpdate` 가 optional 수용·저장(길이 ~64 검증, 빈 문자열→None). 저장은 **raw 원문**(숫자 강제 안 함 — 표시 충실). 별도 매칭 엔드포인트 없음(accounts 가 이미 trades 쿼리에 번들되어 FE 보유).
+- **결정 ③ 매칭·정규화는 FE-side.** `normalizeAccountNumber(s) = 숫자만 남김(하이픈·공백 제거)`, **비교 시점에 양쪽 정규화 후 전체 문자열 동일성** 판정. 저장 raw / 비교 정규화 분리로 구분자·표기 차이를 흡수. 공용 헬퍼로 FE 에 둔다(결합도 최소).
+- **근거(실측):** 파서 4종(samsung/toss/shinhan/mirae) 정규식이 전부 `\d`/`[\d\-]` 만 캡처 → **마스킹 없는 전체 계좌번호** 추출(실 샘플 픽스처 `test_broker_parsers.py` 검증). 4개 broker 전부 정규화 후 전체 동일성 매칭 가능. 매칭 시 다계좌에서도 올바른 계좌를 안전 자동선택(broker-only auto-select 의 silent mis-route 회피).
+- **트레이드오프:** 유니크 미강제(중복 번호 방지 안 함) · 마스킹 내역서 미지원(현행 4파서 비마스킹이라 불필요) · 재발급/상품구분 접미(samsung `-14`) 엣지는 저장·파싱 동일 규칙으로 일관. `account_hint` null/부분값(향후 마스킹·추출 실패) → 자동매칭 skip → 수동 계좌 선택 폴백(+ 수동 매핑 옵션 노출).
+- **향후 과제:** 마스킹 내역서 부분매칭 알고리즘, 필요 시 (사용자 스코프) 인덱스. 참조: [[project_broker_import_parsers]].
+
+---
+
 ## 2026-07-01 | 탈-Supabase Auth 2c 최종 teardown — 회원탈퇴 DB-only 전환
 
 - **맥락:** 2c cutover(2026-06-26)+가역 코드 배포(2026-06-30) 후 남은 **유일한 런타임 Supabase 호출**은 회원탈퇴(`routers/me.py`)의 GoTrue `deleteUser`(`auth/identity_provider.py`)였다. `supabase_secret_key` 없으면 503 하드가드라 `supabase_url`/`supabase_secret_key` 필드 제거를 막고 있었다.

@@ -130,6 +130,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 export interface AccountInput {
   name: string;
   broker?: string | null;
+  account_number?: string | null;
   cash_balance?: number;
 }
 
