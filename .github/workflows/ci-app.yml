@@ -23,8 +23,6 @@ jobs:
     name: Frontend (Next.js + Capacitor)
     runs-on: ubuntu-latest
     env:
-      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_dummy
       NEXT_PUBLIC_API_BASE_URL: ""
       NEXT_PUBLIC_SITE_URL: ""
     steps:

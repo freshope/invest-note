@@ -67,8 +67,8 @@ def mint_be_token(
 def be_verify_key(settings: Settings):
     """BE 토큰 검증용 public key 객체(in-process 직접 주입, B8).
 
-    ⚠️ be_jwks_uri(=supabase_url 파생 placeholder) self-fetch 를 **하지 않는다**(P8 self-HTTP
-    fragility + 호스트 placeholder 동시 회피). signing key 로부터 메모리에서 public key 를 도출해
+    ⚠️ be_jwks_uri self-fetch 를 **하지 않는다**(P8 self-HTTP fragility 회피). signing key 로부터
+    메모리에서 public key 를 도출해
     issuer registry 의 BE entry 검증에 직접 주입한다. dormant(빈 키)면 None — registry 에 BE entry
     자체가 없어 호출되지 않는다(jwt.py 가 None 가드).
 

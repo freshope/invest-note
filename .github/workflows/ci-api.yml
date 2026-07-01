@@ -5,13 +5,11 @@ on:
     branches: [main, develop]
     paths:
       - "api/**" # api/alembic/** 마이그레이션 변경 포함
-      - "supabase/**" # 마이그레이션은 API 도메인 — 스키마 변경 커밋도 API 테스트를 거친다.
       - ".github/workflows/ci-api.yml"
   push:
     branches: [main, develop]
     paths:
       - "api/**"
-      - "supabase/**"
       - ".github/workflows/ci-api.yml"
 
 jobs:
@@ -21,8 +19,6 @@ jobs:
     defaults:
       run:
         working-directory: api
-    env:
-      SUPABASE_URL: https://example.supabase.co
     steps:
       - uses: actions/checkout@v4
 

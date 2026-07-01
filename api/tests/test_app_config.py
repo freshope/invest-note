@@ -164,7 +164,7 @@ def test_be_token_dormant_by_default():
 def test_be_token_registry_entry_when_enabled():
     # signing key + issuer 설정 → registry 에 BE entry 등장(iss→{jwks_uri,issuer,audience}).
     s = Settings(
-        supabase_url=TEST_SUPABASE_URL,
+        be_oauth_redirect_base="https://api.invest-note.example",
         be_token_signing_key="-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----",
         be_token_issuer="https://api.invest-note.example/be",
         be_token_audience="invest-note-app",
@@ -174,7 +174,7 @@ def test_be_token_registry_entry_when_enabled():
     reg = s.oidc_issuer_registry
     assert "https://api.invest-note.example/be" in reg
     be = reg["https://api.invest-note.example/be"]
-    assert be["jwks_uri"] == f"{TEST_SUPABASE_URL}/auth/.well-known/jwks.json"
+    assert be["jwks_uri"] == "https://api.invest-note.example/auth/.well-known/jwks.json"
     assert be["issuer"] == "https://api.invest-note.example/be"
     # per-issuer audience(P6): BE aud 는 authenticated 가 아닌 별도 값.
     assert be["audience"] == "invest-note-app"
