@@ -331,7 +331,12 @@ export function TradeList({ trades, accounts }: TradeListProps) {
       {!isSelectMode && (
         <button
           type="button"
-          onClick={() => setChooserOpen(true)}
+          onClick={(e) => {
+            // 시트가 열리며 <main>에 aria-hidden이 씌워지기 전에 FAB 포커스를 해제한다.
+            // (포커스된 요소가 aria-hidden 조상 아래 남으면 접근성 경고 발생)
+            e.currentTarget.blur();
+            setChooserOpen(true);
+          }}
           className="fixed bottom-28 right-5 z-20 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg active:scale-95 transition-transform"
           aria-label="거래 등록"
         >
