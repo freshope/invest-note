@@ -121,3 +121,10 @@ jobs:
         env:
           INVEST_NOTE_TEST_DATABASE_URL: postgresql://invest_note_app:invest_note_app@127.0.0.1:5432/invest_note
         run: poetry run pytest tests/test_user_isolation_*.py -q
+
+      # 단위 테스트(FakePool)가 못 덮는 import/commit 전체 경로(INSERT/merge/skip +
+      # recalc_group_pnl)와 preview oversell 검증을 실 DB 로 커버. (앱 role 접속)
+      - name: Import commit (real DB)
+        env:
+          INVEST_NOTE_TEST_DATABASE_URL: postgresql://invest_note_app:invest_note_app@127.0.0.1:5432/invest_note
+        run: poetry run pytest tests/test_trade_import_commit_realdb.py -q
