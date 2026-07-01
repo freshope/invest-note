@@ -462,11 +462,6 @@ export function TradeBasicForm({
         {/* 종목명 */}
         <div className="space-y-1.5">
           <Label>종목명 <span className="text-destructive">*</span></Label>
-          <StockQuickChips
-            tradeType={tradeType}
-            accountId={accountId}
-            onSelect={handleStockSelect}
-          />
           <Controller
             control={control}
             name="asset_name"
@@ -493,6 +488,12 @@ export function TradeBasicForm({
                 />
               );
             }}
+          />
+          {/* 최근/보유 종목 빠른선택 — 입력 상자 아래 한 줄 가로 스크롤 */}
+          <StockQuickChips
+            tradeType={tradeType}
+            accountId={accountId}
+            onSelect={handleStockSelect}
           />
         </div>
 

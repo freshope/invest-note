@@ -47,7 +47,7 @@ export function StockQuickChips({ tradeType, accountId, onSelect }: Props) {
   const { data: tradesData } = useQuery<TradesListResponse>({
     queryKey: queryKeys.trades,
     queryFn: () => tradesApi.list(),
-    enabled: !isSell,
+    enabled: !isSell && !!accountId,
   });
 
   const chips = useMemo<Chip[]>(() => {
@@ -93,17 +93,18 @@ export function StockQuickChips({ tradeType, accountId, onSelect }: Props) {
     return out.slice(0, MAX_CHIPS);
   }, [summary, tradesData, isSell]);
 
-  // 0건이면 렌더하지 않음 (빈 자리·혼란 방지).
-  if (chips.length === 0) return null;
+  // 계좌 미선택이면 칩을 숨긴다(계좌 선택 전에는 표시하지 않음). 0건도 렌더하지 않음(빈 자리·혼란 방지).
+  if (!accountId || chips.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap gap-2 pb-0.5">
+    // 입력 상자 아래 한 줄 가로 스크롤 — 줄바꿈 없이 넘치면 스크롤(모바일 터치). 스크롤바는 숨김.
+    <div className="flex gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {chips.map((chip) => (
         <button
           key={chip.key}
           type="button"
           onClick={() => onSelect(chip.stock)}
-          className="max-w-[45%] truncate rounded-full border bg-card px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-accent active:scale-95"
+          className="shrink-0 whitespace-nowrap rounded-full border bg-card px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-accent active:scale-95"
         >
           {chip.label}
         </button>
