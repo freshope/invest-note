@@ -14,7 +14,6 @@ MVP 이후 구현할 작업 후보 목록.
   - 트리거: 출시 결정 시 ①②③ → 베이크 → ④.
 - [ ] **app/admin auth 3계층 공유 패키지화 (2026-06-19, 코드리뷰 후속)** — Phase 1 에서 `app/src/lib/auth/`(types/supabase-client/index)를 `admin/src/lib/auth/` 패턴을 미러링해 신규 작성 → 두 워크스페이스에 거의 동일한 SDK 격리 seam 이 중복. `pnpm-workspace.yaml` 이 app+admin 을 한 모노레포로 묶으므로 공유 패키지(`@invest-note/auth` 류)로 공통부(supabase-client·neutral 타입·`toAuthUser`/`getAccessToken`/`getUser`/`subscribe`/`signOut`) 추출 가능. 발산부(`signInWithOAuth` 멀티프로바이더+네이티브 url vs admin `signInWithGoogle` 웹전용, signOut scope)만 각자 유지. 효과: 탈-Supabase 시 격리 경계를 한 곳만 교체. 트리거: 양쪽 auth 동시 변경이 잦아지거나 Phase 2 착수 시.
 - [ ] **어드민 BE-auth 코드리뷰 후속 (2026-06-26, 배포 완료)** — 어드민 패널 BE 토큰-브로커 전환(`feature/admin-be-auth` → develop)·운영 배포·라이브 완료(v1.3.2). **남은 스킵된 코드리뷰 후속(저severity, 내부 콘솔)**: #3 `_handle_callback` 실패 레그가 web 어드민에 raw JSON 노출(만료 state 는 client 식별 불가라 근본 수정 한계) / #4 `signInWithGoogle` full-page 이동이라 dormant-503 catch 불가(env 미설정 시에만, 배포 체크리스트가 커버). 트리거: 코드 품질 라운드.
-- [ ] **RLS 제거 후속 — 라우터 인라인 user_id 필터 e2e 회귀 가드 확대 (2026-06-18)** — RLS 제거(`0002_drop_rls`)로 DB 백스톱이 사라져 사용자 격리는 앱 레이어 `WHERE user_id` 가 유일 수단. 현재 회귀 가드 `tests/test_user_isolation_db.py` 는 **repo 함수(accounts/trades/custom_tags repo + pnl_sync)만** 커버하고, 라우터에 인라인된 user_id 필터(`routers/accounts.py` 의 `get_trade_count` 2쿼리·`list_accounts` 의 trades count·`create_account` INSERT)는 미커버. 후속: HTTP 레이어 + 실DB 픽스처로 두 사용자 시드 후 해당 엔드포인트의 cross-user 격리를 검증(인라인 쿼리에서 `AND user_id` 누락 시 실패하도록). 트리거: 라우터 인라인 SQL 추가/수정 시 또는 보안 강화 라운드.
 
 ## 분석 탭 성능 / 유지보수
 

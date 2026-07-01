@@ -115,8 +115,9 @@ jobs:
           fi
 
       # RLS 제거 후 user 격리는 앱 레이어 user_id 필터가 유일한 수단 → 실 DB(마이그레이션 적용됨)에서
-      # repo 함수가 cross-user 데이터를 노출하지 않는지 검증(앱 role invest_note_app 로 접속).
+      # repo 함수(db) + 라우터 인라인 SQL(http) 이 cross-user 데이터를 노출하지 않는지 검증
+      # (앱 role invest_note_app 로 접속).
       - name: User isolation (real DB)
         env:
           INVEST_NOTE_TEST_DATABASE_URL: postgresql://invest_note_app:invest_note_app@127.0.0.1:5432/invest_note
-        run: poetry run pytest tests/test_user_isolation_db.py -q
+        run: poetry run pytest tests/test_user_isolation_*.py -q
