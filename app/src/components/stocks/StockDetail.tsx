@@ -26,6 +26,7 @@ interface StockStats {
 
 interface StockDetailProps {
   assetName: string;
+  nameKo?: string | null;
   ticker: string;
   country: string;
   trades: TradeWithAccount[];
@@ -40,8 +41,10 @@ interface StockDetailProps {
   onSell?: () => void;
 }
 
-export function StockDetail({ assetName, ticker, country, trades, stats, accounts, holdingQuantity = 0, onBack, onTradePress, onAssetHistoryPress, onSwitchStock, onBuy, onSell }: StockDetailProps) {
+export function StockDetail({ assetName, nameKo, ticker, country, trades, stats, accounts, holdingQuantity = 0, onBack, onTradePress, onAssetHistoryPress, onSwitchStock, onBuy, onSell }: StockDetailProps) {
   const router = useRouter();
+  // 표시명은 한글(US name_ko) 우선, 없으면 영문 asset_name fallback — HoldingCard/거래 상세와 동일 패턴.
+  const displayName = nameKo || assetName;
   const { setSelectedAccountId } = useAccountFilter();
   const effectiveAccountId = useEffectiveAccountId(accounts);
   const isFiltered = effectiveAccountId !== null;
@@ -83,11 +86,11 @@ export function StockDetail({ assetName, ticker, country, trades, stats, account
                 className="pointer-events-auto inline-flex max-w-full items-center gap-1 text-[17px] font-bold text-foreground"
                 aria-label="종목 변경"
               >
-                <span className="min-w-0 truncate">{assetName}</span>
+                <span className="min-w-0 truncate">{displayName}</span>
                 <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" strokeWidth={2.4} />
               </button>
             ) : (
-              <span className="min-w-0 truncate text-[17px] font-bold text-foreground">{assetName}</span>
+              <span className="min-w-0 truncate text-[17px] font-bold text-foreground">{displayName}</span>
             )}
           </div>
           {onAssetHistoryPress && (
@@ -113,7 +116,7 @@ export function StockDetail({ assetName, ticker, country, trades, stats, account
         {/* 종목 기본 정보 */}
         <div className="rounded-2xl bg-muted/60 p-4">
           <p className="min-w-0 break-words text-[22px] font-bold text-foreground">
-            {assetName}{" "}
+            {displayName}{" "}
             <span className="text-[13px] font-mono font-normal text-muted-foreground">{ticker}</span>
           </p>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">

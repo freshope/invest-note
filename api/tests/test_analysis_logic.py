@@ -332,14 +332,22 @@ class TestComputeSummary:
 
 # --- concentration ---
 
-def _make_position(key: str, cost: float, country: str = "KR", evaluation: float | None = None) -> Position:
+def _make_position(
+    key: str,
+    cost: float,
+    country: str = "KR",
+    evaluation: float | None = None,
+    asset_name: str | None = None,
+    name_ko: str | None = None,
+) -> Position:
     ticker, _ = key.split(":")
     return Position(
         key=key,
         ticker=ticker,
         country=country,
         currency="USD" if country == "US" else "KRW",
-        asset_name=ticker,
+        asset_name=asset_name or ticker,
+        name_ko=name_ko,
         exchange="",
         holding_quantity=1.0,
         avg_buy_price=cost,
@@ -380,6 +388,18 @@ class TestComputeConcentration:
         pos = _make_position("A:KR", 500.0, evaluation=1000.0)
         result = compute_concentration([pos], [])
         assert result.hhi == pytest.approx(1.0)
+
+    def test_top3_label_prefers_name_ko(self):
+        """US 종목은 name_ko(한글) 라벨 우선 — 홈/포트폴리오 표시와 일치."""
+        pos = _make_position("AAPL:US", 1000.0, country="US", asset_name="Apple", name_ko="애플")
+        result = compute_concentration([pos], [])
+        assert result.top3[0]["asset"] == "애플"
+
+    def test_top3_label_falls_back_to_asset_name(self):
+        """name_ko 없으면(KR·롱테일 US) 영문/원본 asset_name 으로 fallback."""
+        pos = _make_position("AAPL:US", 1000.0, country="US", asset_name="Apple", name_ko=None)
+        result = compute_concentration([pos], [])
+        assert result.top3[0]["asset"] == "Apple"
 
 
 # --- profile ---

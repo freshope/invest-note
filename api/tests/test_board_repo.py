@@ -50,7 +50,7 @@ async def test_list_my_posts_empty_skips_join_queries():
     """본인 글 0건이면 comments/attachments fetch 자체를 안 한다(1회 호출)."""
     conn = AsyncMock()
     conn.fetch.return_value = []
-    assert await board_repo.list_my_posts(conn, USER_ID) == []
+    assert await board_repo.list_my_posts(conn, USER_ID) == ([], 0)
     assert conn.fetch.call_count == 1
 
 
@@ -99,7 +99,7 @@ async def test_list_my_posts_join_queries_scope_to_post_ids():
     conn = AsyncMock()
     conn.fetch.side_effect = [post_rows, comment_rows, attachment_rows]
 
-    result = await board_repo.list_my_posts(conn, USER_ID)
+    result, total = await board_repo.list_my_posts(conn, USER_ID)
 
     # call_args_list[0]=posts, [1]=comments, [2]=attachments
     comment_query, *cargs = conn.fetch.call_args_list[1].args
@@ -112,6 +112,7 @@ async def test_list_my_posts_join_queries_scope_to_post_ids():
     assert "post_id = any($1)" in att_query
     assert aargs[0] == [pid]
 
+    assert total == 1  # board_type None(레거시) → total=len
     assert len(result) == 1
     assert result[0]["id"] == str(pid)  # 응답은 str 화
     assert result[0]["metadata"] == {"source": "app"}  # jsonb → dict
@@ -125,6 +126,133 @@ async def test_list_my_posts_join_queries_scope_to_post_ids():
     assert result[0]["popup_acked"] is False
     assert "read_at" not in result[0]
     assert "popup_acked_at" not in result[0]
+
+
+@pytest.mark.asyncio
+async def test_list_my_posts_board_type_paginates_with_count_and_limit():
+    """board_type 지정 → count(fetchval) + 단일 타입 WHERE + LIMIT/OFFSET. total 은 count 값."""
+    conn = AsyncMock()
+    conn.fetchval.return_value = 37
+    conn.fetch.return_value = []  # 빈 posts → join 생략
+    rows, total = await board_repo.list_my_posts(
+        conn, USER_ID, board_type="feedback", page=2, page_size=20
+    )
+    assert (rows, total) == ([], 37)  # count 가 total(page 행 0건이어도)
+
+    count_query, *count_args = conn.fetchval.call_args.args
+    assert "count(*)" in count_query
+    assert "board_type = $2" in count_query
+    assert count_args == [USER_ID, "feedback"]
+
+    posts_query, *posts_args = conn.fetch.call_args.args
+    assert "board_type = $2" in posts_query
+    assert "limit $3 offset $4" in posts_query
+    assert posts_args == [USER_ID, "feedback", 20, 20]  # page2 → offset 20
+
+
+@pytest.mark.asyncio
+async def test_list_my_posts_rejects_non_whitelist_board_type():
+    """화이트리스트 외 board_type(notice 등) → ([], 0). 쿼리 자체를 안 친다(권한 경계)."""
+    conn = AsyncMock()
+    assert await board_repo.list_my_posts(conn, USER_ID, board_type="notice") == ([], 0)
+    conn.fetch.assert_not_called()
+    conn.fetchval.assert_not_called()
+
+
+# ─────────────────────────── unread_summary (전량 스캔 집계) ───────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_unread_summary_scopes_to_user_and_three_board_types_full_scan():
+    """unread_summary posts 쿼리는 user_id + 3종 any($2), LIMIT 없음(page 비의존 전량 스캔)."""
+    conn = AsyncMock()
+    conn.fetch.return_value = []  # 빈 posts
+    result = await board_repo.unread_summary(conn, USER_ID)
+    assert result == {
+        "unread": {"feedback": False, "bug_report": False, "broker_statement": False},
+        "popup": None,
+    }
+    query, *args = conn.fetch.call_args.args
+    assert "user_id = $1" in query
+    assert "board_type = any($2)" in query
+    assert "limit" not in query.lower()  # 전량 스캔
+    assert args[0] == USER_ID
+    assert args[1] == ["feedback", "bug_report", "broker_statement"]
+
+
+@pytest.mark.asyncio
+async def test_unread_summary_aggregates_unread_and_first_popup():
+    """어드민 댓글 있는 글 → 해당 board_type unread True. resolved broker_statement(미ack) → popup."""
+    feedback_pid = uuid4()
+    bs_pid = uuid4()
+
+    def _row(pid, board_type, *, status="open", popup_acked_at=None):
+        return {
+            "id": pid,
+            "board_type": board_type,
+            "user_id": USER_ID,
+            "title": f"[{board_type}]",
+            "body": "본문",
+            "status": status,
+            "is_pinned": False,
+            "metadata": '{"broker": "삼성증권"}',
+            "created_at": "2026-06-25T00:00:00Z",
+            "updated_at": "2026-06-28T00:00:00Z",
+            "read_at": None,
+            "popup_acked_at": popup_acked_at,
+        }
+
+    # created_at desc 순서로 들어온다고 가정(bs 먼저).
+    posts = [
+        _row(bs_pid, "broker_statement", status="resolved"),
+        _row(feedback_pid, "feedback"),
+    ]
+    comment_rows = [
+        {
+            "id": uuid4(),
+            "post_id": feedback_pid,
+            "user_id": uuid4(),
+            "body": "반영",
+            "is_admin": True,
+            "created_at": "2026-06-26T00:00:00Z",
+        }
+    ]
+    conn = AsyncMock()
+    conn.fetch.side_effect = [posts, comment_rows]
+
+    result = await board_repo.unread_summary(conn, USER_ID)
+    # feedback 에 어드민 댓글 + read 없음 → unread. broker_statement 는 status=resolved 라 unread.
+    assert result["unread"]["feedback"] is True
+    assert result["unread"]["broker_statement"] is True
+    assert result["unread"]["bug_report"] is False
+    # popup: resolved broker_statement + popup_acked_at None → {post_id, broker}.
+    assert result["popup"] == {"post_id": str(bs_pid), "broker": "삼성증권"}
+
+
+@pytest.mark.asyncio
+async def test_unread_summary_popup_none_when_acked():
+    """resolved broker_statement 라도 popup_acked_at 있으면 popup None."""
+    bs_pid = uuid4()
+    posts = [
+        {
+            "id": bs_pid,
+            "board_type": "broker_statement",
+            "user_id": USER_ID,
+            "title": "[broker_statement]",
+            "body": "본문",
+            "status": "resolved",
+            "is_pinned": False,
+            "metadata": "{}",
+            "created_at": "2026-06-25T00:00:00Z",
+            "updated_at": "2026-06-28T00:00:00Z",
+            "read_at": None,
+            "popup_acked_at": "2026-06-29T00:00:00Z",
+        }
+    ]
+    conn = AsyncMock()
+    conn.fetch.side_effect = [posts, []]
+    result = await board_repo.unread_summary(conn, USER_ID)
+    assert result["popup"] is None
 
 
 # ─────────────────────────── _compute_unread (isMyPostUnread 복제) ───────────────────────────

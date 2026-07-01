@@ -52,20 +52,26 @@ export function BugReportPanel({ open, onOpenChange }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [body, setBody] = useState("");
   const [files, setFiles] = useState<File[]>([]);
+  const [wasOpen, setWasOpen] = useState(open);
 
-  // 진입(open) 시마다 폼을 초기 상태로 — 패널 컴포넌트는 항상 마운트되어 있어
-  // 직전 입력값이 useState 에 남기 때문. files 리셋 시 previews 는 아래 effect 가 정리.
-  useEffect(() => {
+  // 진입(open false→true) 시마다 폼을 초기 상태로 — 패널 컴포넌트는 항상 마운트되어 있어
+  // 직전 입력값이 useState 에 남기 때문. effect 동기 setState 대신 렌더 중 조정(React 공식 패턴).
+  // files 리셋 시 previews 는 아래 effect 가 정리.
+  if (open !== wasOpen) {
+    setWasOpen(open);
     if (open) {
       setBody("");
       setFiles([]);
     }
-  }, [open]);
+  }
 
   // 첨부 썸네일 — files 마다 object URL 생성, 변경/언마운트 시 전부 revoke(메모리 누수 방지).
   const [previews, setPreviews] = useState<string[]>([]);
   useEffect(() => {
     const urls = files.map((f) => URL.createObjectURL(f));
+    // createObjectURL 은 side-effect(메모리 할당)라 render/useMemo 로 옮기면 누수.
+    // cleanup 의 revoke 와 한 쌍이라 effect 가 정석 — set-state-in-effect 룰 과발화.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPreviews(urls);
     return () => urls.forEach((u) => URL.revokeObjectURL(u));
   }, [files]);

@@ -23,6 +23,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [probedUserId, setProbedUserId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -58,15 +59,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // user 가 바뀌면(로그아웃 또는 사용자 전환) isAdmin 을 미확정(null)으로 리셋한다.
+  // effect 동기 setState(set-state-in-effect) 대신 렌더 중 상태 조정(React 공식 패턴).
+  // user.id 가 같으면(applyUser 가 prev 유지) 리셋·재프로브하지 않는다.
+  const currentUserId = user?.id ?? null;
+  if (currentUserId !== probedUserId) {
+    setProbedUserId(currentUserId);
+    setIsAdmin(null);
+  }
+
   // user 가 바뀔 때마다 /admin/me 로 allowlist 여부 프로브. 200 → admin, 403/오류 → 비-admin.
-  // user 식별자가 같으면(applyUser 가 prev 유지) 재프로브하지 않는다.
   useEffect(() => {
-    if (!user) {
-      setIsAdmin(null);
-      return;
-    }
+    if (!user) return;
     let mounted = true;
-    setIsAdmin(null); // 프로브 진행 중
     adminApi
       .me()
       .then(() => mounted && setIsAdmin(true))

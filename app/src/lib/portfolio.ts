@@ -7,7 +7,10 @@ function countryFromKey(key: string): string {
   return key.split(":")[1] ?? DEFAULT_COUNTRY_CODE;
 }
 
-export type QuoteMap = Record<string, { price: number; currency: string; as_of: string } | null>;
+export type QuoteMap = Record<
+  string,
+  { price: number; currency: string; as_of: string; change_pct?: number | null } | null
+>;
 
 export interface Position {
   key: string;                  // `${ticker}:${country}`
@@ -24,6 +27,7 @@ export interface Position {
   costBasisNative: number;      // native
   realizedPnL: number;          // KRW
   currentPrice: number | null;  // native 시세
+  changePct?: number | null;    // 오늘 등락율(%, native 전일종가 대비, 부호 포함). mergeQuotes 만 채움.
   evaluation: number | null;    // KRW (= currentPrice × qty × 현재환율, primary)
   evaluationNative: number | null;  // native(= currentPrice × qty)
   unrealizedPnL: number | null; // KRW (= evaluation - costBasis)
@@ -71,6 +75,7 @@ export function mergeQuotes(
     return {
       ...pos,
       currentPrice: quote.price,
+      changePct: quote.change_pct ?? null,
       evaluation,
       evaluationNative,
       unrealizedPnL: evaluation === null ? null : evaluation - pos.costBasis,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { ChevronRightIcon } from "lucide-react";
 import {
@@ -12,7 +12,9 @@ import {
 } from "@/components/base/FullScreenPanel";
 import { EmptyCard } from "@/components/shared/EmptyCard";
 import { ErrorState } from "@/components/shared/ErrorState";
+import { LoadMoreButton } from "@/components/shared/LoadMoreButton";
 import { boardApi, type MyPost, type MyPostBoardType } from "@/lib/api-client";
+import { offsetNextPageParam } from "@/lib/infinite-list";
 import { queryKeys } from "@/lib/query-keys";
 import { requestImportOpen } from "@/lib/import-deeplink";
 import {
@@ -49,14 +51,29 @@ export function MyPostsListPanel({
   // 스냅샷 객체 대신 id 보관 후 live items 에서 조회 → 상세 열린 중 refetch 되면 새 답변 반영.
   const [detailId, setDetailId] = useState<string | null>(null);
 
-  const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: queryKeys.myPosts,
-    queryFn: () => boardApi.myPosts(),
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: queryKeys.myPostsList(boardType),
+    queryFn: ({ pageParam }) => boardApi.myPosts(boardType, pageParam),
     enabled: open,
+    initialPageParam: 1,
+    getNextPageParam: offsetNextPageParam,
   });
 
+  // 서버가 board_type 으로 필터하지만, BE-lag(구버전 BE 가 board_type 무시 → 3종 전량) 시
+  // 타 게시판 글 혼입을 막는 방어 필터. 페이지 평탄화 + board_type 일치만.
   const items = useMemo(
-    () => (data?.items ?? []).filter((p) => p.board_type === boardType),
+    () =>
+      (data?.pages.flatMap((p) => p.items) ?? []).filter(
+        (p) => p.board_type === boardType,
+      ),
     [data, boardType],
   );
   // 서버 unread 플래그로 행 점 구성(단일 출처). invalidate 로 자연 갱신.
@@ -108,16 +125,23 @@ export function MyPostsListPanel({
                   description="상단 ‘작성’ 으로 보내주시면 이곳에서 처리 상태와 답변을 확인할 수 있어요."
                 />
               ) : (
-                <div className="rounded-2xl bg-muted/60 overflow-hidden">
-                  {items.map((post) => (
-                    <PostRow
-                      key={post.id}
-                      post={post}
-                      unread={unreadIds.has(post.id)}
-                      onClick={() => setDetailId(post.id)}
-                    />
-                  ))}
-                </div>
+                <>
+                  <div className="rounded-2xl bg-muted/60 overflow-hidden">
+                    {items.map((post) => (
+                      <PostRow
+                        key={post.id}
+                        post={post}
+                        unread={unreadIds.has(post.id)}
+                        onClick={() => setDetailId(post.id)}
+                      />
+                    ))}
+                  </div>
+                  <LoadMoreButton
+                    hasNextPage={hasNextPage}
+                    isFetchingNextPage={isFetchingNextPage}
+                    onClick={() => fetchNextPage()}
+                  />
+                </>
               )}
             </div>
           </FullScreenPanelBody>

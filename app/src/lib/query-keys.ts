@@ -1,4 +1,5 @@
 import type { Period } from "@/lib/analysis/period";
+import type { MyPostBoardType } from "@/lib/api-client";
 
 export const queryKeys = {
   portfolio: ["portfolio"] as const,
@@ -35,11 +36,20 @@ export const queryKeys = {
     ["analysis", "dashboard", period] as const,
 
   // 공지사항(게시판 notice) — 목록/상세. 읽기 전용이라 긴 staleTime.
+  // notices: 설정 점(has_unread)용 단건 useQuery. noticesList: 패널 무한스크롤용
+  // (shape 가 달라 키 분리). 둘 다 ["notices"] prefix 라 한 번의 invalidate 로 갱신.
   notices: ["notices"] as const,
+  noticesList: ["notices", "list"] as const,
   notice: (id: string) => ["notice", id] as const,
 
   // 내 제보/문의(본인이 쓴 글 + 어드민 답변). 진입 팝업 게이트와 read-back 패널이 공유.
+  // myPosts: invalidation 루트 prefix(불변식 — 기존 invalidator 5곳이 이 키로 무효화).
+  // myPostsList/unreadSummary: reader 전용 하위 키. 둘 다 ["my-posts"] prefix 라 루트 한 번의
+  // invalidate 로 list+summary 가 함께 cascade 갱신된다.
   myPosts: ["my-posts"] as const,
+  myPostsList: (boardType: MyPostBoardType) =>
+    ["my-posts", "list", boardType] as const,
+  unreadSummary: ["my-posts", "unread-summary"] as const,
 
   // 거래 변경 시 assets prefix invalidate 한 번으로 모든 파라미터 조합을 무효화.
   assets: ["assets"] as const,

@@ -110,6 +110,20 @@ describe("mergeQuotes", () => {
     const merged = mergeQuotes(positions, {});
     expect(merged.every((p) => p.currentPrice === null)).toBe(true);
   });
+
+  it("(e) change_pct(snake) → changePct(camel) 매핑 + 값 없으면 null degrade", () => {
+    const positions = [
+      makePosition({ key: "005930:KR" }),
+      makePosition({ key: "NHN:KR" }),
+    ];
+    const quotes: QuoteMap = {
+      "005930:KR": { price: 80000, currency: "KRW", as_of: "", change_pct: -4.04 },
+      "NHN:KR": { price: 10000, currency: "KRW", as_of: "" }, // change_pct 결측
+    };
+    const [samsung, nhn] = mergeQuotes(positions, quotes);
+    expect(samsung.changePct).toBe(-4.04);
+    expect(nhn.changePct).toBeNull();
+  });
 });
 
 describe("applyQuotesToTotals", () => {

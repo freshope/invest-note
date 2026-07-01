@@ -31,7 +31,7 @@ def compute_concentration(positions: list[Position], trades: list[Trade]) -> Con
     values = [
         {
             "key": p.key,
-            "asset": p.asset_name,
+            "asset": p.name_ko or p.asset_name,  # name_ko(US 한글) 우선, 없으면 영문 fallback
             "country": p.country,
             "value": p.evaluation if p.evaluation is not None else p.cost_basis,
         }

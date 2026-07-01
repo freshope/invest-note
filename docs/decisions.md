@@ -4,6 +4,37 @@
 
 ---
 
+## 2026-06-30 | 분석 탭 집중도 한글화 — 로더 교체로 name_ko 운반(SQL 신규 작성 회피)
+
+- **맥락:** name_ko(2026-06-28) 트레이드오프 ⓑ "분석 탭 집중도는 `list_trades`(SELECT *) 경로라 `Position.name_ko` 항상 None → 같은 US 종목이 홈=한글/분석=영문" 의 후속. backlog 는 `list_trades` SQL 에 `LEFT JOIN stocks` 추가(SELECT t.*, s.name_ko)를 제안했었다.
+- **결정 ① `list_trades` SQL 수정 대신 `/analysis/dashboard` 로더를 `list_trades_with_account` 로 교체.** 후자는 포트폴리오가 이미 쓰는 name_ko-운반 로더(accounts+stocks LEFT JOIN)이고 `build_positions` 가 `first.name_ko → Lot → Position` carry-through 를 이미 구현. 단일 호출지점 1줄 교체로 끝나고, `Trade`(name_ko 필드 기존재)·`TradeWithAccount`(Trade 서브클래스, 추가필드 옵셔널)라 다운스트림 calc 함수 무변경.
+- **결정 ② 라벨만 한글화, 계산은 무변경.** `concentration.py` top3 라벨을 `p.name_ko or p.asset_name`. HHI/비중/country/market 집계는 전부 `position_key` 기반이라 name_ko 는 표시 전용으로만 흐름(계산 키 오염 없음 — name_ko 불변식 유지). FE 무변경(BE `top3[].asset` 그대로 `WeightBar` 라벨).
+- **이유:** backlog 의 `list_trades` SQL 수정안은 **모든** `list_trades` 호출자에 JOIN 비용 + name_ko 적재를 강제(blast radius 큼). 로더 교체는 영향이 analysis 한 곳, 검증된 기존 로더 재사용, SQL/모델 변경 0. analysis 가 추가로 얻는 accounts JOIN 1개는 무시 가능.
+- **트레이드오프:** ⓐ `missing_quote_tickers`(line 175) 라벨·FE dead `concentration.ts` 는 영문 잔존(범위 밖, 후속). ⓑ name_ko 가 분석 calc 경로 객체에 실리지만 표시 전용이라 무해(불변식의 목적은 "계산 키 오염 방지"이고 그룹핑은 key 기반 유지). 참조: [[project_stock_name_ko]].
+
+---
+
+## 2026-06-30 | KIS API 연동 — 트랙 전체 종결(트랙1 완료 / 트랙1-B·2 미진행 확정)
+
+- **맥락:** 2026-06-07 deep-research 로 KIS 연동을 2-트랙 분리(`docs/spec-history/2026-06-07-kis-data-providers.md`·`-kis-token-persistence.md`). backlog 잔존 항목 처리 여부를 재점검하며 종결 판정한다.
+- **결정 ① 트랙1(데이터 공급처 활성화) = 완료.** 시세(`QUOTE_PROVIDERS` 에 kis, 보조 fallback)·일별종가(`DAILY_PRICE_PROVIDER=kis` primary)·종목마스터(`STOCK_SEED_SOURCES` 에 kis)·교차검증 전부 registry 등록 + 운영 적용·검증 완료. 레이트리밋 선행조건 해소(`kis.py` `_RATE_MAX_CALLS` 2→18, 신규고객 3일 제한 만료 후 재실측), `kis_tokens` DB 영속화, 운영 키 주입 확인. 의도적 보류 항목(시세 primary=kis 전환, replica 증설 시 공유 리미터)도 현 상태를 합리적 종착점으로 보고 종결에 포함.
+- **결정 ② 트랙1-B(휴장일 조회 API CTCA0903R) = 미진행 종결.** 공식 캘린더 대체의 주 가치가 "시세 primary=kis 전환의 traded_on=None degrade 해소"였는데 그 전환을 보류(2026-06-14)했으므로 연계 가치 소멸. 휴장일 판정은 현 휴리스틱 2곳(`market_open_today` traded_on 신호 + marcap `basDt` lookback)으로 동작. 독립적 개선 필요 시 신규 spec 단독 착수(실전 전용 TR, 모의 미지원).
+- **결정 ③ 트랙2(사용자 개인 데이터 자동화·BYOK) = 미진행 종결.** 사용자 appkey 로 매매내역·예수금·잔고 자동 동기화하는 대형 feature. 종결 사유: ⓐ 착수 전 BYOK 구조의 KIS 개인 약관 허용 여부 공식 확인이 하드 선행조건(최대 리스크), ⓑ appkey 가 주문 권한 포함(읽기전용 스코프 불가로 보임) → 키 유출 시 주문 실행 가능한 보안 부담, ⓒ 사용자별 발급 UX 마찰. 사용자 수요 확인 전 선제 착수 비권장. **부활 시 참고(2026-06-07 조사):** 체결내역 `inquire-daily-ccld`(TTTC8001R, 최근 3개월·초과분 CTSC9215R)·보유잔고 `inquire-balance`(TTTC8434R)·매수가능현금 `inquire-psbl-order`(TTTC8908R)·해외잔고 `inquire-present-balance`(CTRP6504R). `kis_tokens.scope='user:{id}'` 확장 여지는 토큰 스토어 주석으로 잔존.
+- **트레이드오프:** backlog 의 "v2 — KIS API 연동" 섹션은 본 종결로 삭제(완료/미진행 모두 backlog "다음 작업 후보" 성격에 안 맞음). 트랙1 구현 상세는 spec-history, 종결 근거는 본 항목이 SSOT. 참조: [[project_kis_rate_limits]].
+
+---
+
+## 2026-06-30 | 게시판 my-posts 페이지네이션 + unread 신호 분리(unread-summary 신설)
+
+- **맥락:** my-posts 계열만 무페이지네이션 전량 반환이라 글이 쌓이면 첨부 presigned URL 재서명 포함 응답 비용이 선형 증가했다. notices 는 이미 `list_notices` + `useInfiniteQuery` 로 페이지네이션됨 → my-posts 도 동일 패턴(board_type 필터 + page/page_size/total)으로 통일한다. 단, my-posts 를 페이지네이션하면 목록 전량 순회로 파생되던 unread/popup 신호(settings 3-dot, MySubmissionsPopupGate)가 page1 만 보고 깨진다.
+- **결정 ① unread/popup 을 목록에서 분리 — 신규 경량 `GET /board/unread-summary`.** my-posts 페이지네이션 위에 unread 를 얹지 않고(page1-only 버그 재발), 본인 글 3종 **전체를 스캔**하는 별도 엔드포인트로 뺀다. `{unread:{feedback,bug_report,broker_statement}(bool), popup:{post_id,broker}|null}`. 첨부/R2 서명은 생략(경량) — unread 판정에 불필요. FE 는 목록에서 unread 를 파생하지 않고 이 엔드포인트가 board_type별 점·진입 팝업의 단일 출처.
+- **결정 ② unread 규칙 단일 정의 — `_compute_unread` 재사용(SQL 집계 미채택).** unread-summary 는 list_my_posts 와 동일하게 Python `_compute_unread`(FE `isMyPostUnread` 미러)를 글+어드민 댓글+`board_post_reads` JOIN 위에서 재실행한다. SQL EXISTS 집계로 규칙을 3번째 복제하면 BUY/SELL 활동시각·tz 수치비교 등 규칙이 drift 한다 → 첨부/서명만 빼고 판정 코드는 공유. 트레이드오프: 전량 스캔(글 수 선형)이나 첨부/서명 없어 비용은 목록보다 작고, page 비의존이 정확성의 핵심.
+- **결정 ③ board_type Optional — 레거시 하위호환(가장 빡빡한 제약).** 라이브 네이티브 v1.3.4 는 `/board/my-posts` 를 **무인자**로 호출하고 `.items` 만 읽는다. `board_type` 을 필수화하면 422 로 라이브 앱 파손 → **반드시 Optional**(기본 None). None → 3종 전량(LIMIT 미적용, total=len, page=1, 레거시 동작 보존). 지정 → 해당 타입만 count(total) + LIMIT/OFFSET. 응답은 **additive** `{items, total, page}`(구 클라이언트는 `.items` 만 읽어 무해). 화이트리스트 외 board_type(notice 등)은 ([], 0)로 권한 경계 보호.
+- **결정 ④ query-key `["my-posts"]` 루트 prefix 보존 — invalidator 무수정.** FE reader 만 하위 키(`["my-posts","list",boardType]`, `["my-posts","unread-summary"]`)로 이동하고, invalidation 루트는 `["my-posts"]` 유지 → 기존 invalidator 5곳(FeedbackPanel/BugReportPanel/BrokerStatementPanel/MyPostDetailPanel/MySubmissionsPopupGate)이 루트 무효화 시 list·summary 가 함께 cascade. invalidator 측 수정 0.
+- **트레이드오프/잔여:** ⓐ unread-summary 전량 스캔은 글 수에 선형(첨부/서명 제외라 목록 페이지네이션보다 저렴, page 정확성 위해 의도적 선택). ⓑ **롤아웃 순서 — BE 선배포 필수.** unread-summary 는 신규 엔드포인트라 FE OTA 보다 먼저 배포돼야 한다. FE 는 BE-lag 시 summary 부재 → 점 미표시 안전 degrade. ⓒ DB 스키마 변경 없음(페이지네이션=LIMIT/OFFSET, 필터=WHERE, 기존 `board_post_reads` 컬럼 재사용) → Alembic 마이그레이션 불필요. ⓓ notices 경로(list_notices/has_unread_notice/markNoticesSeen) 무변경 — 서버 EXISTS 라 page 무관, unread-summary 로 통합 안 함(blast radius 대비 정합 이득 없음). 참조: [[project_board_structure]]·[[project_broker_statement_submission]]·[[project_alembic_migrations]].
+
+---
+
 ## 2026-06-29 | 탈-Supabase Auth Phase 2c — Supabase 검증 fallback 제거 + 웹 BE flow 복구(localStorage C5 예외)
 
 - **맥락:** cutover 운영 완료(2026-06-26, [[project_auth_cutover_exec_method]]) + force-update bump(`MIN_SUPPORTED_VERSION=1.3.0`, 2026-06-29, [[project_force_update]]) 이후, Supabase 는 ⓐ BE 토큰 검증 default fallback, ⓑ FE 웹 분기(supabase-js) 두 경로로만 잔존했다. 2c "가역 코드 제거" 단계로 둘을 정리한다([[project_auth_decoupling]] Phase 2 의 마지막 가역 코드 작업, 비가역 클라우드 정리는 별도 후속). backlog ④(2c contract)·⑤(isNativePlatform 이중화) 등재 항목.
@@ -437,7 +468,7 @@
 - **결정:**
   - ① **환산 책임을 FE → BE 로 이관.** `compute_asset_history` 가 `usdkrw` 인자를 받아 종목별 `to_krw` 로 KRW 합산(직접 곱 금지 — USD+usdkrw=None 은 None 전파로 기여 제외+incomplete, silent USD-as-KRW 합산 구조적 차단). 종목 식별 키를 `position_key(ticker, country)` 로 일관화(steps/closes/live_quotes 3축 동기, US/KR ticker 충돌 방지). `assets.py` 는 전체/계좌뷰에서 country 필터를 제거하고 country 별 파이프라인(backfill/get_closes/quotes)을 분리·합산, `usdkrw` 는 해외 보유 시 1회 조회. 응답에 `usdkrw`/`has_foreign` 노출. FE 는 `asset-history-convert.ts` 삭제하고 BE KRW 값을 그대로 사용.
   - ② **환율 정책: 현재 환율(spot) 일괄 적용**(일자별 historical FX 아님). 모든 과거 일자 US 평가액에 '오늘 usdkrw' 하나를 곱한다. FE 에 '현재 환율 기준(일자별 아님)' 고지 유지.
-- **트레이드오프:** spot 일괄이라 과거 곡선 모양이 오늘 환율로 왜곡됨(USD 가격 변동만 반영) — 정확한 일자별 환산은 USD/KRW 일별 시계열 적재라는 별도 대형 작업이 필요해 **보류**. 오늘 점 총액은 자산추이(BE `fetch_quotes_by_keys`)와 대시보드(FE overlay)의 시세 소스가 갈려 미세 불일치 가능(포함범위·usdkrw 소스는 일치 — backlog 후속).
+- **트레이드오프:** spot 일괄이라 과거 곡선 모양이 오늘 환율로 왜곡됨(USD 가격 변동만 반영) — 정확한 일자별 환산은 USD/KRW 일별 시계열 적재라는 별도 대형 작업이 필요해 **보류**. 오늘 점 총액은 자산추이(BE `fetch_quotes_by_keys`)와 대시보드(FE overlay)의 시세 소스가 갈려 미세 불일치 가능(포함범위·usdkrw 소스는 일치). **2026-06-30: 이 미세 불일치는 허용 오차로 수용·백로그 종료** — 변동성 큰 종목에서만 표시 시점 차이로 발생하는 cosmetic 수준이라, 사용자가 두 화면 오늘 값 차이를 체감/보고할 때 소스 통일로 재오픈.
 
 ---
 

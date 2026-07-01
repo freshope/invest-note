@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
@@ -10,7 +10,7 @@ import {
   DrawerTitle,
 } from "@/components/base/Drawer";
 import { Button } from "@/components/base/Button";
-import { boardApi, type MyPost } from "@/lib/api-client";
+import { boardApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { requestImportOpen } from "@/lib/import-deeplink";
@@ -34,49 +34,43 @@ export function MySubmissionsPopupGate() {
   const enabled = !!user && updateRequired === false;
 
   const { data } = useQuery({
-    queryKey: queryKeys.myPosts,
-    queryFn: () => boardApi.myPosts(),
+    queryKey: queryKeys.unreadSummary,
+    queryFn: () => boardApi.unreadSummary(),
     enabled,
     // 진입 1회용 — 포커스 재조회 끄고 staleTime 길게(세션당 사실상 1회).
     refetchOnWindowFocus: false,
     staleTime: 5 * 60_000,
   });
 
-  // 미확인 resolved 거래내역서 제보 중 1건(글 목록 created_at desc → 첫 매칭).
-  // 미확인 판정은 서버 플래그(popup_acked) — 기기 무관 1회 dedup.
-  // `=== false` 명시 비교: BE-lag(OTA 선행)로 필드 부재 시 undefined → 미노출(안전). `!popup_acked`
-  // 면 undefined 가 truthy 처리돼 ack 불가 구간에 매 진입마다 팝업이 떠버린다.
-  const target = useMemo<MyPost | null>(() => {
-    if (!data) return null;
-    return (
-      data.items.find(
-        (p) =>
-          p.status === "resolved" &&
-          p.board_type === "broker_statement" &&
-          p.popup_acked === false,
-      ) ?? null
-    );
-  }, [data]);
+  // 미확인 resolved 거래내역서 제보 1건 — 서버 단일 출처(unread-summary.popup, created_at desc 첫 건).
+  // BE 가 popup_acked_at IS NULL 로 1회 dedup. BE-lag(OTA 선행)로 summary 부재 시 data undefined →
+  // popup null → 미노출(안전). FE 에서 목록 파생/판정하지 않는다(단일 출처).
+  const target = data?.popup ?? null;
 
   const [open, setOpen] = useState(false);
-  // 한 번 ack 한 id 는 다시 노출하지 않는다(같은 세션 재오픈 방지).
-  const [acked, setAcked] = useState(false);
+  // 이번 세션에 ack 한 post_id 집합. post_id 별로 가려 같은 세션 재오픈만 막고,
+  // ack 후 서버가 내려주는 다른 미확인 제보(다른 post_id)는 정상 노출한다.
+  // (세션 전역 boolean 이면 첫 ack 후 후속 팝업이 세션 내내 차단됨.)
+  const [ackedIds, setAckedIds] = useState<Set<string>>(() => new Set());
 
-  useEffect(() => {
-    if (target && !acked) setOpen(true);
-  }, [target, acked]);
+  // target 이 나타나면(미ack) 자동 오픈. effect 동기 setState 대신 렌더 중 조정(React 공식 패턴).
+  // !open 가드로 1회만 set → 무한 렌더 없음. ack 한 post_id 는 ackedIds 가 가린다.
+  if (target && !ackedIds.has(target.post_id) && !open) {
+    setOpen(true);
+  }
 
   if (!target) return null;
 
   const ack = () => {
-    // 서버 popup_acked 처리 → my-posts invalidate 로 기기 무관 dedup. 로컬 acked 는 같은 세션 재오픈 방지.
+    // 서버 popup_acked 처리 → myPosts 루트 prefix invalidate 로 summary cascade 갱신(기기 무관 dedup).
+    // 로컬 acked 는 같은 세션 재오픈 방지.
     void boardApi
-      .ackPopup(target.id)
+      .ackPopup(target.post_id)
       .then(() =>
         queryClient.invalidateQueries({ queryKey: queryKeys.myPosts }),
       )
       .catch(() => {});
-    setAcked(true);
+    setAckedIds((prev) => new Set(prev).add(target.post_id));
     setOpen(false);
   };
 
@@ -91,7 +85,7 @@ export function MySubmissionsPopupGate() {
     router.push("/records");
   };
 
-  const broker = target.metadata.broker ?? "제보하신 증권사";
+  const broker = target.broker ?? "제보하신 증권사";
 
   return (
     <Drawer open={open} onOpenChange={handleOpenChange}>

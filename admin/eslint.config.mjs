@@ -25,10 +25,6 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // Capacitor native projects bundle the Next.js build output as static
-    // assets; linting these minified chunks produces thousands of noise errors.
-    "ios/**",
-    "android/**",
   ]),
 ]);
 

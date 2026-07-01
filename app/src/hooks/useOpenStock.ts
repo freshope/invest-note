@@ -32,6 +32,7 @@ export function useOpenStock(
         });
         openStock({
           assetName: pos.assetName,
+          nameKo: pos.nameKo,
           ticker: pos.ticker,
           country: pos.country,
           allTrades: trades,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { ChevronRightIcon, PinIcon } from "lucide-react";
 import {
   FullScreenPanel,
@@ -12,7 +12,9 @@ import {
 } from "@/components/base/FullScreenPanel";
 import { EmptyCard } from "@/components/shared/EmptyCard";
 import { ErrorState } from "@/components/shared/ErrorState";
+import { LoadMoreButton } from "@/components/shared/LoadMoreButton";
 import { boardApi } from "@/lib/api-client";
+import { offsetNextPageParam } from "@/lib/infinite-list";
 import { queryKeys } from "@/lib/query-keys";
 import { formatDateOnly } from "@/lib/format";
 
@@ -25,11 +27,23 @@ export function NoticePanel({ open, onOpenChange }: Props) {
   // 상세로 띄울 공지 id. null 이면 상세 패널 닫힘.
   const [detailId, setDetailId] = useState<string | null>(null);
 
-  const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: queryKeys.notices,
-    queryFn: () => boardApi.listNotices(),
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: queryKeys.noticesList,
+    queryFn: ({ pageParam }) => boardApi.listNotices(pageParam),
     enabled: open,
+    initialPageParam: 1,
+    getNextPageParam: offsetNextPageParam,
   });
+
+  const items = data?.pages.flatMap((p) => p.items) ?? [];
 
   return (
     <>
@@ -46,14 +60,15 @@ export function NoticePanel({ open, onOpenChange }: Props) {
                 </div>
               ) : isError ? (
                 <ErrorState onRetry={refetch} />
-              ) : !data || data.items.length === 0 ? (
+              ) : items.length === 0 ? (
                 <EmptyCard
                   title="등록된 공지가 없어요"
                   description="새로운 소식이 있으면 이곳에서 알려드릴게요."
                 />
               ) : (
+                <>
                 <div className="rounded-2xl bg-muted/60 overflow-hidden">
-                  {data.items.map((item) => (
+                  {items.map((item) => (
                     <button
                       key={item.id}
                       type="button"
@@ -77,6 +92,12 @@ export function NoticePanel({ open, onOpenChange }: Props) {
                     </button>
                   ))}
                 </div>
+                <LoadMoreButton
+                  hasNextPage={hasNextPage}
+                  isFetchingNextPage={isFetchingNextPage}
+                  onClick={() => fetchNextPage()}
+                />
+                </>
               )}
             </div>
           </FullScreenPanelBody>
