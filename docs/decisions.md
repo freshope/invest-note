@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-01 | 탈-Supabase Auth 2c 최종 teardown — 회원탈퇴 DB-only 전환
+
+- **맥락:** 2c cutover(2026-06-26)+가역 코드 배포(2026-06-30) 후 남은 **유일한 런타임 Supabase 호출**은 회원탈퇴(`routers/me.py`)의 GoTrue `deleteUser`(`auth/identity_provider.py`)였다. `supabase_secret_key` 없으면 503 하드가드라 `supabase_url`/`supabase_secret_key` 필드 제거를 막고 있었다.
+- **결정 ① 회원탈퇴를 DB-only 로 전환.** GoTrue `deleteUser` 호출·503 가드 제거, `identity_provider.py` 삭제. 삭제는 `public.users` 행 삭제(감사 INSERT→DELETE 트랜잭션)만 수행.
+- **결정 ② `config.supabase_url`·`supabase_secret_key` 필드 제거, `be_jwks_uri` 를 `supabase_url` 파생 placeholder 에서 `be_oauth_redirect_base` 기준으로 재유도.** `supabase/` 디렉토리·CI SUPABASE env 도 정리.
+- **이유:** 인증이 BE 토큰-브로커 단일 경로가 됐고 신원은 앱 DB(`users`+`auth_identities`)가 소유한다. `users` 삭제가 `auth_identities`(0004)·`user_profiles`(0005)·`auth_refresh_tokens`(0006) 전부 **ON DELETE CASCADE**(실측 확인) → users 행 삭제가 곧 완전한 탈퇴이고, 매핑이 함께 지워지므로 삭제된 UUID 부활(재로그인 시 dead 매핑 재사용)도 불가능. **구 GoTrue 호출은 오히려 버그였다** — BE-native 신규가입자는 `user.id` 가 Supabase 에 없어 404→502, 네이티브 탈퇴가 사실상 깨져 있었다. DB-only 가 이를 바로잡는다.
+- **트레이드오프:** 마이그레이션 유저의 Supabase `auth.users` 행은 이제 앱 탈퇴로 지워지지 않고 잔존하지만, 인증(발급·검증) 어디도 그 행을 쓰지 않아 무해하고 비가역 클라우드 프로젝트 삭제(U4)로 일괄 소멸한다. `be_auth_enabled` 플래그는 vestigial 로 남김(FE app-config 게이트 동반 제거는 후속). 비가역 운영(Coolify SUPABASE env 제거·클라우드 프로젝트 삭제·PIPA 고지)은 별도. ⚠️ **배포 순서:** 구 코드가 `supabase_url` required 라 이 커밋 BE 배포·부팅확인 후에 Coolify env 제거. 참조: runbook `docs/auth-cutover-runbook.md`.
+
 ## 2026-06-30 | 분석 탭 집중도 한글화 — 로더 교체로 name_ko 운반(SQL 신규 작성 회피)
 
 - **맥락:** name_ko(2026-06-28) 트레이드오프 ⓑ "분석 탭 집중도는 `list_trades`(SELECT *) 경로라 `Position.name_ko` 항상 None → 같은 US 종목이 홈=한글/분석=영문" 의 후속. backlog 는 `list_trades` SQL 에 `LEFT JOIN stocks` 추가(SELECT t.*, s.name_ko)를 제안했었다.

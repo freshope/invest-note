@@ -150,7 +150,9 @@ force-update([project_force_update]) 양 스토어 승인 → Supabase default f
 | 2026-06-29 | **force-update bump** | Coolify `MIN_SUPPORTED_VERSION 0.0.0→1.3.0` 적용·재배포, `/app-config` 반영 확인. 1.2.x 구앱(모두 force-gate 보유)에 강제 업데이트 시작 |
 | 2026-06-29 (bump 직후) | 윈도우별 재측정 | legacy 비중 14d **26.2%(63명)** / 7d 2.1% / 4d 1.1% / 2d 0%. 활성 코어(2~4d)는 사실상 100% BE flow지만, 급감은 bump 효과가 아니라 **구앱 사용자가 최근 비활성**이기 때문(짧은 윈도우가 비활성 꼬리를 누락). 14d의 63명이 진짜 위험 모수(복귀 시 락아웃). bump 전파 더 필요 → **#1 배포 보류(사용자 판단), 코드만 완성** |
 | 2c 코드 작업 | feature `feature/auth-2c-remove-supabase` | #1 BE fallback 제거 / #2 FE supabase-js 제거·웹 폐기 진행 중(spec `docs/spec-current.md`). 코드·테스트·독립 커밋까지만, 배포는 별도 게이트 |
-| (대기) | 전파 재측정 후 배포 판단 | 며칠 후 7d/14d 재측정 → legacy 수렴 확인 시 #1 배포 **GO** 재판단 |
+| 2026-06-30 | #1 운영 배포 | release app-v1.3.4_31 / api-v1.3.10 → develop·main·태그 push → Coolify. BE fallback 제거 라이브(구앱 ~26% force-gate 뒤 401). 롤백=276825a revert |
+| 2026-07-01 | 게이트 재측정 | PostHog active users: 14d legacy **25.7%(69명)** flat / 7d 2.5% / 3d 0%. 활성 코어 100% BE flow, 14d 꼬리는 비활성 구앱(수렴 안 됨) |
+| 2026-07-01 | 최종 코드 teardown | feature `feature/auth-2c-teardown`: 회원탈퇴 DB-only(GoTrue deleteUser·identity_provider.py 제거) / config `supabase_url`·`supabase_secret_key` 필드 제거·be_jwks_uri→be_oauth_redirect_base 재유도 / supabase/ 디렉토리·CI env·compose 주석 정리. pytest 966 green. **런타임 Supabase 결합 0.** 비가역 클라우드 삭제는 사용자 GO 대기 |
 
 > ⚠️ #1(BE fallback 제거)의 **배포**만 legacy~0 게이트에 묶인다. #2(FE supabase-js 제거·웹 폐기)와 코드 작성 자체는 가역이라 게이트 전 진행 가능(배포만 보류).
 > ⚠️ **force-update는 BE 진입을 차단하지 못한다(확인 2026-06-29):** `ForceUpdateGate`는 children 비차단 오버레이(layout.tsx 형제) + fail-open(app-config 미수신 시 통과)이라, 오버레이 뒤/장애 시 구앱이 Supabase 토큰으로 BE 호출을 계속한다 → #1 배포를 force-update만 믿고 당기면 안 된다.
