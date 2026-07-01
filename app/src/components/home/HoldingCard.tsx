@@ -36,6 +36,7 @@ export const HoldingCard = memo(function HoldingCard({ position, meta, onPress }
     avgBuyPrice,
     avgBuyPriceNative,
     currentPrice,
+    changePct,
     evaluation,
     evaluationNative,
     unrealizedPnL,
@@ -119,6 +120,16 @@ export const HoldingCard = memo(function HoldingCard({ position, meta, onPress }
               {formatPnLCurrency(unrealizedPnL, "KRW")}
             </p>
           )}
+          {priceChangePct !== null && (
+            <p
+              className={cn(
+                "text-[11px] font-semibold tabular-nums",
+                signColor(priceChangePct, "muted"),
+              )}
+            >
+              {formatPctSigned(priceChangePct)}
+            </p>
+          )}
         </div>
       </div>
 
@@ -129,7 +140,7 @@ export const HoldingCard = memo(function HoldingCard({ position, meta, onPress }
           <p
             className={cn(
               "text-[13px] font-semibold tabular-nums text-foreground",
-              priceChangePct !== null && signColor(priceChangePct, "none"),
+              changePct != null && signColor(changePct, "none"),
             )}
           >
             {currentPrice !== null
@@ -138,14 +149,14 @@ export const HoldingCard = memo(function HoldingCard({ position, meta, onPress }
                 : fmt(currentPrice)
               : "-"}
           </p>
-          {priceChangePct !== null && (
+          {changePct != null && (
             <p
               className={cn(
                 "text-[11px] font-semibold tabular-nums",
-                signColor(priceChangePct, "muted"),
+                signColor(changePct, "muted"),
               )}
             >
-              {formatPctSigned(priceChangePct)}
+              {formatPctSigned(changePct)}
             </p>
           )}
         </div>

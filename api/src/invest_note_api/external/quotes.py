@@ -79,9 +79,41 @@ class QuoteResult(TypedDict):
     currency: str
     as_of: str
     traded_on: str | None  # 마지막 체결 KST 날짜(ISO). 휴장일 판정용 — 소스에 없으면 None.
+    change_pct: float | None  # 전일 종가 대비 오늘 등락율(%, native 통화, 부호 포함). 없으면 None.
 
 
-def _parse_realtime_price(data: dict) -> tuple[float, str | None]:
+def _pct_from_prev(price: float, prev: object) -> float | None:
+    """전일 종가(prev) 대비 오늘 등락율(%). prev 없거나 0이하면 None (sign-safe).
+
+    ratio 필드의 부호 함정(무부호+방향코드)을 피하려고 전일종가로 직접 계산한다.
+    """
+    try:
+        p = float(prev)
+    except (TypeError, ValueError):
+        return None
+    if p <= 0:
+        return None
+    return (price - p) / p * 100
+
+
+def _naver_change_pct(item: dict, price: float) -> float | None:
+    """Naver 응답 전일대비(compareToPreviousClosePriceRaw, 부호 포함)로 sign-safe 산출.
+
+    prev = 현재가 - 전일대비. fluctuationsRatio(무부호 가능)를 쓰지 않고 부호를 확정한다.
+    """
+    if price <= 0:
+        return None
+    change_raw = item.get("compareToPreviousClosePriceRaw")
+    if change_raw in (None, ""):
+        change_raw = strip_comma_number(item.get("compareToPreviousClosePrice"))
+    try:
+        change = float(change_raw)
+    except (TypeError, ValueError):
+        return None
+    return _pct_from_prev(price, price - change)
+
+
+def _parse_realtime_price(data: dict) -> tuple[float, str | None, float | None]:
     item = (data.get("datas") or [{}])[0] if data.get("datas") else data.get("data") or data
     raw = (
         item.get("closePriceRaw")
@@ -91,27 +123,34 @@ def _parse_realtime_price(data: dict) -> tuple[float, str | None]:
     # localTradedAt: "2026-06-05T15:30:00+09:00" — 앞 10자가 KST 날짜.
     traded_at = item.get("localTradedAt")
     traded_on = traded_at[:10] if isinstance(traded_at, str) and len(traded_at) >= 10 else None
-    return (float(raw) if raw else 0.0, traded_on)
+    price = float(raw) if raw else 0.0
+    return (price, traded_on, _naver_change_pct(item, price))
 
 
-def _parse_basic_price(data: dict) -> tuple[float, str | None]:
+def _parse_basic_price(data: dict) -> tuple[float, str | None, float | None]:
     raw = (
         data.get("closePriceRaw")
         or strip_comma_number(data.get("stockEndPrice"))
         or strip_comma_number(data.get("closePrice"))
     )
-    return (float(raw) if raw else 0.0, None)  # basic 응답엔 체결 일시 필드 없음.
+    price = float(raw) if raw else 0.0
+    # basic 응답엔 체결 일시 필드 없음. 전일대비 필드가 있으면 등락율 산출, 없으면 None.
+    return (price, None, _naver_change_pct(data, price))
 
 
-def _parse_yahoo_chart_price(data: dict, tz: ZoneInfo = KST) -> tuple[float, str | None]:
+def _parse_yahoo_chart_price(
+    data: dict, tz: ZoneInfo = KST
+) -> tuple[float, str | None, float | None]:
     """Yahoo chart v8: chart.result[0].meta.regularMarketPrice (+regularMarketTime epoch).
 
     tz: traded_on 산출 시간대. KR(기본 KST)은 그대로, US 는 ET(US_EASTERN)를 넘긴다 —
     KST 변환은 마감(16:00 ET) 체결을 익일로 밀어 휴장일 판정(market_open_today)이 어긋난다.
+
+    change_pct: previousClose(없으면 chartPreviousClose) 대비 등락율. 둘 다 없거나 0이하면 None.
     """
     result = (data.get("chart") or {}).get("result") or []
     if not result:
-        return (0.0, None)
+        return (0.0, None, None)
     meta = result[0].get("meta") or {}
     raw = meta.get("regularMarketPrice")
     ts = meta.get("regularMarketTime")
@@ -120,26 +159,32 @@ def _parse_yahoo_chart_price(data: dict, tz: ZoneInfo = KST) -> tuple[float, str
         if isinstance(ts, (int, float)) and ts > 0
         else None
     )
-    return (float(raw) if raw else 0.0, traded_on)
+    price = float(raw) if raw else 0.0
+    prev = meta.get("previousClose")
+    if prev is None:
+        prev = meta.get("chartPreviousClose")
+    change_pct = _pct_from_prev(price, prev) if price > 0 else None
+    return (price, traded_on, change_pct)
 
 
 async def _try_endpoint(
     client: httpx.AsyncClient,
     url: str,
-    parse_price: Callable[[dict], tuple[float, str | None]],
+    parse_price: Callable[[dict], tuple[float, str | None, float | None]],
     log_label: str,
     code: str,
 ) -> QuoteResult | None:
     try:
         res = await client.get(url, headers=_HEADERS, timeout=QUOTE_ATTEMPT_TIMEOUT)
         if res.status_code == 200:
-            price, traded_on = parse_price(res.json())
+            price, traded_on, change_pct = parse_price(res.json())
             if price > 0:
                 return {
                     "price": price,
                     "currency": CURRENCY_KRW,
                     "as_of": datetime.now(timezone.utc).isoformat(),
                     "traded_on": traded_on,
+                    "change_pct": change_pct,
                 }
     except Exception:
         logger.warning("%s 시세 실패 code=%s", log_label, code, exc_info=True)
@@ -212,7 +257,7 @@ async def _fetch_yahoo_us(client: httpx.AsyncClient, code: str) -> QuoteResult |
     if not result:
         return None
     meta = result[0].get("meta") or {}
-    price, traded_on = _parse_yahoo_chart_price(data, US_EASTERN)
+    price, traded_on, change_pct = _parse_yahoo_chart_price(data, US_EASTERN)
     if price <= 0:
         return None
     # 다운스트림(merge_quotes/to_krw)은 quote 통화가 아니라 position 통화(country=US→USD)로
@@ -227,6 +272,7 @@ async def _fetch_yahoo_us(client: httpx.AsyncClient, code: str) -> QuoteResult |
         "currency": q_currency or CURRENCY_USD,
         "as_of": datetime.now(timezone.utc).isoformat(),
         "traded_on": traded_on,
+        "change_pct": change_pct,
     }
 
 
@@ -240,7 +286,8 @@ async def _fetch_kis(client: httpx.AsyncClient, code: str) -> QuoteResult | None
 
     자격증명 미설정·토큰 발급 실패·오류 응답·레이트리밋 슬롯 부족은 kis_get 이
     None 으로 수렴시켜 다음 공급자로 fallback 한다. 응답에 체결 일시 필드가 없어
-    traded_on 은 None.
+    traded_on 은 None. change_pct 도 None — 실응답(prdy_ctrt) 부호 컨벤션 미확보라
+    degrade(planner "확신 못 하면 None"). KIS 는 KR fallback 공급자라 영향 경미.
     """
     body = await kis_get(
         client,
@@ -264,6 +311,7 @@ async def _fetch_kis(client: httpx.AsyncClient, code: str) -> QuoteResult | None
         "currency": CURRENCY_KRW,
         "as_of": datetime.now(timezone.utc).isoformat(),
         "traded_on": None,
+        "change_pct": None,
     }
 
 
