@@ -147,6 +147,42 @@ class TestImportPreview:
         assert len(staged["rows"]) == 1
         assert staged["rows"][0]["ticker_symbol"] == "005930"
 
+    def test_parser_raises_broker_mismatch_400(self, client, monkeypatch):
+        """선택 증권사 파서가 다른 형식 파일에 raise(예: xlsx 파서 ← PDF) → 500 아닌 400 안내."""
+
+        class RaisingParser:
+            display_name = "삼성증권"
+
+            def parse(self, file_bytes, filename):
+                raise ValueError("File is not a zip file")
+
+        monkeypatch.setitem(trades_module.PARSERS, "fake_broker", RaisingParser())
+        resp = client.post(
+            "/v1/trades/import/preview",
+            files={"file": ("wrong.pdf", b"%PDF-1.4", "application/pdf")},
+            params={"broker_key": "fake_broker"},
+        )
+        assert resp.status_code == 400, resp.text
+        assert "삼성증권" in resp.json()["error"]
+
+    def test_empty_parse_broker_mismatch_400(self, client, monkeypatch):
+        """거래·계좌번호·에러 모두 없는 빈 결과(다른 증권사 PDF) → 조용한 0건 대신 400 안내."""
+
+        class EmptyParser:
+            display_name = "토스증권"
+
+            def parse(self, file_bytes, filename):
+                return ParseResult()
+
+        monkeypatch.setitem(trades_module.PARSERS, "fake_broker", EmptyParser())
+        resp = client.post(
+            "/v1/trades/import/preview",
+            files={"file": ("other.pdf", b"%PDF-1.4", "application/pdf")},
+            params={"broker_key": "fake_broker"},
+        )
+        assert resp.status_code == 400, resp.text
+        assert "토스증권" in resp.json()["error"]
+
 
 class TestImportCommit:
     def test_expired_staging_400(self, client, staging_store, monkeypatch):

@@ -671,7 +671,25 @@ async def import_preview(
 
     parser = PARSERS[broker_key]
     # 동기 pdfplumber/openpyxl 파싱은 threadpool 로 — async 이벤트 루프 비차단
-    parse_result = await run_in_threadpool(parser.parse, file_bytes, filename)
+    try:
+        parse_result = await run_in_threadpool(parser.parse, file_bytes, filename)
+    except Exception:
+        # 선택 증권사와 파일 형식이 다르면 파서가 raise 한다(xlsx 파서 ← PDF = BadZipFile 등).
+        # 500 대신 원인을 짚어주는 400 으로 안내한다.
+        raise APIError(
+            f"이 파일은 {parser.display_name} 거래내역서 형식이 아닌 것 같아요. "
+            "선택한 증권사가 맞는지 확인해주세요.",
+            400,
+        )
+
+    # 거래·계좌번호·에러가 모두 비어 있으면 증권사 미스매치로 간주한다(같은 PDF 라도 다른
+    # 증권사 파일이면 파서가 조용히 0건을 반환 — 정상 증권사 내역서는 최소 계좌번호 헤더가 잡힌다).
+    if not parse_result.trades and not parse_result.account_hint and not parse_result.errors:
+        raise APIError(
+            f"이 파일에서 {parser.display_name} 거래내역을 찾지 못했어요. "
+            "선택한 증권사가 맞는지 확인해주세요.",
+            400,
+        )
 
     now_utc = datetime.now(timezone.utc)
 
