@@ -7,6 +7,7 @@ from ..utils.numbers import strip_comma_number
 _MAX_CASH = Decimal("9999999999999999.99")
 _MAX_NAME = 50
 _MAX_BROKER = 50
+_MAX_ACCOUNT_NUMBER = 64
 
 
 def _parse_cash(value: object) -> Decimal:
@@ -48,10 +49,25 @@ def _parse_broker(v: object) -> str | None:
     return v
 
 
+def _parse_account_number(v: object) -> str | None:
+    # 저장은 raw(파싱 원문) — 숫자만 강제하지 않는다. 정규화/동일성 비교는 FE 매칭 시점.
+    if v is None:
+        return None
+    if not isinstance(v, str):
+        raise ValueError("계좌번호가 올바르지 않습니다.")
+    v = v.strip()
+    if not v:
+        return None
+    if len(v) > _MAX_ACCOUNT_NUMBER:
+        raise ValueError(f"계좌번호는 {_MAX_ACCOUNT_NUMBER}자 이내여야 합니다.")
+    return v
+
+
 class AccountCreate(BaseModel):
     name: str
     broker: str | None = None
     cash_balance: Decimal = Decimal(0)
+    account_number: str | None = None
 
     @field_validator("name", mode="before")
     @classmethod
@@ -68,11 +84,17 @@ class AccountCreate(BaseModel):
     def _clean_cash(cls, v: object) -> Decimal:
         return _parse_cash(v)
 
+    @field_validator("account_number", mode="before")
+    @classmethod
+    def _clean_account_number(cls, v: object) -> str | None:
+        return _parse_account_number(v)
+
 
 class AccountUpdate(BaseModel):
     name: str | None = None
     broker: str | None = None
     cash_balance: Decimal | None = None
+    account_number: str | None = None
 
     @field_validator("name", mode="before")
     @classmethod
@@ -88,3 +110,8 @@ class AccountUpdate(BaseModel):
     @classmethod
     def _clean_cash(cls, v: object) -> Decimal | None:
         return None if v is None else _parse_cash(v)
+
+    @field_validator("account_number", mode="before")
+    @classmethod
+    def _clean_account_number(cls, v: object) -> str | None:
+        return _parse_account_number(v)

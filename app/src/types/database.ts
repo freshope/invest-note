@@ -18,6 +18,8 @@ export interface Account {
   user_id: string;
   name: string;
   broker: string | null;
+  // 계좌번호(내역서→계좌 매칭용). 저장은 raw 원문, 정규화/동일성 비교는 FE-side.
+  account_number: string | null;
   cash_balance: number;
   created_at: string;
   updated_at: string;

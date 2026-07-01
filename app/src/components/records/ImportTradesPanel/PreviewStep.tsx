@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ChevronDownIcon, ChevronUpIcon, AlertCircleIcon, InfoIcon } from "lucide-react";
 import { Button } from "@/components/base/Button";
-import { BrokerLogo } from "@/components/base/BrokerLogo";
+import { AccountChip } from "@/components/shared/AccountChip";
 import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
 import type { ImportPreviewResponse } from "@/lib/api-client";
 import type { Account } from "@/types/database";
@@ -14,7 +14,14 @@ const OVERSEAS_SUPPORTED_BROKERS = new Set(["toss_pdf"]);
 
 interface Props {
   preview: ImportPreviewResponse;
-  account: Account;
+  /** 계좌 선택 스텝에서 확정한 기존 등록 대상 계좌. 신규 등록이면 null 이고 newAccountName 을 쓴다. */
+  resolvedAccount: Account | null;
+  /** 신규 계좌로 등록 시 표시할 계좌명(commit 시 자동 생성). 기존 계좌면 null. */
+  newAccountName?: string | null;
+  /** 선택 계좌가 파일 계좌번호와 어긋남 — mis-route 경고용(주로 단일계좌 스킵 경로 잔여). */
+  hintMismatch: boolean;
+  /** 계좌 선택 스텝으로 돌아가 계좌를 바꾼다. */
+  onChangeAccount: () => void;
   onCommit: () => void;
   onBack?: () => void;
   /** 해외 거래내역서 제보 진입. */
@@ -51,18 +58,25 @@ function CountCard({ label, value, variant = "default" }: {
   );
 }
 
-export function PreviewStep({ preview, account, onCommit, onBack, onReportOverseas, isLoading }: Props) {
+export function PreviewStep({
+  preview,
+  resolvedAccount,
+  newAccountName,
+  hintMismatch,
+  onChangeAccount,
+  onCommit,
+  onBack,
+  onReportOverseas,
+  isLoading,
+}: Props) {
   const [showErrors, setShowErrors] = useState(false);
   const hasErrors = preview.errors.length > 0;
-  const hint = preview.account_hint;
-  const hintMismatch = !!hint && !account.name?.includes(hint);
   const validationErrors = preview.validation_errors ?? [];
   const hasValidationError = validationErrors.length > 0;
   const excludedCount = preview.excluded_count ?? 0;
   const foreignCount = preview.foreign_count ?? 0;
   const overseasUnsupported = !OVERSEAS_SUPPORTED_BROKERS.has(preview.broker_key);
   // 제외 예정 그룹은 보통 신규 등록으로 분류돼 있으므로 차감해서 실제 등록 예정 수를 표시한다.
-  // dup_count 까지 차감하지 않는 이유: 제외 그룹의 row 가 dup 으로 분류된 경우는 드물고, BE 가 row 합계만 알려주기 때문.
   const effectiveNewCount = Math.max(0, preview.new_count - excludedCount);
   const totalExcluded = preview.error_count + excludedCount;
 
@@ -150,25 +164,53 @@ export function PreviewStep({ preview, account, onCommit, onBack, onReportOverse
           </div>
         )}
 
+        {/* 등록 대상 계좌 — 계좌 선택 스텝에서 확정, 여기서는 읽기전용 표시 + 변경 링크 */}
         <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium">등록 대상 계좌</p>
-          <div className="flex items-center gap-3 rounded-2xl bg-muted/60 p-4">
-            <BrokerLogo broker={account.broker} size={32} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{account.name}</p>
-              {account.broker && (
-                <p className="truncate text-xs text-muted-foreground">{account.broker}</p>
-              )}
-            </div>
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">등록 대상 계좌</p>
+            <button
+              type="button"
+              onClick={onChangeAccount}
+              disabled={isLoading}
+              className="text-[13px] font-medium text-primary disabled:opacity-50"
+            >
+              계좌 변경
+            </button>
           </div>
+
           {hintMismatch && (
             <div className="flex items-start gap-2 rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
               <AlertCircleIcon className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>
-                파일의 계좌번호({hint})와 선택한 계좌가 다를 수 있습니다. 그대로 등록하려면 계속 진행하세요.
-              </span>
+              <span>선택한 계좌의 계좌번호가 파일과 달라요. 다른 계좌의 거래가 섞일 수 있으니 계좌를 확인하세요.</span>
             </div>
           )}
+
+          <div className="flex items-center gap-3 rounded-2xl border bg-card p-4">
+            {resolvedAccount ? (
+              <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                <AccountChip account={resolvedAccount} size="md" className="overflow-hidden" />
+                {resolvedAccount.account_number && (
+                  <span className="shrink-0 truncate text-xs tabular-nums text-muted-foreground">
+                    {resolvedAccount.account_number}
+                  </span>
+                )}
+              </div>
+            ) : newAccountName ? (
+              // 신규 계좌 — 등록 시(commit) 자동 생성. 별도 계좌 등록 페이지 없이 여기서 확인만.
+              <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                <span className="min-w-0 truncate text-sm font-medium">
+                  <span className="text-primary">새 계좌</span> {newAccountName}
+                </span>
+                {preview.account_hint && (
+                  <span className="shrink-0 truncate text-xs tabular-nums text-muted-foreground">
+                    {preview.account_hint}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">계좌를 선택하세요</p>
+            )}
+          </div>
         </div>
 
         {hasErrors && (
@@ -213,11 +255,14 @@ export function PreviewStep({ preview, account, onCommit, onBack, onReportOverse
             className="flex-1"
             onClick={onCommit}
             disabled={
-              (effectiveNewCount === 0 && preview.duplicate_count === 0)
+              (!resolvedAccount && !newAccountName)
+              || (effectiveNewCount === 0 && preview.duplicate_count === 0)
               || isLoading
             }
           >
-            {isLoading ? "등록 중..." : buildCommitLabel(effectiveNewCount, preview.duplicate_count, excludedCount)}
+            {isLoading
+              ? "등록 중..."
+              : buildCommitLabel(effectiveNewCount, preview.duplicate_count, excludedCount)}
           </Button>
         </div>
       </FullScreenPanelFooter>

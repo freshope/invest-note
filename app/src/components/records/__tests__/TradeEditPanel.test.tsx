@@ -26,6 +26,7 @@ const accounts: Account[] = [
     user_id: "user-1",
     name: "테스트 계좌",
     broker: null,
+    account_number: null,
     cash_balance: 0,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",

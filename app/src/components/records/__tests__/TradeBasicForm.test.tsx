@@ -75,6 +75,7 @@ const accounts: Account[] = [
     user_id: "user-1",
     name: "테스트 계좌",
     broker: null,
+    account_number: null,
     cash_balance: 0,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
@@ -112,6 +113,28 @@ describe("TradeBasicForm", () => {
 
     expect(screen.queryByText("005930")).toBeNull();
     expect(screen.getByText("종목 선택 시 자동 입력")).toBeDefined();
+  });
+
+  it("종목을 선택(칩/자동완성)하면 이전에 입력한 가격·수량·수수료를 초기화한다", () => {
+    renderForm();
+
+    const priceInput = screen.getByLabelText(/가격/) as HTMLInputElement;
+    const quantityInput = screen.getByLabelText(/수량/) as HTMLInputElement;
+    const commissionInput = screen.getByLabelText(/수수료/) as HTMLInputElement;
+
+    // 값 입력 (수수료 자동계산 포함) → 비어있지 않음.
+    fireEvent.change(priceInput, { target: { value: "1000" } });
+    fireEvent.change(quantityInput, { target: { value: "10" } });
+    expect(priceInput.value).not.toBe("");
+    expect(quantityInput.value).not.toBe("");
+    expect(commissionInput.value).not.toBe("");
+
+    // 종목 선택(onSelect → handleStockSelect) → 다른 종목이므로 금액 입력값 리셋.
+    fireEvent.click(screen.getByRole("button", { name: "select-buy-stock" }));
+
+    expect(priceInput.value).toBe("");
+    expect(quantityInput.value).toBe("");
+    expect(commissionInput.value).toBe("");
   });
 
   it("localStorage에 유효한 LAST_ACCOUNT_ID가 있으면 마운트 시 해당 계좌가 미리 선택된다", () => {

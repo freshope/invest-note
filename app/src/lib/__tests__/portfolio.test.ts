@@ -47,6 +47,7 @@ function makeAccount(id: string, cash: number): Account {
     user_id: "u1",
     name: `계좌 ${id}`,
     broker: null,
+    account_number: null,
     cash_balance: cash,
     created_at: "2024-01-01T00:00:00Z",
     updated_at: "2024-01-01T00:00:00Z",
