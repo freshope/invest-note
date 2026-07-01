@@ -4,7 +4,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TradeEditPanel } from "../TradeEditPanel";
 import { tradesApi } from "@/lib/api-client";
+import { toast } from "sonner";
 import type { Account, Trade } from "@/types/database";
+
+vi.mock("sonner", () => ({
+  toast: { error: vi.fn(), success: vi.fn() },
+}));
 
 vi.mock("@/lib/api-client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api-client")>();
@@ -81,6 +86,7 @@ function renderPanel(trade: Trade) {
 describe("TradeEditPanel — 해외(US) 환율 인지", () => {
   beforeEach(() => {
     (tradesApi.update as ReturnType<typeof vi.fn>).mockClear();
+    (toast.error as ReturnType<typeof vi.fn>).mockClear();
   });
   afterEach(() => cleanup());
 
@@ -114,7 +120,10 @@ describe("TradeEditPanel — 해외(US) 환율 인지", () => {
     fireEvent.change(amountInput, { target: { value: "1000" } });
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
-    await waitFor(() => expect(screen.getByText(/환율이 1이 되어/)).toBeDefined());
+    // 검증 에러는 인라인이 아니라 toast 로 노출된다(긴 폼 모바일 가시성).
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/환율이 1이 되어/)),
+    );
     expect(tradesApi.update).not.toHaveBeenCalled();
   });
 
@@ -195,6 +204,7 @@ describe("TradeEditPanel — 해외(US) 환율 인지", () => {
 describe("TradeEditPanel — 거래내역서(IMPORT) 금액 잠금", () => {
   beforeEach(() => {
     (tradesApi.update as ReturnType<typeof vi.fn>).mockClear();
+    (toast.error as ReturnType<typeof vi.fn>).mockClear();
   });
   afterEach(() => cleanup());
 

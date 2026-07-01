@@ -20,7 +20,7 @@ import {
 import { ToggleChipGrid } from "@/components/shared/ToggleChipGrid";
 import { AnalysisTagsField } from "./AnalysisTagsField";
 import { TradeFreeTextField } from "./TradeFreeTextField";
-import { getFirstFormError } from "@/lib/utils";
+import { toastFirstFormError, toastSubmitError } from "@/lib/form-errors";
 import type { StrategyType, EmotionType } from "@/types/database";
 
 const schema = z.object({
@@ -45,8 +45,7 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
     register,
     handleSubmit,
     setValue,
-    setError,
-    formState: { isSubmitting, errors },
+    formState: { isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -79,14 +78,12 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
       ]);
       onDone();
     } catch (err) {
-      setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
+      toastSubmitError(err);
     }
   }
 
-  const errorMessage = getFirstFormError(errors);
-
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">
+    <form onSubmit={handleSubmit(onSubmit, toastFirstFormError)} className="flex flex-col min-h-full">
       <div className="flex-1 px-5 pt-2 pb-4 space-y-6">
         <div className="space-y-6">
           <div className="space-y-2">
@@ -145,8 +142,6 @@ export function TradeMetaBuyForm({ tradeId, onDone }: TradeMetaBuyFormProps) {
           placeholder="매수 메모를 간단히 적어주세요"
           rows={3}
         />
-
-        {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
       </div>
 
       <FullScreenPanelFooter className="flex gap-3">

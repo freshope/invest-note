@@ -11,7 +11,7 @@ import { VALIDATION_LIMITS, TRADE_FREE_TEXT_ERROR } from "@/lib/constants/valida
 import { queryKeys } from "@/lib/query-keys";
 import { TradeFreeTextField } from "./TradeFreeTextField";
 import { AutoBuyReasonField, AutoEmotionField, AutoReasoningTagsField } from "./AutoMetaField";
-import { getFirstFormError } from "@/lib/utils";
+import { toastFirstFormError, toastSubmitError } from "@/lib/form-errors";
 
 const schema = z.object({
   sell_reason: z.string().max(VALIDATION_LIMITS.TRADE_FREE_TEXT_MAX, TRADE_FREE_TEXT_ERROR),
@@ -42,8 +42,7 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
     control,
     handleSubmit,
     register,
-    setError,
-    formState: { isSubmitting, errors },
+    formState: { isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { sell_reason: "" },
@@ -64,14 +63,12 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
       ]);
       onDone();
     } catch (err) {
-      setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
+      toastSubmitError(err);
     }
   }
 
-  const errorMessage = getFirstFormError(errors);
-
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">
+    <form onSubmit={handleSubmit(onSubmit, toastFirstFormError)} className="flex flex-col min-h-full">
       <div className="flex-1 px-5 pt-2 pb-4 space-y-6">
 
         <TradeFreeTextField
@@ -88,8 +85,6 @@ export function TradeMetaSellForm({ tradeId, onDone }: TradeMetaSellFormProps) {
         <AutoReasoningTagsField tags={trade?.reasoning_tags ?? null} />
 
         <AutoBuyReasonField reason={summary?.buyReason ?? null} />
-
-        {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
       </div>
 
       <FullScreenPanelFooter className="flex gap-3">

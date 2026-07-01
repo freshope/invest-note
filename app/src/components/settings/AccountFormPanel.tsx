@@ -22,6 +22,7 @@ import { BROKERS } from "@/lib/brokers";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { VALIDATION_LIMITS } from "@/lib/constants/validation";
 import { fmtNumberInput, formatNumberInput, parseNumberInput } from "@/lib/format";
+import { toastFirstFormError, toastSubmitError } from "@/lib/form-errors";
 import { capture } from "@/lib/analytics";
 import type { Account } from "@/types/database";
 
@@ -75,7 +76,6 @@ export function AccountFormPanel({
     watch,
     reset,
     setValue,
-    setError,
     formState: { isSubmitting, errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -127,7 +127,7 @@ export function AccountFormPanel({
       onOpenChange(false);
     } catch (err) {
       if (!isEdit) capture("account_add_failed"); // 활성화 퍼널: 제출 실패 누수 (메시지 미포함)
-      setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
+      toastSubmitError(err);
     }
   }
 
@@ -136,7 +136,7 @@ export function AccountFormPanel({
       <FullScreenPanelContent>
         <FullScreenPanelHeader title={isEdit ? "계좌 수정" : "계좌 추가"} />
         <FullScreenPanelBody>
-          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">
+          <form onSubmit={handleSubmit(onSubmit, toastFirstFormError)} className="flex flex-col min-h-full">
             <div className="flex-1 px-5 pt-2 pb-4 space-y-5">
               <div className="space-y-1.5">
                 <Label htmlFor="name">
@@ -215,9 +215,6 @@ export function AccountFormPanel({
             </div>
 
             <FullScreenPanelFooter>
-              {errors.root && (
-                <p className="mb-2 text-sm text-destructive">{errors.root.message}</p>
-              )}
               <Button type="submit" size="xl" disabled={isSubmitting} className="w-full">
                 {isSubmitting ? "저장 중..." : isEdit ? "수정하기" : "추가하기"}
               </Button>

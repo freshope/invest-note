@@ -36,7 +36,9 @@ import { CountryBadge } from "./trade-display";
 import { currencyForCountry, fmt, formatMoney } from "@/lib/format";
 import { impliedExchangeRate, fxHintText } from "./fx-input";
 import { useFxRate } from "@/hooks/useFxRate";
-import { cn, getFirstFormError } from "@/lib/utils";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { toastFirstFormError, toastSubmitError } from "@/lib/form-errors";
 import type { Account, TradeType } from "@/types/database";
 import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
@@ -141,10 +143,9 @@ export function TradeBasicForm({
     handleSubmit,
     setValue,
     resetField,
-    setError,
     getValues,
     getFieldState,
-    formState: { isSubmitting, errors },
+    formState: { isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -280,15 +281,13 @@ export function TradeBasicForm({
   const total = (price || 0) * (quantity || 0);
   const totalDisplay = total > 0 ? formatMoney(total, isForeign ? "USD" : "KRW") : "-";
 
-  const firstError = getFirstFormError(errors);
-
   async function onSubmit(values: FormValues) {
     try {
       // 클라 사전 검증 — 로딩 중이거나 보유 없으면 차단 (정확한 계좌별 검증은 서버에서 담당)
       if (values.trade_type === TRADE_TYPE.SELL && values.asset_name) {
         if (holdingLoading) return; // 아직 데이터 미도착 — 버튼이 disabled이므로 여기 도달하지 않음
         if (holdingQty === 0) {
-          setError("root", { message: "보유하지 않은 종목입니다." });
+          toast.error("보유하지 않은 종목입니다."); // 수량 옆 인라인 안내와 중복이나 제출 경로 방어 유지
           return;
         }
       }
@@ -328,16 +327,14 @@ export function TradeBasicForm({
       });
       onTradeCreated(result.id, result.trade_type);
     } catch (err) {
-      setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
+      toastSubmitError(err);
     }
   }
 
   return (
     <>
-    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">
+    <form onSubmit={handleSubmit(onSubmit, toastFirstFormError)} className="flex flex-col min-h-full">
       <div className="flex-1 px-5 pt-2 pb-4 space-y-5">
-        {firstError && <p className="text-sm text-destructive">{firstError}</p>}
-
         <Controller
           control={control}
           name="trade_type"
