@@ -62,7 +62,7 @@ export function AccountSelectStep({
     <div className="flex flex-col min-h-full">
       <div className="flex-1 px-5 pt-2 pb-4 space-y-4">
         <p className="text-sm text-muted-foreground">
-          이 거래내역서를 등록할 계좌를 선택하세요.
+          이 거래내역서를 등록할 계좌를 선택하세요.<br />
           {normalizedHint && (
             <>
               {" "}

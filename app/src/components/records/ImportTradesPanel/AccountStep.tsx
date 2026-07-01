@@ -22,7 +22,8 @@ export function AccountStep({ brokerKey, onSelectBroker, onNext, onReportUnsuppo
     <div className="flex flex-col min-h-full">
       <div className="flex-1 px-5 pt-2 pb-4 space-y-5">
         <p className="text-sm text-muted-foreground">
-          거래내역서를 발급한 증권사를 선택하세요. 선택한 증권사 형식으로 파일을 분석합니다.
+          거래내역서를 발급한 증권사를 선택하세요.<br />
+          선택한 증권사 형식으로 파일을 분석합니다.
         </p>
 
         <div className="flex flex-col gap-2">

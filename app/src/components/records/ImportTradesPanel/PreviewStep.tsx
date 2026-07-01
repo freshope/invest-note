@@ -53,7 +53,7 @@ function CountCard({ label, value, variant = "default" }: {
   return (
     <div className="flex flex-col items-center rounded-lg border bg-card p-4">
       <span className={`text-2xl font-bold ${color}`}>{value}</span>
-      <span className="mt-1 text-xs text-muted-foreground">{label}</span>
+      <span className="mt-1 text-center text-xs text-muted-foreground">{label}</span>
     </div>
   );
 }
