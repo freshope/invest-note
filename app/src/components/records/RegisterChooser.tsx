@@ -20,7 +20,8 @@ interface Props {
 
 /**
  * 등록 진입점 통합 chooser. FAB(+) 를 눌렀을 때 [매수 / 매도 / 거래내역서 업로드] 중
- * 하나를 고르게 하는 바텀시트. 매수를 hero(강조)로 두어 첫 거래 기록을 유도한다.
+ * 하나를 고르게 하는 바텀시트. 매수·매도를 동등 primary(둘 다 solid 채움)로 제시해
+ * 첫 활성화 동선을 대칭으로 유도하고, 거래내역서 업로드는 중립 카드로 둔다.
  * 색상 규칙: 매수=rise(빨강) / 매도=fall(파랑).
  */
 export function RegisterChooser({
@@ -42,7 +43,7 @@ export function RegisterChooser({
           <DrawerTitle>어떤 거래를 기록할까요?</DrawerTitle>
         </DrawerHeader>
         <div className="space-y-2.5 px-5 pb-8">
-          {/* 매수 — hero */}
+          {/* 매수 — solid 채움(rise) */}
           <button
             type="button"
             onClick={() => choose(onSelectBuy)}
@@ -60,25 +61,21 @@ export function RegisterChooser({
             </span>
           </button>
 
-          {/* 매도 */}
+          {/* 매도 — solid 채움(fall), 매수와 대칭 */}
           <button
             type="button"
             onClick={() => choose(onSelectSell)}
             className={cn(
-              "flex w-full items-center gap-3 rounded-2xl border bg-card px-4 py-4 text-left active:scale-[0.99] transition-transform",
-              PNL_COLORS.fall.borderSoft,
+              "flex w-full items-center gap-3 rounded-2xl px-4 py-4 text-left text-white active:scale-[0.99] transition-transform",
+              PNL_COLORS.fall.bg,
             )}
           >
-            <span className={cn(
-              "flex h-11 w-11 shrink-0 items-center justify-center rounded-full",
-              PNL_COLORS.fall.bgSoft,
-              PNL_COLORS.fall.text,
-            )}>
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/20">
               <ArrowDownIcon className="h-6 w-6" strokeWidth={2.5} />
             </span>
             <span className="min-w-0 flex-1">
-              <span className={cn("block text-[16px] font-bold", PNL_COLORS.fall.text)}>매도 기록</span>
-              <span className="block text-[13px] text-muted-foreground">보유 종목을 팔았어요</span>
+              <span className="block text-[16px] font-bold">매도 기록</span>
+              <span className="block text-[13px] text-white/80">보유 종목을 팔았어요</span>
             </span>
           </button>
 

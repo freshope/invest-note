@@ -37,17 +37,14 @@ function makePreview(overrides: Partial<ImportPreviewResponse> = {}): ImportPrev
   };
 }
 
-// 매칭된 계좌가 선택된 기본 상태로 렌더 (등록 버튼 라벨/활성 검증용).
+// 계좌가 확정된 기본 상태로 렌더 (등록 버튼 라벨/활성 검증용).
 function renderStep(preview: ImportPreviewResponse) {
   return render(
     <PreviewStep
       preview={preview}
-      accounts={[makeAccount()]}
-      matchState="matched"
-      resolvedAccountId="acc-1"
-      computedAccountName="삼성증권 0000"
-      onSelectAccount={vi.fn()}
-      onAddNewAccount={vi.fn()}
+      resolvedAccount={makeAccount()}
+      hintMismatch={false}
+      onChangeAccount={vi.fn()}
       onCommit={vi.fn()}
       onReportOverseas={vi.fn()}
       isLoading={false}
@@ -141,28 +138,24 @@ describe("PreviewStep", () => {
     expect(screen.getByRole("button", { name: "해외 거래내역서 제보" })).not.toBeNull();
   });
 
-  it("matched 상태면 자동 매칭 안내 노출", () => {
-    renderStep(makePreview({ account_hint: "101-01-024891" }));
-    expect(screen.getByText(/일치하는 계좌를 자동으로 찾았어요/)).not.toBeNull();
+  it("확정 계좌를 읽기전용으로 표시하고 '계좌 변경' 링크를 노출한다", () => {
+    renderStep(makePreview());
+    expect(screen.getByText("주식계좌")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "계좌 변경" })).not.toBeNull();
   });
 
-  it("resolvedAccountId 없으면 '새 계좌 만들고 등록' 라벨", () => {
+  it("hintMismatch 면 계좌번호 불일치 경고 배너 노출", () => {
     render(
       <PreviewStep
         preview={makePreview({ account_hint: "999-99-999999" })}
-        accounts={[makeAccount()]}
-        matchState="unmatched"
-        resolvedAccountId=""
-        computedAccountName="삼성증권 9999"
-        onSelectAccount={vi.fn()}
-        onAddNewAccount={vi.fn()}
+        resolvedAccount={makeAccount()}
+        hintMismatch
+        onChangeAccount={vi.fn()}
         onCommit={vi.fn()}
         onReportOverseas={vi.fn()}
         isLoading={false}
       />,
     );
-    expect(screen.getByText(/일치하는 계좌가 없어요/)).not.toBeNull();
-    const button = screen.getByRole("button", { name: /새 계좌 만들고 등록/ }) as HTMLButtonElement;
-    expect(button.disabled).toBe(false);
+    expect(screen.getByText(/선택한 계좌의 계좌번호가 파일과 달라요/)).not.toBeNull();
   });
 });

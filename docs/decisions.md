@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-07-01 | 내역서 계좌번호 → account_number 자동기입 (미매칭 기존계좌 선택 시)
+
+- **맥락:** 활성화 feature 개발 검수(C5). import 흐름을 `broker→file→account(카드)→preview→commit` 5스텝으로 재설계하면서, 계좌 선택 스텝에서 사용자가 **파일 계좌번호(`account_hint`)와 미매칭인 기존 계좌**를 고른 경우, 그 계좌에 번호를 채워 넣어 **다음 업로드부터 자동매칭**되게 한다(기존 계좌 대부분 `account_number=null` 이라 매칭이 실효 없는 문제 해소 — C3 계좌번호 표시와 상호 보완).
+- **결정: commit 확정 직전에 `accountsApi.update(id, { name, account_number: hint })` 로 자동기입** — UI 는 조용히 바꾸지 않고 toast 로 고지.
+- **오염 방지 게이트(최우선 불변식):**
+  1. **null-only write** — picked 기존 계좌의 `account_number` 가 null/빈 값일 때만 write. **이미 다른 번호가 있으면 write 금지**(정확한 번호를 hint 로 덮어쓰지 않음), 경고 배너만(account 스텝의 hintMismatch).
+  2. **commit 시점** — tentative 선택이 아니라 등록 확정 직전에만. back-nav 로 계좌를 바꾸면 엉뚱한 계좌에 쓰는 잔재 방지.
+  3. **write 후 accounts 소스 invalidate**(`queryKeys.accounts`) — stale 방지.
+  4. **`AccountInput.name` 필수 → `acc.name` 동봉** — 부분 PATCH 로 name 유실 방지.
+  5. 신규 생성 계좌는 이미 `account_number=hint` 로 만들어져(번호 존재) 게이트를 통과하지 않음 → 이중 write 없음.
+- **계좌 표시명 결정:** 파서/preview 는 계좌번호(`account_hint`)만 주고 **계좌 표시명(계좌명/상품명)은 미제공**(4파서 정규식·`ParseResult`/`ImportPreviewResponse` 모두 번호만). → 신규 계좌명은 **FE fallback 포맷** `"{증권사명} {정규화 뒤4자리}"`(힌트 없으면 증권사명)만 사용. BE 파서 계좌명 추출은 broker별 상이·복잡도 커서 스코프 밖(요구 대비 과투자).
+- **트레이드오프:** 자동기입 실패(update 에러)는 등록 자체를 막지 않음(부가 편의). 자동매칭 시 계좌 확정 재-preview 로 BE 파싱 2회(해외 OpenFIGI 재실행 포함) — `re-validate(staging_id, account_id)` 엔드포인트 부재로 불가피. 참조: [[project_broker_import_parsers]], [[project_be_buy_meta_cascades_to_sell]].
+
+---
+
 ## 2026-07-01 | accounts.account_number 추가 — 내역서→계좌 번호 매칭 (초안 defer 뒤집음)
 
 - **맥락:** 신규 가입자 활성화 개선(내역서 업로드 흐름). 초안은 "활성화 타깃=0계좌 신규 사용자엔 매칭 문제 없음"을 근거로 `account_number` 컬럼 추가를 **defer** 하고 0계좌 auto-create 로 처리하려 했다. 사용자 결정으로 이를 뒤집어 **컬럼을 추가하고 내역서 계좌번호로 사용자 계좌를 매칭**한다.

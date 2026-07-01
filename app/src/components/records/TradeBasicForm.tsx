@@ -93,6 +93,20 @@ function resolveAccountId(accounts: Account[], prefillAccountId?: string | null)
   return getInitialAccountId(accounts);
 }
 
+// 계좌 Select 행 — 좌측 AccountChip, 우측 account_number(있을 때만). 공유 AccountChip 은 미변경(blast radius 최소).
+function AccountSelectRow({ account, flex }: { account: Account; flex?: boolean }) {
+  return (
+    <span className={cn("flex items-center justify-between gap-2 overflow-hidden", flex && "flex-1")}>
+      <AccountChip account={account} size="md" className="overflow-hidden" />
+      {account.account_number && (
+        <span className="shrink-0 truncate text-xs tabular-nums text-muted-foreground">
+          {account.account_number}
+        </span>
+      )}
+    </span>
+  );
+}
+
 interface TradeBasicFormProps {
   accounts: Account[];
   onTradeCreated: (tradeId: string, tradeType: TradeType) => void;
@@ -126,6 +140,7 @@ export function TradeBasicForm({
     control,
     handleSubmit,
     setValue,
+    resetField,
     setError,
     getValues,
     getFieldState,
@@ -175,7 +190,14 @@ export function TradeBasicForm({
     setValue("country_code", "OTHER");
     setValue("exchange", "");
     setValue("amount_krw", 0);
-  }, [setValue]);
+    // 종목이 바뀌면 이전 종목 기준 숫자도 리셋 — 총액은 파생(자동)이라 별도 초기화 불필요.
+    setValue("price", 0);
+    setValue("quantity", 0);
+    // ★commission/tax 는 resetField(dirty clear). 단순 setValue 면 이전에 수동편집한 dirty 가
+    // 남아 다음 price/qty 입력 시 recalcFees 가 skip → 0 고정되는 버그. dirty 까지 지워 auto-recalc 복귀.
+    resetField("commission", { defaultValue: 0 });
+    resetField("tax", { defaultValue: 0 });
+  }, [setValue, resetField]);
 
   // 인라인 생성된 계좌를 옵티미스틱 병합 + 폼에 즉시 주입 → refetch 착지 전에도 Select 에 선택 표시.
   const handleAccountCreated = useCallback((account: Account) => {
@@ -195,17 +217,21 @@ export function TradeBasicForm({
   // 종목 선택 공통 경로 — 자동완성/보유선택/빠른선택 칩 모두 이 핸들러를 쓴다(칩에서 호출하려 hoist).
   const handleStockSelect = useCallback((stock: SelectedStock) => {
     selectedAssetNameRef.current = stock.name;
-    setValue("asset_name", stock.name);
-    setValue("ticker_symbol", stock.code);
+    // shouldValidate: 보유선택(SELL)·빠른선택 칩은 onChange 를 안 거쳐(setValue 만) 재검증이
+    // 안 돌아 "종목명 입력" 필수 에러가 남는다 → 명시적으로 재검증해 에러를 지운다.
+    setValue("asset_name", stock.name, { shouldValidate: true });
+    setValue("ticker_symbol", stock.code, { shouldValidate: true });
     setValue("country_code", stock.market);
     setValue("exchange", stock.exchange);
-    // 해외 종목 전환 시 KR 자동계산 수수료/세금(원화 기준)을 비운다 —
-    // recalcFees 가 isForeign 에서 early-return 이라 stale KR 값이 남는 것을 방지.
-    if (currencyForCountry(stock.market) === "USD") {
-      setValue("commission", 0);
-      setValue("tax", 0);
-    }
-  }, [setValue]);
+    // 종목이 바뀌면 이전 종목의 금액 입력값을 모두 초기화한다(칩/자동완성/보유선택 공통 경로).
+    // 타이핑 경로(clearStockSelection)와 동일하게 맞춘 것 — 칩으로 바꿔도 리셋되도록.
+    // commission/tax 는 resetField 로 dirty 도 클리어(안 하면 recalcFees 자동재계산이 스킵됨).
+    setValue("price", 0);
+    setValue("quantity", 0);
+    setValue("amount_krw", 0);
+    resetField("commission", { defaultValue: 0 });
+    resetField("tax", { defaultValue: 0 });
+  }, [setValue, resetField]);
 
   // 매도 시 계좌별 보유 수량 조회 (계좌 + flexible ticker 기준)
   const holdingEnabled = tradeType === TRADE_TYPE.SELL && !!accountId && !!assetName;
@@ -384,7 +410,19 @@ export function TradeBasicForm({
 
         {/* 계좌 */}
         <div className="space-y-1.5">
-          <Label>계좌 <span className="text-destructive">*</span></Label>
+          <div className="flex items-center justify-between">
+            <Label>계좌 <span className="text-destructive">*</span></Label>
+            {mergedAccounts.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setAccountPanelOpen(true)}
+                className="inline-flex items-center gap-1 text-[13px] font-medium text-primary"
+              >
+                <PlusIcon className="h-3.5 w-3.5" />
+                새 계좌 추가
+              </button>
+            )}
+          </div>
           {mergedAccounts.length === 0 ? (
             // 0계좌: 빈 Select(막다른 길) 대신 새 계좌 추가 CTA.
             <button
@@ -405,29 +443,19 @@ export function TradeBasicForm({
                     {(() => {
                       const acc = mergedAccounts.find((a) => a.id === field.value);
                       if (!acc) return <span className="text-muted-foreground">계좌를 선택하세요</span>;
-                      return <AccountChip account={acc} size="md" className="flex-1 overflow-hidden" />;
+                      return <AccountSelectRow account={acc} flex />;
                     })()}
                   </SelectTrigger>
                   <SelectContent>
                     {mergedAccounts.map((acc) => (
                       <SelectItem key={acc.id} value={acc.id}>
-                        <AccountChip account={acc} size="md" className="overflow-hidden" />
+                        <AccountSelectRow account={acc} />
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               )}
             />
-          )}
-          {mergedAccounts.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setAccountPanelOpen(true)}
-              className="inline-flex items-center gap-1 text-[13px] font-medium text-primary"
-            >
-              <PlusIcon className="h-3.5 w-3.5" />
-              새 계좌 추가
-            </button>
           )}
         </div>
 

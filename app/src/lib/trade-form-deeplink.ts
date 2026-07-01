@@ -1,29 +1,12 @@
 /**
- * 거래 등록 폼 딥링크용 1회성 모듈 플래그 + 구독.
- * import-deeplink 와 동일 패턴 — TradeFormPanel 상태는 TradeList 내부 지역 상태라
- * 홈 빈 상태 CTA 등 외부에서 직접 열 수 없어 모듈 플래그로 신호를 넘긴다.
- *
- * 교차 라우트(홈→/records): TradeList 가 마운트 시 consumeTradeFormOpen() 으로 소비.
- * 동일 라우트(이미 /records): requestTradeFormOpen() 이 listener 를 즉시 호출.
+ * 거래 등록 폼 딥링크 — 공용 신호 팩토리(createDeeplinkSignal) 기반.
+ * TradeFormPanel 상태는 TradeList 내부 지역 상태라 홈 빈상태 CTA 등 외부에서 직접 열 수 없어
+ * 모듈 플래그로 신호를 넘긴다.
  */
+import { createDeeplinkSignal } from "./deeplink-signal";
 
-let pending = false;
-let listener: (() => void) | null = null;
+const signal = createDeeplinkSignal();
 
-export function requestTradeFormOpen(): void {
-  pending = true;
-  listener?.();
-}
-
-export function consumeTradeFormOpen(): boolean {
-  if (!pending) return false;
-  pending = false;
-  return true;
-}
-
-export function subscribeTradeFormOpen(fn: () => void): () => void {
-  listener = fn;
-  return () => {
-    if (listener === fn) listener = null;
-  };
-}
+export const requestTradeFormOpen = signal.request;
+export const consumeTradeFormOpen = signal.consume;
+export const subscribeTradeFormOpen = signal.subscribe;
