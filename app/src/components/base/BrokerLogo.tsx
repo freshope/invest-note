@@ -16,6 +16,8 @@ export function BrokerLogo({ broker, size = 28, className }: BrokerLogoProps) {
 
   if (found && !imgError) {
     return (
+      // 로컬 정적 SVG(소형·onError 폴백) + 정적 export(images.unoptimized) 라 next/image 이득 없음.
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={`/logos/securities/${found.slug}.svg`}
         alt={found.name}

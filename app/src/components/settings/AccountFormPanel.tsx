@@ -106,6 +106,8 @@ export function AccountFormPanel({
     if (!isEdit) capture("account_add_started"); // 활성화 퍼널: 계좌 추가 폼 진입
   }, [open, account, reset, isEdit, defaultName, defaultBroker, defaultAccountNumber]);
 
+  // React Compiler 는 RHF watch() 를 memoize 못 해 이 컴포넌트 memoization 을 스킵한다(런타임 안전·안내성 경고).
+  // eslint-disable-next-line react-hooks/incompatible-library
   const broker = watch("broker");
 
   async function onSubmit(values: FormValues) {

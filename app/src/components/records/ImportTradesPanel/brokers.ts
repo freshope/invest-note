@@ -14,20 +14,23 @@ export interface BrokerOption {
   downloadGuide: BrokerDownloadGuide;
 }
 
-// TODO: 다운로드 가이드는 AI 1차 초안 — 실제 증권사 앱과 대조 후 검수 필요.
-// 앱 화면 메뉴 라벨/단계가 바뀌면 여기를 갱신한다.
+// description(문서명)·accept(형식)는 파서 docstring·sample/ 실제 export 파일명과 대조 완료.
+// 삼성 steps = PC 웹(samsungpop.com) 엑셀 다운로드로 정정(모바일 앱엔 xlsx 내보내기 없음, 실사용 확인 2026-07-02).
+// 토스 steps = 공식 FAQ(support.toss.im/faq/3331) 앱 경로로 정정(2026-07-02).
+// TODO 미검수: 신한·미래에셋 steps(앱 메뉴 경로) — 계정 없어 캡처 대기.
+// 앱·웹 화면 메뉴 라벨/단계가 바뀌면 여기를 갱신한다.
 export const BROKER_OPTIONS: readonly BrokerOption[] = [
   {
     key: "samsung_xlsx",
     label: "삼성증권",
     accept: ".xlsx,.xls",
     downloadGuide: {
-      description: "기간별 매매내역서 (xlsx)",
+      description: "거래내역서 (xlsx)",
       steps: [
-        "삼성증권 mPOP 앱 로그인",
-        "메뉴 → 거래내역 → 기간별 매매내역",
-        "조회 기간 선택 (최근 1년 이내 권장)",
-        "엑셀(.xlsx) 다운로드 후 이 화면에 업로드",
+        "PC 웹브라우저에서 삼성증권 홈페이지(samsungpop.com) 로그인 (모바일 mPOP 앱에는 엑셀 내보내기가 없음)",
+        "거래내역 조회 화면에서 계좌·조회기간·조회구분 선택 후 [조회]",
+        "[엑셀파일다운로드] 버튼으로 .xlsx 저장 (기간 최근 1년 이내 권장)",
+        "저장한 xlsx 를 휴대폰으로 옮긴 뒤 이 화면에 업로드",
       ],
       helpUrl: "https://www.samsungpop.com",
     },
@@ -39,12 +42,12 @@ export const BROKER_OPTIONS: readonly BrokerOption[] = [
     downloadGuide: {
       description: "거래내역서 (PDF)",
       steps: [
-        "토스 앱 → 주식 탭",
-        "오른쪽 상단 메뉴 → 거래내역 확인",
-        "기간 선택 후 PDF로 내보내기",
-        "저장된 PDF 를 이 화면에 업로드",
+        "토스 앱 → 토스증권 홈 → 우측 상단 회색 삼단바(≡)",
+        "설정 → 계좌관리 → '증명서 발급하기'",
+        "증명서 종류에서 '거래 내역서' 선택 후 기간 지정",
+        "PDF 로 발급한 뒤 이 화면에 업로드",
       ],
-      helpUrl: "https://tossinvest.com",
+      helpUrl: "https://support.toss.im/faq/3331",
     },
   },
   {
@@ -67,7 +70,7 @@ export const BROKER_OPTIONS: readonly BrokerOption[] = [
     label: "미래에셋증권",
     accept: ".pdf",
     downloadGuide: {
-      description: "거래내역서 (PDF)",
+      description: "거래내역증명서 (PDF)",
       steps: [
         "미래에셋 m.Stock 앱 로그인",
         "메뉴 → 거래내역 → 기간별 거래내역",
