@@ -49,6 +49,8 @@ export function CountryBadge({ countryCode, className }: { countryCode: string; 
 
   if (FLAG_CODES.has(code) && erroredSrc !== src) {
     return (
+      // 로컬 정적 국기 SVG(소형·onError 폴백) + 정적 export(images.unoptimized) 라 next/image 이득 없음.
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={src}
         alt={label}
