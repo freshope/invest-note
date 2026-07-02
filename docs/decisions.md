@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-07-02 | warning 텍스트 대비 — amber-600/orange-600 → 700 (라이트 모드 WCAG AA)
+
+- **맥락:** 다크 테마 실현가능성 조사(`feature/dark-theme`) 중 QA가 발견한 **사전-존재 라이트 모드 접근성 이슈**. 리포트는 `SEMANTIC_COLORS.warning` / `globals.css :root --warning` / `.dark` 블록을 전제로 "팔레트 한 곳(`--warning` amber-700) 조정"을 권장했으나, **해당 구조는 이 브랜치·`feature/dark-theme`·전체 git 히스토리 어디에도 실재하지 않는다**(다크 테마는 backlog 조사 단계일 뿐 미구현). 실제 warning 색상은 CSS 변수가 아니라 Tailwind 유틸리티 클래스로 하드코딩.
+- **결정:** 단일 팔레트 소스가 없으므로 **실제 미달 지점의 유틸 클래스만 직접 상향**한다.
+  - `severity-styles.ts` `warn.metricClass`: `text-amber-600` → `text-amber-700`
+  - `trading.ts` `ADHERENCE_CONFIG.DEVIATED.textClassName`: `text-orange-600` → `text-orange-700`
+- **이유(실측 대비, `bg-*-50` 소프트 배경 기준):** amber-600(#D97706)/orange-600(#EA580C)은 각각 ~3.1:1 / ~3.36:1 로 소형 텍스트 AA(4.5:1) 미달. amber-700(#B45309)≈4.77:1, orange-700(#C2410C)≈4.88:1 로 통과. 리포트가 지목한 배너 **본문 텍스트(StrategyAdherencePanel/ReasoningBreakdown)는 이미 `text-amber-700`이라 통과** 상태였고, 실제 미달은 severity `warn` metric 값과 DEVIATED 라벨이었다.
+- **트레이드오프:** 향후 실제 다크 테마 구현 시 warning 색을 CSS 변수/`SEMANTIC_COLORS` 로 토큰화하면서 이 유틸 클래스들을 흡수해야 함(현재는 분산된 유틸이라 단일 소스 없음). 아이콘(`text-amber-500`, non-text 3:1 대상)은 스코프 외로 유지.
+
+---
+
 ## 2026-07-01 | 내역서 신규 계좌 — 등록 폼 없이 commit 시 자동 생성
 
 - **맥락:** 활성화 feature 개발 검수. import 계좌 선택 스텝에서 "새 계좌로 등록"을 고르면 초기 구현은 `AccountFormPanel`(계좌 등록 폼)을 띄워 사용자가 입력·확인하게 했다. 파서가 계좌번호만 주고 계좌명은 미제공([[2026-07-01 자동기입 항목]] 참조)이라 폼에서 사용자가 채울 정보가 사실상 없고, "새 계좌 등록에 별도 페이지 방문이 왜 필요하냐"는 검수 피드백이 있었다.
