@@ -4,13 +4,12 @@ from fastapi.testclient import TestClient
 from invest_note_api.config import Settings
 from invest_note_api.main import create_app
 
-TEST_SUPABASE_URL = "https://test.supabase.co"
 CAPACITOR_ORIGINS = ["capacitor://localhost", "https://localhost"]
 
 
 def test_default_cors_origins_includes_capacitor(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("CORS_ORIGINS", raising=False)
-    s = Settings(supabase_url=TEST_SUPABASE_URL)
+    s = Settings()
     for origin in CAPACITOR_ORIGINS:
         assert origin in s.cors_origins
 
@@ -19,7 +18,6 @@ def test_default_cors_origins_includes_capacitor(monkeypatch: pytest.MonkeyPatch
 def cors_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.delenv("CORS_ORIGINS", raising=False)
     settings = Settings(
-        supabase_url=TEST_SUPABASE_URL,
         cors_origins=["http://localhost:3000", *CAPACITOR_ORIGINS],
     )
     return TestClient(create_app(settings))

@@ -16,7 +16,7 @@ def _use_fake_pool(client, conn: FakeConnection | None = None) -> None:
 def _use_db_provider(client) -> None:
     """search 엔드포인트를 로컬 DB 경로로 고정 (기본값은 naver 이므로 명시 override)."""
     client.app.dependency_overrides[get_settings] = lambda: Settings(
-        supabase_url="https://test.supabase.co", stock_search_provider="db"
+        stock_search_provider="db"
     )
 
 
@@ -72,7 +72,7 @@ class TestStocksQuote:
             return {}
 
         trades_client.app.dependency_overrides[get_settings] = lambda: Settings(
-            supabase_url="https://test.supabase.co", quote_providers="yahoo"
+            quote_providers="yahoo"
         )
         try:
             with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
@@ -94,7 +94,7 @@ class TestStocksQuote:
             return {}
 
         trades_client.app.dependency_overrides[get_settings] = lambda: Settings(
-            supabase_url="https://test.supabase.co", us_quote_providers="yahoo"
+            us_quote_providers="yahoo"
         )
         try:
             with patch("invest_note_api.routers.stocks.fetch_quotes_by_keys", mock_quotes):
@@ -154,7 +154,7 @@ class TestStocksFx:
             return {"base": base, "quote": quote, "rate": 1300.0, "as_of": ""}
 
         trades_client.app.dependency_overrides[get_settings] = lambda: Settings(
-            supabase_url="https://test.supabase.co", fx_providers="yahoo,er_api"
+            fx_providers="yahoo,er_api"
         )
         try:
             with patch("invest_note_api.routers.stocks.get_fx_rate", mock_fx):

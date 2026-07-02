@@ -21,7 +21,6 @@ from invest_note_api.auth.be_token import be_verify_key, build_be_jwks, mint_be_
 from invest_note_api.config import Settings, get_settings
 from invest_note_api.main import create_app
 
-TEST_SUPABASE_URL = "https://test.supabase.co"
 BE_ISSUER = "https://api.invest-note.example/be"
 BE_AUDIENCE = "invest-note-app"
 BE_KID = "be-test-key"
@@ -36,7 +35,6 @@ def _ec_private_pem() -> str:
 
 def _be_settings() -> Settings:
     return Settings(
-        supabase_url=TEST_SUPABASE_URL,
         be_token_signing_key=_ec_private_pem(),
         be_token_issuer=BE_ISSUER,
         be_token_audience=BE_AUDIENCE,
@@ -79,14 +77,14 @@ def test_token_header_kid_matches_jwks():
 
 def test_mint_rejected_when_signing_key_empty():
     # dormant(빈 signing key) — 발급 시도는 명확히 거부(실수 발급 방지).
-    settings = Settings(supabase_url=TEST_SUPABASE_URL)
+    settings = Settings()
     with pytest.raises(RuntimeError):
         mint_be_token(uuid4(), None, settings=settings)
 
 
 def test_build_jwks_empty_when_dormant():
     # 빈 signing key → 빈 keys(404 아님). dormant 안전.
-    settings = Settings(supabase_url=TEST_SUPABASE_URL)
+    settings = Settings()
     assert build_be_jwks(settings) == {"keys": []}
 
 
@@ -106,7 +104,7 @@ def test_jwks_endpoint_public_no_auth():
 
 def test_jwks_endpoint_empty_when_dormant():
     # dormant 시 엔드포인트도 빈 keys 200 — Supabase 경로 무영향.
-    settings = Settings(supabase_url=TEST_SUPABASE_URL)
+    settings = Settings()
     app = create_app(settings)
     app.dependency_overrides[get_settings] = lambda: settings
     client = TestClient(app)
@@ -140,7 +138,7 @@ def test_be_verify_key_in_process_round_trip():
 
 def test_be_verify_key_none_when_dormant():
     # dormant(빈 signing key) → None. registry 에 BE entry 가 없어 jwt.py 가 호출하지 않는다.
-    settings = Settings(supabase_url=TEST_SUPABASE_URL)
+    settings = Settings()
     assert be_verify_key(settings) is None
 
 
@@ -148,7 +146,6 @@ def test_be_token_audience_fail_fast_when_enabled():
     # B7: signing key 있는데 aud 빈 값이면 Settings 생성 시 기동 실패(per-issuer aud 격리 보호).
     with pytest.raises(ValueError, match="be_token_audience"):
         Settings(
-            supabase_url=TEST_SUPABASE_URL,
             be_token_signing_key=_ec_private_pem(),
             be_token_issuer=BE_ISSUER,
             be_token_kid=BE_KID,

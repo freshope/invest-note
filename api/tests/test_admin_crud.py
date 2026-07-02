@@ -16,7 +16,6 @@ from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import get_pool
 from invest_note_api.main import create_app
 
-from .conftest import TEST_SUPABASE_URL
 from .fake_pool import FakeConnection, FakePool
 
 ADMIN_EMAIL = "admin@example.com"
@@ -29,7 +28,7 @@ def _make_admin_app(admin_emails: str = ADMIN_EMAILS_CSV):
     create_app 에 넘긴 settings 는 CORS·lifespan 용이고, 라우터의 Depends(get_settings) 는
     별도 lru_cache 함수라 같은 settings 를 보장하려면 override 해야 한다(기존 테스트 관례).
     """
-    settings = Settings(supabase_url=TEST_SUPABASE_URL, admin_emails=admin_emails)
+    settings = Settings(admin_emails=admin_emails)
     app = create_app(settings)
     app.dependency_overrides[get_settings] = lambda: settings
     return app

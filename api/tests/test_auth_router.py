@@ -34,7 +34,6 @@ from invest_note_api.db import get_pool
 from invest_note_api.external.http_client import get_http_client
 from invest_note_api.main import create_app
 
-TEST_SUPABASE_URL = "https://test.supabase.co"
 BE_ISSUER = "https://api.invest-note.example/be"
 BE_AUDIENCE = "invest-note-app"
 BE_KID = "be-test-key"
@@ -47,7 +46,6 @@ _be_pem = _be_key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption(
 
 def _settings() -> Settings:
     return Settings(
-        supabase_url=TEST_SUPABASE_URL,
         be_token_signing_key=_be_pem,
         be_token_issuer=BE_ISSUER,
         be_token_audience=BE_AUDIENCE,
@@ -563,7 +561,6 @@ def _dormant_client(store):
     # be_token_signing_key 없음 = dormant. callback/refresh 가 mint_be_token RuntimeError→500
     # 대신 503 을 명시해야 한다(F15).
     settings = Settings(
-        supabase_url=TEST_SUPABASE_URL,
         be_oauth_redirect_base="https://api.invest-note.example",
         google_client_id="gid",
         google_client_secret="gsec",
@@ -609,7 +606,6 @@ ADMIN_REDIRECT_URL = "https://invest-note-admin.example/auth/callback/"
 
 def _admin_settings() -> Settings:
     return Settings(
-        supabase_url=TEST_SUPABASE_URL,
         be_token_signing_key=_be_pem,
         be_token_issuer=BE_ISSUER,
         be_token_audience=BE_AUDIENCE,
@@ -701,7 +697,6 @@ WEB_REDIRECT_URL = "http://localhost:3000/auth/callback"
 
 def _web_settings() -> Settings:
     return Settings(
-        supabase_url=TEST_SUPABASE_URL,
         be_token_signing_key=_be_pem,
         be_token_issuer=BE_ISSUER,
         be_token_audience=BE_AUDIENCE,

@@ -45,7 +45,6 @@ PROVIDER_UIDS = {p: uuid4() for p in PROVIDER_SUBS}
 
 def _settings() -> Settings:
     return Settings(
-        supabase_url=TEST_SUPABASE_URL,
         be_token_signing_key=_be_pem,
         be_token_issuer=BE_ISSUER,
         be_token_audience=BE_AUDIENCE,

@@ -3,7 +3,6 @@ from fastapi.testclient import TestClient
 from invest_note_api.config import Settings, get_settings
 from invest_note_api.main import create_app
 
-TEST_SUPABASE_URL = "https://test.supabase.co"
 
 
 def _client(
@@ -13,7 +12,6 @@ def _client(
     be_auth_enabled: bool = False,
 ) -> TestClient:
     settings = Settings(
-        supabase_url=TEST_SUPABASE_URL,
         min_supported_version=min_v,
         store_url_ios=ios,
         store_url_android=android,
@@ -72,7 +70,7 @@ def test_startup_rejects_unknown_quote_provider():
     # QUOTE_PROVIDERS 오타는 요청 경로에서 조용히 null 시세가 되므로 부팅 시 fail-fast 해야 한다.
     import pytest
 
-    settings = Settings(supabase_url=TEST_SUPABASE_URL, quote_providers="naverr")
+    settings = Settings(quote_providers="naverr")
     app = create_app(settings)
     with pytest.raises(ValueError, match="quotes"):
         with TestClient(app):  # with 블록이 lifespan(startup) 실행
@@ -83,7 +81,7 @@ def test_startup_rejects_empty_quote_providers():
     # QUOTE_PROVIDERS="" 는 빈 체인 → 전 종목 시세가 조용히 null 이므로 부팅 시 fail-fast.
     import pytest
 
-    settings = Settings(supabase_url=TEST_SUPABASE_URL, quote_providers="")
+    settings = Settings(quote_providers="")
     app = create_app(settings)
     with pytest.raises(ValueError, match="quotes"):
         with TestClient(app):
@@ -95,14 +93,13 @@ def test_stock_search_provider_rejects_unknown_value():
     import pytest
 
     with pytest.raises(ValueError, match="stock_search_provider"):
-        Settings(supabase_url=TEST_SUPABASE_URL, stock_search_provider="dbb")
+        Settings(stock_search_provider="dbb")
 
 
 def test_provider_env_values_normalized():
     # 운영 콘솔의 공백/대소문자 입력("none ", "NONE")이 registry 미일치 ValueError 로
     # 라우터 500 을 내지 않도록 공급자류 env 는 strip+lower 정규화된다.
     s = Settings(
-        supabase_url=TEST_SUPABASE_URL,
         stock_search_provider=" DB ",
         quote_providers=" Naver,Yahoo ",
         daily_price_provider=" DATA_GO_KR ",
@@ -120,7 +117,7 @@ def test_kis_settings_explicit_values_and_env_normalized():
     # 명시 전달 값과 kis_env 정규화(공백/대소문자) 검증.
     # (.env.local 은 conftest 가 dotenv 소스를 꺼 테스트에 새지 않는다.)
     s = Settings(
-        supabase_url=TEST_SUPABASE_URL, kis_app_key="", kis_app_secret="", kis_env=" MOCK "
+        kis_app_key="", kis_app_secret="", kis_env=" MOCK "
     )
     assert s.kis_app_key == ""
     assert s.kis_app_secret == ""
@@ -132,17 +129,16 @@ def test_kis_env_rejects_unknown_value():
     import pytest
 
     with pytest.raises(ValueError, match="kis_env"):
-        Settings(supabase_url=TEST_SUPABASE_URL, kis_env="prod")
+        Settings(kis_env="prod")
 
 
 def test_provider_list_properties_default_and_parse():
     # 콤마 체인 env(str 필드)는 property 가 trim + 빈 항목 제거로 파싱한다.
-    s = Settings(supabase_url=TEST_SUPABASE_URL)
+    s = Settings()
     assert s.quote_provider_list == ["naver", "yahoo"]
     assert s.stock_seed_source_list == ["data_go_kr", "stock_prices", "securities"]
 
     s = Settings(
-        supabase_url=TEST_SUPABASE_URL,
         quote_providers=" yahoo , naver ,",
         stock_seed_sources="securities",
     )
@@ -156,7 +152,7 @@ def test_provider_list_properties_default_and_parse():
 def test_be_token_dormant_by_default():
     # 기본(BE signing key 빈 값) → BE 토큰 비활성. registry 에 BE entry 없음(dormant).
     # ⚠️ 2c: Supabase default fallback 제거 → registry 빈 = 전원 401(불변식 역전).
-    s = Settings(supabase_url=TEST_SUPABASE_URL)
+    s = Settings()
     assert s.be_token_enabled is False
     assert s.oidc_issuer_registry == {}
 
@@ -187,7 +183,6 @@ def test_be_token_enabled_empty_audience_fails_fast():
 
     with pytest.raises(ValueError, match="be_token_audience"):
         Settings(
-            supabase_url=TEST_SUPABASE_URL,
             be_token_signing_key="-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----",
             be_token_issuer="https://api.invest-note.example/be",
         )
@@ -195,7 +190,7 @@ def test_be_token_enabled_empty_audience_fails_fast():
 
 def test_be_token_dormant_empty_audience_ok():
     # dormant(signing key 빈 값)는 be_token_audience 빈 값이어도 무영향 — fail-fast 대상 아님.
-    s = Settings(supabase_url=TEST_SUPABASE_URL, be_token_audience="")
+    s = Settings(be_token_audience="")
     assert s.be_token_enabled is False
     assert s.oidc_issuer_registry == {}
 
@@ -206,7 +201,7 @@ def test_be_token_dormant_empty_audience_ok():
 def test_oauth_provider_credentials_default_empty():
     # provider 자격증명 미설정 → 빈 값(부분 활성 허용). 미설정 provider 는 라우터에서
     # 명시 에러(B-6) — Settings 단계는 빈 값 허용.
-    s = Settings(supabase_url=TEST_SUPABASE_URL)
+    s = Settings()
     assert s.google_client_id == ""
     assert s.google_client_secret == ""
     assert s.kakao_client_id == ""
@@ -219,7 +214,6 @@ def test_oauth_provider_credentials_default_empty():
 
 def test_oauth_provider_credentials_load():
     s = Settings(
-        supabase_url=TEST_SUPABASE_URL,
         google_client_id="g-id",
         google_client_secret="g-secret",
         kakao_client_id="k-rest-key",
@@ -237,20 +231,19 @@ def test_oauth_provider_credentials_load():
 
 
 def test_oauth_redirect_and_deeplink_defaults():
-    s = Settings(supabase_url=TEST_SUPABASE_URL)
+    s = Settings()
     assert s.be_oauth_redirect_base == ""
     # 딥링크 스킴은 고정 기본값(앱 custom scheme).
     assert s.be_deeplink_scheme == "app.pixelwave.investnote://auth/callback"
 
 
 def test_oauth_ttl_defaults_and_override():
-    s = Settings(supabase_url=TEST_SUPABASE_URL)
+    s = Settings()
     assert s.be_refresh_token_ttl == 60 * 60 * 24 * 30  # 30d
     assert s.oauth_code_ttl == 60  # 일회용 code 단명
     assert s.oauth_state_ttl == 600  # state/PKCE challenge
 
     s2 = Settings(
-        supabase_url=TEST_SUPABASE_URL,
         be_refresh_token_ttl=3600,
         oauth_code_ttl=30,
         oauth_state_ttl=300,
