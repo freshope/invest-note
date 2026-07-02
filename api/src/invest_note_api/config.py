@@ -15,7 +15,6 @@ DEFAULT_FX_PROVIDERS = ("yahoo", "er_api")
 
 
 class Settings(BaseSettings):
-    supabase_url: str
     cors_origins: list[str] = [
         "http://localhost:3000",
         "https://localhost:3000",
@@ -26,16 +25,15 @@ class Settings(BaseSettings):
         "https://localhost:3101",
     ]
     database_url: str = ""
-    supabase_secret_key: str = ""
 
     # 강제 업데이트: 빈 문자열이면 강제하지 않음(no-force). 양 플랫폼 공통 min 버전.
     min_supported_version: str = ""
     store_url_ios: str = ""
     store_url_android: str = ""
 
-    # BE auth flow 서버 플래그(Phase 2b-4 cutover). default False = dormant(네이티브도 Supabase
-    # flow 로 폴백 = 현재 라이브 동작). Coolify env 로 ON 으로 flip 하면 secure-storage 플러그인
-    # 보유 기기가 BE OAuth flow 로 전환된다(force-update 와 동일 운영 토글, 신규 마이그레이션 없음).
+    # BE auth flow 서버 플래그(Phase 2b-4 cutover 잔재). 운영은 항상 True(Coolify env, 2c 완료).
+    # 2c 로 Supabase flow 물리 제거 후 이 플래그는 vestigial — FE 에 supabase-js 가 없어 OFF 로
+    # 두면 네이티브 인증 경로가 없다. 향후 플래그 자체 제거(FE app-config 게이트 동반) 검토.
     be_auth_enabled: bool = False
 
     # Capacitor OTA 라이브 업데이트: R2 의 발행 매니페스트 JSON 절대 URL.
@@ -111,10 +109,6 @@ class Settings(BaseSettings):
     # NPS 보유내역 seed(services/nps_seed.py) 공급자. 등록: "odcloud".
     nps_provider: str = "odcloud"
 
-    # 관리자 트리거 라우터(POST /admin/seed/*) 인증 토큰. X-Admin-Token 헤더와 constant-time 비교.
-    # 빈 값이면 admin 엔드포인트는 항상 거부(미설정=차단).
-    admin_token: str = ""
-
     # 어드민 패널(신규 /admin CRUD) allowlist — 쉼표구분 이메일. Supabase JWT email 클레임과
     # 정확 비교(admin_email_set property). 빈 값이면 어떤 계정도 require_admin 통과 못 함.
     admin_emails: str = ""
@@ -149,9 +143,9 @@ class Settings(BaseSettings):
 
     # OAuth 중개 redirect/딥링크 설정.
     # be_oauth_redirect_base: BE 공개 호스트(https://api...) — IdP redirect_uri 는
-    # {be_oauth_redirect_base}/auth/callback. ⚠️ be_jwks_uri 호스트 정정의 출처(B8): BE 자기
+    # {be_oauth_redirect_base}/auth/callback. be_jwks_uri 호스트의 출처(B8)이기도 하다: BE 자기
     # 검증은 in-process key 직접 주입이라 self-fetch 안 하지만, 외부 JWKS 엔드포인트 절대 URL 도
-    # 이 호스트 기준이어야 한다(현재 be_jwks_uri 가 supabase_url 파생이라 placeholder).
+    # 이 호스트 기준으로 유도된다.
     be_oauth_redirect_base: str = ""
     # be_deeplink_scheme: callback 이 일회용 code 를 실어 앱으로 돌려보내는 딥링크 URL.
     # IdP redirect_uri 가 아니라 BE→앱 최종 단계 전용(스킴 고정, 바뀌는 건 BE 뿐).
@@ -250,11 +244,10 @@ class Settings(BaseSettings):
     # BE 자체 토큰 검증용 JWKS URI(BE 가 스스로 서빙하는 /auth/.well-known/jwks.json).
     # registry BE entry 의 jwks_uri nominal 메타로 실린다 — 자기검증은 in-process verify_key
     # 직접 주입이라 이 URI 를 self-fetch 하지 않는다(2c fallback 제거 후 JWKS HTTP 경로 소멸).
-    # ⚠️ supabase_url 파생 placeholder 호스트 → 향후 클라우드 정리 시 be_oauth_redirect_base
-    # 기준으로 재유도 필요(supabase_url 자체는 delete_user 때문에 유지).
+    # BE 공개 호스트(be_oauth_redirect_base) 기준(2c: Supabase 완전 제거로 supabase_url 파생 폐기).
     @property
     def be_jwks_uri(self) -> str:
-        return f"{self.supabase_url}/auth/.well-known/jwks.json"
+        return f"{self.be_oauth_redirect_base}/auth/.well-known/jwks.json"
 
     # BE 토큰 발급/검증 활성 여부 — signing key 가 있어야만 활성(없으면 dormant).
     @property

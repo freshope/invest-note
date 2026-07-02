@@ -13,6 +13,7 @@ ACC_ROW = {
     "name": "주식계좌",
     "broker": "키움",
     "cash_balance": 1000000,
+    "account_number": "270-26-192214",
     "created_at": "2026-01-01T00:00:00+09:00",
     "updated_at": "2026-01-01T00:00:00+09:00",
 }
@@ -84,6 +85,61 @@ def test_create_account_cash_balance_over_max(accounts_client):
         )
     assert r.status_code == 422
     assert "error" in r.json()
+
+
+# ─── account_number 왕복 (create/list/update) ────────────────────────────
+
+def test_list_accounts_returns_account_number(accounts_client):
+    conn = FakeConnection([ACC_ROW], [])
+    with _patch(conn):
+        r = accounts_client.get("/v1/accounts")
+    assert r.json()[0]["account_number"] == "270-26-192214"
+
+
+def test_create_account_with_account_number(accounts_client):
+    conn = FakeConnection(ACC_ROW)
+    with _patch(conn):
+        r = accounts_client.post(
+            "/v1/accounts",
+            json={"name": "주식계좌", "broker": "신한", "account_number": "270-26-192214"},
+        )
+    assert r.status_code == 201
+    assert r.json()["account_number"] == "270-26-192214"
+
+
+def test_create_account_number_empty_string_becomes_null(accounts_client):
+    created = {**ACC_ROW, "account_number": None}
+    conn = FakeConnection(created)
+    with _patch(conn):
+        r = accounts_client.post(
+            "/v1/accounts",
+            json={"name": "계좌", "account_number": "  ", "cash_balance": 0},
+        )
+    assert r.status_code == 201
+    assert r.json()["account_number"] is None
+
+
+def test_create_account_number_over_max_returns_422(accounts_client):
+    conn = FakeConnection()
+    with _patch(conn):
+        r = accounts_client.post(
+            "/v1/accounts",
+            json={"name": "계좌", "account_number": "1" * 65, "cash_balance": 0},
+        )
+    assert r.status_code == 422
+    assert "error" in r.json()
+
+
+def test_update_account_number_success(accounts_client):
+    updated = {**ACC_ROW, "account_number": "101-01-024891"}
+    conn = FakeConnection(updated)
+    with _patch(conn):
+        r = accounts_client.patch(
+            f"/v1/accounts/{ACC_ID}",
+            json={"account_number": "101-01-024891"},
+        )
+    assert r.status_code == 200
+    assert r.json()["account_number"] == "101-01-024891"
 
 
 def test_create_account_broker_empty_string_becomes_null(accounts_client):

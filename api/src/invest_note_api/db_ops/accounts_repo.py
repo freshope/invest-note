@@ -8,8 +8,10 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-UPDATABLE_COLS: frozenset[str] = frozenset({"name", "broker", "cash_balance"})
-RETURNING_COLS = "id, user_id, name, broker, cash_balance, created_at, updated_at"
+UPDATABLE_COLS: frozenset[str] = frozenset({"name", "broker", "cash_balance", "account_number"})
+RETURNING_COLS = (
+    "id, user_id, name, broker, cash_balance, account_number, created_at, updated_at"
+)
 
 
 def account_row_to_dict(row: Any) -> dict:

@@ -22,6 +22,7 @@ import { BROKERS } from "@/lib/brokers";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { VALIDATION_LIMITS } from "@/lib/constants/validation";
 import { fmtNumberInput, formatNumberInput, parseNumberInput } from "@/lib/format";
+import { toastFirstFormError, toastSubmitError } from "@/lib/form-errors";
 import { capture } from "@/lib/analytics";
 import type { Account } from "@/types/database";
 
@@ -31,7 +32,17 @@ const schema = z.object({
     .trim()
     .min(1, "계좌명을 입력해주세요.")
     .max(VALIDATION_LIMITS.ACCOUNT_NAME_MAX),
-  broker: z.string().nullable(),
+  broker: z
+    .string()
+    .nullable()
+    .refine((v) => !!v, "증권사를 선택해주세요."),
+  account_number: z
+    .string()
+    .trim()
+    .max(VALIDATION_LIMITS.ACCOUNT_NUMBER_MAX, `계좌번호는 ${VALIDATION_LIMITS.ACCOUNT_NUMBER_MAX}자 이내로 입력해주세요.`)
+    // 선택 항목: 비어 있으면 통과. 입력했다면 숫자와 하이픈만, 숫자 6자리 이상.
+    .refine((v) => v === "" || /^[\d-]+$/.test(v), "계좌번호는 숫자와 하이픈(-)만 입력할 수 있어요.")
+    .refine((v) => v === "" || v.replace(/\D/g, "").length >= 6, "계좌번호를 정확히 입력해주세요."),
   cash_display: z.string(),
 });
 
@@ -41,9 +52,26 @@ interface AccountFormPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   account?: Account;
+  /** 신규 생성 시 생성된 계좌를 상위로 전달 (인라인 계좌등록 배선용). */
+  onCreated?: (account: Account) => void;
+  /** 신규 생성 시 초기값 prefill (내역서 매칭 신규계좌 확인 스텝 — broker/계좌번호/계좌명). edit 모드에선 무시. */
+  defaultName?: string;
+  defaultBroker?: string | null;
+  defaultAccountNumber?: string;
+  /** account_added 퍼널 태그 출처 (기본 manual, 내역서 신규계좌는 import). */
+  source?: string;
 }
 
-export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPanelProps) {
+export function AccountFormPanel({
+  open,
+  onOpenChange,
+  account,
+  onCreated,
+  defaultName,
+  defaultBroker,
+  defaultAccountNumber,
+  source = "manual",
+}: AccountFormPanelProps) {
   const isEdit = !!account;
   const queryClient = useQueryClient();
 
@@ -54,13 +82,13 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
     watch,
     reset,
     setValue,
-    setError,
     formState: { isSubmitting, errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      name: account?.name ?? "",
-      broker: account?.broker ?? null,
+      name: account?.name ?? defaultName ?? "",
+      broker: account?.broker ?? defaultBroker ?? null,
+      account_number: account?.account_number ?? defaultAccountNumber ?? "",
       cash_display: fmtNumberInput(account?.cash_balance ? Number(account.cash_balance) : null),
     },
   });
@@ -70,12 +98,13 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
   useEffect(() => {
     if (!open) return;
     reset({
-      name: account?.name ?? "",
-      broker: account?.broker ?? null,
+      name: account?.name ?? defaultName ?? "",
+      broker: account?.broker ?? defaultBroker ?? null,
+      account_number: account?.account_number ?? defaultAccountNumber ?? "",
       cash_display: fmtNumberInput(account?.cash_balance ? Number(account.cash_balance) : null),
     });
     if (!isEdit) capture("account_add_started"); // 활성화 퍼널: 계좌 추가 폼 진입
-  }, [open, account, reset, isEdit]);
+  }, [open, account, reset, isEdit, defaultName, defaultBroker, defaultAccountNumber]);
 
   const broker = watch("broker");
 
@@ -83,14 +112,17 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
     const input = {
       name: values.name,
       broker: values.broker || null,
+      // 빈 문자열 → null (BE 도 정규화하지만 wire 를 깔끔히). 저장은 raw 원문.
+      account_number: values.account_number.trim() || null,
       cash_balance: parseNumberInput(values.cash_display),
     };
     try {
       if (isEdit) {
         await accountsApi.update(account!.id, input);
       } else {
-        await accountsApi.create(input);
-        capture("account_added", { source: "manual" }); // 계좌명/예수금 등 미포함
+        const created = await accountsApi.create(input);
+        capture("account_added", { source }); // 계좌명/예수금 등 미포함
+        onCreated?.(created);
       }
       // portfolio prefix 는 accounts(["portfolio","accounts"]) 까지 무효화하지만,
       // records/일괄등록 wizard 는 trades(["trades"]) 응답에 번들된 계좌를 쓰므로 별도 무효화 필요.
@@ -101,7 +133,7 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
       onOpenChange(false);
     } catch (err) {
       if (!isEdit) capture("account_add_failed"); // 활성화 퍼널: 제출 실패 누수 (메시지 미포함)
-      setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
+      toastSubmitError(err);
     }
   }
 
@@ -110,7 +142,7 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
       <FullScreenPanelContent>
         <FullScreenPanelHeader title={isEdit ? "계좌 수정" : "계좌 추가"} />
         <FullScreenPanelBody>
-          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">
+          <form onSubmit={handleSubmit(onSubmit, toastFirstFormError)} className="flex flex-col min-h-full">
             <div className="flex-1 px-5 pt-2 pb-4 space-y-5">
               <div className="space-y-1.5">
                 <Label htmlFor="name">
@@ -128,7 +160,52 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
               </div>
 
               <div className="space-y-1.5">
-                <Label>증권사</Label>
+                <Label htmlFor="account_number">계좌번호</Label>
+                <Controller
+                  control={control}
+                  name="account_number"
+                  render={({ field }) => (
+                    <Input
+                      id="account_number"
+                      placeholder="예: 123-45-678901 (선택)"
+                      inputMode="numeric"
+                      maxLength={VALIDATION_LIMITS.ACCOUNT_NUMBER_MAX}
+                      value={field.value}
+                      // 숫자와 하이픈만 남긴다(영문·공백·특수문자 자유 입력 차단). 저장은 입력 원문 유지.
+                      onChange={(e) => field.onChange(e.target.value.replace(/[^\d-]/g, ""))}
+                    />
+                  )}
+                />
+                {errors.account_number && (
+                  <p className="text-sm text-destructive">{errors.account_number.message}</p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  입력하면 거래내역서 업로드 시 이 계좌로 자동 매칭돼요.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="cash_display">예수금 (원)</Label>
+                <Controller
+                  control={control}
+                  name="cash_display"
+                  render={({ field }) => (
+                    <Input
+                      id="cash_display"
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="0 (선택)"
+                      value={field.value}
+                      onChange={(e) => field.onChange(formatNumberInput(e.target.value))}
+                    />
+                  )}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>
+                  증권사 <span className="text-destructive">*</span>
+                </Label>
                 <div className="grid grid-cols-3 gap-2">
                   {BROKERS.map((b) => {
                     const isSelected = broker === b.name;
@@ -136,7 +213,7 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
                       <button
                         key={b.name}
                         type="button"
-                        onClick={() => setValue("broker", isSelected ? null : b.name)}
+                        onClick={() => setValue("broker", isSelected ? null : b.name, { shouldValidate: true })}
                         className={cn(
                           "flex flex-col items-center gap-1.5 rounded-xl border p-3 text-center transition-colors",
                           isSelected
@@ -150,31 +227,13 @@ export function AccountFormPanel({ open, onOpenChange, account }: AccountFormPan
                     );
                   })}
                 </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="cash_display">예수금 (원)</Label>
-                <Controller
-                  control={control}
-                  name="cash_display"
-                  render={({ field }) => (
-                    <Input
-                      id="cash_display"
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="0"
-                      value={field.value}
-                      onChange={(e) => field.onChange(formatNumberInput(e.target.value))}
-                    />
-                  )}
-                />
+                {errors.broker && (
+                  <p className="text-sm text-destructive">{errors.broker.message}</p>
+                )}
               </div>
             </div>
 
             <FullScreenPanelFooter>
-              {errors.root && (
-                <p className="mb-2 text-sm text-destructive">{errors.root.message}</p>
-              )}
               <Button type="submit" size="xl" disabled={isSubmitting} className="w-full">
                 {isSubmitting ? "저장 중..." : isEdit ? "수정하기" : "추가하기"}
               </Button>

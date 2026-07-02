@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Button } from "@/components/base/Button";
 import { AccountFormPanel } from "./AccountFormPanel";
 import { AccountChip } from "@/components/shared/AccountChip";
@@ -57,14 +58,16 @@ export function AccountCard({ account, tradeCount }: AccountCardProps) {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => deleteDialog.setOpen(true)}
-              disabled={tradeCount > 0}
-              title={tradeCount > 0 ? "거래 기록이 있는 계좌는 삭제할 수 없습니다" : undefined}
-              className={
-                tradeCount > 0
-                  ? "text-[13px] h-8 px-3 opacity-30 cursor-not-allowed"
-                  : "text-[13px] h-8 px-3 text-destructive hover:text-destructive hover:bg-destructive/10"
-              }
+              onClick={() => {
+                if (tradeCount > 0) {
+                  toast.error(
+                    `거래 기록이 ${tradeCount}건 있어 삭제할 수 없습니다. 거래를 먼저 삭제해 주세요.`,
+                  );
+                  return;
+                }
+                deleteDialog.setOpen(true);
+              }}
+              className="text-[13px] h-8 px-3 text-destructive hover:text-destructive hover:bg-destructive/10"
             >
               삭제
             </Button>

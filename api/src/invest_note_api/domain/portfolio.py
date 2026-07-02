@@ -36,6 +36,9 @@ class Account:
     cash_balance: float
     created_at: datetime
     updated_at: datetime
+    # list_accounts(account_row_to_dict) 가 RETURNING_COLS 에 포함된 account_number 를
+    # 함께 반환하므로 Account(**d) 가 받도록 필드를 둔다(없으면 TypeError → summary 500).
+    account_number: str | None = None
 
 
 QuoteEntry = dict  # {"price": float, "currency": str, "as_of": str}

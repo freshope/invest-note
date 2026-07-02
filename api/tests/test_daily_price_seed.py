@@ -113,38 +113,6 @@ async def test_fetch_daily_closes_pages_through_full_pages():
     assert rows[-1]["close_price"] == 2000.0
 
 
-# ─────────────────────────── admin: POST /admin/seed/daily-prices ───────────────────────────
-
-
-def _admin_client(admin_token: str):
-    from fastapi.testclient import TestClient
-
-    from invest_note_api.config import Settings, get_settings
-    from invest_note_api.main import create_app
-
-    settings = Settings(supabase_url="https://test.supabase.co", admin_token=admin_token)
-    app = create_app(settings)
-    app.dependency_overrides[get_settings] = lambda: settings
-    return TestClient(app)
-
-
-def test_admin_seed_daily_prices_rejects_missing_token():
-    client = _admin_client("secret")
-    r = client.post("/admin/seed/daily-prices")
-    assert r.status_code == 403
-
-
-def test_admin_seed_daily_prices_accepts_valid_token_returns_202(monkeypatch):
-    async def noop(*_a, **_k):
-        return None
-
-    monkeypatch.setattr("invest_note_api.routers.admin.run_seed_daily_prices", noop)
-    client = _admin_client("secret")
-    r = client.post("/admin/seed/daily-prices", headers={"X-Admin-Token": "secret"})
-    assert r.status_code == 202
-    assert r.json() == {"status": "started"}
-
-
 # ─────────────────────────── ETF/ETN 엔드포인트 라우팅 ───────────────────────────
 
 

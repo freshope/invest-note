@@ -4,6 +4,50 @@
 
 ---
 
+## 2026-07-01 | 내역서 신규 계좌 — 등록 폼 없이 commit 시 자동 생성
+
+- **맥락:** 활성화 feature 개발 검수. import 계좌 선택 스텝에서 "새 계좌로 등록"을 고르면 초기 구현은 `AccountFormPanel`(계좌 등록 폼)을 띄워 사용자가 입력·확인하게 했다. 파서가 계좌번호만 주고 계좌명은 미제공([[2026-07-01 자동기입 항목]] 참조)이라 폼에서 사용자가 채울 정보가 사실상 없고, "새 계좌 등록에 별도 페이지 방문이 왜 필요하냐"는 검수 피드백이 있었다.
+- **결정:** 신규 계좌 경로에서 **AccountFormPanel 을 제거**하고, "새 계좌로 등록" + 다음 → **바로 preview 로 진행**, **commit 시점에 `accountsApi.create` 로 자동 생성**한다. 계좌명은 fallback `"{증권사명}-{계좌번호 뒷4자리}"`(힌트 없으면 증권사명), 계좌번호 = 파일 hint. preview 스텝은 "새 계좌 {이름}"을 읽기전용으로 표시.
+- **이유:** 신규 계좌는 보유0이라 입력값이 없고 이름은 파일에서 유도 가능 → 폼 단계가 순수 마찰. 스텝 감소로 첫 활성화 가속(feature 목표와 일치).
+- **트레이드오프:** 사용자가 계좌명을 커밋 전에 편집할 수 없음(생성 후 설정에서 수정). PreviewStep 커밋 버튼 활성 조건이 `resolvedAccount` 존재였는데 신규(=resolvedAccount null)는 항상 비활성이던 버그를 `newAccountName` 허용으로 함께 수정.
+
+---
+
+## 2026-07-01 | 내역서 계좌번호 → account_number 자동기입 (미매칭 기존계좌 선택 시)
+
+- **맥락:** 활성화 feature 개발 검수(C5). import 흐름을 `broker→file→account(카드)→preview→commit` 5스텝으로 재설계하면서, 계좌 선택 스텝에서 사용자가 **파일 계좌번호(`account_hint`)와 미매칭인 기존 계좌**를 고른 경우, 그 계좌에 번호를 채워 넣어 **다음 업로드부터 자동매칭**되게 한다(기존 계좌 대부분 `account_number=null` 이라 매칭이 실효 없는 문제 해소 — C3 계좌번호 표시와 상호 보완).
+- **결정: commit 확정 직전에 `accountsApi.update(id, { name, account_number: hint })` 로 자동기입** — UI 는 조용히 바꾸지 않고 toast 로 고지.
+- **오염 방지 게이트(최우선 불변식):**
+  1. **null-only write** — picked 기존 계좌의 `account_number` 가 null/빈 값일 때만 write. **이미 다른 번호가 있으면 write 금지**(정확한 번호를 hint 로 덮어쓰지 않음), 경고 배너만(account 스텝의 hintMismatch).
+  2. **commit 시점** — tentative 선택이 아니라 등록 확정 직전에만. back-nav 로 계좌를 바꾸면 엉뚱한 계좌에 쓰는 잔재 방지.
+  3. **write 후 accounts 소스 invalidate**(`queryKeys.accounts`) — stale 방지.
+  4. **`AccountInput.name` 필수 → `acc.name` 동봉** — 부분 PATCH 로 name 유실 방지.
+  5. 신규 생성 계좌는 이미 `account_number=hint` 로 만들어져(번호 존재) 게이트를 통과하지 않음 → 이중 write 없음.
+- **계좌 표시명 결정:** 파서/preview 는 계좌번호(`account_hint`)만 주고 **계좌 표시명(계좌명/상품명)은 미제공**(4파서 정규식·`ParseResult`/`ImportPreviewResponse` 모두 번호만). → 신규 계좌명은 **FE fallback 포맷** `"{증권사명} {정규화 뒤4자리}"`(힌트 없으면 증권사명)만 사용. BE 파서 계좌명 추출은 broker별 상이·복잡도 커서 스코프 밖(요구 대비 과투자).
+- **트레이드오프:** 자동기입 실패(update 에러)는 등록 자체를 막지 않음(부가 편의). 자동매칭 시 계좌 확정 재-preview 로 BE 파싱 2회(해외 OpenFIGI 재실행 포함) — `re-validate(staging_id, account_id)` 엔드포인트 부재로 불가피. 참조: [[project_broker_import_parsers]], [[project_be_buy_meta_cascades_to_sell]].
+
+---
+
+## 2026-07-01 | accounts.account_number 추가 — 내역서→계좌 번호 매칭 (초안 defer 뒤집음)
+
+- **맥락:** 신규 가입자 활성화 개선(내역서 업로드 흐름). 초안은 "활성화 타깃=0계좌 신규 사용자엔 매칭 문제 없음"을 근거로 `account_number` 컬럼 추가를 **defer** 하고 0계좌 auto-create 로 처리하려 했다. 사용자 결정으로 이를 뒤집어 **컬럼을 추가하고 내역서 계좌번호로 사용자 계좌를 매칭**한다.
+- **결정 ① `accounts.account_number`(nullable text) 컬럼 추가** — Alembic 신규 리비전(head `0012_board_reads` 뒤). 인덱스/유니크 제약 없음(같은 번호 재사용·재발급 엣지 + 사용자별 스코프라 유니크 강제 부적절). ★**마이그레이션 적용(upgrade)은 사용자/리더 확인 후** — 리비전 파일 작성까지만.
+- **결정 ② BE 는 passthrough 만.** Account 응답에 `account_number` 노출, `AccountCreate`/`AccountUpdate` 가 optional 수용·저장(길이 ~64 검증, 빈 문자열→None). 저장은 **raw 원문**(숫자 강제 안 함 — 표시 충실). 별도 매칭 엔드포인트 없음(accounts 가 이미 trades 쿼리에 번들되어 FE 보유).
+- **결정 ③ 매칭·정규화는 FE-side.** `normalizeAccountNumber(s) = 숫자만 남김(하이픈·공백 제거)`, **비교 시점에 양쪽 정규화 후 전체 문자열 동일성** 판정. 저장 raw / 비교 정규화 분리로 구분자·표기 차이를 흡수. 공용 헬퍼로 FE 에 둔다(결합도 최소).
+- **근거(실측):** 파서 4종(samsung/toss/shinhan/mirae) 정규식이 전부 `\d`/`[\d\-]` 만 캡처 → **마스킹 없는 전체 계좌번호** 추출(실 샘플 픽스처 `test_broker_parsers.py` 검증). 4개 broker 전부 정규화 후 전체 동일성 매칭 가능. 매칭 시 다계좌에서도 올바른 계좌를 안전 자동선택(broker-only auto-select 의 silent mis-route 회피).
+- **트레이드오프:** 유니크 미강제(중복 번호 방지 안 함) · 마스킹 내역서 미지원(현행 4파서 비마스킹이라 불필요) · 재발급/상품구분 접미(samsung `-14`) 엣지는 저장·파싱 동일 규칙으로 일관. `account_hint` null/부분값(향후 마스킹·추출 실패) → 자동매칭 skip → 수동 계좌 선택 폴백(+ 수동 매핑 옵션 노출).
+- **향후 과제:** 마스킹 내역서 부분매칭 알고리즘, 필요 시 (사용자 스코프) 인덱스. 참조: [[project_broker_import_parsers]].
+
+---
+
+## 2026-07-01 | 탈-Supabase Auth 2c 최종 teardown — 회원탈퇴 DB-only 전환
+
+- **맥락:** 2c cutover(2026-06-26)+가역 코드 배포(2026-06-30) 후 남은 **유일한 런타임 Supabase 호출**은 회원탈퇴(`routers/me.py`)의 GoTrue `deleteUser`(`auth/identity_provider.py`)였다. `supabase_secret_key` 없으면 503 하드가드라 `supabase_url`/`supabase_secret_key` 필드 제거를 막고 있었다.
+- **결정 ① 회원탈퇴를 DB-only 로 전환.** GoTrue `deleteUser` 호출·503 가드 제거, `identity_provider.py` 삭제. 삭제는 `public.users` 행 삭제(감사 INSERT→DELETE 트랜잭션)만 수행.
+- **결정 ② `config.supabase_url`·`supabase_secret_key` 필드 제거, `be_jwks_uri` 를 `supabase_url` 파생 placeholder 에서 `be_oauth_redirect_base` 기준으로 재유도.** `supabase/` 디렉토리·CI SUPABASE env 도 정리.
+- **이유:** 인증이 BE 토큰-브로커 단일 경로가 됐고 신원은 앱 DB(`users`+`auth_identities`)가 소유한다. `users` 삭제가 `auth_identities`(0004)·`user_profiles`(0005)·`auth_refresh_tokens`(0006) 전부 **ON DELETE CASCADE**(실측 확인) → users 행 삭제가 곧 완전한 탈퇴이고, 매핑이 함께 지워지므로 삭제된 UUID 부활(재로그인 시 dead 매핑 재사용)도 불가능. **구 GoTrue 호출은 오히려 버그였다** — BE-native 신규가입자는 `user.id` 가 Supabase 에 없어 404→502, 네이티브 탈퇴가 사실상 깨져 있었다. DB-only 가 이를 바로잡는다.
+- **트레이드오프:** 마이그레이션 유저의 Supabase `auth.users` 행은 이제 앱 탈퇴로 지워지지 않고 잔존하지만, 인증(발급·검증) 어디도 그 행을 쓰지 않아 무해하고 비가역 클라우드 프로젝트 삭제(U4)로 일괄 소멸한다. `be_auth_enabled` 플래그는 vestigial 로 남김(FE app-config 게이트 동반 제거는 후속). 비가역 운영(Coolify SUPABASE env 제거·클라우드 프로젝트 삭제·PIPA 고지)은 별도. ⚠️ **배포 순서:** 구 코드가 `supabase_url` required 라 이 커밋 BE 배포·부팅확인 후에 Coolify env 제거. 참조: runbook `docs/auth-cutover-runbook.md`.
+
 ## 2026-06-30 | 분석 탭 집중도 한글화 — 로더 교체로 name_ko 운반(SQL 신규 작성 회피)
 
 - **맥락:** name_ko(2026-06-28) 트레이드오프 ⓑ "분석 탭 집중도는 `list_trades`(SELECT *) 경로라 `Position.name_ko` 항상 None → 같은 US 종목이 홈=한글/분석=영문" 의 후속. backlog 는 `list_trades` SQL 에 `LEFT JOIN stocks` 추가(SELECT t.*, s.name_ko)를 제안했었다.

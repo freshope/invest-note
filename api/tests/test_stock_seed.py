@@ -508,52 +508,6 @@ async def test_update_us_index_empty_preserves(monkeypatch):
     assert conn.ops == []
 
 
-# ─────────────────────────── require_admin_token ───────────────────────────
-
-
-def _admin_client(admin_token: str):
-    from fastapi.testclient import TestClient
-
-    from invest_note_api.config import Settings, get_settings
-    from invest_note_api.main import create_app
-
-    settings = Settings(supabase_url="https://test.supabase.co", admin_token=admin_token)
-    app = create_app(settings)
-    app.dependency_overrides[get_settings] = lambda: settings
-    return TestClient(app)
-
-
-def test_admin_seed_rejects_missing_token():
-    client = _admin_client("secret")
-    r = client.post("/admin/seed/stocks")
-    assert r.status_code == 403
-
-
-def test_admin_seed_rejects_wrong_token():
-    client = _admin_client("secret")
-    r = client.post("/admin/seed/stocks", headers={"X-Admin-Token": "wrong"})
-    assert r.status_code == 403
-
-
-def test_admin_seed_rejects_when_token_unset_even_with_empty_header():
-    # admin_token 미설정 → compare_digest("","") 함정 방어. 빈 헤더로도 통과하면 안 된다.
-    client = _admin_client("")
-    r = client.post("/admin/seed/stocks", headers={"X-Admin-Token": ""})
-    assert r.status_code == 403
-
-
-def test_admin_seed_accepts_valid_token_returns_202(monkeypatch):
-    # run_seed 가 실제 DB 에 연결하지 않도록 BackgroundTasks 진입점을 no-op 으로 교체.
-    async def noop(*_a, **_k):
-        return None
-
-    monkeypatch.setattr("invest_note_api.routers.admin.run_seed", noop)
-    client = _admin_client("secret")
-    r = client.post("/admin/seed/stocks", headers={"X-Admin-Token": "secret"})
-    assert r.status_code == 202
-    assert r.json() == {"status": "started"}
-
-
 # ─────────────────────────── _get_with_retry (게이트웨이 간헐 장애) ───────────────────────────
 
 

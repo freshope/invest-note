@@ -1,112 +1,63 @@
 "use client";
 
-import { AlertCircleIcon } from "lucide-react";
 import { Button } from "@/components/base/Button";
 import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
 import { cn } from "@/lib/utils";
-import type { Account } from "@/types/database";
-import { findBrokerKeyByAccountBroker } from "./brokers";
+import { BROKER_OPTIONS, type BrokerKey } from "./brokers";
 
 interface Props {
-  accounts: Account[];
-  selectedAccountId: string;
-  onSelect: (id: string) => void;
+  /** 사용자가 고른 broker(파서) 키. */
+  brokerKey: BrokerKey | null;
+  onSelectBroker: (key: BrokerKey) => void;
   onNext: () => void;
-  /** 미지원 계좌 행에서 거래내역서 제보 진입. */
-  onReportUnsupported: (account: Account) => void;
+  /** 지원 목록에 없는 증권사 → 거래내역서 제보 진입. */
+  onReportUnsupported: () => void;
 }
 
-export function AccountStep({
-  accounts,
-  selectedAccountId,
-  onSelect,
-  onNext,
-  onReportUnsupported,
-}: Props) {
-  const isEmpty = accounts.length === 0;
-
+// broker-first 흐름의 첫 스텝 — 거래내역서를 발급한 증권사(파서)를 고른다.
+// 계좌는 다음 단계 preview 의 account_hint 를 계좌번호로 매칭해 결정한다.
+export function AccountStep({ brokerKey, onSelectBroker, onNext, onReportUnsupported }: Props) {
   return (
     <div className="flex flex-col min-h-full">
       <div className="flex-1 px-5 pt-2 pb-4 space-y-5">
-        {isEmpty ? (
-          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed p-8 text-center">
-            <AlertCircleIcon className="h-6 w-6 text-muted-foreground" />
-            <div>
-              <p className="text-sm font-medium">등록된 계좌가 없습니다</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                먼저 설정 화면에서 계좌를 등록한 뒤 다시 시도해주세요.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <>
-            <p className="text-sm text-muted-foreground">
-              거래를 등록할 계좌를 선택하세요. 선택한 계좌의 증권사 형식으로 파일을 분석합니다.
-            </p>
+        <p className="text-sm text-muted-foreground">
+          거래내역서를 발급한 증권사를 선택하세요.<br />
+          선택한 증권사 형식으로 파일을 분석합니다.
+        </p>
 
-            <div className="flex flex-col gap-2">
-              {accounts.map((a) => {
-                const supported = findBrokerKeyByAccountBroker(a.broker) !== null;
-                const selected = a.id === selectedAccountId;
-                if (!supported) {
-                  return (
-                    <div
-                      key={a.id}
-                      className="rounded-lg border bg-muted/30 p-3"
-                    >
-                      <div className="flex items-center gap-3 opacity-60">
-                        <BrokerLogo broker={a.broker} size={36} />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">{a.name}</p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {a.broker ?? "증권사 미설정"} · 일괄 등록 미지원
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => onReportUnsupported(a)}
-                        className="mt-2 w-full rounded-md border border-primary/40 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/5"
-                      >
-                        거래내역서 제보하기
-                      </button>
-                    </div>
-                  );
-                }
-                return (
-                  <button
-                    key={a.id}
-                    type="button"
-                    onClick={() => onSelect(a.id)}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg border p-3 text-left transition-colors",
-                      selected && "border-primary bg-primary/5",
-                      !selected && "hover:bg-accent"
-                    )}
-                  >
-                    <BrokerLogo broker={a.broker} size={36} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{a.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {a.broker ?? "증권사 미설정"}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        )}
+        <div className="flex flex-col gap-2">
+          {BROKER_OPTIONS.map((b) => {
+            const selected = b.key === brokerKey;
+            return (
+              <button
+                key={b.key}
+                type="button"
+                onClick={() => onSelectBroker(b.key)}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg border p-3 text-left transition-colors",
+                  selected && "border-primary bg-primary/5",
+                  !selected && "hover:bg-accent"
+                )}
+              >
+                <BrokerLogo broker={b.label} size={36} />
+                <p className="min-w-0 flex-1 truncate text-sm font-medium">{b.label}</p>
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={onReportUnsupported}
+          className="w-full rounded-md border border-primary/40 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/5"
+        >
+          찾는 증권사가 없나요? 거래내역서 제보하기
+        </button>
       </div>
 
       <FullScreenPanelFooter>
-        <Button
-          size="xl"
-          className="w-full"
-          onClick={onNext}
-          disabled={!selectedAccountId}
-        >
+        <Button size="xl" className="w-full" onClick={onNext} disabled={!brokerKey}>
           다음
         </Button>
       </FullScreenPanelFooter>

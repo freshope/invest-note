@@ -1,7 +1,7 @@
 """국민연금(NPS) 보유종목 적재 — odcloud OpenAPI 자동화.
 
 진입점:
-    POST /admin/seed/nps  →  seed_nps(db_url, api_key=...)
+    CLI `python -m invest_note_api.services.nps_seed`  →  reconcile 선행 후 seed_nps()
 
 소스(odcloud, data.go.kr serviceKey):
   - held : 국내주식 투자정보(3070507, 전체보유)   — 연1회, `종목명`.     nps_holding='held'.

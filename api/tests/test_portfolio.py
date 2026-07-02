@@ -58,6 +58,9 @@ def _make_account_row(id_="a1") -> dict:
         "name": "테스트 계좌",
         "broker": None,
         "cash_balance": 1000000.0,
+        # 실제 DB 행(RETURNING_COLS)에 account_number 가 포함되므로 픽스처도 맞춘다.
+        # 누락 시 list_accounts→Account(**d) 경로의 account_number kwarg 회귀를 못 잡는다.
+        "account_number": "123-456-789",
         "created_at": _dt("2024-01-01T00:00:00Z"),
         "updated_at": _dt("2024-01-01T00:00:00Z"),
     }

@@ -38,7 +38,7 @@ import { AccountChip } from "@/components/shared/AccountChip";
 import { currencyForCountry } from "@/lib/format";
 import { impliedExchangeRate, fxHintText } from "./fx-input";
 import { useFxRate } from "@/hooks/useFxRate";
-import { getFirstFormError } from "@/lib/utils";
+import { toastFirstFormError, toastSubmitError } from "@/lib/form-errors";
 import type { Trade, Account, ReasoningTag, StrategyType, EmotionType } from "@/types/database";
 import { formatTradedAtLabel } from "@/lib/trade-utils";
 import { TradeFreeTextField } from "./TradeFreeTextField";
@@ -117,9 +117,8 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
     watch,
     setValue,
     reset,
-    setError,
     getFieldState,
-    formState: { isSubmitting, errors },
+    formState: { isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(makeSchema(isForeign)),
     defaultValues: buildFormValues(trade),
@@ -219,18 +218,16 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
       onOpenChange(false);
       onSaved?.();
     } catch (err) {
-      setError("root", { message: err instanceof Error ? err.message : "저장에 실패했습니다." });
+      toastSubmitError(err);
     }
   }
-
-  const firstError = getFirstFormError(errors);
 
   return (
     <FullScreenPanel open={open} onOpenChange={() => onOpenChange(false)}>
       <FullScreenPanelContent>
         <FullScreenPanelHeader title="거래 수정" />
         <FullScreenPanelBody>
-          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col min-h-full">
+          <form onSubmit={handleSubmit(onSubmit, toastFirstFormError)} className="flex flex-col min-h-full">
             <div className="flex-1 px-5 pt-5 pb-4 space-y-5">
               <TradeHeaderCard
                 trade={trade}
@@ -468,8 +465,6 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
                 )}
 
               </div>
-
-              {firstError && <p className="text-sm text-destructive">{firstError}</p>}
             </div>
 
             <FullScreenPanelFooter>

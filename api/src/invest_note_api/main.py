@@ -30,8 +30,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         # 요청 경로가 소비하는 공급자 env 오타 fail-fast — quotes 는 요청 경로가 예외를
         # 삼켜 시세가 조용히 null, daily price 는 GET /assets/history 가 사용자 대면 500 을
-        # 반복하므로 부팅 시점에 검증한다. admin/batch 전용 도메인(seed 소스 등)은
-        # 트리거 시점 검증으로 충분(admin.py 참조).
+        # 반복하므로 부팅 시점에 검증한다. seed 소스 등 batch 도메인은 요청 경로가 아니라
+        # CLI 실행 시점(`python -m ...stock_seed`/`nps_seed`)에 처리하므로 부팅 검증 대상 아님.
         validate_quote_providers(
             settings.quote_provider_list, settings.us_quote_provider_list
         )
@@ -91,7 +91,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # table="boards" 로 흡수하므로 반드시 admin.router 보다 **먼저** include 한다(테스트로 가드).
     application.include_router(admin_board.router)
 
-    # admin 트리거 라우터 — 정식 `/admin/*`(관리용). 앱 라우터(/v1)와 무관.
+    # admin 라우터 — 어드민 패널 CRUD(`/admin/*`, require_admin=JWT+allowlist). 앱 라우터(/v1)와 무관.
     application.include_router(admin.router)
 
     return application
