@@ -6,6 +6,8 @@ import { Button } from "@/components/base/Button";
 import { AccountChip } from "@/components/shared/AccountChip";
 import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
 import type { ImportPreviewResponse } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
+import { SEMANTIC_COLORS } from "@/lib/constants/semantic-colors";
 import type { Account } from "@/types/database";
 
 // 해외(USD) 일괄 등록을 지원하는 broker_key. 그 외 브로커는 해외 행이 조용히
@@ -45,9 +47,9 @@ function CountCard({ label, value, variant = "default" }: {
 }) {
   const color = {
     default: "text-foreground",
-    success: "text-green-600 dark:text-green-400",
-    warn: "text-yellow-600 dark:text-yellow-400",
-    error: "text-red-600 dark:text-red-400",
+    success: SEMANTIC_COLORS.success.text,
+    warn: SEMANTIC_COLORS.warning.text,
+    error: SEMANTIC_COLORS.danger.text,
   }[variant];
 
   return (
@@ -139,14 +141,14 @@ export function PreviewStep({
         )}
 
         {preview.unresolved_ticker_count > 0 && (
-          <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
+          <div className={cn("rounded-lg border px-4 py-3 text-sm", SEMANTIC_COLORS.warning.bgSoft, SEMANTIC_COLORS.warning.borderSoft, SEMANTIC_COLORS.warning.text)}>
             종목코드 미해결: {preview.unresolved_ticker_count}건 — 해당 종목은 등록되지 않습니다.
             종목명을 정확히 입력했는지 확인하거나, 거래내역의 종목명 표기를 점검해주세요.
           </div>
         )}
 
         {hasValidationError && (
-          <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
+          <div className={cn("rounded-lg border px-4 py-3 text-sm", SEMANTIC_COLORS.warning.bgSoft, SEMANTIC_COLORS.warning.borderSoft, SEMANTIC_COLORS.warning.text)}>
             <div className="flex items-start gap-2">
               <AlertCircleIcon className="mt-0.5 h-4 w-4 shrink-0" />
               <div className="flex-1 space-y-1.5">
@@ -179,7 +181,7 @@ export function PreviewStep({
           </div>
 
           {hintMismatch && (
-            <div className="flex items-start gap-2 rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
+            <div className={cn("flex items-start gap-2 rounded-lg border px-3 py-2 text-xs", SEMANTIC_COLORS.warning.bgSoft, SEMANTIC_COLORS.warning.borderSoft, SEMANTIC_COLORS.warning.text)}>
               <AlertCircleIcon className="mt-0.5 h-4 w-4 shrink-0" />
               <span>선택한 계좌의 계좌번호가 파일과 달라요. 다른 계좌의 거래가 섞일 수 있으니 계좌를 확인하세요.</span>
             </div>

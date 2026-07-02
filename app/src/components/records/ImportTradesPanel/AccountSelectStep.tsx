@@ -6,6 +6,7 @@ import { BrokerLogo } from "@/components/base/BrokerLogo";
 import { FullScreenPanelFooter } from "@/components/base/FullScreenPanel";
 import { normalizeAccountNumber } from "@/lib/account";
 import { cn } from "@/lib/utils";
+import { SEMANTIC_COLORS } from "@/lib/constants/semantic-colors";
 import type { Account } from "@/types/database";
 
 // 신규 등록 카드를 나타내는 sentinel 선택값 — 실제 계좌 id 와 충돌하지 않는 문자열.
@@ -74,13 +75,13 @@ export function AccountSelectStep({
         </p>
 
         {hasAccounts && matchState === "matched" && (
-          <div className="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
+          <div className={cn("flex items-start gap-2 rounded-lg border px-3 py-2 text-xs", SEMANTIC_COLORS.success.bgSoft, SEMANTIC_COLORS.success.borderSoft, SEMANTIC_COLORS.success.text)}>
             <CheckCircle2Icon className="mt-0.5 h-4 w-4 shrink-0" />
             <span>파일의 계좌번호와 일치하는 계좌를 자동으로 찾았어요.</span>
           </div>
         )}
         {hasAccounts && matchState === "unmatched" && (
-          <div className="flex items-start gap-2 rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
+          <div className={cn("flex items-start gap-2 rounded-lg border px-3 py-2 text-xs", SEMANTIC_COLORS.warning.bgSoft, SEMANTIC_COLORS.warning.borderSoft, SEMANTIC_COLORS.warning.text)}>
             <AlertCircleIcon className="mt-0.5 h-4 w-4 shrink-0" />
             <span>파일의 계좌번호와 일치하는 계좌가 없어요. 계좌를 선택하거나 새로 추가하세요.</span>
           </div>
@@ -92,7 +93,7 @@ export function AccountSelectStep({
           </div>
         )}
         {hintMismatch && (
-          <div className="flex items-start gap-2 rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
+          <div className={cn("flex items-start gap-2 rounded-lg border px-3 py-2 text-xs", SEMANTIC_COLORS.warning.bgSoft, SEMANTIC_COLORS.warning.borderSoft, SEMANTIC_COLORS.warning.text)}>
             <AlertCircleIcon className="mt-0.5 h-4 w-4 shrink-0" />
             <span>선택한 계좌의 계좌번호가 파일과 달라요. 다른 계좌의 거래가 섞일 수 있으니 계좌를 확인하세요.</span>
           </div>
@@ -116,7 +117,7 @@ export function AccountSelectStep({
                   <span className="flex items-center gap-1.5">
                     <span className="truncate text-sm font-medium">{acc.name}</span>
                     {acc.id === matchedAccountId && (
-                      <span className="shrink-0 rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900 dark:text-green-300">
+                      <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium", SEMANTIC_COLORS.success.bgSoft, SEMANTIC_COLORS.success.text)}>
                         자동 매칭
                       </span>
                     )}

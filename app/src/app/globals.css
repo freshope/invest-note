@@ -2,10 +2,26 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* Tailwind v4 CSS-first: `.dark` 클래스 하위에서 dark 토큰이 유틸에 적용되게 한다.
+   이 선언이 없으면 `.dark {}` 팔레트가 Tailwind 유틸(bg-*, text-* 등)에 안 먹는다. */
+@custom-variant dark (&:is(.dark *));
+
 :root {
   --rise: #F04452;
   --fall: #1B6AC9;
   --brand: #7C3AED;
+  /* semantic 색 토큰 — soft 배경은 알파(bg-[var(--success)]/10)로 표현.
+     light 값은 기존 하드코딩 Tailwind 색조(green/amber/blue/red-600)에 앵커링해 라이트 회귀 방지. */
+  --success: #16A34A;
+  --warning: #D97706;
+  --info: #2563EB;
+  --danger: #DC2626;
+  /* 차트 fallback(6번째 이후) 토큰 — AllocationTabs 하드코딩 hex 승격 */
+  --chart-6: #A78BFA;
+  --chart-7: #34D399;
+  --chart-8: #FB923C;
+  /* 카드보다 살짝 어두운 미묘한 회색 표면(TradeCard 등). --card(순백)와 다른 값이어야 한다. */
+  --surface-subtle: #F7F8FA;
   --background: #FFFFFF;
   --foreground: #191F28;
   --card: #FFFFFF;
@@ -46,6 +62,11 @@
   --color-rise: var(--rise);
   --color-fall: var(--fall);
   --color-brand: var(--brand);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-danger: var(--danger);
+  --color-surface-subtle: var(--surface-subtle);
   --font-sans: var(--font-pretendard);
   --font-heading: var(--font-pretendard);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -56,6 +77,9 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --color-chart-8: var(--chart-8);
+  --color-chart-7: var(--chart-7);
+  --color-chart-6: var(--chart-6);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -97,6 +121,55 @@ body {
 html,
 body {
   overscroll-behavior-y: contain;
+}
+
+.dark {
+  /* 등락색: --rise(빨강)는 어두운 배경에서도 대비 충분해 옛값 유지.
+     --fall(파랑)만 어두운 배경 대비를 위해 밝게 조정(#1B6AC9 → #4C9AEE). */
+  --rise: #F04452;
+  --fall: #4C9AEE;
+  /* semantic — dark 값은 어두운 표면 대비를 위해 밝은 색조(*-400 계열) */
+  --success: #4ADE80;
+  --warning: #FBBF24;
+  --info: #60A5FA;
+  --danger: #F87171;
+  /* 차트 fallback — 비비드 계열이라 다크에서도 대비 무난, 동일 유지 */
+  --chart-6: #A78BFA;
+  --chart-7: #34D399;
+  --chart-8: #FB923C;
+  /* 카드(#1E1E24)보다 살짝 밝은 표면 */
+  --surface-subtle: #26262E;
+  --background: #17171C;
+  --foreground: #ECECEC;
+  --card: #1E1E24;
+  --card-foreground: #ECECEC;
+  --popover: #1E1E24;
+  --popover-foreground: #ECECEC;
+  --primary: #7C3AED;
+  --primary-foreground: #FFFFFF;
+  --secondary: #2C2C34;
+  --secondary-foreground: #ECECEC;
+  --muted: #2C2C34;
+  --muted-foreground: #6B7684;
+  --accent: #2C2C34;
+  --accent-foreground: #ECECEC;
+  --destructive: #F04452;
+  --border: #2C2C34;
+  --input: #2C2C34;
+  --ring: #7C3AED;
+  --chart-1: #7C3AED;
+  --chart-2: #00C9A7;
+  --chart-3: #FFC107;
+  --chart-4: #F04452;
+  --chart-5: #EC4899;
+  --sidebar: #1E1E24;
+  --sidebar-foreground: #ECECEC;
+  --sidebar-primary: #7C3AED;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #2C2C34;
+  --sidebar-accent-foreground: #ECECEC;
+  --sidebar-border: #2C2C34;
+  --sidebar-ring: #7C3AED;
 }
 
 /**

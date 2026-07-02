@@ -12,6 +12,8 @@ interface SettingsMenuRowProps {
   description?: string;
   /** 라벨 옆 unread 점(새 답변·새 공지 등). */
   dot?: boolean;
+  /** chevron 왼쪽에 표시하는 현재값(예: 선택된 테마명). */
+  value?: string;
 }
 
 /**
@@ -25,6 +27,7 @@ export function SettingsMenuRow({
   variant = "default",
   description,
   dot = false,
+  value,
 }: SettingsMenuRowProps) {
   const isDestructive = variant === "destructive";
 
@@ -57,7 +60,12 @@ export function SettingsMenuRow({
       {variant === "external" ? (
         <ExternalLinkIcon className="size-4 shrink-0 text-muted-foreground" />
       ) : isDestructive ? null : (
-        <ChevronRightIcon className="size-5 shrink-0 text-muted-foreground" />
+        <span className="flex shrink-0 items-center gap-1.5">
+          {value ? (
+            <span className="text-[14px] text-muted-foreground">{value}</span>
+          ) : null}
+          <ChevronRightIcon className="size-5 text-muted-foreground" />
+        </span>
       )}
     </button>
   );

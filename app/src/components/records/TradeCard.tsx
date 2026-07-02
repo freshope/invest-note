@@ -20,9 +20,10 @@ import type { StockMeta } from "@/lib/api-client";
 const ACTION_WIDTH_PX = 88;
 
 // 다른 카드(HoldingCard 등 bg-muted/60)와 동일한 표면색. 스와이프 레이어라 뒤의
-// 삭제 버튼(빨강)이 비치지 않도록 불투명이어야 한다 → muted(#F2F4F6) 60% over
-// background(#FFF) 의 등가 불투명색(#F7F8FA). 라이트 전용이라 고정값으로 둔다.
-const CARD_SURFACE = "bg-[#F7F8FA]";
+// 삭제 버튼(빨강)이 비치지 않도록 불투명이어야 한다. 라이트=#F7F8FA(=muted 60% over
+// #FFF 등가), 다크=어두운 등가색. --surface-subtle 토큰(globals.css)으로 라이트/다크 대응.
+// ⚠️ bg-card(순백) 로 매핑 금지 — 라이트 모드에서 카드가 순백으로 바뀌는 회귀.
+const CARD_SURFACE = "bg-[var(--surface-subtle)]";
 
 interface TradeCardProps {
   trade: TradeWithAccount;
