@@ -13,7 +13,7 @@ export const SEVERITY_STYLES = {
     border: "border-amber-200",
     icon: AlertTriangle,
     iconClass: "text-amber-500",
-    metricClass: "text-amber-600",
+    metricClass: "text-amber-700",
   },
   critical: {
     bg: "bg-red-50",

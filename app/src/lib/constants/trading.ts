@@ -86,7 +86,7 @@ export const ADHERENCE_CONFIG = {
   },
   DEVIATED: {
     label: "전략 이탈 ✗",
-    textClassName: "text-orange-600",
+    textClassName: "text-orange-700",
     bgClassName: "bg-orange-50 border-orange-200",
     barClassName: "bg-orange-500",
   },
