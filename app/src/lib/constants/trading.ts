@@ -7,6 +7,7 @@ import type {
   TradeType,
 } from "@/types/database";
 import { PNL_COLORS } from "./pnl-colors";
+import { SEMANTIC_COLORS } from "./semantic-colors";
 
 export const MARKET_LABELS: Record<MarketType, string> = {
   STOCK: "주식",
@@ -80,15 +81,16 @@ export const TRADE_RESULT_VALUES = ["SUCCESS", "FAIL", "BREAKEVEN"] as const sat
 export const ADHERENCE_CONFIG = {
   FOLLOWED: {
     label: "전략 준수 ✓",
-    textClassName: "text-green-600",
-    bgClassName: "bg-green-50 border-green-200",
-    barClassName: "bg-green-500",
+    textClassName: SEMANTIC_COLORS.success.text,
+    bgClassName: `${SEMANTIC_COLORS.success.bgSoft} ${SEMANTIC_COLORS.success.borderSoft}`,
+    barClassName: SEMANTIC_COLORS.success.bg,
   },
   DEVIATED: {
+    // 이탈은 경고색(amber/warning) — 옛 orange 를 semantic warning 토큰으로 통일.
     label: "전략 이탈 ✗",
-    textClassName: "text-orange-600",
-    bgClassName: "bg-orange-50 border-orange-200",
-    barClassName: "bg-orange-500",
+    textClassName: SEMANTIC_COLORS.warning.text,
+    bgClassName: `${SEMANTIC_COLORS.warning.bgSoft} ${SEMANTIC_COLORS.warning.borderSoft}`,
+    barClassName: SEMANTIC_COLORS.warning.bg,
   },
   UNKNOWN: {
     label: "미입력",

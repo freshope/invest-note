@@ -22,7 +22,7 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 운영 / 어드민 도구
 
-- [ ] **eslint lint warnings 잔여 (2026-06-30, set-state-in-effect 라운드 후속)** — admin eslint config 부재(전역 lint 실패)는 2026-06-30 해소(`admin/eslint.config.mjs` 추가 + app/admin `react-hooks/set-state-in-effect` 에러 5+1건 정식 수정: 대부분 렌더 중 상태조정 패턴 전환, object-URL previews·딥링크 consume 2건만 사유주석 disable). `_`-prefix 미사용 var 경고는 2026-06-30 `argsIgnorePattern:^_`(app+admin config) 로 해소(7→4). **남은 advisory warnings 4건:** ① `<img>`→`next/image`(`BrokerLogo.tsx`·`trade-display.tsx`, 시각/레이아웃 영향 검토 필요), ② `compilation-skipped`(React Compiler "incompatible library" — `TradeEditPanel.tsx`·`AccountFormPanel.tsx`). 에러 아님(exit 0). 트리거: 코드 품질 라운드 또는 CI lint 게이트 `--max-warnings 0` 도입 시.
+- [ ] **eslint lint warnings 잔여 (2026-06-30, set-state-in-effect 라운드 후속)** — admin eslint config 부재(전역 lint 실패)는 2026-06-30 해소(`admin/eslint.config.mjs` 추가 + app/admin `react-hooks/set-state-in-effect` 에러 5+1건 정식 수정: 대부분 렌더 중 상태조정 패턴 전환, object-URL previews·딥링크 consume 2건만 사유주석 disable). `_`-prefix 미사용 var 경고는 2026-06-30 `argsIgnorePattern:^_`(app+admin config) 로 해소(7→4). **~~남은 advisory warnings 4건~~ 2026-07-02 해소(lint 0 problems):** ① `<img>` 2건(`BrokerLogo.tsx`·`trade-display.tsx`)은 로컬 정적 SVG + `output:export`·`images.unoptimized` 라 next/image 이득 0(전환은 순수 churn) → 기존 관례(`BugReportPanel`/`MyPostDetailPanel`)대로 사유주석 `eslint-disable-next-line @next/next/no-img-element`. ② React Compiler `react-hooks/incompatible-library` 2건(RHF `watch()` — `TradeEditPanel`·`AccountFormPanel`)은 라이브러리 태생적·컴파일러가 이미 해당 컴포넌트 memoization 을 스킵(런타임 안전) → 사유주석 disable(`useWatch` 전환은 리렌더 동작 변경 리스크라 미채택). **이제 CI lint 게이트 `--max-warnings 0` 도입 가능.**
 - [ ] **KIS 앱키 만료·로테이션 가시화 (어드민 페이지에서 확인)** — 2026-06-08 조사. **문제:** KIS 앱키는 발급 1년 후 만료, 만료 30일 전부터 갱신 가능하고 **갱신=APP Key/APP Secret 재발급**(기존 값 연장이 아니라 새 값, KIS 공식 이용안내·wikidocs 확인). 즉 1년마다 시크릿 로테이션이 강제된다. 현재는 `KIS_APP_KEY`/`KIS_APP_SECRET` **env 단일 전역 키**(`kis_tokens.scope='app'` 고정)이고 **만료 감지/알림 코드 전무** → 만료 누락 시 `_issue_token()` 전면 실패 → 시세·일별종가 전체 장애(SPOF). 또 단일 키라 로테이션 시 env 교체+Coolify 재시작 사이 시세 공백 불가피(무중단 불가). **확인된 사실:** ① 유량 제한 단위 = 앱키(=계좌), 공식 기본 18건/초 — 다중 앱키 발급이 유량 확장 + 로테이션 무중단(키 A 교체 중 키 B 유지)의 공식 우회로(line 58 참조), ② 갱신은 재발급이라 만료일을 코드가 알 수 없음 → 운영자가 만료일을 명시 등록해야 D-day 산출 가능. **미확인(도입 전 KIS 확인 필요):** ① 갱신 직후 기존 키가 만료일까지 유효한지(유효하면 사전 갱신→교체로 무중단 가능, 무효화되면 점검창 필수), ② 유량 회피 목적 다중 앱키가 약관 허용인지. **방향(2026-06-08 결정):** 별도 어드민 페이지를 신규 구축해 거기서 만료 D-day·토큰 상태·최근 발급실패를 **확인**. 키 등록/교체(hot-swap)·멀티키까지 "관리"로 확장할지는 별도 결정 — 그 경우 키·만료일을 DB 저장(시크릿 암호화+서비스롤만 접근) 전제. 미사용 X-Admin-Token 트리거 인프라는 2026-07-01 제거됨(어드민 패널 CRUD `routers/admin.py` 는 유지) — 어드민 페이지 신설 시 `require_admin`(JWT+allowlist) 게이트 위에 엔드포인트 추가.
 - [ ] PnL 저장값 검증 엔드포인트 (이슈 E) — `/admin/verify-pnl` 신설. SELL의 저장된 `profit_loss`/`avg_buy_price`/`holding_days`/`strategy_type`/`reasoning_tags`/`emotion`을 `compute_group_pnl()`로 재계산해 차이 검출. 사용자 단위 batch + 차이 리포트 + (옵션) 자동 보정. 권한은 admin scope. DB 직접 수정·마이그레이션 누락·mutation 경로 우회 시 분석 탭과 거래 기록 합계 불일치를 잡기 위함.
 
@@ -37,7 +37,7 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] import preview 그룹 검증 중복 제거 (2026-05-26 API 성능 분석 #5) — `import_preview` 가 `account_id` 를 받으면 `_validate_import_groups` 가 commit 과 동일한 그룹별 `list_trades_in_group` + oversell 검증을 한 번 더 수행한다(`routers/trades.py` 의 preview 경로). 그룹 수가 많은 파일일수록 preview 에서 N회 추가 쿼리. 작업: preview 의 dedup 용 date-range fetch 결과를 재활용하거나, 정합성(oversell) 검증을 commit 단계로 일원화하고 preview 는 참고용 카운트만 노출. 주의: preview 단계에서 사용자에게 위반을 미리 보여주는 UX 가치가 있으므로 제거 전 FE 노출 동작 확인 필요.
 - [ ] 머지 갱신 범위 확장 재검토 — 현재 머지는 `commission`/`tax`/`traded_at` 만 update, `market_type`/`country_code`/`exchange` 는 사용자 분류를 우선해 **보존**(`docs/decisions.md` 2026-05-18 참고). 다음 트리거 발생 시 재검토: ① 사용자가 거래내역서로 분류 자동 보정을 명시적으로 원함, ② 증권사 파서가 사용자 수동 분류보다 더 정확한 케이스가 다수 보고됨. 재검토 시 `update_trade_from_import` 화이트리스트와 `build_merge_patch` 비교 필드를 함께 확장
 - [ ] **KB증권 파서 — 매도 포함 샘플 확보 후 구현 (2026-06-25 보류)** — 신한·미래에셋과 함께 추가하려 했으나 제공된 KB 샘플(`거래내역서_KB증권_1.xlsx`)에 **매수 행만** 있어 매도(`주식장내매도`/`KOSDAQ매도`, 금액=`입금/입고/매도` 컬럼) 포맷을 회귀 검증할 수 없음. 추정 구현 금지 — 매도 거래 포함 KB 거래내역서가 들어오면 매수+매도 함께 구현(`broker_import/kb_xlsx.py` 신규 + PARSERS + FE `BROKER_OPTIONS` 에 `kb_xlsx`/"KB증권"). 시트 `Sheet0`, 헤더 `거래일|내용|종목명|수량|단가|입금/입고/매도|출금/출고/매수|예수금잔액(원)`, 종목코드 없음(종목명 매칭). `lib/brokers.ts` "KB증권"(계좌 마스터)은 이미 존재.
-- [ ] 다운로드 가이드 콘텐츠 검수 — `app/src/components/records/ImportTradesPanel/brokers.ts` 의 `downloadGuide` 는 AI 1차 초안(`TODO` 주석 표시). 삼성증권 mPOP/토스/신한 SOL증권/미래에셋 m.Stock 앱과 실제 화면 대조 후 단계 텍스트·`helpUrl` 수정. 증권사 앱 UI 개편 시 깨질 수 있어 분기별 점검 또는 사용자 신고 트리거 시 갱신. 캡처 이미지 단계 안내가 더 효과적이라 판단되면 별도 spec 으로 보강
+- [ ] 다운로드 가이드 콘텐츠 검수 — `app/src/components/records/ImportTradesPanel/brokers.ts` 의 `downloadGuide`. **2026-07-02 검수:** ① description(문서명)·accept(형식)는 파서 docstring·`sample/` 실제 export 파일명과 대조 완료 — 삼성 "기간별 매매내역서"→**"거래내역서"**, 미래에셋 "거래내역서"→**"거래내역증명서"** 수정. ② 삼성 steps 는 **PC 웹(samsungpop.com) 엑셀 다운로드**로 정정(모바일 mPOP 엔 xlsx 내보내기 없음, 파서도 xlsx 전용). ③ 토스 steps 는 공식 FAQ(support.toss.im/faq/3331)의 **앱 경로**(홈→우측상단 삼단바→설정→계좌관리→증명서 발급하기→'거래 내역서')로 정정 — PC 웹으로도 받을 수 있으나 모바일 앱 흐름이 우리 앱에 적합. **남은 것:** **신한·미래에셋 steps(앱 메뉴 경로) 미검수** — 계정 없어 캡처 대기. 증권사 UI 개편 시 깨질 수 있어 분기별 점검 또는 사용자 신고 트리거 시 갱신. 캡처 이미지 단계 안내가 더 효과적이라 판단되면 별도 spec 으로 보강
 
 ## 거래내역서 일괄등록 고도화 — 해외주식(US/USD)
 
@@ -66,14 +66,13 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 사용자 요청 및 추가 기능
 
-- [ ] 목표가(%), 손절 및 익절 계획을 입력하고 그것을 지켰는지 여부를 분석
-- [ ] 관심 종목 추가 (보유하지 않은 종목도 볼 수 있게)
-- [ ] 보유종목 카드에 오늘 등락 표시
-- [ ] 자산추이에 일, 주, 월, 6개월, 올해 1년, 5년, all 선택 표시
-- [ ] 자산추이에 차트 기준점 s&p500, 코스피 지수등과 비교
-- [ ] 다크 테마 추가
-- [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리
-- [ ] iOS 상태바 색 동기화 — @capacitor/status-bar 도입 후 다크/라이트 전환 시 status bar style 동기화
+- [ ] 목표가(%), 손절 및 익절 계획을 입력하고 그것을 지켰는지 여부를 분석 — **(2026-07-02 감사) 부분:** 전략(strategy_type) 준수 분석은 이미 구현됨(`analysis/StrategyAdherencePanel.tsx` — 실보유기간 자동추론 vs 입력 전략 비교). **미구현이 이 항목의 핵심:** 거래/종목에 목표가·손절가·익절가 필드·입력 폼·달성/이탈 추적이 전무(스키마·폼에 target_price/stop_loss/take_profit 없음).
+- [ ] 관심 종목 추가 (보유하지 않은 종목도 볼 수 있게) — (2026-07-02 감사) 미구현 확인(watchlist 테이블·API·컴포넌트 전무).
+- [ ] 자산추이에 일, 주, 월, 6개월, 올해 1년, 5년, all 선택 표시 — **(2026-07-02 감사) 부분:** 분석 탭엔 기간 선택 존재(`lib/constants/analysis.ts` Period 1m/3m/6m/ytd/all — 재사용 가능 패턴). **자산추이 뷰(`assets/AssetHistoryView.tsx`)엔 기간 선택 없음**(전체 역사만) → 이 항목 대상.
+- [ ] 자산추이에 차트 기준점 s&p500, 코스피 지수등과 비교 — (2026-07-02 감사) 미구현 확인(benchmark/지수 오버레이 코드 전무, 차트는 단일 asset 곡선만).
+- [x] 다크 테마 추가 (완료 2026-07-02) — **실현가능성 조사 완료(2026-07-02), FE 전용·중간 규모.** 토대: 색이 `globals.css :root` shadcn 토큰(hex)으로 중앙화돼 있고 컴포넌트 ~270곳이 토큰 기반(`bg-muted`·`text-foreground`) → `.dark {}` 블록만 채우면 ~70% 자동 적용. **부재:** `.dark {}` 팔레트·Tailwind darkMode(v4 CSS-first라 `@custom-variant dark` 한 줄)·`next-themes`(토글 인프라)·설정 UI·`@capacitor/status-bar`(백로그 iOS 상태바 항목과 연계). **실작업:** ①다크 팔레트 30여 토큰 hex 설계(진짜 관문·디자인 결정, --rise 빨강/--fall 파랑은 명도만 조정) ②토글+html.dark class ③next-themes+설정 UI ④하드코딩 색 ~30-50줄 수정(`bg-white`/`text-white`/고정 hex — 단 카카오 `#FEE500`·구글·`TradeCard #F7F8FA` 등 의도적 고정 제외) ⑤라이트/다크 전수 QA. **⚠️ 시각 검증 다수 → preview 가능한 세션에서 진행.**
+- [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리 — **(2026-07-02 감사) 부분:** 푸시(`@capacitor/push-notifications`)·생체인증 플러그인 미설치. 키보드는 `@capacitor/keyboard` `resize:Native`만 설정(show/hide 이벤트 처리 없음), 백버튼은 `ForceUpdateGate.tsx`에서 강제업데이트 오버레이용 swallow만 존재 → **일반 네비게이션 백버튼 핸들러 없음**.
+- [x] iOS 상태바 색 동기화 (완료 2026-07-02) — @capacitor/status-bar 도입 + StatusBarThemeSync(resolvedTheme 반응, 네이티브 전용)로 다크/라이트 전환 시 status bar style 동기화
 
 ## v2 — UX
 

@@ -25,7 +25,6 @@ from tests.conftest import (
     BE_ISSUER,
     BE_KID,
     TEST_EMAIL,
-    TEST_SUPABASE_URL,
     TEST_USER_ID,
     _be_private_pem,
     _be_settings,
@@ -53,7 +52,7 @@ def _registry_client():
 @contextmanager
 def _dormant_client():
     """BE 토큰 미활성(signing key 없음) → registry 빈. 2c 불변식 역전: 전원 401."""
-    settings = Settings(supabase_url=TEST_SUPABASE_URL)
+    settings = Settings()
     app = create_app(settings)
     app.dependency_overrides[get_settings] = lambda: settings
     with TestClient(app) as client:

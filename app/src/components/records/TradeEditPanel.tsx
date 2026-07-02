@@ -150,6 +150,8 @@ export function TradeEditPanel({ open, onOpenChange, trade, accounts, onSaved }:
     amount_krw: liveAmountKrw,
     buy_reason: buyReason,
     sell_reason: sellReason,
+    // React Compiler 는 RHF watch() 를 memoize 못 해 이 컴포넌트 memoization 을 스킵한다(런타임 안전·안내성 경고).
+    // eslint-disable-next-line react-hooks/incompatible-library
   } = watch();
   const liveTotal = livePrice * liveQty;
   const acc = accounts.find((a) => a.id === trade.account_id);

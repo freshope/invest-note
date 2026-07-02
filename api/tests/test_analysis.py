@@ -86,7 +86,7 @@ class TestAnalysisDashboard:
             return {}
 
         trades_client.app.dependency_overrides[get_settings] = lambda: Settings(
-            supabase_url="https://test.supabase.co", quote_providers="yahoo"
+            quote_providers="yahoo"
         )
         try:
             with patch("invest_note_api.routers.analysis.acquire_for_user", make_fake_acquire(conn)):

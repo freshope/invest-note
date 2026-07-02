@@ -286,7 +286,7 @@ async def _seed_trades(
 
         # 그룹 PnL 재계산 — SELL 행의 profit_loss/avg_buy_price/holding_days/result 자동 채움
         group_trades = await list_trades_in_group(conn, user_id, group_key)
-        await recalc_group_pnl(conn, group_trades, group_key)
+        await recalc_group_pnl(conn, group_trades, group_key, user_id)
 
     return buy_count, sell_count
 

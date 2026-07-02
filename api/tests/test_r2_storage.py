@@ -15,12 +15,10 @@ from invest_note_api.config import Settings
 from invest_note_api.errors import APIError
 from invest_note_api.storage import r2
 
-TEST_SUPABASE_URL = "https://example.supabase.co"
 
 
 def _enabled_settings() -> Settings:
     return Settings(
-        supabase_url=TEST_SUPABASE_URL,
         r2_endpoint_url="https://accountid.r2.cloudflarestorage.com",
         r2_bucket="statements",
         r2_access_key_id="dummy-access-key",
@@ -29,7 +27,7 @@ def _enabled_settings() -> Settings:
 
 
 def _disabled_settings() -> Settings:
-    return Settings(supabase_url=TEST_SUPABASE_URL)
+    return Settings()
 
 
 def test_build_temp_key_prefix_and_ext():

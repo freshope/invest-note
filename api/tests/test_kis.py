@@ -14,14 +14,13 @@ from invest_note_api.external import kis
 from invest_note_api.external.constants import KIS_MOCK_BASE_URL, KIS_REAL_BASE_URL
 from tests.fake_pool import FakeConnection, make_fake_pool
 
-TEST_SUPABASE_URL = "https://test.supabase.co"
 
 TOKEN_JSON = {"access_token": "tok-1", "expires_in": 86400, "token_type": "Bearer"}
 
 
 def _settings(**kw) -> Settings:
     return Settings(
-        supabase_url=TEST_SUPABASE_URL, kis_app_key="key", kis_app_secret="secret", **kw
+        kis_app_key="key", kis_app_secret="secret", **kw
     )
 
 
@@ -54,7 +53,7 @@ def test_configure_kis_sets_base_url_by_env():
     assert kis.is_kis_configured()
     # 키 미설정으로 복원 — .env.local 의 실제 키가 새어들지 않게 명시적으로 빈 값 전달.
     kis.configure_kis(
-        Settings(supabase_url=TEST_SUPABASE_URL, kis_app_key="", kis_app_secret="")
+        Settings(kis_app_key="", kis_app_secret="")
     )
     assert not kis.is_kis_configured()
 

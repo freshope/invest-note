@@ -20,7 +20,6 @@ from invest_note_api.db import get_pool
 from invest_note_api.main import create_app
 from invest_note_api.storage import r2
 
-from .conftest import TEST_SUPABASE_URL
 from .fake_pool import FakeConnection, FakePool
 
 USER_ID = UUID("11111111-1111-1111-1111-111111111111")
@@ -29,7 +28,6 @@ PNG_CT = "image/png"
 
 def _r2_settings(**over) -> Settings:
     base = dict(
-        supabase_url=TEST_SUPABASE_URL,
         r2_endpoint_url="https://accountid.r2.cloudflarestorage.com",
         r2_bucket="statements",
         r2_access_key_id="dummy-access-key",

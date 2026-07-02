@@ -28,7 +28,6 @@ from invest_note_api.auth.oauth_providers import (
 )
 from invest_note_api.config import Settings
 
-TEST_SUPABASE_URL = "https://test.supabase.co"
 REDIRECT_URI = "https://api.invest-note.example/auth/callback"
 
 _apple_key = generate_private_key(SECP256R1())
@@ -38,7 +37,7 @@ _apple_pem = _apple_key.private_bytes(
 
 
 def _settings(**kw) -> Settings:
-    return Settings(supabase_url=TEST_SUPABASE_URL, **kw)
+    return Settings(**kw)
 
 
 class _FakeResp:

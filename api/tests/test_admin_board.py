@@ -16,7 +16,6 @@ from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import get_pool
 from invest_note_api.main import create_app
 
-from .conftest import TEST_SUPABASE_URL
 from .fake_pool import FakeConnection, FakePool
 
 ADMIN_EMAIL = "admin@example.com"
@@ -34,7 +33,7 @@ def _make_admin_app(admin_emails: str = ADMIN_EMAILS_CSV, *, r2: bool = False):
         if r2
         else {}
     )
-    settings = Settings(supabase_url=TEST_SUPABASE_URL, admin_emails=admin_emails, **extra)
+    settings = Settings(admin_emails=admin_emails, **extra)
     app = create_app(settings)
     app.dependency_overrides[get_settings] = lambda: settings
     return app

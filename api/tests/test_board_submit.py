@@ -17,7 +17,6 @@ from invest_note_api.db import get_pool
 from invest_note_api.main import create_app
 from invest_note_api.storage import r2
 
-from .conftest import TEST_SUPABASE_URL
 from .fake_pool import FakeConnection, FakePool
 
 USER_ID = UUID("11111111-1111-1111-1111-111111111111")
@@ -33,7 +32,6 @@ def _stub_r2_move(monkeypatch) -> None:
 
 def _r2_settings(**over) -> Settings:
     base = dict(
-        supabase_url=TEST_SUPABASE_URL,
         r2_endpoint_url="https://accountid.r2.cloudflarestorage.com",
         r2_bucket="statements",
         r2_access_key_id="dummy-access-key",
@@ -148,7 +146,7 @@ def test_presign_rejects_oversize():
 
 def test_presign_dormant_503():
     """R2 미설정이면 presign 503(dormant 무회귀)."""
-    client = _client(Settings(supabase_url=TEST_SUPABASE_URL))
+    client = _client(Settings())
     resp = client.post(
         "/v1/board/broker-statement/presign",
         json={"original_name": "내역.xlsx", "content_type": XLSX_CT, "size_bytes": 1024},
@@ -248,7 +246,7 @@ def test_submit_missing_upload_400(monkeypatch):
 
 def test_submit_dormant_503():
     """R2 미설정이면 submit 503(presign 우회 직접 호출 방어). 스키마 통과분으로 호출."""
-    client = _client(Settings(supabase_url=TEST_SUPABASE_URL), pool=FakePool())
+    client = _client(Settings(), pool=FakePool())
     resp = client.post("/v1/board/broker-statement", json=_submit_body(_key()))
     assert resp.status_code == 503
 

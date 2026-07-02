@@ -252,7 +252,7 @@ class TestPortfolioSummary:
             return {}
 
         trades_client.app.dependency_overrides[get_settings] = lambda: Settings(
-            supabase_url="https://test.supabase.co", quote_providers="yahoo"
+            quote_providers="yahoo"
         )
         try:
             with _patch_portfolio(conn):

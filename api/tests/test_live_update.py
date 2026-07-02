@@ -13,14 +13,12 @@ from invest_note_api.config import Settings, get_settings
 from invest_note_api.external.http_client import get_http_client
 from invest_note_api.main import create_app
 
-TEST_SUPABASE_URL = "https://test.supabase.co"
 MANIFEST_URL = "https://r2.example.com/manifest/latest.json"
 
 
 def _client(manifest_handler, *, manifest_url: str = MANIFEST_URL) -> TestClient:
     """manifest GET 을 MockTransport 로 가로채는 테스트 클라이언트."""
     settings = Settings(
-        supabase_url=TEST_SUPABASE_URL,
         live_update_manifest_url=manifest_url,
     )
     app = create_app(settings)

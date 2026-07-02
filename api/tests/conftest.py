@@ -19,8 +19,6 @@ def dt(s: str) -> datetime:
     """ISO 문자열 → UTC datetime."""
     return datetime.fromisoformat(s).astimezone(timezone.utc)
 TEST_EMAIL = "test@example.com"
-TEST_SUPABASE_URL = "https://test.supabase.co"
-TEST_JWKS_URI = f"{TEST_SUPABASE_URL}/auth/v1/.well-known/jwks.json"
 
 # 테스트 Settings 가 개발 머신 api/.env.local 값(provider 토글·실제 키)에 오염되지 않게
 # dotenv 소스를 전역 비활성화한다 — 명시 kwargs 로 안 넘긴 필드가 .env.local 로 덮여
@@ -75,7 +73,7 @@ def _make_app():
     from invest_note_api.config import Settings
     from invest_note_api.main import create_app
 
-    settings = Settings(supabase_url=TEST_SUPABASE_URL)
+    settings = Settings()
     return create_app(settings)
 
 
@@ -84,7 +82,6 @@ def _be_settings():
     from invest_note_api.config import Settings
 
     return Settings(
-        supabase_url=TEST_SUPABASE_URL,
         be_token_signing_key=_be_private_pem,
         be_token_issuer=BE_ISSUER,
         be_token_audience=BE_AUDIENCE,
