@@ -69,10 +69,10 @@
    - trades 라우터 변경
    main push 시 Coolify 가 자동 배포 (Watch Paths). **마이그레이션 적용 후 push.**
 
-3. **MIN_SUPPORTED_VERSION: 현재 `1.3.0` — 변경 검토 필요 (사용자 판단)**
-   - 2c teardown 이 BE 런타임의 Supabase 결합을 **완전 제거**한다. auth 컷오버(1.3.2)보다 이전인 1.3.0/1.3.1 앱이 구 Supabase-direct 경로에 의존한다면 이번 BE 배포 후 깨질 수 있음.
-   - account_number(schema optional 추가)·폼/toast 변경은 additive → 그 자체로는 breaking 아님.
-   - MIN 을 올리기로 하면 `api/.env.production` 변경 → BE 재배포 수반. **양 스토어 라이브 앱 lockout 위험이 있으므로 신중히 판단** (자동 결정하지 않음).
+3. **MIN_SUPPORTED_VERSION: 현재 `1.3.0` — 변경 불필요 (하위호환 검증 완료)**
+   - 하위호환 실증 확인 결과, **토큰 검증 코어(jwt.py/dependency.py)는 이번 릴리즈에서 무변경**. Supabase 검증 fallback 제거("2c")는 이미 이전 릴리즈(1.3.5 이전)에 반영·라이브·실기기 검증 완료된 상태이고, 이번 1.3.6 은 잔여 미사용 코드(identity_provider·config 필드) 청소일 뿐이다.
+   - `delete_me`(204 계약 동일·503 가드 제거로 견고), account_number(optional/additive), import 400 안내(성공 경로 불변), auth callback(성공 리다이렉트 동일·실패만 HTML), config 필드 제거(`extra="ignore"` → 부팅 정상), admin.py(`/admin/seed·reconcile`만 제거·앱 `/v1` 무관) — 모두 구버전 앱과 하위호환.
+   - 따라서 MIN 인상 없이 patch 로 진행. (변경 시 `api/.env.production` → BE 재배포 수반, 라이브 앱 lockout 위험이므로 향후에도 신중.)
 
 4. **모바일 스토어 제출: 불필요** — OTA web-only, 빌드 31 유지. OTA 번들 배포로 반영. 누적 변경은 다음 네이티브 제출 때 `since app-v1.3.0_31` 로 묶어 스토어 노트 작성.
 
