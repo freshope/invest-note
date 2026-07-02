@@ -2,6 +2,7 @@
 
 import { FileCheckIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SEMANTIC_COLORS } from "@/lib/constants/semantic-colors";
 import type { Trade } from "@/types/database";
 
 type ImportSourceBadgeSize = "sm" | "md";
@@ -30,7 +31,10 @@ export function ImportSourceBadge({ origin, size = "md", className }: ImportSour
   return (
     <span
       className={cn(
-        "inline-flex items-center font-bold rounded-md bg-green-500/10 border border-green-500/20 text-green-600 dark:text-green-400 shrink-0",
+        "inline-flex items-center font-bold rounded-md border shrink-0",
+        SEMANTIC_COLORS.success.bgSoft,
+        SEMANTIC_COLORS.success.borderSoft,
+        SEMANTIC_COLORS.success.text,
         SIZE_CLASSES[size],
         className,
       )}

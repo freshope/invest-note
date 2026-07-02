@@ -16,6 +16,7 @@ import {
   FullScreenPanelBody,
 } from "@/components/base/FullScreenPanel";
 import { AccountList } from "@/components/settings/AccountList";
+import { AppearanceSection } from "@/components/settings/AppearanceSection";
 import { SettingsMenuRow } from "@/components/settings/SettingsMenuRow";
 import { NoticePanel } from "@/components/settings/NoticePanel";
 import { MyPostsListPanel } from "@/components/settings/MyPostsListPanel";
@@ -115,6 +116,12 @@ export default function SettingsPage() {
               onClick={() => setAccountsOpen(true)}
             />
           </div>
+        </section>
+
+        {/* 화면 */}
+        <section className="space-y-3">
+          <h2 className={SECTION_LABEL}>화면</h2>
+          <AppearanceSection />
         </section>
 
         {/* 소식 */}

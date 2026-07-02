@@ -70,9 +70,9 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 관심 종목 추가 (보유하지 않은 종목도 볼 수 있게) — (2026-07-02 감사) 미구현 확인(watchlist 테이블·API·컴포넌트 전무).
 - [ ] 자산추이에 일, 주, 월, 6개월, 올해 1년, 5년, all 선택 표시 — **(2026-07-02 감사) 부분:** 분석 탭엔 기간 선택 존재(`lib/constants/analysis.ts` Period 1m/3m/6m/ytd/all — 재사용 가능 패턴). **자산추이 뷰(`assets/AssetHistoryView.tsx`)엔 기간 선택 없음**(전체 역사만) → 이 항목 대상.
 - [ ] 자산추이에 차트 기준점 s&p500, 코스피 지수등과 비교 — (2026-07-02 감사) 미구현 확인(benchmark/지수 오버레이 코드 전무, 차트는 단일 asset 곡선만).
-- [ ] 다크 테마 추가 — **실현가능성 조사 완료(2026-07-02), FE 전용·중간 규모.** 토대: 색이 `globals.css :root` shadcn 토큰(hex)으로 중앙화돼 있고 컴포넌트 ~270곳이 토큰 기반(`bg-muted`·`text-foreground`) → `.dark {}` 블록만 채우면 ~70% 자동 적용. **부재:** `.dark {}` 팔레트·Tailwind darkMode(v4 CSS-first라 `@custom-variant dark` 한 줄)·`next-themes`(토글 인프라)·설정 UI·`@capacitor/status-bar`(백로그 iOS 상태바 항목과 연계). **실작업:** ①다크 팔레트 30여 토큰 hex 설계(진짜 관문·디자인 결정, --rise 빨강/--fall 파랑은 명도만 조정) ②토글+html.dark class ③next-themes+설정 UI ④하드코딩 색 ~30-50줄 수정(`bg-white`/`text-white`/고정 hex — 단 카카오 `#FEE500`·구글·`TradeCard #F7F8FA` 등 의도적 고정 제외) ⑤라이트/다크 전수 QA. **⚠️ 시각 검증 다수 → preview 가능한 세션에서 진행.**
+- [x] 다크 테마 추가 (완료 2026-07-02) — **실현가능성 조사 완료(2026-07-02), FE 전용·중간 규모.** 토대: 색이 `globals.css :root` shadcn 토큰(hex)으로 중앙화돼 있고 컴포넌트 ~270곳이 토큰 기반(`bg-muted`·`text-foreground`) → `.dark {}` 블록만 채우면 ~70% 자동 적용. **부재:** `.dark {}` 팔레트·Tailwind darkMode(v4 CSS-first라 `@custom-variant dark` 한 줄)·`next-themes`(토글 인프라)·설정 UI·`@capacitor/status-bar`(백로그 iOS 상태바 항목과 연계). **실작업:** ①다크 팔레트 30여 토큰 hex 설계(진짜 관문·디자인 결정, --rise 빨강/--fall 파랑은 명도만 조정) ②토글+html.dark class ③next-themes+설정 UI ④하드코딩 색 ~30-50줄 수정(`bg-white`/`text-white`/고정 hex — 단 카카오 `#FEE500`·구글·`TradeCard #F7F8FA` 등 의도적 고정 제외) ⑤라이트/다크 전수 QA. **⚠️ 시각 검증 다수 → preview 가능한 세션에서 진행.**
 - [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리 — **(2026-07-02 감사) 부분:** 푸시(`@capacitor/push-notifications`)·생체인증 플러그인 미설치. 키보드는 `@capacitor/keyboard` `resize:Native`만 설정(show/hide 이벤트 처리 없음), 백버튼은 `ForceUpdateGate.tsx`에서 강제업데이트 오버레이용 swallow만 존재 → **일반 네비게이션 백버튼 핸들러 없음**.
-- [ ] iOS 상태바 색 동기화 — @capacitor/status-bar 도입 후 다크/라이트 전환 시 status bar style 동기화
+- [x] iOS 상태바 색 동기화 (완료 2026-07-02) — @capacitor/status-bar 도입 + StatusBarThemeSync(resolvedTheme 반응, 네이티브 전용)로 다크/라이트 전환 시 status bar style 동기화
 
 ## v2 — UX
 

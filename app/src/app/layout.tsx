@@ -3,7 +3,9 @@ import localFont from "next/font/local";
 import { AuthProvider } from "@/components/providers/AuthProvider";
 import { CapacitorDeepLinkHandler } from "@/components/providers/CapacitorDeepLinkHandler";
 import { QueryProvider } from "@/components/providers/QueryProvider";
-import { AppToaster } from "@/components/providers/AppToaster";
+import { ThemeProvider } from "@/components/providers/ThemeProvider";
+import { ThemedToaster } from "@/components/providers/ThemedToaster";
+import { StatusBarThemeSync } from "@/components/providers/StatusBarThemeSync";
 import { ForceUpdateGate } from "@/components/providers/ForceUpdateGate";
 import { LiveUpdateReady } from "@/components/providers/LiveUpdateReady";
 import { PageviewTracker } from "@/components/providers/PageviewTracker";
@@ -25,7 +27,10 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: "#7C3AED",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#FFFFFF" },
+    { media: "(prefers-color-scheme: dark)", color: "#17171C" },
+  ],
 };
 
 export const metadata: Metadata = {
@@ -39,22 +44,29 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko" className={`${pretendard.variable} h-full antialiased`}>
+    <html
+      lang="ko"
+      className={`${pretendard.variable} h-full antialiased`}
+      suppressHydrationWarning
+    >
       <body className="min-h-full flex flex-col">
-        <ForceUpdateGate />
-        <LiveUpdateReady />
-        <AuthProvider>
-          <CapacitorDeepLinkHandler />
-          <PostHogIdentifyBridge />
-          <PostHogVersionBridge />
-          <PageviewTracker />
-          <QueryProvider>
-            {/* 토큰 준비(AuthProvider) + useQuery(QueryProvider) 모두 안에서 마운트. */}
-            <MySubmissionsPopupGate />
-            {children}
-          </QueryProvider>
-        </AuthProvider>
-        <AppToaster />
+        <ThemeProvider>
+          <StatusBarThemeSync />
+          <ForceUpdateGate />
+          <LiveUpdateReady />
+          <AuthProvider>
+            <CapacitorDeepLinkHandler />
+            <PostHogIdentifyBridge />
+            <PostHogVersionBridge />
+            <PageviewTracker />
+            <QueryProvider>
+              {/* 토큰 준비(AuthProvider) + useQuery(QueryProvider) 모두 안에서 마운트. */}
+              <MySubmissionsPopupGate />
+              {children}
+            </QueryProvider>
+          </AuthProvider>
+          <ThemedToaster />
+        </ThemeProvider>
       </body>
     </html>
   );
