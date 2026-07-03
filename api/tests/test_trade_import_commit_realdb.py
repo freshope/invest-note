@@ -221,6 +221,41 @@ async def test_commit_merges_and_skips():
         await pool.close()
 
 
+async def test_commit_sets_source_ledger_provenance():
+    """물질화된 trade 의 source_ledger_entry_id 가 원본 원장 행 id 를 정확히 가리킨다."""
+    pool = await asyncpg.create_pool(TEST_DB_URL, min_size=1, max_size=4, statement_cache_size=0)
+    uid = None
+    try:
+        async with pool.acquire() as conn:
+            uid, acct = await _seed_account(conn, name="provenance")
+            sid = await _seed_ledger(conn, uid, [
+                _row("005930", "삼성전자", "BUY", 10, 70000, "2024-05-01"),
+            ])
+            entry_id = await conn.fetchval(
+                "SELECT id FROM import_ledger_entries WHERE user_id = $1", UUID(uid)
+            )
+
+        app = _make_app()
+        app.state.pool = pool
+        async with _client_as(app, uid) as ac:
+            r = await ac.post("/v1/trades/import/commit", json={"staging_id": sid, "account_id": acct})
+        assert r.status_code == 200, r.text
+        assert r.json()["inserted_count"] == 1
+
+        async with pool.acquire() as conn:
+            sle = await conn.fetchval(
+                "SELECT source_ledger_entry_id FROM trades"
+                " WHERE user_id = $1 AND trade_type = 'BUY'",
+                UUID(uid),
+            )
+        assert sle == entry_id  # provenance 링크가 원장 행을 정확히 가리킴
+    finally:
+        if uid is not None:
+            async with pool.acquire() as conn:
+                await conn.execute("DELETE FROM public.users WHERE id = $1", UUID(uid))
+        await pool.close()
+
+
 async def test_preview_validate_flags_oversell():
     """_validate_import_groups: 보유 없는 종목의 SELL 은 oversell → validation_errors + excluded_count."""
     pool = await asyncpg.create_pool(TEST_DB_URL, min_size=1, max_size=4, statement_cache_size=0)

@@ -130,3 +130,55 @@ def test_r2_disabled_storage_key_null():
             await pool.close()
 
     assert asyncio.run(scenario()) is None
+
+
+def test_cascade_delete_and_set_null():
+    """FK 무결성 — 원장 행 삭제 시 trade.source_ledger_entry_id=NULL(SET NULL),
+    사용자 삭제 시 batch·원장·trades 전부 CASCADE 삭제.
+    """
+    async def scenario():
+        pool = await asyncpg.create_pool(
+            TEST_DB_URL, min_size=1, max_size=2, statement_cache_size=0
+        )
+        try:
+            uid = uuid4()
+            await _capture(pool, uid, _make_samsung_xlsx([_buy_row()]))
+            async with pool.acquire() as c:
+                acct = await c.fetchval(
+                    "INSERT INTO accounts (user_id, name, broker, cash_balance)"
+                    " VALUES ($1, 'cascade', 'T', 0) RETURNING id",
+                    uid,
+                )
+                entry_id = await c.fetchval(
+                    "SELECT id FROM import_ledger_entries"
+                    " WHERE user_id=$1 AND dedup_key IS NOT NULL LIMIT 1",
+                    uid,
+                )
+                trade_id = await c.fetchval(
+                    "INSERT INTO trades (user_id, account_id, asset_name, ticker_symbol,"
+                    " market_type, trade_type, price, quantity, traded_at, country_code,"
+                    " exchange, exchange_rate, origin, source_ledger_entry_id)"
+                    " VALUES ($1,$2,'삼성전자','005930','STOCK','BUY',70000,10, now(),"
+                    " 'KR','',1.0,'IMPORT',$3) RETURNING id",
+                    uid, acct, entry_id,
+                )
+                # (a) SET NULL — 원장 행만 삭제 → trade 는 남고 링크만 끊긴다.
+                await c.execute("DELETE FROM import_ledger_entries WHERE id=$1", entry_id)
+                sle = await c.fetchval(
+                    "SELECT source_ledger_entry_id FROM trades WHERE id=$1", trade_id
+                )
+                # (b) CASCADE — 사용자 삭제 → batch·원장·trades 전부 소멸.
+                await c.execute("DELETE FROM public.users WHERE id=$1", uid)
+                counts = await c.fetchrow(
+                    "SELECT (SELECT count(*) FROM import_batches WHERE user_id=$1) AS b,"
+                    " (SELECT count(*) FROM import_ledger_entries WHERE user_id=$1) AS l,"
+                    " (SELECT count(*) FROM trades WHERE user_id=$1) AS t",
+                    uid,
+                )
+            return sle, counts["b"], counts["l"], counts["t"]
+        finally:
+            await pool.close()
+
+    sle, nbatch, nledger, ntrade = asyncio.run(scenario())
+    assert sle is None                         # SET NULL 적용
+    assert nbatch == 0 and nledger == 0 and ntrade == 0   # user CASCADE
