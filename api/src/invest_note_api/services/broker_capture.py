@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
@@ -27,6 +28,8 @@ from ..db_ops.import_ledger_repo import insert_batch, insert_ledger_entries
 from ..domain.trade_import import parse_kst_date
 from ..errors import APIError
 from ..storage import r2
+
+logger = logging.getLogger(__name__)
 
 # broker_key → 원본 파일 확장자(R2 key 표기용).
 _EXT_BY_BROKER = {
@@ -49,11 +52,15 @@ class CaptureResult:
 def _upload_source_file(
     settings: Settings, key: str, file_bytes: bytes, content_type: str | None
 ) -> None:
-    """원본 파일 R2 업로드(best-effort). 실패해도 무시 — 무손실 책임은 원장 raw."""
+    """원본 파일 R2 업로드(best-effort). 실패해도 진행 — 무손실 책임은 원장 raw.
+
+    단, storage_key 는 이미 batch 에 박혀 있어 '있다고 광고'하므로, 실패를 조용히 삼키면
+    ops 가 '90일 만료'와 '업로드 실패'를 구분할 수 없다 → warning 으로 남긴다(읽기는 404 관용).
+    """
     try:
         r2.put_object(settings, key, file_bytes, content_type)
     except Exception:
-        pass
+        logger.warning("원장 원본 파일 R2 업로드 실패(key=%s) — 원장 raw 로 진행", key, exc_info=True)
 
 
 async def capture_statement(

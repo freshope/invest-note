@@ -952,136 +952,142 @@ async def import_commit(
             groups[group_key].append(row)
 
         for group_key, group_rows in groups.items():
-            # 그룹별로 기존 거래 페치 → 시그니처→Trade 매핑 구성 (사용자 전체 fetch 회피)
-            group_existing = await list_trades_in_group(conn, user.id, group_key)
-            existing_by_sig: dict = {
-                trade_to_signature(t, str(body.account_id)): t for t in group_existing
-            }
-            # 같은 batch 내 중복 INSERT 방지용 (DB + 직전 INSERT 결정 모두 포함)
-            seen_sigs: set = set(existing_by_sig.keys())
-
-            # BUY → SELL 순 정렬
+            # BUY → SELL 순 정렬 (순수 Python — lock 불요)
             group_rows.sort(key=lambda r: (r["traded_at_kst"], 0 if r["trade_type"] == TRADE_TYPE_BUY else 1))
-
-            to_insert: list[dict] = []
-            to_merge: list[tuple[Trade, dict]] = []
-            for row in group_rows:
-                kst_str = row["traded_at_kst"]
-                traded_date = date.fromisoformat(kst_str)
-
-                # 파일 체결 시각 → UTC. 시각 없으면 KST 장 시작(09:00) 고정.
-                kst_full = row.get("traded_at_kst_full")
-                if kst_full:
-                    kst_dt = datetime.fromisoformat(kst_full)
-                    traded_at_utc = kst_date_to_utc(kst_dt.date(), kst_dt.time())
-                    # build_merge_patch 가 traded_at 비교를 위해 사용하는 키
-                    row_for_merge = {**row, "traded_at_utc": traded_at_utc}
-                else:
-                    traded_at_utc = kst_date_to_utc(traded_date)
-                    row_for_merge = row  # traded_at_utc 키 없음 → 머지에서 traded_at 비교 안 함
-
-                sig = make_signature(
-                    account_id=str(body.account_id),
-                    trade_date=traded_date,
-                    ticker=row["ticker_symbol"],
-                    asset_name=row["asset_name"],
-                    trade_type=row["trade_type"],
-                    quantity=row["quantity"],
-                    price=row["price"],
-                )
-
-                existing = existing_by_sig.get(sig)
-                if existing is not None:
-                    patch = build_merge_patch(existing, row_for_merge)
-                    if patch:
-                        to_merge.append((existing, patch))
-                    else:
-                        # 완전히 동일 → noop
-                        skipped_count += 1
-                    continue
-
-                if sig in seen_sigs:
-                    # 같은 import batch 내에서 같은 시그니처가 또 등장 → skip
-                    skipped_count += 1
-                    continue
-
-                # 방어 가드: import 경로는 create 의 _foreign_requires_exchange_rate validator 를
-                # 우회한다. 해외(비-KRW) 행은 exchange_rate(원/달러)를 반드시 실어 INSERT 한다.
-                # exchange_rate 가 1.0/누락이면 native USD 금액이 KRW 로 오인 집계되므로(원가
-                # ~환율배 부풀림), 그 행만 commit_error 로 처리하고 배치는 계속한다(침묵 통과 금지).
-                row_country = row["country_code"]
-                row_rate = row.get("exchange_rate", 1.0)
-                if (
-                    currency_for_country(row_country) != CURRENCY_KRW
-                    and row_rate == 1.0
-                ):
-                    commit_errors.append(ImportError(
-                        row_no=0,
-                        reason=f"{row['asset_name']} 해외 거래 환율 누락 — exchange_rate 가 필요합니다.",
-                    ))
-                    continue
-                insert_row = {
-                    "account_id": str(body.account_id),
-                    "asset_name": row["asset_name"],
-                    "ticker_symbol": row["ticker_symbol"],
-                    "market_type": row["market_type"],
-                    "trade_type": row["trade_type"],
-                    "price": row["price"],
-                    "quantity": row["quantity"],
-                    "traded_at": traded_at_utc,
-                    "commission": row["commission"],
-                    "tax": row["tax"],
-                    "country_code": row_country,
-                    "exchange_rate": row_rate,
-                    "exchange": row["exchange"],
-                    "origin": "IMPORT",
-                    "source_ledger_entry_id": row["source_ledger_entry_id"],
-                }
-                to_insert.append(insert_row)
-                seen_sigs.add(sig)
-
-            if not to_insert and not to_merge:
-                continue
-
-            # 정합성 검증은 DB 적용 *전* 가상 적용으로 수행한다.
-            # acquire_for_user 가 이미 outer transaction 을 잡고 있어 inner
-            # conn.transaction() 의 SAVEPOINT 동작이 Supavisor pooler 환경에서
-            # 안정적이지 않을 수 있어, "검증 실패면 raise → rollback" 패턴을 피한다.
-            now_for_virtual = datetime.now(timezone.utc)
-            virtual_inserts = [
-                Trade(
-                    id=f"__pending_{i}",
-                    user_id=str(user.id),
-                    total_amount=r["price"] * r["quantity"],
-                    created_at=now_for_virtual,
-                    updated_at=now_for_virtual,
-                    **r,
-                )
-                for i, r in enumerate(to_insert)
-            ]
-            virtual_merged = [
-                existing.model_copy(update=patch) for existing, patch in to_merge
-            ]
-            virtual_merged_ids = {m.id for m in virtual_merged}
-            virtual_fresh = (
-                virtual_merged
-                + [t for t in group_existing if t.id not in virtual_merged_ids]
-                + virtual_inserts
-            )
-            oversell_msg = _find_import_oversell(virtual_fresh, group_key)
-            if oversell_msg is not None:
-                commit_errors.append(ImportError(row_no=0, reason=oversell_msg))
-                continue
-
-            # 검증 통과 → 실제 DB 적용
-            err_asset = (
-                to_insert[0]["asset_name"]
-                if to_insert
-                else (to_merge[0][0].asset_name if to_merge else group_key.asset_name)
-            )
+            # except 핸들러가 항상 참조할 수 있게 미리 초기화(조회/결정 단계 예외 대비).
+            err_asset = group_key.asset_name
             try:
                 async with conn.transaction():
+                    # advisory lock 을 기존 거래 조회보다 *먼저* 획득한다. 같은 batch 를 동시
+                    # 재커밋(더블클릭·재시도·두 탭)하면 두 요청이 lock 전에 빈 그룹을 읽어 양쪽 다
+                    # INSERT 하는 TOCTOU 중복이 발생한다 → lock 선점 시 뒤 요청이 앞 요청의 커밋분을
+                    # 읽어 dedup(부분 UNIQUE 인덱스가 최후 방어). 조회·결정·검증·적용을 lock 안에서 수행.
                     await acquire_trade_group_lock(conn, str(user.id), group_key)
+
+                    # 그룹별 기존 거래 페치 → 시그니처→Trade 매핑 (lock 안 = 직렬화된 최신 상태)
+                    group_existing = await list_trades_in_group(conn, user.id, group_key)
+                    existing_by_sig: dict = {
+                        trade_to_signature(t, str(body.account_id)): t
+                        for t in group_existing
+                    }
+                    # 같은 batch 내 중복 INSERT 방지용 (DB + 직전 INSERT 결정 모두 포함)
+                    seen_sigs: set = set(existing_by_sig.keys())
+
+                    to_insert: list[dict] = []
+                    to_merge: list[tuple[Trade, dict]] = []
+                    for row in group_rows:
+                        kst_str = row["traded_at_kst"]
+                        traded_date = date.fromisoformat(kst_str)
+
+                        # 파일 체결 시각 → UTC. 시각 없으면 KST 장 시작(09:00) 고정.
+                        kst_full = row.get("traded_at_kst_full")
+                        if kst_full:
+                            kst_dt = datetime.fromisoformat(kst_full)
+                            traded_at_utc = kst_date_to_utc(kst_dt.date(), kst_dt.time())
+                            # build_merge_patch 가 traded_at 비교를 위해 사용하는 키
+                            row_for_merge = {**row, "traded_at_utc": traded_at_utc}
+                        else:
+                            traded_at_utc = kst_date_to_utc(traded_date)
+                            row_for_merge = row  # traded_at_utc 키 없음 → 머지에서 traded_at 비교 안 함
+
+                        sig = make_signature(
+                            account_id=str(body.account_id),
+                            trade_date=traded_date,
+                            ticker=row["ticker_symbol"],
+                            asset_name=row["asset_name"],
+                            trade_type=row["trade_type"],
+                            quantity=row["quantity"],
+                            price=row["price"],
+                        )
+
+                        existing = existing_by_sig.get(sig)
+                        if existing is not None:
+                            patch = build_merge_patch(existing, row_for_merge)
+                            if patch:
+                                to_merge.append((existing, patch))
+                            else:
+                                # 완전히 동일 → noop
+                                skipped_count += 1
+                            continue
+
+                        if sig in seen_sigs:
+                            # 같은 import batch 내에서 같은 시그니처가 또 등장 → skip
+                            skipped_count += 1
+                            continue
+
+                        # 방어 가드: import 경로는 create 의 _foreign_requires_exchange_rate validator 를
+                        # 우회한다. 해외(비-KRW) 행은 exchange_rate(원/달러)를 반드시 실어 INSERT 한다.
+                        # exchange_rate 가 1.0/누락이면 native USD 금액이 KRW 로 오인 집계되므로(원가
+                        # ~환율배 부풀림), 그 행만 commit_error 로 처리하고 배치는 계속한다(침묵 통과 금지).
+                        row_country = row["country_code"]
+                        row_rate = row.get("exchange_rate", 1.0)
+                        if (
+                            currency_for_country(row_country) != CURRENCY_KRW
+                            and row_rate == 1.0
+                        ):
+                            commit_errors.append(ImportError(
+                                row_no=0,
+                                reason=f"{row['asset_name']} 해외 거래 환율 누락 — exchange_rate 가 필요합니다.",
+                            ))
+                            continue
+                        insert_row = {
+                            "account_id": str(body.account_id),
+                            "asset_name": row["asset_name"],
+                            "ticker_symbol": row["ticker_symbol"],
+                            "market_type": row["market_type"],
+                            "trade_type": row["trade_type"],
+                            "price": row["price"],
+                            "quantity": row["quantity"],
+                            "traded_at": traded_at_utc,
+                            "commission": row["commission"],
+                            "tax": row["tax"],
+                            "country_code": row_country,
+                            "exchange_rate": row_rate,
+                            "exchange": row["exchange"],
+                            "origin": "IMPORT",
+                            "source_ledger_entry_id": row["source_ledger_entry_id"],
+                        }
+                        to_insert.append(insert_row)
+                        seen_sigs.add(sig)
+
+                    if not to_insert and not to_merge:
+                        continue
+
+                    # 정합성 검증은 DB 적용 *전* 가상 적용으로 수행한다.
+                    # inner conn.transaction() 의 SAVEPOINT 롤백이 Supavisor pooler 환경에서
+                    # 불안정할 수 있어, "검증 실패면 raise → rollback" 대신 가상 적용으로 판정한다.
+                    now_for_virtual = datetime.now(timezone.utc)
+                    virtual_inserts = [
+                        Trade(
+                            id=f"__pending_{i}",
+                            user_id=str(user.id),
+                            total_amount=r["price"] * r["quantity"],
+                            created_at=now_for_virtual,
+                            updated_at=now_for_virtual,
+                            **r,
+                        )
+                        for i, r in enumerate(to_insert)
+                    ]
+                    virtual_merged = [
+                        existing.model_copy(update=patch) for existing, patch in to_merge
+                    ]
+                    virtual_merged_ids = {m.id for m in virtual_merged}
+                    virtual_fresh = (
+                        virtual_merged
+                        + [t for t in group_existing if t.id not in virtual_merged_ids]
+                        + virtual_inserts
+                    )
+                    oversell_msg = _find_import_oversell(virtual_fresh, group_key)
+                    if oversell_msg is not None:
+                        commit_errors.append(ImportError(row_no=0, reason=oversell_msg))
+                        continue
+
+                    # 검증 통과 → 실제 DB 적용
+                    err_asset = (
+                        to_insert[0]["asset_name"]
+                        if to_insert
+                        else (to_merge[0][0].asset_name if to_merge else group_key.asset_name)
+                    )
 
                     # 1) 머지: 기존 거래 update
                     merged_trades: list[Trade] = []

@@ -68,6 +68,12 @@ def test_same_file_twice_single_batch_no_dup_rows():
     assert r2.batch_id == r1.batch_id
     assert nbatch == 1                        # 파일 1개
     assert nrows == 1                         # 거래 1행, 중복 적재 없음
+    # 프리뷰만 하고 커밋 안 한 파일을 재업로드해도 preview/commit 은 스킵되지 않는다:
+    # is_new=False 는 '원장 재적재·R2 재업로드'만 건너뛸 뿐, parse_result 는 매번 새로 파싱돼
+    # 프리뷰 카운트와 commit 물질화 소스(안정적 batch_id 로 기존 원장 행 조회)가 그대로 유효하다.
+    assert r2.trade_row_count == 1            # 재업로드도 거래를 그대로 노출(프리뷰 정상)
+    assert len(r2.parse_result.trades) == 1
+    assert r2.row_count == 0                  # 재적재만 스킵(원장 무중복)
 
 
 def test_same_trade_different_file_appends_both_renderings():
