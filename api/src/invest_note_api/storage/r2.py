@@ -34,6 +34,9 @@ from invest_note_api.errors import APIError
 TEMP_PREFIX = "temp"
 STATEMENT_PREFIX = "broker_statement"
 BUG_REPORT_PREFIX = "bug_report"
+# 원장 캡처(Stage 1) 원본 파일 보관 prefix. content-addressed(sha256) key 라 같은 파일
+# 재업로드 시 동일 객체(멱등). R2 lifecycle 규칙이 이 prefix 를 90일 만료시킨다(앱 정리 잡 없음).
+IMPORT_SOURCE_PREFIX = "import_source"
 
 ERR_R2_DISABLED = "첨부 스토리지가 설정되지 않았습니다."
 ERR_UPLOAD_MISSING = "업로드가 완료되지 않았습니다. 다시 시도해주세요."
@@ -93,6 +96,24 @@ def promote_key(temp_key: str, dest_prefix: str = STATEMENT_PREFIX) -> str:
     if not temp_key.startswith(prefix):
         raise APIError(ERR_UPLOAD_MISSING, 400)
     return f"{dest_prefix}/{temp_key[len(prefix):]}"
+
+
+def build_import_source_key(user_id, sha256: str, ext: str) -> str:
+    """원장 캡처 원본 파일 key — `import_source/{user_id}/{sha256}.{ext}`.
+
+    content-addressed(sha256) — 같은 파일 재업로드 시 동일 key 로 멱등(중복 객체 미생성).
+    ext 는 점 없는 확장자('xlsx'/'pdf'). R2 lifecycle 이 90일 만료.
+    """
+    return f"{IMPORT_SOURCE_PREFIX}/{user_id}/{sha256}.{ext}"
+
+
+def put_object(
+    settings: Settings, key: str, body: bytes, content_type: str | None = None
+) -> None:
+    """서버측 바이트 업로드(Stage 1 캡처). 동기 네트워크 호출 — async 에선 threadpool 로 감쌀 것."""
+    client = make_client(settings)
+    extra = {"ContentType": content_type} if content_type else {}
+    client.put_object(Bucket=settings.r2_bucket, Key=key, Body=body, **extra)
 
 
 def copy_object(settings: Settings, src_key: str, dst_key: str) -> None:

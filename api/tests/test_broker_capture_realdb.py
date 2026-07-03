@@ -1,0 +1,132 @@
+"""Stage 1 캡처 서비스 실DB 통합 테스트 — 파일/거래 dedup(keep-last).
+
+ON CONFLICT UPSERT·partial-unique 동작은 FakePool 로 못 덮으므로 실 PG 로만 검증된다.
+`INVEST_NOTE_TEST_DATABASE_URL`(마이그레이션 적용된 실 PG) 설정 시에만 실행, 미설정 시 skip.
+R2 는 미설정(r2_enabled=False)으로 두어 원본 파일 저장을 건너뛴다(storage_key=NULL).
+"""
+from __future__ import annotations
+
+import asyncio
+import os
+from types import SimpleNamespace
+from uuid import uuid4
+
+import asyncpg
+import pytest
+
+from invest_note_api.services.broker_capture import capture_statement
+
+from tests.test_broker_parsers import _buy_row, _make_samsung_xlsx
+
+TEST_DB_URL = os.environ.get("INVEST_NOTE_TEST_DATABASE_URL")
+
+pytestmark = pytest.mark.skipif(
+    not TEST_DB_URL, reason="INVEST_NOTE_TEST_DATABASE_URL 미설정 — 실DB 캡처 테스트 skip"
+)
+
+_SETTINGS = SimpleNamespace(r2_enabled=False)
+_XLSX_CT = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+async def _capture(pool, user_id, file_bytes):
+    return await capture_statement(
+        pool,
+        _SETTINGS,
+        user_id=user_id,
+        broker_key="samsung_xlsx",
+        filename="삼성증권 거래내역서.xlsx",
+        content_type=_XLSX_CT,
+        file_bytes=file_bytes,
+    )
+
+
+def test_same_file_twice_single_batch_no_dup_rows():
+    async def scenario():
+        pool = await asyncpg.create_pool(
+            TEST_DB_URL, min_size=1, max_size=2, statement_cache_size=0
+        )
+        try:
+            uid = uuid4()
+            xlsx = _make_samsung_xlsx([_buy_row()])
+            r1 = await _capture(pool, uid, xlsx)
+            r2 = await _capture(pool, uid, xlsx)  # 같은 파일 재업로드
+            async with pool.acquire() as c:
+                nbatch = await c.fetchval(
+                    "SELECT count(*) FROM import_batches WHERE user_id=$1", uid
+                )
+                nrows = await c.fetchval(
+                    "SELECT count(*) FROM import_ledger_entries WHERE user_id=$1", uid
+                )
+            return r1, r2, nbatch, nrows
+        finally:
+            await pool.close()
+
+    r1, r2, nbatch, nrows = asyncio.run(scenario())
+    assert r1.is_new_file is True
+    assert r1.trade_row_count == 1
+    assert r2.is_new_file is False           # sha256 dedup → batch 재생성 안 함
+    assert r2.batch_id == r1.batch_id
+    assert nbatch == 1                        # 파일 1개
+    assert nrows == 1                         # 거래 1행, 중복 적재 없음
+
+
+def test_same_trade_different_file_keeps_last_and_keeps_non_trade():
+    async def scenario():
+        pool = await asyncpg.create_pool(
+            TEST_DB_URL, min_size=1, max_size=2, statement_cache_size=0
+        )
+        try:
+            uid = uuid4()
+            # 같은 거래(date/name/qty/price 동일) + 배당(비거래). 수수료만 다름 → 다른 파일.
+            file_a = _make_samsung_xlsx([_buy_row(fee=22), _buy_row(name="배당금입금")])
+            file_b = _make_samsung_xlsx([_buy_row(fee=99), _buy_row(name="배당금입금")])
+            await _capture(pool, uid, file_a)
+            await _capture(pool, uid, file_b)
+            async with pool.acquire() as c:
+                n_trade = await c.fetchval(
+                    "SELECT count(*) FROM import_ledger_entries "
+                    "WHERE user_id=$1 AND dedup_key IS NOT NULL",
+                    uid,
+                )
+                n_non_trade = await c.fetchval(
+                    "SELECT count(*) FROM import_ledger_entries "
+                    "WHERE user_id=$1 AND dedup_key IS NULL",
+                    uid,
+                )
+                fee = await c.fetchval(
+                    "SELECT raw->>'수수료/Fee' FROM import_ledger_entries "
+                    "WHERE user_id=$1 AND dedup_key IS NOT NULL",
+                    uid,
+                )
+                nbatch = await c.fetchval(
+                    "SELECT count(*) FROM import_batches WHERE user_id=$1", uid
+                )
+            return n_trade, n_non_trade, fee, nbatch
+        finally:
+            await pool.close()
+
+    n_trade, n_non_trade, fee, nbatch = asyncio.run(scenario())
+    assert nbatch == 2                        # 서로 다른 파일 2개
+    assert n_trade == 1                        # 같은 거래 → 1행(dedup)
+    assert fee == "99"                         # keep-last: 마지막 업로드 값으로 갱신
+    assert n_non_trade == 2                     # 비거래 행은 dedup 안 함 → 2건 유지
+
+
+def test_r2_disabled_storage_key_null():
+    async def scenario():
+        pool = await asyncpg.create_pool(
+            TEST_DB_URL, min_size=1, max_size=2, statement_cache_size=0
+        )
+        try:
+            uid = uuid4()
+            r = await _capture(pool, uid, _make_samsung_xlsx([_buy_row()]))
+            async with pool.acquire() as c:
+                storage_key = await c.fetchval(
+                    "SELECT storage_key FROM import_batches WHERE id=$1::uuid",
+                    r.batch_id,
+                )
+            return storage_key
+        finally:
+            await pool.close()
+
+    assert asyncio.run(scenario()) is None

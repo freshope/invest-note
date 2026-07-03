@@ -197,6 +197,9 @@ class ParseResult:
 class BrokerStatementParser(ABC):
     key: str          # 레지스트리 식별자 (예: "samsung_xlsx")
     display_name: str # 사용자 노출 이름 (예: "삼성증권")
+    # 파서 출력 shape 버전 — 원장 batch 에 기록해 drift 감지·재파싱 판단에 쓴다.
+    # 파서 로직/추출 필드가 바뀌면 bump 한다.
+    version: str = "1"
 
     @abstractmethod
     def parse(self, file_bytes: bytes, filename: str) -> ParseResult:
