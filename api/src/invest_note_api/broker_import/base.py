@@ -93,6 +93,11 @@ class ParsedRow:
     asset_name: str | None = None
     quantity: float | None = None
     price: float | None = None
+    # 물질화(Stage 2)에 필요한 파서 산출 금액값 — tax 는 파서가 세목 합산(토스 거래세+제세금),
+    # USD 는 ÷환율 변환값이라 원장 컬럼에 정규화해 둔다(원문 세목은 raw 에 보존).
+    commission: float = 0.0
+    tax: float = 0.0
+    exchange_rate: float = 1.0
     currency: str = "KRW"
     country_code: str = "KR"
     ticker_hint: str | None = None
@@ -150,6 +155,9 @@ def row_from_trade(trade: "ParsedTrade", raw: dict | None = None) -> ParsedRow:
         asset_name=trade.asset_name,
         quantity=trade.quantity,
         price=trade.price,
+        commission=trade.commission,
+        tax=trade.tax,
+        exchange_rate=trade.exchange_rate,
         currency=trade.currency,
         country_code=trade.country_code,
         ticker_hint=trade.ticker_hint,

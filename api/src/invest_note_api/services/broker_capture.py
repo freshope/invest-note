@@ -73,7 +73,30 @@ async def capture_statement(
     if parser is None:
         raise APIError(f"지원하지 않는 증권사입니다: {broker_key}", 400)
 
-    parse_result = parser.parse(file_bytes, filename)
+    # 동기 pdfplumber/openpyxl 파싱은 threadpool 로 — async 이벤트 루프 비차단.
+    try:
+        parse_result = await run_in_threadpool(parser.parse, file_bytes, filename)
+    except Exception:
+        # 선택 증권사와 파일 형식 불일치(xlsx 파서 ← PDF = BadZipFile 등) → 원인 안내 400.
+        raise APIError(
+            f"이 파일은 {parser.display_name} 거래내역서 형식이 아닌 것 같아요. "
+            "선택한 증권사가 맞는지 확인해주세요.",
+            400,
+        )
+
+    # 거래·계좌번호·에러가 모두 비면 증권사 미스매치(정상 내역서는 최소 계좌번호 헤더가 잡힘)
+    # — 원장/파일을 만들지 않고 안내한다(bogus 캡처 방지).
+    if (
+        not parse_result.trades
+        and not parse_result.account_hint
+        and not parse_result.errors
+    ):
+        raise APIError(
+            f"이 파일에서 {parser.display_name} 거래내역을 찾지 못했어요. "
+            "선택한 증권사가 맞는지 확인해주세요.",
+            400,
+        )
+
     sha256 = hashlib.sha256(file_bytes).hexdigest()
     ext = _EXT_BY_BROKER.get(broker_key, "bin")
 

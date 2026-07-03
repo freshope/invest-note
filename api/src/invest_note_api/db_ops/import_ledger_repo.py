@@ -33,9 +33,9 @@ _UPSERT_LEDGER_SQL = """
 INSERT INTO import_ledger_entries (
     batch_id, user_id, source_row_no, traded_at_raw, traded_at,
     trade_type, asset_name, ticker_hint, isin, country_code,
-    quantity, price, dedup_key, raw
+    quantity, price, commission, tax, exchange_rate, dedup_key, raw
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb
 )
 ON CONFLICT (user_id, dedup_key) WHERE dedup_key IS NOT NULL
 DO UPDATE SET
@@ -50,7 +50,20 @@ DO UPDATE SET
     country_code = excluded.country_code,
     quantity = excluded.quantity,
     price = excluded.price,
+    commission = excluded.commission,
+    tax = excluded.tax,
+    exchange_rate = excluded.exchange_rate,
     raw = excluded.raw
+"""
+
+# Stage 2 물질화 소스 — batch 의 거래 인식 행(dedup_key 有)만. id 는 trades.source_ledger_entry_id 링크용.
+_SELECT_TRADE_ROWS_SQL = """
+SELECT id, source_row_no, traded_at_raw, trade_type, asset_name,
+       ticker_hint, isin, country_code, quantity, price,
+       commission, tax, exchange_rate
+  FROM import_ledger_entries
+ WHERE batch_id = $1 AND user_id = $2 AND dedup_key IS NOT NULL
+ ORDER BY source_row_no
 """
 
 
@@ -77,6 +90,9 @@ def _row_params(batch_id: UUID, user_id: UUID, row: ParsedRow) -> tuple:
         row.country_code,
         _num(row.quantity),
         _num(row.price),
+        _num(row.commission),
+        _num(row.tax),
+        _num(row.exchange_rate),
         row.dedup_key,
         json.dumps(row.raw, ensure_ascii=False),
     )
@@ -125,3 +141,10 @@ async def upsert_ledger_entries(
     params = [_row_params(batch_id, user_id, r) for r in rows]
     await conn.executemany(_UPSERT_LEDGER_SQL, params)
     return len(rows)
+
+
+async def get_ledger_trade_rows(
+    conn: Any, *, batch_id: UUID, user_id: UUID
+) -> list[Any]:
+    """Stage 2 물질화 소스 — batch 의 거래 인식 행(asyncpg Record 리스트). 없으면 빈 리스트."""
+    return await conn.fetch(_SELECT_TRADE_ROWS_SQL, batch_id, user_id)

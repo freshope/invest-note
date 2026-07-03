@@ -12,7 +12,8 @@ group·pnl mock 표면이 커 fragile → 실 PG + ASGI 로만 신뢰성 있게 
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -22,7 +23,7 @@ from httpx import ASGITransport
 
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
-from invest_note_api.db_ops.import_staging_repo import put_import_staging
+from invest_note_api.broker_import.base import make_dedup_key
 from invest_note_api.routers.trades import _validate_import_groups
 
 from tests.conftest import _make_app
@@ -79,17 +80,49 @@ async def _insert_trade(conn, user_id, account_id, *, ticker, name, ttype, qty, 
     )
 
 
-async def _stage(conn, user_id: str, rows: list[dict]) -> str:
-    """staging 을 실DB 에 pre-seed. staging_id 는 UUID 필수, 만료는 미래로."""
-    sid = str(uuid4())
-    await put_import_staging(
-        conn,
-        sid,
-        user_id,
-        {"rows": rows, "parse_errors": [], "usd_skip_count": 0, "broker_key": "test", "account_hint": None},
-        datetime.now(timezone.utc) + timedelta(hours=1),
+async def _seed_ledger(conn, user_id: str, rows: list[dict]) -> str:
+    """원장(batch + 거래 행)을 실DB 에 pre-seed 하고 batch_id(str) 반환.
+
+    commit 이 batch_id(=staging_id 필드)로 원장을 읽어 재해소·물질화한다. ticker_hint=ticker 로
+    두면 resolve_tickers 가 hint 를 권위로 즉시 해소(stocks 시드 불필요). raw 는 최소 더미.
+    """
+    batch_id = await conn.fetchval(
+        "INSERT INTO import_batches (user_id, broker_key, parser_version, content_sha256)"
+        " VALUES ($1, 'test', '1', $2) RETURNING id",
+        UUID(user_id),
+        str(uuid4()),
     )
-    return sid
+    for i, r in enumerate(rows, start=1):
+        dedup = make_dedup_key(
+            traded_at_kst=r["traded_at_kst"],
+            trade_type=r["trade_type"],
+            asset_name=r["asset_name"],
+            quantity=r["quantity"],
+            price=r["price"],
+            ticker_hint=r["ticker_symbol"],
+            country_code=r["country_code"],
+        )
+        await conn.execute(
+            "INSERT INTO import_ledger_entries (batch_id, user_id, source_row_no,"
+            " traded_at_raw, trade_type, asset_name, ticker_hint, country_code,"
+            " quantity, price, commission, tax, exchange_rate, dedup_key, raw)"
+            " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'{}'::jsonb)",
+            batch_id,
+            UUID(user_id),
+            i,
+            r["traded_at_kst"],
+            r["trade_type"],
+            r["asset_name"],
+            r["ticker_symbol"],
+            r["country_code"],
+            Decimal(str(r["quantity"])),
+            Decimal(str(r["price"])),
+            Decimal(str(r["commission"])),
+            Decimal(str(r["tax"])),
+            Decimal(str(r["exchange_rate"])),
+            dedup,
+        )
+    return str(batch_id)
 
 
 def _client_as(app, user_id: str) -> httpx.AsyncClient:
@@ -106,7 +139,7 @@ async def test_commit_inserts_new_and_recomputes_sell_pnl():
     try:
         async with pool.acquire() as conn:
             uid, acct = await _seed_account(conn, name="commit-insert")
-            sid = await _stage(conn, uid, [
+            sid = await _seed_ledger(conn, uid, [
                 _row("005930", "삼성전자", "BUY", 10, 70000, "2024-01-10"),
                 _row("005930", "삼성전자", "SELL", 5, 80000, "2024-01-20"),
             ])
@@ -155,7 +188,7 @@ async def test_commit_merges_and_skips():
                                 qty=3, price=1000, kst="2024-02-01", commission=5, tax=0)
             await _insert_trade(conn, uid, acct, ticker="BBB", name="비이", ttype="BUY",
                                 qty=2, price=2000, kst="2024-02-02", commission=5, tax=0)
-            sid = await _stage(conn, uid, [
+            sid = await _seed_ledger(conn, uid, [
                 _row("AAA", "에이", "BUY", 3, 1000, "2024-02-01", commission=5),   # 동일 → skip
                 _row("BBB", "비이", "BUY", 2, 2000, "2024-02-02", commission=9),   # commission 변경 → merge
             ])

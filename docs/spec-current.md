@@ -57,13 +57,15 @@ import_ledger_entries 읽기 → ticker 해소 → 거래 판별
 | trade_type | text NULL | BUY/SELL, 거래 인식 행만 |
 | asset_name / ticker_hint / isin / country_code | text NULL | 식별 힌트 |
 | quantity / price | numeric NULL | 식별 필드 |
+| commission / tax | numeric(18,2) NULL | 물질화 필요 파서 산출값(tax=세목 합산). 원문 세목은 raw 에 |
+| exchange_rate | numeric(18,6) NULL | 물질화 필요(USD 원가 환산) |
 | dedup_key | text NULL | 정규화 signature(거래 인식 행만; 비거래=NULL) |
 | raw | jsonb NOT NULL | **행 원문 전체(원문 토큰) + 세금 항목별** |
 | created_at | timestamptz | |
 
 인덱스: `(batch_id)`, **PARTIAL UNIQUE `(user_id, dedup_key) WHERE dedup_key IS NOT NULL`**(거래 dedup).
 > **dedup = keep-last**: 적재 시 `ON CONFLICT (user_id, dedup_key) DO UPDATE` 로 같은 signature 행의 raw·식별 필드를 최신 업로드 값으로 갱신(재업로드 정정 채널, 결정④). 엄격 append-only 아님.
-> 원장에 **없는** 것(의도): disposition·trade_id·row_kind·resolved_ticker·commission/tax 컬럼(전부 raw 또는 Stage 2).
+> 원장에 **없는** 것(의도): disposition·trade_id·row_kind·resolved_ticker(전부 raw 또는 Stage 2 산출). commission/tax/exchange_rate 는 물질화 필요 파생값이라 컬럼으로 둔다(2026-07-02 스코프4, decisions.md 결정② ★).
 
 ### `trades` 컬럼 추가
 - `source_ledger_entry_id` uuid NULL, FK→import_ledger_entries **ON DELETE SET NULL** — provenance(어느 원장 행에서 물질화됐는지).

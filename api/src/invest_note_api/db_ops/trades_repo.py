@@ -215,17 +215,17 @@ INSERT INTO trades (
     trade_type, price, quantity, traded_at, commission, tax,
     country_code, exchange, exchange_rate,
     strategy_type, reasoning_tags, buy_reason, sell_reason,
-    emotion, result, custom_tags, origin
+    emotion, result, custom_tags, origin, source_ledger_entry_id
 ) VALUES (
     $1, $2, $3, $4, $5,
     $6, $7, $8, $9, $10, $11,
     $12, $13, $14,
     $15, $16, $17, $18,
-    $19, $20, $21, $22
+    $19, $20, $21, $22, $23
 )
 """
 
-_TRADE_INSERT_PARAM_COUNT = 22
+_TRADE_INSERT_PARAM_COUNT = 23
 
 
 def _trade_insert_params(user_id: str, data: dict) -> tuple:
@@ -253,6 +253,8 @@ def _trade_insert_params(user_id: str, data: dict) -> tuple:
         data.get("custom_tags", []),
         # 출처. 개별등록 경로는 키 없음→"MANUAL", import 경로는 "IMPORT" 명시 전달.
         data.get("origin", "MANUAL"),
+        # 원장 provenance. import 물질화만 원장 행 id 전달, 개별등록은 None.
+        data.get("source_ledger_entry_id"),
     )
 
 
