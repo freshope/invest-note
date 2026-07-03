@@ -33,6 +33,15 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] **KB증권 파서 — 매도 포함 샘플 확보 후 구현 (2026-06-25 보류)** — 신한·미래에셋과 함께 추가하려 했으나 제공된 KB 샘플(`거래내역서_KB증권_1.xlsx`)에 **매수 행만** 있어 매도(`주식장내매도`/`KOSDAQ매도`, 금액=`입금/입고/매도` 컬럼) 포맷을 회귀 검증할 수 없음. 추정 구현 금지 — 매도 거래 포함 KB 거래내역서가 들어오면 매수+매도 함께 구현(`broker_import/kb_xlsx.py` 신규 + PARSERS + FE `BROKER_OPTIONS` 에 `kb_xlsx`/"KB증권"). 시트 `Sheet0`, 헤더 `거래일|내용|종목명|수량|단가|입금/입고/매도|출금/출고/매수|예수금잔액(원)`, 종목코드 없음(종목명 매칭). `lib/brokers.ts` "KB증권"(계좌 마스터)은 이미 존재.
 - [ ] 다운로드 가이드 콘텐츠 검수 — `app/src/components/records/ImportTradesPanel/brokers.ts` 의 `downloadGuide`. **2026-07-02 검수:** ① description(문서명)·accept(형식)는 파서 docstring·`sample/` 실제 export 파일명과 대조 완료 — 삼성 "기간별 매매내역서"→**"거래내역서"**, 미래에셋 "거래내역서"→**"거래내역증명서"** 수정. ② 삼성 steps 는 **PC 웹(samsungpop.com) 엑셀 다운로드**로 정정(모바일 mPOP 엔 xlsx 내보내기 없음, 파서도 xlsx 전용). ③ 토스 steps 는 공식 FAQ(support.toss.im/faq/3331)의 **앱 경로**(홈→우측상단 삼단바→설정→계좌관리→증명서 발급하기→'거래 내역서')로 정정 — PC 웹으로도 받을 수 있으나 모바일 앱 흐름이 우리 앱에 적합. **남은 것:** **신한·미래에셋 steps(앱 메뉴 경로) 미검수** — 계정 없어 캡처 대기. 증권사 UI 개편 시 깨질 수 있어 분기별 점검 또는 사용자 신고 트리거 시 갱신. 캡처 이미지 단계 안내가 더 효과적이라 판단되면 별도 spec 으로 보강
 
+### 거래내역서 원장(ledger) — 배포 및 후속 (2026-07-03)
+
+원장 기능(캡처/물질화 2-스테이지·append-only·등록 마커·날짜 파일거절) 구현 완료(`docs/decisions.md` 2026-07-02·07-03, `docs/spec-current.md`, 마이그레이션 `0014`, 유닛 959 + 격리 realdb 8 통과). 아래는 **배포 시/배포 후** 진행 항목 — feature 동작엔 영향 없음.
+
+- [ ] **`0014` 마이그레이션 운영 적용 (배포 시)** — `import_batches` / `import_ledger_entries` / `trades.source_ledger_entry_id`. 현재 "작성만"·미적용. 적용은 일상 경로(invest_note_app, superuser 불요). 참조: [[project_alembic_migrations]].
+- [ ] **R2 lifecycle 규칙 설정 (배포 시, 수동 Ops)** — Cloudflare R2 콘솔에서 **prefix `import_source/` 90일 만료** 규칙 추가. ⚠️ 버킷 전체 아님(OTA 매니페스트·`broker_statement/` 제보 첨부와 공유) — prefix 스코프 필수. 현재 storage_key 를 읽는 코드는 없음(다운로드 엔드포인트 부재).
+- [ ] **`import_staging`(0010) drop (배포 후)** — 원장이 대체해 dead 상태(라우터 참조 이미 제거). 별도 리비전 `0015` 로 DROP + `db_ops/import_staging_repo.py`·`tests/test_import_staging_repo.py`·잔존 import 정리. 운영 적용 테이블이라 위험 분리해 배포 후 진행.
+- [ ] **개인정보처리방침에 내역서 원본/파싱본 수집·보유기간(90일) 명시** — 위 "PIPA 개인정보처리방침 갱신" 항목과 함께 진행. 내역서 **원본 파일(R2, 90일)** + **파싱 원장 rows** 수집을 처리방침(`freshope.github.io/invest-note-legal`)·Play Data Safety·App Store privacy 라벨에 반영.
+
 ### 일괄등록 고도화 — 해외주식(US/USD)
 
 해외 주식 지원 본체(US 직접입력·KRW 통합표시·거래시점 환율 저장·US 시세/환율/검색/seed·KRW 환산 합산·FE overlay)는 모두 출시 완료(2026-06-08 Phase A·B, decisions·spec-history 기록). 이 섹션은 **일괄등록(import) 경로의 해외 잔여 작업**만 추적한다.
