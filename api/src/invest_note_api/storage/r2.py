@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from urllib.parse import quote
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import boto3
 from botocore.config import Config
@@ -98,7 +98,7 @@ def promote_key(temp_key: str, dest_prefix: str = STATEMENT_PREFIX) -> str:
     return f"{dest_prefix}/{temp_key[len(prefix):]}"
 
 
-def build_import_source_key(user_id, sha256: str, ext: str) -> str:
+def build_import_source_key(user_id: UUID, sha256: str, ext: str) -> str:
     """원장 캡처 원본 파일 key — `import_source/{user_id}/{sha256}.{ext}`.
 
     content-addressed(sha256) — 같은 파일 재업로드 시 동일 key 로 멱등(중복 객체 미생성).

@@ -6,13 +6,14 @@
 
 멱등/dedup:
 - 같은 파일 재업로드 → content_sha256 로 batch 통째 스킵(원장 재적재 안 함).
-- 같은 거래 다른 파일 → dedup_key keep-last UPSERT 로 최신 렌더링 갱신(재업로드 정정 채널).
+- 같은 거래 다른 파일 → 원장은 append(둘 다 보존). 중복 trade 방지는 물질화(Stage 2)가 담당.
 - 원본 파일 저장은 best-effort(무손실 책임은 원장 raw) — R2 미설정/실패 시 storage_key=NULL 로 진행.
 """
 from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -22,7 +23,8 @@ from ..broker_import import PARSERS
 from ..broker_import.base import ParseResult
 from ..config import Settings
 from ..db import acquire_for_user
-from ..db_ops.import_ledger_repo import insert_batch, upsert_ledger_entries
+from ..db_ops.import_ledger_repo import insert_batch, insert_ledger_entries
+from ..domain.trade_import import parse_kst_date
 from ..errors import APIError
 from ..storage import r2
 
@@ -44,19 +46,14 @@ class CaptureResult:
     parse_result: ParseResult  # Stage 2 preview 가 재사용(원장 재조회 없이 이어감)
 
 
-def _store_source_file(
-    settings: Settings, user_id: UUID, sha256: str, ext: str,
-    file_bytes: bytes, content_type: str | None,
-) -> str | None:
-    """원본 파일 R2 보관(best-effort). 미설정/실패 시 None(캡처는 계속 — 원장이 무손실 책임)."""
-    if not settings.r2_enabled:
-        return None
-    key = r2.build_import_source_key(user_id, sha256, ext)
+def _upload_source_file(
+    settings: Settings, key: str, file_bytes: bytes, content_type: str | None
+) -> None:
+    """원본 파일 R2 업로드(best-effort). 실패해도 무시 — 무손실 책임은 원장 raw."""
     try:
         r2.put_object(settings, key, file_bytes, content_type)
     except Exception:
-        return None
-    return key
+        pass
 
 
 async def capture_statement(
@@ -84,10 +81,12 @@ async def capture_statement(
             400,
         )
 
-    # 거래·계좌번호·에러가 모두 비면 증권사 미스매치(정상 내역서는 최소 계좌번호 헤더가 잡힘)
-    # — 원장/파일을 만들지 않고 안내한다(bogus 캡처 방지).
+    # 거래·계좌번호·에러·캡처행이 모두 비면 증권사 미스매치(정상 내역서는 최소 계좌번호 헤더가
+    # 잡힘) — 원장/파일을 만들지 않고 안내한다(bogus 캡처 방지). rows[] 포함: 비거래 행만 있는
+    # 정상 파일(예: 배당만 있는 기간)이 거짓 400 으로 거부되지 않도록 새 SoT 도 함께 본다.
     if (
         not parse_result.trades
+        and not parse_result.rows
         and not parse_result.account_hint
         and not parse_result.errors
     ):
@@ -97,12 +96,30 @@ async def capture_statement(
             400,
         )
 
+    # 날짜 오류(미래 일자·해석 불가)는 정상 데이터가 아니라 신뢰할 수 없는 파일 또는 파서 이상의
+    # 신호다 — 일부 행만 걸러내지 않고 파일 전체를 거절한다(캡처/원장에 남기지 않음).
+    today = datetime.now(timezone.utc).date()
+    for pt in parse_result.trades:
+        parsed_date = parse_kst_date(pt.traded_at_kst)
+        if parsed_date is None:
+            raise APIError(
+                f"거래 일자를 해석할 수 없는 행이 있어요(예: {pt.traded_at_kst!r}). "
+                "파일이 손상되었을 수 있으니 다시 내려받아 업로드해 주세요.",
+                400,
+            )
+        if parsed_date > today:
+            raise APIError(
+                f"미래 일자({pt.traded_at_kst}) 거래가 포함돼 있어요. "
+                "올바른 거래내역서 파일인지 확인해 주세요.",
+                400,
+            )
+
     sha256 = hashlib.sha256(file_bytes).hexdigest()
     ext = _EXT_BY_BROKER.get(broker_key, "bin")
-
-    # 원본 저장은 DB 쓰기 전에(멱등 key라 재업로드해도 동일 객체). threadpool 로 sync R2 호출 격리.
-    storage_key = await run_in_threadpool(
-        _store_source_file, settings, user_id, sha256, ext, file_bytes, content_type
+    # content-addressed key(멱등). 실제 R2 업로드는 신규 파일(is_new)일 때만 — sha256 batch
+    # dedup 이후로 미뤄, 재업로드/재-preview 시 동일 파일을 다시 PUT 하는 낭비를 피한다.
+    storage_key = (
+        r2.build_import_source_key(user_id, sha256, ext) if settings.r2_enabled else None
     )
 
     async with acquire_for_user(pool, user_id) as conn:
@@ -121,9 +138,16 @@ async def capture_statement(
         )
         row_count = 0
         if is_new:
-            row_count = await upsert_ledger_entries(
+            row_count = await insert_ledger_entries(
                 conn, batch_id=batch_id, user_id=user_id, rows=parse_result.rows
             )
+
+    # 신규 파일일 때만 원본 R2 업로드(best-effort — 실패해도 무손실 책임은 원장 raw; storage_key
+    # 는 콘텐츠 주소라 유효하고 읽기 경로는 만료/부재 404 를 관용).
+    if is_new and storage_key is not None:
+        await run_in_threadpool(
+            _upload_source_file, settings, storage_key, file_bytes, content_type
+        )
 
     trade_rows = sum(1 for r in parse_result.rows if r.kind == "trade")
     return CaptureResult(

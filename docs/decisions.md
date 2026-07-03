@@ -4,6 +4,19 @@
 
 ---
 
+## 2026-07-03 | 원장 dedup 재설계 — append-only + 물질화 단계 dedup (keep-last 뒤집음) + 등록 마커
+
+- **맥락:** 2026-07-02 원장은 "거래 dedup 을 원장에서 keep-last UPSERT(user-scope)"로 했다(결정②·④). 코드 리뷰에서 **cross-batch batch_id flip → 조용한 거래 손실** 발견: keep-last 가 `SET batch_id=excluded.batch_id` 로 공유 행을 최신 배치로 옮기는데 commit 은 `WHERE batch_id` 로 읽어, 먼저 preview 한 배치를 등록하면 옮겨간 행이 누락된다. 근본은 "등록=파일 단위 vs dedup=사용자 단위" 충돌.
+- **결정 ① 원장은 append-only — 거래 dedup 을 하지 않는다.** 모든 행을 그대로 적재(무손실). 파일 통째 재업로드만 `content_sha256` UNIQUE 로 skip. **같은 거래의 중복 제거는 물질화(Stage 2)의 trade-signature dedup/merge(계좌 단위)가 담당** — 이미 존재하던 로직이라 Stage 2 변경 거의 없음. → 결정②의 `dedup_key`·partial-unique, 결정④의 keep-last UPSERT **폐기**. 원장에서 거래 행 식별은 `trade_type IS NOT NULL`.
+- **이유:** (a) flip 문제 소멸, (b) 원래 "무손실" 목표에 더 충실(모든 렌더링 보존; keep-last 는 옛 렌더링을 덮어썼음), (c) 중복은 trade 레벨에서 막는 게 맞고 계좌 단위 dedup 이 사용자 단위보다 정확, (d) 원장이 순수 append 로그로 단순화(UPSERT·partial-unique·`make_dedup_key` 제거 → 코드리뷰 지적 "make_dedup_key↔make_signature 축 불일치"도 소멸).
+- **정정 흐름:** 정정본 파일 등록 시 그 파일 값으로 trade merge(`build_merge_patch`) → "내가 등록한 파일 값이 반영"으로 더 직관적(keep-last 의 "옛 파일 등록해도 최신 업로드 값" 보다 명확).
+- **트레이드오프:** 겹치는 파일 반복 업로드 시 원장 행 누적(단, 동일 파일은 sha256 skip·행 작음). provenance `source_ledger_entry_id` 는 그 거래를 만든 배치 행을 가리킴(첫 물질화 기준).
+- **결정 ② 등록 생애주기 마커 — `import_batches.committed_at`·`account_id`.** commit 시점에 채운다. 미리보기만 한 배치(committed_at NULL)와 실제 등록한 배치를 구분(재구성·정리·전환율 분석용). 캡처는 여전히 독립(마커는 NULL 로 시작).
+- **결정 ③ 날짜 오류(미래·해석불가) → 파일 전체 거절.** 정상 데이터가 아니라 신뢰불가 파일/파서 이상 신호로 보고, 일부 행만 거르지 않고 **캡처 시점에 파일 전체를 400 으로 거절**(원장에 남기지 않음). (코드리뷰 지적 "commit 미래일자 가드 소실"의 근본 처리.)
+- 참조: [[project_broker_import_parsers]], [[project_trade_origin]], [[feedback_broker_parser_fixture_tests]].
+
+---
+
 ## 2026-07-02 | 거래내역서 원장(ledger) 도입 — 캡처(원장)와 물질화(일괄등록) 2-스테이지 분리 (조사 단계 결정)
 
 - **맥락:** 거래내역서에서 추출 가능한 정보를 **모두** 기록해, 추후 거래 데이터를 원장 기반으로 복구·재구성 가능하게 하고 싶다는 요구. 현재는 `내역서 → 파서(ParsedTrade) → import_staging(jsonb, TTL 600s) → dedup → trades INSERT` 흐름에서 **`trades`가 유일 영속 저장소**이고, 가변·dedup·merge 손실·원본 미보관 이라 비가역이다. 파서 4종 감사: 삼성 xlsx 18컬럼 중 8개만 추출, 신한 소득세/지방소득세/농특세 누락, 미래에셋 수수료 미추출, 토스 USD KRW원본 소실, `raw`·`source_row_no`·`isin` 저장 단계 폐기.

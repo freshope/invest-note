@@ -19,7 +19,10 @@ from invest_note_api.db_ops.custom_tags_repo import (
     delete_custom_tag,
     list_custom_tags,
 )
-from invest_note_api.db_ops.import_ledger_repo import get_ledger_trade_rows
+from invest_note_api.db_ops.import_ledger_repo import (
+    get_ledger_trade_rows,
+    mark_batch_committed,
+)
 from invest_note_api.db_ops.pnl_sync import recalc_group_pnl
 from invest_note_api.db_ops.trades_repo import (
     IMPORT_LOCKED_FIELDS,
@@ -675,6 +678,7 @@ def _rows_from_ledger(
                 )
             )
             continue
+        # 날짜 유효성(미래·파싱불가)은 캡처 시점에 파일 단위로 이미 거절됨 → 원장 행은 유효 날짜.
         raw_kst = lr["traded_at_raw"] or ""
         rows.append(
             {
@@ -1118,6 +1122,10 @@ async def import_commit(
 
         # 원장은 durable 하므로 삭제하지 않는다. transient 실패가 섞였으면 사용자가 같은
         # batch_id 로 commit 재시도(재업로드·재해소 없이) — trade-signature dedup 이 멱등 보장.
+        # 등록 생애주기 마커 — 미리보기만 한 배치와 구분(committed_at·account_id 채움).
+        await mark_batch_committed(
+            conn, batch_id=batch_uuid, user_id=user.id, account_id=body.account_id
+        )
 
     return ImportCommitResponse(
         inserted_count=inserted_count,

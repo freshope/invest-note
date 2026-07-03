@@ -70,7 +70,11 @@ def test_same_file_twice_single_batch_no_dup_rows():
     assert nrows == 1                         # 거래 1행, 중복 적재 없음
 
 
-def test_same_trade_different_file_keeps_last_and_keeps_non_trade():
+def test_same_trade_different_file_appends_both_renderings():
+    """원장은 append-only — 같은 거래가 다른 파일에 또 나타나면 두 렌더링이 모두 남는다.
+
+    (중복 trade 방지는 물질화 Stage 2 의 trade-signature 담당; 원장은 무손실 캡처.)
+    """
     async def scenario():
         pool = await asyncpg.create_pool(
             TEST_DB_URL, min_size=1, max_size=2, statement_cache_size=0
@@ -85,31 +89,31 @@ def test_same_trade_different_file_keeps_last_and_keeps_non_trade():
             async with pool.acquire() as c:
                 n_trade = await c.fetchval(
                     "SELECT count(*) FROM import_ledger_entries "
-                    "WHERE user_id=$1 AND dedup_key IS NOT NULL",
+                    "WHERE user_id=$1 AND trade_type IS NOT NULL",
                     uid,
                 )
                 n_non_trade = await c.fetchval(
                     "SELECT count(*) FROM import_ledger_entries "
-                    "WHERE user_id=$1 AND dedup_key IS NULL",
+                    "WHERE user_id=$1 AND trade_type IS NULL",
                     uid,
                 )
-                fee = await c.fetchval(
-                    "SELECT raw->>'수수료/Fee' FROM import_ledger_entries "
-                    "WHERE user_id=$1 AND dedup_key IS NOT NULL",
+                fees = await c.fetch(
+                    "SELECT raw->>'수수료/Fee' AS fee FROM import_ledger_entries "
+                    "WHERE user_id=$1 AND trade_type IS NOT NULL ORDER BY fee",
                     uid,
                 )
                 nbatch = await c.fetchval(
                     "SELECT count(*) FROM import_batches WHERE user_id=$1", uid
                 )
-            return n_trade, n_non_trade, fee, nbatch
+            return n_trade, n_non_trade, [r["fee"] for r in fees], nbatch
         finally:
             await pool.close()
 
-    n_trade, n_non_trade, fee, nbatch = asyncio.run(scenario())
+    n_trade, n_non_trade, fees, nbatch = asyncio.run(scenario())
     assert nbatch == 2                        # 서로 다른 파일 2개
-    assert n_trade == 1                        # 같은 거래 → 1행(dedup)
-    assert fee == "99"                         # keep-last: 마지막 업로드 값으로 갱신
-    assert n_non_trade == 2                     # 비거래 행은 dedup 안 함 → 2건 유지
+    assert n_trade == 2                        # append — 두 렌더링 모두 보존
+    assert fees == ["22", "99"]                # 두 파일의 수수료가 각각 남음
+    assert n_non_trade == 2                     # 비거래 행도 각 파일에서 보존
 
 
 def test_r2_disabled_storage_key_null():
@@ -151,7 +155,7 @@ def test_cascade_delete_and_set_null():
                 )
                 entry_id = await c.fetchval(
                     "SELECT id FROM import_ledger_entries"
-                    " WHERE user_id=$1 AND dedup_key IS NOT NULL LIMIT 1",
+                    " WHERE user_id=$1 AND trade_type IS NOT NULL LIMIT 1",
                     uid,
                 )
                 trade_id = await c.fetchval(

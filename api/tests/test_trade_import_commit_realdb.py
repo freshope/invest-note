@@ -23,7 +23,6 @@ from httpx import ASGITransport
 
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
-from invest_note_api.broker_import.base import make_dedup_key
 from invest_note_api.routers.trades import _validate_import_groups
 
 from tests.conftest import _make_app
@@ -93,20 +92,12 @@ async def _seed_ledger(conn, user_id: str, rows: list[dict]) -> str:
         str(uuid4()),
     )
     for i, r in enumerate(rows, start=1):
-        dedup = make_dedup_key(
-            traded_at_kst=r["traded_at_kst"],
-            trade_type=r["trade_type"],
-            asset_name=r["asset_name"],
-            quantity=r["quantity"],
-            price=r["price"],
-            ticker_hint=r["ticker_symbol"],
-            country_code=r["country_code"],
-        )
+        # 거래 행은 trade_type 이 채워져 있어 get_ledger_trade_rows(trade_type IS NOT NULL)에 잡힌다.
         await conn.execute(
             "INSERT INTO import_ledger_entries (batch_id, user_id, source_row_no,"
             " traded_at_raw, trade_type, asset_name, ticker_hint, country_code,"
-            " quantity, price, commission, tax, exchange_rate, dedup_key, raw)"
-            " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'{}'::jsonb)",
+            " quantity, price, commission, tax, exchange_rate, raw)"
+            " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'{}'::jsonb)",
             batch_id,
             UUID(user_id),
             i,
@@ -120,7 +111,6 @@ async def _seed_ledger(conn, user_id: str, rows: list[dict]) -> str:
             Decimal(str(r["commission"])),
             Decimal(str(r["tax"])),
             Decimal(str(r["exchange_rate"])),
-            dedup,
         )
     return str(batch_id)
 
@@ -248,7 +238,14 @@ async def test_commit_sets_source_ledger_provenance():
                 " WHERE user_id = $1 AND trade_type = 'BUY'",
                 UUID(uid),
             )
+            batch = await conn.fetchrow(
+                "SELECT committed_at, account_id FROM import_batches WHERE id = $1::uuid",
+                sid,
+            )
         assert sle == entry_id  # provenance 링크가 원장 행을 정확히 가리킴
+        # 등록 생애주기 마커 — commit 후 committed_at·account_id 채워짐(미리보기만 한 배치와 구분).
+        assert batch["committed_at"] is not None
+        assert str(batch["account_id"]) == acct
     finally:
         if uid is not None:
             async with pool.acquire() as conn:

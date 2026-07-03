@@ -8,9 +8,12 @@ Create Date: 2026-07-02
 
 - import_batches (파일 1건=1행): 원본 파일 메타 — R2 storage_key + content_sha256(재업로드 dedup)
   + parser_version(재파싱 판단) + account_hint. 파일 삭제는 R2 lifecycle 소유(만료 컬럼·정리 잡 없음).
-- import_ledger_entries (행 1건, dedup·keep-last): raw jsonb(행 원문 전체) + dedup/식별 최소 필드
-  + provenance(batch_id, source_row_no). 분류·실행결과·해소결과는 넣지 않음(Stage 2 산출).
-  거래 dedup 은 partial-unique (user_id, dedup_key) — 적재 시 keep-last UPSERT(코드).
+  account_id·committed_at: 등록(commit) 시점에 채우는 생애주기 마커 — 미리보기만 한 배치(committed_at
+  NULL)와 실제 등록한 배치를 구분한다(캡처는 여전히 독립적, NULL 로 시작).
+- import_ledger_entries (행 1건, **append-only**): raw jsonb(행 원문 전체) + 식별/물질화 필드
+  + provenance(batch_id, source_row_no). **원장은 거래 dedup 을 하지 않는다** — 모든 행을 그대로
+  적재(무손실). 파일 통째 재업로드만 content_sha256 로 skip. 같은 거래의 중복 제거는 물질화(Stage 2)
+  의 trade-signature dedup/merge 가 담당(계좌 단위). 거래 행은 trade_type IS NOT NULL 로 식별.
 - trades.source_ledger_entry_id: 어느 원장 행에서 물질화됐는지 provenance 링크.
 
 설계 주의(0003/0010/0012 관습 따름):
@@ -48,11 +51,15 @@ def upgrade() -> None:
             storage_key text,
             content_sha256 text NOT NULL,
             account_hint text,
+            account_id uuid,
+            committed_at timestamp with time zone,
             created_at timestamp with time zone DEFAULT now() NOT NULL,
             parsed_at timestamp with time zone,
             CONSTRAINT import_batches_pkey PRIMARY KEY (id),
             CONSTRAINT import_batches_user_id_fkey
-                FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE
+                FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE,
+            CONSTRAINT import_batches_account_id_fkey
+                FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE SET NULL
         );
         ALTER TABLE public.import_batches OWNER TO invest_note_app;
         CREATE INDEX import_batches_user_created_idx
@@ -77,7 +84,6 @@ def upgrade() -> None:
             commission numeric(18,2),
             tax numeric(18,2),
             exchange_rate numeric(18,6),
-            dedup_key text,
             raw jsonb NOT NULL,
             created_at timestamp with time zone DEFAULT now() NOT NULL,
             CONSTRAINT import_ledger_entries_pkey PRIMARY KEY (id),
@@ -89,9 +95,6 @@ def upgrade() -> None:
         ALTER TABLE public.import_ledger_entries OWNER TO invest_note_app;
         CREATE INDEX import_ledger_entries_batch_id_idx
             ON public.import_ledger_entries USING btree (batch_id);
-        CREATE UNIQUE INDEX import_ledger_entries_dedup_key
-            ON public.import_ledger_entries USING btree (user_id, dedup_key)
-            WHERE dedup_key IS NOT NULL;
         """
     )
 
@@ -108,9 +111,14 @@ def upgrade() -> None:
         ["id"],
         ondelete="SET NULL",
     )
+    # FK(SET NULL) 지원 인덱스 — 원장 행 삭제 시 참조 trades 를 인덱스로 찾게 해 seq scan 회피.
+    op.create_index(
+        "trades_source_ledger_entry_id_idx", "trades", ["source_ledger_entry_id"]
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("trades_source_ledger_entry_id_idx", table_name="trades")
     op.drop_constraint(
         "trades_source_ledger_entry_id_fkey", "trades", type_="foreignkey"
     )

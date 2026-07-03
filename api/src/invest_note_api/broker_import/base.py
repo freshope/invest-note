@@ -6,7 +6,6 @@ import io
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from decimal import ROUND_HALF_UP, Decimal
 
 import pdfplumber
 
@@ -80,16 +79,16 @@ class ParsedTrade:
 class ParsedRow:
     """원장(import_ledger_entries) 캡처용 행 1건. 파일의 모든 데이터 행을 담는다.
 
-    거래 인식 행(kind='trade')은 식별 필드 + dedup_key 를 채우고, 비거래/미인식 행
-    (kind='non_trade'|'error')은 raw 만 담는다. raw 는 행 원문 전체 덤프(무손실 책임).
-    분류(kind)는 파서의 best-effort 힌트일 뿐 — 물질화(Stage 2)에서 재해석한다.
+    거래 인식 행(kind='trade')은 식별 필드를 채우고, 비거래/미인식 행(kind='non_trade'|'error')은
+    raw 만 담는다. raw 는 행 원문 전체 덤프(무손실 책임). 원장은 append-only — dedup 하지 않으며,
+    같은 거래의 중복 제거는 물질화(Stage 2)의 trade-signature 가 담당한다.
     """
 
     source_row_no: int
     kind: str                        # "trade" | "non_trade" | "error"
     raw: dict
     traded_at_kst: str | None = None
-    trade_type: str | None = None
+    trade_type: str | None = None    # 거래 행만 채움 → 원장에서 거래 행 식별 키
     asset_name: str | None = None
     quantity: float | None = None
     price: float | None = None
@@ -102,50 +101,10 @@ class ParsedRow:
     country_code: str = "KR"
     ticker_hint: str | None = None
     isin: str | None = None
-    dedup_key: str | None = None     # 거래 인식 행만 (비거래=None → 원장 dedup 대상 아님)
-
-
-def _normalize_amount(value: object, places: int) -> str:
-    quant = Decimal(1).scaleb(-places)
-    return str(
-        Decimal(str(value if value is not None else 0)).quantize(
-            quant, rounding=ROUND_HALF_UP
-        )
-    )
-
-
-def make_dedup_key(
-    *,
-    traded_at_kst: str | None,
-    trade_type: str | None,
-    asset_name: str | None,
-    quantity: float | None,
-    price: float | None,
-    ticker_hint: str | None = None,
-    country_code: str = "KR",
-) -> str:
-    """거래 행 dedup 키 — user-scope 원장 dedup 용 정규화 signature.
-
-    Stage 2 trade-signature 와 동일 축(date+identifier+type+qty+price)에 country_code 를
-    더해 KR/US 동명(同名) 충돌을 막는다. price 2자리·quantity 4자리(trades 컬럼 정밀도)로
-    정규화해 포맷 차이를 흡수한다. identifier 는 ticker_hint 우선(없으면 asset_name).
-    """
-    date = (traded_at_kst or "")[:10]
-    identifier = (ticker_hint or asset_name or "").strip()
-    return "|".join(
-        [
-            date,
-            country_code,
-            identifier,
-            trade_type or "",
-            _normalize_amount(quantity, 4),
-            _normalize_amount(price, 2),
-        ]
-    )
 
 
 def row_from_trade(trade: "ParsedTrade", raw: dict | None = None) -> ParsedRow:
-    """거래 인식 ParsedTrade → 원장 rows[] 용 ParsedRow(kind='trade', dedup_key 계산)."""
+    """거래 인식 ParsedTrade → 원장 rows[] 용 ParsedRow(kind='trade')."""
     return ParsedRow(
         source_row_no=trade.source_row_no,
         kind="trade",
@@ -162,15 +121,6 @@ def row_from_trade(trade: "ParsedTrade", raw: dict | None = None) -> ParsedRow:
         country_code=trade.country_code,
         ticker_hint=trade.ticker_hint,
         isin=trade.isin,
-        dedup_key=make_dedup_key(
-            traded_at_kst=trade.traded_at_kst,
-            trade_type=trade.trade_type,
-            asset_name=trade.asset_name,
-            quantity=trade.quantity,
-            price=trade.price,
-            ticker_hint=trade.ticker_hint,
-            country_code=trade.country_code,
-        ),
     )
 
 
@@ -198,7 +148,7 @@ class ParseResult:
     def add_non_trade(
         self, source_row_no: int, raw: dict, kind: str = "non_trade"
     ) -> None:
-        """비거래/미인식 행을 원장 rows[] 에만 등록(raw 전체 덤프, dedup_key 없음)."""
+        """비거래/미인식 행을 원장 rows[] 에만 등록(raw 전체 덤프, trade_type 없음)."""
         self.rows.append(ParsedRow(source_row_no=source_row_no, kind=kind, raw=raw))
 
 
