@@ -4,6 +4,35 @@
 
 ---
 
+## 2026-07-02 | 거래내역서 원장(ledger) 도입 — 캡처(원장)와 물질화(일괄등록) 2-스테이지 분리 (조사 단계 결정)
+
+- **맥락:** 거래내역서에서 추출 가능한 정보를 **모두** 기록해, 추후 거래 데이터를 원장 기반으로 복구·재구성 가능하게 하고 싶다는 요구. 현재는 `내역서 → 파서(ParsedTrade) → import_staging(jsonb, TTL 600s) → dedup → trades INSERT` 흐름에서 **`trades`가 유일 영속 저장소**이고, 가변·dedup·merge 손실·원본 미보관 이라 비가역이다. 파서 4종 감사: 삼성 xlsx 18컬럼 중 8개만 추출, 신한 소득세/지방소득세/농특세 누락, 미래에셋 수수료 미추출, 토스 USD KRW원본 소실, `raw`·`source_row_no`·`isin` 저장 단계 폐기.
+- **결정 ① 2-스테이지 분리 — 캡처와 물질화를 떼어낸다.**
+  - **Stage 1 (캡처, 일괄등록과 무관):** 파일 업로드 → 파서가 **모든 행**을 raw 로 추출 → `import_ledger_entries` 적재(dedup). 일괄등록 UI 에 묶지 않고 **서비스로 분리**(admin/API/향후 auto-import 등 다중 진입점). 원본 파일은 `import_batches` + R2.
+  - **Stage 2 (물질화 = 일괄등록):** `import_ledger_entries` 를 읽어 ticker 해소 → 거래 판별 → 기존 **trade-signature dedup/merge 재사용** → `trades` 생성 + `trades.source_ledger_entry_id` provenance 링크. 재실행 idempotent(trade-signature dedup).
+- **결정 ② 원장은 얇게 = raw + 최소 식별 필드 + provenance 만.** (사용자 지시 "raw 데이터만 넣어") `import_ledger_entries` = `raw` jsonb(행 원문 전체) + dedup/식별에 필요한 최소 컬럼(traded_at·identifier·trade_type·quantity·price·ticker_hint·isin·country_code) + `batch_id`·`source_row_no`. **분류(trade/dividend/…)·실행결과(committed/error/trade_id)·해소결과(resolved_ticker)는 원장에 넣지 않는다** — 전부 Stage 2 산출. ticker 해소는 Stage 2([[project_broker_import_parsers]] isin_ticker_map 캐시). 원장은 **엄격 append-only 아님** — 거래 dedup 은 keep-last UPSERT(결정④)라 같은 signature 행은 갱신된다. "distinct 거래 1건당 최신 렌더링 1행" 이 정확한 성격.
+- **결정 ③ 파서는 "모든 행"을 raw 로 방출.** (사용자 지시) 거래/비거래/오류 분류 없이 각 행의 원문 전체를 dump. 거래로 인식되는 행은 dedup·Stage2 용 식별 필드도 함께 추출; 인식 안 되면 raw 만(식별필드 null). `ParseResult` 계약을 `trades[]`+`errors[]` → `rows[]`(raw + optional 식별) 로 변경. 세금은 합치지 말고 항목별 원문을 raw 에 보존. PDF 자유텍스트/서식 등 행 구분 불가 부분은 원장 대상 아님(90일 원본 파일이 담당).
+- **결정 ④ 중복 등록 방지 — "무손실 keep-both" 를 뒤집는다.** (사용자 지시 "같은 거래 중복 등록 방지") 두 종류 dedup:
+  - **같은 파일 재업로드** → `import_batches.content_sha256`(user-scope unique)로 파일 통째 스킵.
+  - **같은 거래가 다른 파일에** → user-scope **의미적 trade signature**(정규화 date+identifier+trade_type+qty+price) partial-unique 로 원장에서 스킵.
+  - **★뒤집힌 결정 + keep-last:** 초안의 "재업로드 시 양쪽 raw 를 다 남긴다(충실한 기록)"를 폐기. 원장은 **distinct 거래 1건당 최신 1행(keep-last, `ON CONFLICT (user_id, dedup_key) DO UPDATE`)**. 같은 signature 의 재업로드는 raw·commission·tax 를 **최신 값으로 갱신**한다.
+  - **keep-last 를 택한 이유(핵심):** IMPORT 출처 거래는 금액 5필드가 PATCH 로 잠겨([[project_trade_origin]]) 앱에서 직접 수정 불가 → **재업로드가 사실상 유일한 정정 채널**. keep-first 면 두 번째 업로드가 원장 insert 에서 버려져 정정 자체가 불가. keep-last + **Stage 2 물질화 `build_merge_patch` 정정 머지**로 수수료/세금/시각 정정이 흐른다.
+  - **정정 범위 한계:** signature(date+identifier+type+qty+price) 밖의 필드(commission/tax/time/포맷)만 갱신된다. **수량·단가 정정**은 signature 가 바뀌어 갱신이 아니라 *새 행+새 trade* → 기존 "삭제 후 재등록" 정책(2026-04-20)이 담당.
+  - **트레이드오프:** keep-last 는 엄격 불변(append-only)을 완화 — 이전 raw 렌더링을 덮어쓴다. 잃는 건 "이미 캡처된 거래의 옛 렌더링"뿐(canonical 사실 유지, 최근분은 원본 파일이 커버). 전체 이력 보존을 원하면 "append-all + supersede" 변형이 있으나 지시된 원장 dedup 과 상충해 미채택.
+  - **비거래 행은 의미적 dedup 안 함**(trade signature 없음) — 파일 sha256 수준만(over-build 회피).
+- **결정 ⑤ `import_staging`(0010) 대체·폐기.** 원장이 durable 이므로 preview→commit 전용 in-DB staging(TTL 600s)은 불필요 — preview 는 원장을 읽고, commit 은 원장→trades. 이로써 staging 만료로 commit 이 실패하던 버그도 구조적 해소([[project_import_staging_durable]]). **★드롭은 위험 분리:** ledger 추가·배선·검증 뒤 **별도 후속 리비전**으로 `import_staging` DROP(그때까지 unused 로 잔존; prod 적용 테이블이라 동일 변경에 묶지 않음).
+- **결정 ⑥ 원본 파일 90일 후 파기 — 삭제는 R2 lifecycle 이 소유(앱 정리 잡 없음).** (사용자 결정) R2 버킷 lifecycle 규칙으로 객체 자동 만료 → 앱-side cleanup 잡 불요(스코프 단순화). `import_batches` 는 `created_at` 만 유지하고 `file_expires_at`·정리 잡 제거; storage_key 읽기는 "이미 만료됐을 수 있음" 을 관용(90일 경과분 404 허용). 근거(PIPA 최소수집). 파일 파기 후에도 **캡처된 모든 행**은 원장에 남음.
+- **결정 ⑦ `import_batches` 는 파일 삭제용이 아니라 근거(provenance)용으로 유지.** (사용자 판단 동의) 테이블 = 신규 2개(+trades 컬럼 1개). `import_batches`(파일당 1행) 존재 이유 3가지: ① **근거/추적** — 원장 행 → batch_id → "언제 올린 어느 파일(증권사)". ② **파일 dedup** — `content_sha256`(user-scope). ③ **parser_version/storage_key** — 재파싱 판단 + 90일 내 원본 접근. 카디널리티(파일당 1 vs 행당 N)가 달라 원장에 못 접는다. + `trades.source_ledger_entry_id`(nullable FK). `import_staging` 후속 드롭 → net 신규 1개.
+- **복구 범위(변경 없음):** (a) 미래 기능 대비 무손실 기록 + (b) trades 손상 시 금액사실 재생성. 유저 생성 데이터(strategy/reasoning_tags/emotion/reason/result/custom_tags)·수동거래(origin=MANUAL)는 원장 밖. replay 실행 엔진·조회 API·FE 노출은 스코프 밖(capture-heavy, process-light).
+- **트레이드오프 / 보류:**
+  - **상대계좌 PII 마스킹은 이번 스코프에서 제외**(사용자 지시) — 필요 시 별도 스펙. 삼성 `상대계좌명/상대계좌번호` 등은 일단 raw 에 그대로.
+  - 탈퇴 하드삭제 정합: batch·원장·파일 모두 `user_id FK ON DELETE CASCADE`([[project_account_deletion_audit]] 감사행만 FK 없이 잔존).
+  - 기존 `broker_statement` 게시판([[project_broker_statement_submission]] 샘플 제보)과 동의 근거·목적 다르므로 섞지 않음.
+  - 개인정보처리방침(pixelwave-web)에 내역서 원본/파싱본 수집·보유기간(90일) 명시 — 출시 전 필수.
+  - 참조: [[project_broker_import_parsers]], [[feedback_broker_parser_fixture_tests]], [[project_alembic_migrations]], [[feedback_fe_trade_sort_for_calc]].
+
+---
+
 ## 2026-07-01 | 내역서 신규 계좌 — 등록 폼 없이 commit 시 자동 생성
 
 - **맥락:** 활성화 feature 개발 검수. import 계좌 선택 스텝에서 "새 계좌로 등록"을 고르면 초기 구현은 `AccountFormPanel`(계좌 등록 폼)을 띄워 사용자가 입력·확인하게 했다. 파서가 계좌번호만 주고 계좌명은 미제공([[2026-07-01 자동기입 항목]] 참조)이라 폼에서 사용자가 채울 정보가 사실상 없고, "새 계좌 등록에 별도 페이지 방문이 왜 필요하냐"는 검수 피드백이 있었다.
