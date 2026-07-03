@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "806786367895",
+    "project_id": "invest-note-494103",
+    "storage_bucket": "invest-note-494103.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:806786367895:android:782b49ecc4371f1abe04d2",
+        "android_client_info": {
+          "package_name": "app.pixelwave.investnote"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "806786367895-mcpl2chutrpl0snkqhevlade84vr8nk4.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAGQ75FBBt00G-jSGn_u7ZV-rNyN57oupU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "806786367895-mcpl2chutrpl0snkqhevlade84vr8nk4.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
