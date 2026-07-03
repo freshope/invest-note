@@ -38,7 +38,7 @@ MVP 이후 구현할 작업 후보 목록.
 원장 기능(캡처/물질화 2-스테이지·append-only·등록 마커·날짜 파일거절) 구현 완료(`docs/decisions.md` 2026-07-02·07-03, `docs/spec-current.md`, 마이그레이션 `0014`, 유닛 959 + 격리 realdb 8 통과). 아래는 **배포 시/배포 후** 진행 항목 — feature 동작엔 영향 없음.
 
 - [ ] **`0014` 마이그레이션 운영 적용 (배포 시)** — `import_batches` / `import_ledger_entries` / `trades.source_ledger_entry_id`. 현재 "작성만"·미적용. 적용은 일상 경로(invest_note_app, superuser 불요). 참조: [[project_alembic_migrations]].
-- [ ] **R2 lifecycle 규칙 설정 (배포 시, 수동 Ops)** — Cloudflare R2 콘솔에서 **prefix `import_source/` 90일 만료** 규칙 추가. ⚠️ 버킷 전체 아님(OTA 매니페스트·`broker_statement/` 제보 첨부와 공유) — prefix 스코프 필수. 현재 storage_key 를 읽는 코드는 없음(다운로드 엔드포인트 부재).
+- [ ] **R2 lifecycle 규칙 설정 (배포 시, 수동 Ops)** — Cloudflare R2 콘솔에서 **prefix `import_source/` 90일 만료** 규칙 추가. ⚠️ 버킷 전체 아님 — 업로드 버킷(`R2_BUCKET`, 예 `invest-note-uploads`)은 `broker_statement/`(제보)·`temp/`·`bug_report/` 와 공유하므로 **prefix 스코프 필수**(다른 prefix 삭제 금지). OTA 매니페스트는 별도(공개) 버킷이라 무관. 현재 storage_key 를 읽는 코드는 없음(다운로드 엔드포인트 부재).
 - [ ] **`import_staging`(0010) drop (배포 후)** — 원장이 대체해 dead 상태(라우터 참조 이미 제거). 별도 리비전 `0015` 로 DROP + `db_ops/import_staging_repo.py`·`tests/test_import_staging_repo.py`·잔존 import 정리. 운영 적용 테이블이라 위험 분리해 배포 후 진행.
 - [ ] **개인정보처리방침에 내역서 원본/파싱본 수집·보유기간(90일) 명시** — 위 "PIPA 개인정보처리방침 갱신" 항목과 함께 진행. 내역서 **원본 파일(R2, 90일)** + **파싱 원장 rows** 수집을 처리방침(`freshope.github.io/invest-note-legal`)·Play Data Safety·App Store privacy 라벨에 반영.
 
