@@ -17,7 +17,12 @@ from invest_note_api.broker_import.toss_pdf import (
     _parse_usd_name,
     _split_usd_nums,
 )
-from invest_note_api.broker_import.base import ParseResult
+from invest_note_api.broker_import.base import (
+    ParsedTrade,
+    ParseResult,
+    make_dedup_key,
+    row_from_trade,
+)
 
 
 def _make_samsung_xlsx(rows: list[dict], account_meta: str = "7157197877-14 [ ISA ] 홍길동") -> bytes:
@@ -630,3 +635,84 @@ class TestParsersRegistry:
         assert "mirae_pdf" in PARSERS
         assert PARSERS["shinhan_pdf"].display_name == "신한투자증권"
         assert PARSERS["mirae_pdf"].display_name == "미래에셋증권"
+
+
+class TestLedgerRows:
+    """스코프 2번 — 파서 rows[] 원장 캡처 (모든 행 raw + dedup_key)."""
+
+    parser = SamsungXlsxParser()
+
+    def test_trade_row_captured_with_dedup_key_and_full_raw(self):
+        xlsx = _make_samsung_xlsx([_buy_row()])
+        result = self.parser.parse(xlsx, "삼성증권 거래내역서.xlsx")
+        # 거래 행 1건 → rows[] 에 kind='trade' 1건, trades[] 와 동수(backward-compat).
+        trade_rows = [r for r in result.rows if r.kind == "trade"]
+        assert len(trade_rows) == len(result.trades) == 1
+        row = trade_rows[0]
+        assert row.dedup_key is not None
+        assert row.trade_type == "BUY"
+        # 행 원문 전체 덤프 — 지금 안 쓰는 컬럼(상대계좌번호 등)까지 raw 에 보존.
+        assert "상대계좌번호" in row.raw
+        assert "거래단가" in row.raw
+
+    def test_non_trade_row_captured_in_rows(self):
+        xlsx = _make_samsung_xlsx([_buy_row(name="배당금입금")])
+        result = self.parser.parse(xlsx, "삼성증권 거래내역서.xlsx")
+        assert len(result.trades) == 0
+        non_trade = [r for r in result.rows if r.kind == "non_trade"]
+        assert len(non_trade) == 1
+        assert non_trade[0].dedup_key is None
+        assert "거래명" in non_trade[0].raw
+
+    def test_usd_row_captured_as_non_trade(self):
+        xlsx = _make_samsung_xlsx([_buy_row(currency="USD")])
+        result = self.parser.parse(xlsx, "삼성증권 거래내역서.xlsx")
+        assert result.usd_skip_count == 1
+        assert any(r.kind == "non_trade" for r in result.rows)
+
+    def test_make_dedup_key_stable_and_discriminating(self):
+        base = dict(
+            traded_at_kst="2026-03-30",
+            trade_type="BUY",
+            asset_name="삼성전자",
+            quantity=10,
+            price=70000,
+            country_code="KR",
+        )
+        assert make_dedup_key(**base) == make_dedup_key(**base)
+        # 단가 차이 → 다른 키.
+        assert make_dedup_key(**base) != make_dedup_key(**{**base, "price": 70001})
+        # ticker_hint 우선 → identifier 축이 달라져 다른 키.
+        assert make_dedup_key(**base) != make_dedup_key(**base, ticker_hint="005930")
+
+    def test_make_dedup_key_price_normalized_2dp(self):
+        # 70000 vs 70000.004 → 2자리 정규화로 동일 키(포맷 차이 흡수).
+        k1 = make_dedup_key(
+            traded_at_kst="2026-03-30", trade_type="BUY", asset_name="A",
+            quantity=1, price=70000,
+        )
+        k2 = make_dedup_key(
+            traded_at_kst="2026-03-30", trade_type="BUY", asset_name="A",
+            quantity=1, price=70000.004,
+        )
+        assert k1 == k2
+
+    def test_row_from_trade_sets_kind_and_dedup_key(self):
+        pt = ParsedTrade(
+            source_row_no=3,
+            traded_at_kst="2026-03-30",
+            trade_type="SELL",
+            asset_name="팔란티어",
+            quantity=2,
+            price=30.5,
+            country_code="US",
+            isin="US69608A1088",
+        )
+        row = row_from_trade(pt, raw={"line": "raw text"})
+        assert row.kind == "trade"
+        assert row.isin == "US69608A1088"
+        assert row.raw == {"line": "raw text"}
+        assert row.dedup_key == make_dedup_key(
+            traded_at_kst="2026-03-30", trade_type="SELL", asset_name="팔란티어",
+            quantity=2, price=30.5, country_code="US",
+        )
