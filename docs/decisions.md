@@ -33,6 +33,32 @@
 
 ---
 
+## 2026-07-02 | 다크 테마 재도입 — 팔레트(CSS 변수) 중심 · semantic 토큰 승격
+
+- **맥락:** 2026-04-25 완전한 다크 모드가 있었으나 2026-04-28(`ca2610b`)에 "라이트 전용"으로 제거됐다. CSS 변수 인프라(`globals.css :root` shadcn 토큰)는 유지돼 컴포넌트 ~270곳이 이미 토큰 기반이라 `.dark {}` 팔레트만 채우면 대부분 자동 적용된다. 사용자 요구: **테마는 최대한 팔레트로 컨트롤하고 개별 `dark:` 프리픽스는 최소화**(단순 revert = 옛 `dark:` 재살포가 아니라 semantic 색을 팔레트 토큰으로 승격).
+- **결정 ① 단순 revert 대신 semantic 토큰 승격.** `PNL_COLORS`(`--rise`/`--fall`을 `.text/.bg/.bgSoft/.border`로 토큰화한 패턴)를 표준으로 삼아 `SEMANTIC_COLORS`(success/warning/info/danger) 상수(`lib/constants/semantic-colors.ts`, leaf 모듈)를 신설. soft 배경은 알파(`bg-[var(--success)]/10`)로 표현. → severity-styles / ADHERENCE_CONFIG / import 패널이 전부 이걸 참조, **프로젝트 커스텀 컴포넌트의 `dark:` 프리픽스 0개** 달성(shadcn `ui/*` 원본 제외). 색 조정은 팔레트 한 곳에서만.
+- **결정 ② 승격 대상/금지 정책(팔레트 오염 방지).** **승격**: 반복되는 semantic 색(성공/경고/정보/위험 — severity, adherence, import 패널의 매칭·검증 배너). **승격 금지**: 일회성 브랜드색(브로커 배지 23종, 카카오/구글 OAuth 색). 브랜드색을 팔레트 토큰으로 올리면 의미 없는 토큰이 늘어 팔레트가 오염되고, 브랜드 아이덴티티는 라이트/다크 무관 고정이라 토큰화 이득이 없다.
+- **결정 ③ semantic 토큰 light 값은 기존 하드코딩 Tailwind 색조에 앵커링.** light: `--success=#16A34A`(green-600), `--warning=#B45309`(amber-700), `--info=#2563EB`(blue-600), `--danger=#DC2626`(red-600). → **라이트 모드는 픽셀 불변**(승격으로 인한 라이트 회귀 원천 차단). 단 `--warning`만은 amber-600(#D97706, soft 배경서 ~3.1:1로 소형 텍스트 AA 미달)이 아니라 **amber-700(#B45309, ~4.77:1)**로 앵커링 — 아래 warning 대비 결정을 토큰으로 흡수(develop의 하드코딩 상향을 팔레트 단일 소스로 대체). dark 값만 어두운 표면 대비용으로 밝은 색조(*-400): `#4ADE80/#FBBF24/#60A5FA/#F87171`. `--danger`는 `--destructive`(#F04452, `--rise`와 동일 hex)와 **분리** — critical 배지가 손익 상승 빨강과 같은 색이 되는 혼동 방지.
+- **결정 ④ `--fall`(하락 파랑) 다크 명도만 조정.** light `#1B6AC9` 유지, **dark `#4C9AEE`로 밝게**. 어두운 배경(`#17171C`)에서 진한 파랑(#1B6AC9)은 대비가 부족해 금융 수치 가독성이 떨어진다. `--rise`(#F04452 빨강)는 어두운 배경에서도 대비 충분해 옛값 유지.
+- **결정 ⑤ `--surface-subtle` 토큰 신설(≠`--card`).** TradeCard 스와이프 레이어 표면색 `#F7F8FA`(muted 60% over #FFF 등가)를 하드코딩 → 토큰화. light `#F7F8FA`, dark `#26262E`(card #1E1E24보다 살짝 밝음). **`--card`(순백 #FFFFFF)로 매핑하지 않는다** — 라이트 모드에서 카드가 순백으로 바뀌는 미묘한 회귀. `--chart-6/7/8`(AllocationTabs fallback hex `#A78BFA/#34D399/#FB923C`)도 동일하게 토큰화(비비드 계열이라 dark 동일값 유지).
+- **결정 ⑥ 설정 탭 3-way 테마 선택(시스템/라이트/다크) — 필수 요구.** `AppearanceSection`을 `useTheme()` 기반으로 복원, `base/ToggleGroup`(radix `type="single"`)에 배선. **옛 AppearanceSection의 `value={[theme]}` 배열(multiple) 계약을 현재 base/ToggleGroup 계약(`type="single"` + string, radix `role="radio"`)에 맞춰 조정** — DeleteAccountSection과 동일 계약으로 통일. 이에 따라 복원 테스트의 `getByRole("button")` → `getByRole("radio")`로 조정. 지속은 next-themes 기본(localStorage).
+- **결정 ⑦ Capacitor StatusBar 다크 대응 — 웹 no-op·네이티브만.** `@capacitor/status-bar` 신규 설치 + `StatusBarThemeSync`(resolvedTheme 반응 effect, dynamic import·fail-open). SplashScreen `backgroundColor`는 **손대지 않음** — 네이티브 스플래시는 정적이라 시스템 다크 자동전환이 제한적이고, 과설계 금지.
+- **함정 회피:** `@custom-variant dark (&:is(.dark *));`(Tailwind v4 CSS-first) 없으면 `.dark` 토큰이 유틸에 안 먹음 → `@import` 다음에 복원. `<html suppressHydrationWarning>` 복원(next-themes class 주입 시 FOUC/hydration 경고 방지). `viewport.themeColor`를 light/dark 미디어쿼리 배열로 복원. semantic-colors.ts는 leaf라 `trading.ts↔colors.ts` 순환 재발 불가([[feedback_circular_import_colors_trading]]).
+- **트레이드오프:** CountryBadge는 스펙("KR blue → info 토큰")이 stale — 현 코드가 이미 `bg-muted text-muted-foreground`로 토큰화되어 있어 **무변경**(파랑 주입 = 요구사항 외 시각 변경이라 회피). import 패널 배너는 승격 과정에서 텍스트/아이콘 색이 semantic `.text`(solid)로 통일되어 옛 `text-*-800`(더 진한 톤) 대비 약간 밝아짐(라이트) — 팔레트 단일화의 의도된 트레이드오프.
+
+---
+
+## 2026-07-02 | warning 텍스트 대비 — amber-600/orange-600 → 700 (라이트 모드 WCAG AA)
+
+- **맥락:** 다크 테마 실현가능성 조사(`feature/dark-theme`) 중 QA가 발견한 **사전-존재 라이트 모드 접근성 이슈**. 이 결정이 내려진 시점에는 `SEMANTIC_COLORS`/`globals.css --warning` 팔레트가 미실재(다크 테마 미구현)라, 하드코딩된 Tailwind 유틸 클래스만 직접 상향했다.
+- **결정:** 단일 팔레트 소스가 없으므로 **실제 미달 지점의 유틸 클래스만 직접 상향**한다.
+  - `severity-styles.ts` `warn.metricClass`: `text-amber-600` → `text-amber-700`
+  - `trading.ts` `ADHERENCE_CONFIG.DEVIATED.textClassName`: `text-orange-600` → `text-orange-700`
+- **이유(실측 대비, `bg-*-50` 소프트 배경 기준):** amber-600(#D97706)/orange-600(#EA580C)은 각각 ~3.1:1 / ~3.36:1 로 소형 텍스트 AA(4.5:1) 미달. amber-700(#B45309)≈4.77:1, orange-700(#C2410C)≈4.88:1 로 통과.
+- **후속(동일 2026-07-02, 다크 테마 머지로 흡수됨):** severity `warn`/ADHERENCE DEVIATED는 위 다크 테마 결정에서 `SEMANTIC_COLORS.warning` 토큰으로 승격되어 유틸 하드코딩(amber/orange-700)이 제거됐다. AA는 `--warning` light값을 `#B45309`(amber-700)로 설정해 유지 — 이 결정이 예고한 "토큰화 흡수" 완료. 아이콘(non-text 3:1 대상)은 스코프 외.
+
+---
+
 ## 2026-07-01 | 내역서 신규 계좌 — 등록 폼 없이 commit 시 자동 생성
 
 - **맥락:** 활성화 feature 개발 검수. import 계좌 선택 스텝에서 "새 계좌로 등록"을 고르면 초기 구현은 `AccountFormPanel`(계좌 등록 폼)을 띄워 사용자가 입력·확인하게 했다. 파서가 계좌번호만 주고 계좌명은 미제공([[2026-07-01 자동기입 항목]] 참조)이라 폼에서 사용자가 채울 정보가 사실상 없고, "새 계좌 등록에 별도 페이지 방문이 왜 필요하냐"는 검수 피드백이 있었다.
@@ -75,7 +101,7 @@
 - **결정 ① 회원탈퇴를 DB-only 로 전환.** GoTrue `deleteUser` 호출·503 가드 제거, `identity_provider.py` 삭제. 삭제는 `public.users` 행 삭제(감사 INSERT→DELETE 트랜잭션)만 수행.
 - **결정 ② `config.supabase_url`·`supabase_secret_key` 필드 제거, `be_jwks_uri` 를 `supabase_url` 파생 placeholder 에서 `be_oauth_redirect_base` 기준으로 재유도.** `supabase/` 디렉토리·CI SUPABASE env 도 정리.
 - **이유:** 인증이 BE 토큰-브로커 단일 경로가 됐고 신원은 앱 DB(`users`+`auth_identities`)가 소유한다. `users` 삭제가 `auth_identities`(0004)·`user_profiles`(0005)·`auth_refresh_tokens`(0006) 전부 **ON DELETE CASCADE**(실측 확인) → users 행 삭제가 곧 완전한 탈퇴이고, 매핑이 함께 지워지므로 삭제된 UUID 부활(재로그인 시 dead 매핑 재사용)도 불가능. **구 GoTrue 호출은 오히려 버그였다** — BE-native 신규가입자는 `user.id` 가 Supabase 에 없어 404→502, 네이티브 탈퇴가 사실상 깨져 있었다. DB-only 가 이를 바로잡는다.
-- **트레이드오프:** 마이그레이션 유저의 Supabase `auth.users` 행은 이제 앱 탈퇴로 지워지지 않고 잔존하지만, 인증(발급·검증) 어디도 그 행을 쓰지 않아 무해하고 비가역 클라우드 프로젝트 삭제(U4)로 일괄 소멸한다. `be_auth_enabled` 플래그는 vestigial 로 남김(FE app-config 게이트 동반 제거는 후속). 비가역 운영(Coolify SUPABASE env 제거·클라우드 프로젝트 삭제·PIPA 고지)은 별도. ⚠️ **배포 순서:** 구 코드가 `supabase_url` required 라 이 커밋 BE 배포·부팅확인 후에 Coolify env 제거. 참조: runbook `docs/auth-cutover-runbook.md`.
+- **트레이드오프:** 마이그레이션 유저의 Supabase `auth.users` 행은 이제 앱 탈퇴로 지워지지 않고 잔존하지만, 인증(발급·검증) 어디도 그 행을 쓰지 않아 무해하고 비가역 클라우드 프로젝트 삭제(U4)로 일괄 소멸한다. `be_auth_enabled` 플래그는 vestigial 로 남김(FE app-config 게이트 동반 제거는 후속). 비가역 운영(Coolify SUPABASE env 제거·클라우드 프로젝트 삭제·PIPA 고지)은 별도. ⚠️ **배포 순서:** 구 코드가 `supabase_url` required 라 이 커밋 BE 배포·부팅확인 후에 Coolify env 제거. (cutover 실행 절차서 `docs/auth-cutover-runbook.md` 는 flip 완료 후 2026-07-03 삭제 — 실행 이력은 이 결정 로그로 대체.)
 
 ## 2026-06-30 | 분석 탭 집중도 한글화 — 로더 교체로 name_ko 운반(SQL 신규 작성 회피)
 

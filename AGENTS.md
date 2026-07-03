@@ -17,6 +17,11 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - 설치된 컴포넌트와 동일한 이름의 래퍼를 `src/components/base/` 에 만들고 항상 해당 래퍼를 사용한다.
 - 컴포넌트 업데이트 시 래퍼를 수정하여 반영한다.
 
+# 테마·색상 규칙
+
+- 색은 `app/src/app/globals.css` 의 팔레트 토큰으로 컨트롤한다. 라이트/다크는 `:root` 와 `.dark` 두 곳에서만 값을 조정한다.
+- 반복되는 semantic 색(성공/경고/정보/위험)은 `lib/constants/semantic-colors.ts` 의 `SEMANTIC_COLORS`(PNL_COLORS 패턴)를 쓴다. 프로젝트 커스텀 컴포넌트에는 개별 `dark:` 프리픽스를 두지 않는다(shadcn `ui/*` 원본의 표준 `dark:` 만 허용).
+
 # Git 규칙
 
 ## Git Flow 사용

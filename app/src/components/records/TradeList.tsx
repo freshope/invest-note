@@ -21,7 +21,7 @@ import { useDialogState } from "@/hooks/useDialogState";
 import { useStockMeta, isMetaCode } from "@/hooks/useStockMeta";
 import { tradesApi } from "@/lib/api-client";
 import { consumeImportOpen, subscribeImportOpen } from "@/lib/import-deeplink";
-import { consumeTradeFormOpen, subscribeTradeFormOpen } from "@/lib/trade-form-deeplink";
+import { consumeRegisterChooserOpen, subscribeRegisterChooserOpen } from "@/lib/register-chooser-deeplink";
 import { queryKeys } from "@/lib/query-keys";
 import { groupByDate, formatDateLabel, type TradeWithAccount } from "@/lib/trade-utils";
 import { TRADE_TYPE } from "@/lib/constants/trading";
@@ -82,14 +82,15 @@ export function TradeList({ trades, accounts }: TradeListProps) {
     });
   }, [openImport]);
 
-  // 홈 빈 상태 CTA → /records 이동 후 거래 등록 폼(매수) 자동 오픈. import 딥링크와 동일 패턴.
+  // 홈 빈 상태 CTA → /records 이동 후 등록 chooser(매수/매도/내역서 업로드) 자동 오픈.
+  // FAB(+) 와 동일한 진입점으로 통일. import 딥링크와 동일 패턴.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (consumeTradeFormOpen()) openForm(TRADE_TYPE.BUY);
-    return subscribeTradeFormOpen(() => {
-      if (consumeTradeFormOpen()) openForm(TRADE_TYPE.BUY);
+    if (consumeRegisterChooserOpen()) setChooserOpen(true);
+    return subscribeRegisterChooserOpen(() => {
+      if (consumeRegisterChooserOpen()) setChooserOpen(true);
     });
-  }, [openForm]);
+  }, []);
 
   const filteredTrades = useMemo(
     () =>
@@ -281,10 +282,10 @@ export function TradeList({ trades, accounts }: TradeListProps) {
         {trades.length === 0 ? (
           <EmptyCard
             className="mt-2"
-            title="거래 기록이 없어요"
+            title="첫 거래를 기록해보세요"
             description={
               <>
-                우측 하단 버튼을 눌러<br />첫 거래를 기록해보세요
+                우측 하단 + 버튼을 눌러<br />거래를 기록할 수 있어요
               </>
             }
           />

@@ -4,23 +4,24 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/Button";
 import { EmptyCard } from "@/components/shared/EmptyCard";
 import { capture } from "@/lib/analytics";
-import { requestTradeFormOpen } from "@/lib/trade-form-deeplink";
+import { requestRegisterChooserOpen } from "@/lib/register-chooser-deeplink";
 
 interface EmptyStateProps {
   variant: "no-accounts" | "no-trades";
 }
 
-// 인라인 계좌등록(거래폼 내 "새 계좌 추가") 도입으로 no-accounts 도 계좌 사전등록 없이
-// 거래 등록 흐름으로 바로 유도한다(더 이상 /settings 로 보내지 않음). 문구만 맥락 유지.
+// 인라인 계좌등록(거래폼 내 "새 계좌 추가") 도입으로 계좌는 거래 등록 흐름에서 자동 생성된다.
+// 신규 유저에게 "계좌"라는 미지의 개념을 노출하지 않고, 거래 기록으로 얻는 가치를 제시해
+// 첫 활성화를 유도한다(계좌 언급 제거).
 const emptyStateContent = {
   "no-accounts": {
-    title: "아직 계좌가 없어요",
-    description: "첫 거래를 기록하면 계좌도 함께 만들 수 있어요",
+    title: "첫 거래를 기록해보세요",
+    description: "거래를 기록하면 자산과 손익이 자동으로 정리돼요",
     action: "거래 기록하기",
   },
   "no-trades": {
     title: "아직 거래 기록이 없어요",
-    description: "첫 번째 거래를 기록하면 포트폴리오가 표시돼요",
+    description: "거래를 기록하면 자산과 손익이 자동으로 정리돼요",
     action: "거래 기록하기",
   },
 } satisfies Record<
@@ -34,8 +35,9 @@ export function EmptyState({ variant }: EmptyStateProps) {
 
   const handleClick = () => {
     capture("empty_state_cta_clicked", { variant });
-    // /records 로 이동 후 거래 등록 폼(매수)을 자동으로 연다(import 딥링크와 동일 패턴).
-    requestTradeFormOpen();
+    // /records 로 이동 후 등록 chooser(매수/매도/거래내역서 업로드)를 자동으로 연다.
+    // 거래 탭 FAB(+) 와 동일한 진입점으로 통일 (import 딥링크와 동일 패턴).
+    requestRegisterChooserOpen();
     router.push("/records");
   };
 

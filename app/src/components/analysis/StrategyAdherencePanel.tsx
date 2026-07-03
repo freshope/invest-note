@@ -4,6 +4,7 @@ import { AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { calcPercent, formatPnL, signColor } from "@/lib/format";
 import { ADHERENCE_CONFIG } from "@/lib/constants/trading";
+import { SEMANTIC_COLORS } from "@/lib/constants/semantic-colors";
 import type { StrategyAdherenceStats } from "@/lib/analysis/aggregate";
 
 interface StrategyAdherencePanelProps {
@@ -110,9 +111,9 @@ export function StrategyAdherencePanel({ rate, data }: StrategyAdherencePanelPro
       )}
 
       {judged > 0 && unknownCount > 0 && (
-        <div className="rounded-xl bg-amber-50 border border-amber-200 p-2.5 flex gap-2 items-start">
-          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
-          <p className="text-[12px] text-amber-700 leading-snug">
+        <div className={cn("rounded-xl border p-2.5 flex gap-2 items-start", SEMANTIC_COLORS.warning.bgSoft, SEMANTIC_COLORS.warning.borderSoft)}>
+          <AlertTriangle className={cn("w-3.5 h-3.5 shrink-0 mt-0.5", SEMANTIC_COLORS.warning.text)} />
+          <p className={cn("text-[12px] leading-snug", SEMANTIC_COLORS.warning.text)}>
             미입력 {unknownCount}건
             {unknownPnL !== 0 && ` (${formatPnL(unknownPnL)})`}
             은 통계에서 제외
