@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-03 | 일괄등록 commit 동시 재커밋 중복 방어 — 조회를 lock 안으로 재배치 + 부분 UNIQUE
+
+- **맥락:** 원장 재설계로 commit 이 durable batch_id 를 다시 읽어 물질화하게 되면서(재업로드·재시도·두 탭 등 동일 batch 재커밋을 명시적으로 허용), 리뷰에서 **동시 재커밋 TOCTOU 중복**을 발견. commit 그룹 루프가 기존 거래 dedup 셋(`list_trades_in_group`)을 **advisory lock 획득 *전*** 에 읽어, 두 요청이 같은 batch 를 동시에 커밋하면 둘 다 빈 그룹을 보고 각자 INSERT → 거래 중복. 순차 재커밋은 signature dedup 으로 멱등이지만 동시 경로는 뚫렸다(구 staging getter 도 `FOR UPDATE` 없어 동일 레이스가 잠재 — 신규 회귀는 아님).
+- **결정 ① 조회·dedup·검증·적용을 그룹 advisory lock *안*으로 재배치.** `acquire_trade_group_lock` 을 그룹 처리 트랜잭션 맨 앞으로 옮겨, lock 획득 후에 기존 거래를 읽는다. 뒤 요청은 lock 에서 직렬화되어 앞 요청의 커밋분을 읽고 dedup(merge/skip)한다.
+- **결정 ② DB 부분 UNIQUE 백스톱 — 마이그레이션 `0015`.** `trades` 에 부분 UNIQUE `(account_id, source_ledger_entry_id) WHERE source_ledger_entry_id IS NOT NULL`. 락 재배치가 실패해도(핸들러 우회·경합) 같은 계좌에 같은 원장 행이 두 번 물질화되면 `UniqueViolationError` → 기존 commit 핸들러가 "중복 거래 감지"로 우아하게 전환. `account_id` 스코프라 **같은 파일을 다른 계좌에 등록하는 정상 흐름은 허용**, MANUAL·기존 trades(source_ledger_entry_id NULL)는 인덱스 제외라 무충돌.
+- **이유:** 재무 데이터 중복은 PnL·보유수량을 조용히 오염시킨다. 락 재배치가 근본 직렬화, 부분 UNIQUE 가 DB 레벨 최후 방어(이중 안전). 동시 재커밋 realdb 회귀 테스트로 검증(중복 0·양쪽 200).
+- **트레이드오프:** 조회를 락 안으로 옮겨 락 보유 구간이 소폭 늘어난다(그룹당 조회 1회, 무해). 부분 UNIQUE 는 staging drop 이 쓰려던 리비전 번호 `0015` 를 선점 → staging drop 은 `0016` 으로 이동.
+
 ## 2026-07-03 | 원장 dedup 재설계 — append-only + 물질화 단계 dedup (keep-last 뒤집음) + 등록 마커
 
 - **맥락:** 2026-07-02 원장은 "거래 dedup 을 원장에서 keep-last UPSERT(user-scope)"로 했다(결정②·④). 코드 리뷰에서 **cross-batch batch_id flip → 조용한 거래 손실** 발견: keep-last 가 `SET batch_id=excluded.batch_id` 로 공유 행을 최신 배치로 옮기는데 commit 은 `WHERE batch_id` 로 읽어, 먼저 preview 한 배치를 등록하면 옮겨간 행이 누락된다. 근본은 "등록=파일 단위 vs dedup=사용자 단위" 충돌.
