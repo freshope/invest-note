@@ -11,6 +11,7 @@ group·pnl mock 표면이 커 fragile → 실 PG + ASGI 로만 신뢰성 있게 
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -265,6 +266,47 @@ async def test_preview_validate_flags_oversell():
         errors, excluded = await _validate_import_groups(pool, UUID(uid), acct, rows)
         assert errors, "보유 없는 SELL 은 oversell 로 검출되어야 한다"
         assert excluded == 1  # 실패 그룹의 row 합계
+    finally:
+        if uid is not None:
+            async with pool.acquire() as conn:
+                await conn.execute("DELETE FROM public.users WHERE id = $1", UUID(uid))
+        await pool.close()
+
+
+async def test_concurrent_recommit_no_duplicate_trades():
+    """같은 batch_id 동시 재커밋(더블클릭·재시도·두 탭) → 거래 중복 INSERT 없음 (H1 회귀).
+
+    조회-후-INSERT dedup 을 advisory lock 안으로 재배치 + 부분 UNIQUE(0015)로 TOCTOU 를 막는다.
+    단일 그룹(같은 ticker) 이라 두 커밋이 같은 advisory lock 을 직접 경합한다. lock 전 조회하던
+    구조에선 둘 다 빈 그룹을 읽어 각자 INSERT → trades 2건(중복)이 됐을 시나리오.
+    """
+    pool = await asyncpg.create_pool(TEST_DB_URL, min_size=2, max_size=6, statement_cache_size=0)
+    uid = None
+    try:
+        async with pool.acquire() as conn:
+            uid, acct = await _seed_account(conn, name="concurrent-recommit")
+            sid = await _seed_ledger(conn, uid, [
+                _row("005930", "삼성전자", "BUY", 10, 70000, "2024-01-10"),
+            ])
+
+        app = _make_app()
+        app.state.pool = pool
+        async with _client_as(app, uid) as ac:
+            r1, r2 = await asyncio.gather(
+                ac.post("/v1/trades/import/commit", json={"staging_id": sid, "account_id": acct}),
+                ac.post("/v1/trades/import/commit", json={"staging_id": sid, "account_id": acct}),
+            )
+        assert r1.status_code == 200, r1.text
+        assert r2.status_code == 200, r2.text
+
+        # 핵심: 동시 커밋에도 원장 거래 1행 → trades 정확히 1건(중복 INSERT 없음).
+        async with pool.acquire() as conn:
+            n = await conn.fetchval(
+                "SELECT count(*) FROM trades WHERE user_id = $1", UUID(uid)
+            )
+        assert n == 1, f"동시 재커밋으로 중복 INSERT 발생: trades={n} (기대 1)"
+        # 한쪽이 먼저 INSERT 하면 다른 쪽은 skip(재조회로 발견) 또는 중복 거절 → insert 합 ≤ 1.
+        assert r1.json()["inserted_count"] + r2.json()["inserted_count"] <= 1
     finally:
         if uid is not None:
             async with pool.acquire() as conn:
