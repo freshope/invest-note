@@ -201,14 +201,16 @@ export interface BoardRow extends BaseRow {
   updated_at: string;
 }
 
-// board_comments row(7키). is_admin 으로 관리자 댓글 구분.
+// board_comments row. is_admin 으로 관리자 댓글 구분.
 // author_* 는 user_profiles LEFT JOIN 노출(프로필 행 없으면 null).
+// author_withdrawn 은 작성자 탈퇴 시 스탬프(user_id SET NULL 로 끊기기 전 표식).
 export interface BoardComment extends BaseRow {
   id: string;
   post_id: string;
   user_id: string | null;
   author_display_name: string | null;
   author_avatar_url: string | null;
+  author_withdrawn: boolean;
   is_admin: boolean;
   body: string;
   created_at: string;

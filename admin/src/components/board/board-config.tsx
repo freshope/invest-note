@@ -34,7 +34,7 @@ const authorCol: Column<BoardRow> = {
     <AuthorCell
       avatarUrl={r.author_avatar_url}
       displayName={r.author_display_name}
-      fallback={authorFallback(r.metadata)}
+      fallback={authorFallback(r.metadata?.author_withdrawn === true)}
     />
   ),
 };

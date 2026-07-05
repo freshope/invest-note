@@ -152,16 +152,23 @@ def test_delete_me_stamps_board_posts_author_withdrawn() -> None:
     r = client.request("DELETE", "/v1/me", json={"reason": "not_useful"})
     assert r.status_code == 204
 
-    stamps = [q for q in conn.executed if "UPDATE public.board_posts" in q[0]]
-    assert len(stamps) == 1
-    query, args = stamps[0]
-    assert "author_withdrawn" in query
-    assert args == (UUID(TEST_USER_ID),)
+    post_stamps = [q for q in conn.executed if "UPDATE public.board_posts" in q[0]]
+    assert len(post_stamps) == 1
+    assert "author_withdrawn" in post_stamps[0][0]
+    assert post_stamps[0][1] == (UUID(TEST_USER_ID),)
 
+    comment_stamps = [q for q in conn.executed if "UPDATE public.board_comments" in q[0]]
+    assert len(comment_stamps) == 1
+    assert "author_withdrawn" in comment_stamps[0][0]
+    assert comment_stamps[0][1] == (UUID(TEST_USER_ID),)
+
+    # 두 표식 모두 users DELETE 보다 먼저 실행돼야 한다(user_id SET NULL 전).
     queries = [q[0] for q in conn.executed]
-    stamp_idx = next(i for i, q in enumerate(queries) if "UPDATE public.board_posts" in q)
     delete_idx = next(i for i, q in enumerate(queries) if "DELETE FROM public.users" in q)
-    assert stamp_idx < delete_idx
+    post_idx = next(i for i, q in enumerate(queries) if "UPDATE public.board_posts" in q)
+    comment_idx = next(i for i, q in enumerate(queries) if "UPDATE public.board_comments" in q)
+    assert post_idx < delete_idx
+    assert comment_idx < delete_idx
 
 
 def test_delete_me_records_audit_without_reason() -> None:

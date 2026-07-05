@@ -28,7 +28,7 @@ export function TriageDetail({
             <AuthorCell
               avatarUrl={data.author_avatar_url}
               displayName={data.author_display_name}
-              fallback={authorFallback(data.metadata)}
+              fallback={authorFallback(data.metadata?.author_withdrawn === true)}
             />{" "}
             · {fmtDateTime(data.created_at)}
           </p>
