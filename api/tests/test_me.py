@@ -144,6 +144,26 @@ def test_delete_me_records_audit_with_reason() -> None:
     assert insert_idx < delete_idx
 
 
+def test_delete_me_stamps_board_posts_author_withdrawn() -> None:
+    # 탈퇴 전 board_posts 에 author_withdrawn 표식을 남겨야 어드민이 '탈퇴한 회원'으로 구분한다.
+    # users DELETE(→user_id SET NULL) 보다 먼저, 본인 user_id 스코프로 실행돼야 한다.
+    conn = _RecordingConn()
+    client = _make_delete_client(conn=conn)
+    r = client.request("DELETE", "/v1/me", json={"reason": "not_useful"})
+    assert r.status_code == 204
+
+    stamps = [q for q in conn.executed if "UPDATE public.board_posts" in q[0]]
+    assert len(stamps) == 1
+    query, args = stamps[0]
+    assert "author_withdrawn" in query
+    assert args == (UUID(TEST_USER_ID),)
+
+    queries = [q[0] for q in conn.executed]
+    stamp_idx = next(i for i, q in enumerate(queries) if "UPDATE public.board_posts" in q)
+    delete_idx = next(i for i, q in enumerate(queries) if "DELETE FROM public.users" in q)
+    assert stamp_idx < delete_idx
+
+
 def test_delete_me_records_audit_without_reason() -> None:
     # 사유 미전송(바디 없음)도 204 + reason NULL 로 기록.
     conn = _RecordingConn()

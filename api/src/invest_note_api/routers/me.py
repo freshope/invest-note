@@ -46,6 +46,15 @@ async def delete_me(
                 user.id,
                 body.reason,
             )
+            # 탈퇴 전 표식: users DELETE 시 board_posts.user_id 는 ON DELETE SET NULL 로
+            # 끊겨 어드민이 '탈퇴한 회원' 글과 user_id 원래 null 인 공지를 구분 못 한다.
+            # user_id 가 아직 살아있는 지금 author_withdrawn 을 스탬프한다(기존 키 보존 merge).
+            await conn.execute(
+                "UPDATE public.board_posts "
+                "SET metadata = metadata || '{\"author_withdrawn\": true}'::jsonb "
+                "WHERE user_id = $1",
+                user.id,
+            )
             await conn.execute("DELETE FROM public.users WHERE id = $1", user.id)
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)

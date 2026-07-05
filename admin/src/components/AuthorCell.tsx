@@ -1,5 +1,13 @@
 import type { ReactNode } from "react";
 
+// 이름 없는 작성자의 fallback 문구. 탈퇴 시 board_posts 에 남긴 author_withdrawn 표식이면
+// '탈퇴한 회원'(user_id 는 SET NULL 로 끊김), 아니면 '회원 미상'(공지 등 원래 작성자 없음).
+export function authorFallback(
+  metadata?: Record<string, unknown> | null,
+): string {
+  return metadata?.author_withdrawn === true ? "탈퇴한 회원" : "회원 미상";
+}
+
 // 작성자/회원 표시 공용 셀 — 아바타(없으면 이니셜) + 이름.
 // 이름이 없으면 fallback 을 호출부가 계산해 넘긴다(board: "회원 미상", users: "-").
 // 주의: raw user_id(UUID)를 fallback 으로 넘기지 말 것 — 프로필 미수집 작성자가 UUID 로 노출됨.

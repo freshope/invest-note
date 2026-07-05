@@ -1,7 +1,7 @@
 import type { BoardRow, BoardType } from "@/lib/api";
 import type { Column } from "@/components/DataTablePage";
 import { fmtText, fmtDateTime } from "@/lib/format";
-import { AuthorCell } from "@/components/AuthorCell";
+import { AuthorCell, authorFallback } from "@/components/AuthorCell";
 import {
   boardStatusLabel,
   statementTypeLabel,
@@ -34,7 +34,7 @@ const authorCol: Column<BoardRow> = {
     <AuthorCell
       avatarUrl={r.author_avatar_url}
       displayName={r.author_display_name}
-      fallback="회원 미상"
+      fallback={authorFallback(r.metadata)}
     />
   ),
 };

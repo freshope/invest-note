@@ -6,7 +6,7 @@ import { boardTypeLabel } from "@/components/board/constants";
 import { BoardStatusControls } from "@/components/board/BoardStatusControls";
 import { BoardCommentThread } from "@/components/board/BoardCommentThread";
 import { BoardCommentForm } from "@/components/board/BoardCommentForm";
-import { AuthorCell } from "@/components/AuthorCell";
+import { AuthorCell, authorFallback } from "@/components/AuthorCell";
 import { BoardDetailShell } from "./BoardDetailShell";
 import { BoardAttachments } from "./BoardAttachments";
 
@@ -28,7 +28,7 @@ export function TriageDetail({
             <AuthorCell
               avatarUrl={data.author_avatar_url}
               displayName={data.author_display_name}
-              fallback="회원 미상"
+              fallback={authorFallback(data.metadata)}
             />{" "}
             · {fmtDateTime(data.created_at)}
           </p>
