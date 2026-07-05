@@ -9,7 +9,7 @@ import {
 } from "@/lib/api";
 import { Button } from "@/components/base/Button";
 import { fmtDateTime } from "@/lib/format";
-import { AuthorCell } from "@/components/AuthorCell";
+import { AuthorCell, authorFallback } from "@/components/AuthorCell";
 import { boardDetailKey, boardListKey } from "@/components/board/constants";
 
 function CommentDeleteButton({
@@ -81,7 +81,7 @@ export function BoardCommentThread({
                 <AuthorCell
                   avatarUrl={c.author_avatar_url}
                   displayName={c.author_display_name}
-                  fallback="회원 미상"
+                  fallback={authorFallback(c.author_withdrawn)}
                 />
               )}
             </span>
