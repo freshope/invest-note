@@ -15,8 +15,16 @@ import {
 import { AssetHistoryChart } from "./AssetHistoryChart";
 import { AssetDailyPnlChart } from "./AssetDailyPnlChart";
 import { AssetHistoryList } from "./AssetHistoryList";
+import { resampleAssetHistory, firstBaselineOf } from "./resample";
+import {
+  ASSET_UNITS,
+  DEFAULT_ASSET_UNIT,
+  UNIT_PREFIX,
+  UNIT_DELTA_LABEL,
+  type AssetUnit,
+} from "@/lib/constants/asset-history";
 import { useAssetHistory } from "@/hooks/useAssetHistory";
-import { accountsApi, type AssetHistoryPoint } from "@/lib/api-client";
+import { accountsApi, type AssetHistoryPoint, type AssetHistoryItem } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import {
   signColor,
@@ -72,15 +80,18 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
     country,
   });
 
-  // 차트 탭 — 자산(누적 평가액 Area) / 일별 손익(전일대비 Bar).
+  // 차트 탭 — 자산(누적 평가액 Area) / 단위별 손익(전(前)단위대비 Bar).
   const [tab, setTab] = useState<"asset" | "daily">("asset");
+
+  // 표시 단위(일/주/월) — 단위가 곧 줌(useChartPan 고정 창에서 담기는 기간이 늘어난다).
+  const [unit, setUnit] = useState<AssetUnit>(DEFAULT_ASSET_UNIT);
 
   // 차트에서 보이는 가장 우측(최근) 점 — 헤더가 이 점의 날짜·금액을 표시.
   // 탭에 따라 value 의 의미가 다름(자산: 평가액 / 일별 손익: 전일대비).
   const [focus, setFocus] = useState<AssetHistoryPoint | null>(null);
   // 스코프(계좌/종목) 전환 시 초기화 → 차트가 새 우측점을 통지할 때까지 최신값 표시.
   // effect 대신 렌더 중 상태 조정 패턴 사용(react-hooks/set-state-in-effect 회피).
-  const scopeKey = `${effectiveAccountId ?? ""}|${ticker ?? ""}`;
+  const scopeKey = `${effectiveAccountId ?? ""}|${ticker ?? ""}|${unit}`;
   const [prevScopeKey, setPrevScopeKey] = useState(scopeKey);
   if (scopeKey !== prevScopeKey) {
     setPrevScopeKey(scopeKey);
@@ -92,14 +103,25 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
 
   // BE 가 모든 뷰에서 KRW 환산된 series/items/investedAmount 를 반환(환산 책임 BE 이관).
   // FE 는 그대로 사용 — 이중환산 금지. close(종목뷰)만 native 통화(USD) 유지.
-  const series = data?.series ?? [];
   const investedAmount = data?.investedAmount ?? null;
-  const items = data?.items ?? [];
 
-  // 일별 손익 시계열 — items(최신 먼저)의 change 를 날짜 오름차순 point 로 변환(이미 KRW).
+  // 표시 단위로 리샘플한 대표 행(최신 먼저) — 자산 차트·단위별 손익·단위별 내역이
+  // 모두 이 한 결과에서 파생되어 동일 기준을 쓴다(단위=일이면 BE items 그대로).
+  const items = useMemo<AssetHistoryItem[]>(
+    () => (data ? resampleAssetHistory(data.items, unit, firstBaselineOf(data.items)) : []),
+    [data, unit],
+  );
+
+  // 자산 곡선 — 대표 행의 {date, value}(오래된 순).
+  const series = useMemo<AssetHistoryPoint[]>(
+    () => [...items].reverse().map((it) => ({ date: it.date, value: it.value })),
+    [items],
+  );
+
+  // 단위별 손익 시계열 — 대표 행 change 를 날짜 오름차순 point 로 변환(이미 KRW).
   const dailySeries = useMemo<AssetHistoryPoint[]>(
-    () => (data ? [...data.items].reverse().map((it) => ({ date: it.date, value: it.change })) : []),
-    [data],
+    () => [...items].reverse().map((it) => ({ date: it.date, value: it.change })),
+    [items],
   );
 
   // 환율 미상(usdkrw=null)인데 해외 보유 존재 → BE 가 US 기여 제외. 혼재(KR+US) 뷰는 KR 곡선이
@@ -195,10 +217,22 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
                   setFocus(null);
                 }}
               >
-                <TabsList>
-                  <TabsTrigger value="asset">자산</TabsTrigger>
-                  <TabsTrigger value="daily">일별 손익</TabsTrigger>
-                </TabsList>
+                <div className="flex items-center justify-between gap-2">
+                  <TabsList>
+                    <TabsTrigger value="asset">자산</TabsTrigger>
+                    <TabsTrigger value="daily">{UNIT_PREFIX[unit]} 손익</TabsTrigger>
+                  </TabsList>
+                  {/* 표시 단위(일/주/월) — 단위가 곧 줌. 팬은 유지된다. */}
+                  <Tabs value={unit} onValueChange={(v) => setUnit(v as AssetUnit)}>
+                    <TabsList className="inline-flex h-8 w-auto p-0.5">
+                      {ASSET_UNITS.map((u) => (
+                        <TabsTrigger key={u.value} value={u.value} className="h-7 px-2.5 text-[11px]">
+                          {u.label}
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                  </Tabs>
+                </div>
                 <div className="mt-3 flex items-start justify-between gap-2">
                   <div>
                   <p className="text-[12px] text-muted-foreground">
@@ -248,7 +282,7 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
                     {/* 스코프(계좌/종목) 변경 시 remount → 팬 윈도우를 새 데이터의 최신으로 리셋 */}
                     <TabsContent value="asset" className="mt-3">
                       <AssetHistoryChart
-                        key={`${effectiveAccountId ?? "all"}:${ticker ?? ""}`}
+                        key={`${effectiveAccountId ?? "all"}:${ticker ?? ""}:${unit}`}
                         series={series}
                         investedAmount={investedAmount}
                         onFocusChange={setFocus}
@@ -256,7 +290,7 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
                     </TabsContent>
                     <TabsContent value="daily" className="mt-3">
                       <AssetDailyPnlChart
-                        key={`${effectiveAccountId ?? "all"}:${ticker ?? ""}`}
+                        key={`${effectiveAccountId ?? "all"}:${ticker ?? ""}:${unit}`}
                         series={dailySeries}
                         onFocusChange={setFocus}
                       />
@@ -282,9 +316,9 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
             </div>
           </div>
 
-          {/* 일별 내역 — 섹션 라벨(다른 페이지 섹션 패턴) + 내부 스크롤 표 */}
+          {/* 단위별 내역 — 섹션 라벨(다른 페이지 섹션 패턴) + 내부 스크롤 표 */}
           <div className="shrink-0 px-5 pt-5 pb-1">
-            <p className="text-[13px] font-semibold text-muted-foreground">일별 내역</p>
+            <p className="text-[13px] font-semibold text-muted-foreground">{UNIT_PREFIX[unit]} 내역</p>
           </div>
           <div
             className="flex-1 min-h-0 overflow-y-auto px-5"
@@ -293,13 +327,14 @@ export function AssetHistoryView({ ticker, country, name, onBack, onSwitchStock 
             {/* 환율 미상(US)이면 '자산'·'전일대비' 가 native(USD) raw 라 KRW 열에 혼재 — 차트와 동일하게 비표시. */}
             {fxBlocked ? (
               <div className="flex h-full items-center justify-center text-[13px] text-muted-foreground">
-                환율을 불러오면 일별 내역을 표시해요.
+                환율을 불러오면 {UNIT_PREFIX[unit]} 내역을 표시해요.
               </div>
             ) : (
               <AssetHistoryList
                 items={items}
                 isStockView={isStockView}
                 closeCurrency={currencyForCountry(country ?? "")}
+                deltaLabel={UNIT_DELTA_LABEL[unit]}
               />
             )}
           </div>
