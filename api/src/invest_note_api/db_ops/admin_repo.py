@@ -6,8 +6,10 @@ RLS 제거 후 owner connection 이 user_id 필터 없이 cross-user 전 행을 
 """
 from __future__ import annotations
 
+import json
 from datetime import date
 from typing import Any
+from uuid import UUID
 
 # 리스트 가능한 테이블 → (실제 테이블명, q 부분일치 검색 컬럼들, 기본 정렬절).
 # 선택 키: from(기본 table), select(기본 *) — JOIN 으로 다른 테이블 컬럼을 합쳐 노출할 때 사용.
@@ -39,6 +41,27 @@ _LIST_TABLES: dict[str, dict[str, Any]] = {
         "table": "nps_unmatched",
         "search": ["nps_name"],
         "order": "created_at desc",
+    },
+    # 거래내역서 원장 배치(파일 1건=1행). 업로더 email·등록 계좌명은 LEFT JOIN, 행수는 서브쿼리.
+    # entry_count=원장 전체 행, trade_row_count=거래 행(trade_type 有; 비거래/오류 행 제외).
+    "import_batches": {
+        "table": "import_batches",
+        "from": (
+            "import_batches b "
+            "left join user_profiles p on p.user_id = b.user_id "
+            "left join accounts a on a.id = b.account_id"
+        ),
+        "select": (
+            "b.id, b.broker_key, b.filename, b.content_type, b.size_bytes, "
+            "b.account_hint, b.account_id, a.name as account_name, "
+            "b.committed_at, b.created_at, b.parsed_at, p.email, "
+            "(select count(*) from import_ledger_entries e where e.batch_id = b.id) "
+            "as entry_count, "
+            "(select count(*) from import_ledger_entries e "
+            "  where e.batch_id = b.id and e.trade_type is not null) as trade_row_count"
+        ),
+        "search": ["b.filename", "b.broker_key", "p.email"],
+        "order": "b.created_at desc",
     },
 }
 
@@ -89,6 +112,52 @@ async def list_rows(
         *args,
     )
     return [dict(r) for r in rows], int(total or 0)
+
+
+# 원장 배치 상세 — 목록과 동일한 조인/서브쿼리 + 원문 식별 컬럼(storage_key·sha256·parser_version).
+_IMPORT_BATCH_DETAIL_SQL = """
+SELECT b.id, b.user_id, b.broker_key, b.parser_version, b.filename,
+       b.content_type, b.size_bytes, b.storage_key, b.content_sha256,
+       b.account_hint, b.account_id, a.name AS account_name,
+       b.committed_at, b.created_at, b.parsed_at, p.email,
+       (SELECT count(*) FROM import_ledger_entries e WHERE e.batch_id = b.id)
+           AS entry_count,
+       (SELECT count(*) FROM import_ledger_entries e
+         WHERE e.batch_id = b.id AND e.trade_type IS NOT NULL) AS trade_row_count
+  FROM import_batches b
+  LEFT JOIN user_profiles p ON p.user_id = b.user_id
+  LEFT JOIN accounts a ON a.id = b.account_id
+ WHERE b.id = $1
+"""
+
+# 배치의 원장 행 전량(append-only, source_row_no 순). raw 는 파싱 원문 전체(jsonb).
+_LEDGER_ENTRIES_SQL = """
+SELECT id, source_row_no, traded_at_raw, traded_at, trade_type,
+       asset_name, ticker_hint, isin, country_code, quantity, price,
+       commission, tax, exchange_rate, raw, created_at
+  FROM import_ledger_entries
+ WHERE batch_id = $1
+ ORDER BY source_row_no
+"""
+
+
+async def get_import_batch(conn: Any, batch_id: UUID) -> dict | None:
+    """원장 배치 상세(메타 + email·account_name·행수 조인). 없으면 None."""
+    row = await conn.fetchrow(_IMPORT_BATCH_DETAIL_SQL, batch_id)
+    return dict(row) if row is not None else None
+
+
+async def list_ledger_entries(conn: Any, batch_id: UUID) -> list[dict]:
+    """배치의 원장 행 전량. raw jsonb 는 asyncpg 가 str 로 주므로 dict 로 디코드(board_repo 관례)."""
+    rows = await conn.fetch(_LEDGER_ENTRIES_SQL, batch_id)
+    result: list[dict] = []
+    for r in rows:
+        d = dict(r)
+        raw = d.get("raw")
+        if isinstance(raw, str):
+            d["raw"] = json.loads(raw)
+        result.append(d)
+    return result
 
 
 async def get_stats(conn: Any) -> dict[str, int]:

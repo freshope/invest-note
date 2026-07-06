@@ -238,6 +238,60 @@ export type BoardDetail = BoardRow & {
 };
 
 // ============================================================
+// 거래내역서 원장(import ledger) — batches(파일 1건=1행) + entries(행 append-only).
+// snake_case passthrough. numeric 컬럼은 BE 가 문자열/숫자로 줄 수 있어 fmtNum 으로 표시.
+// ============================================================
+
+// import_batches 목록 행. email·account_name 은 LEFT JOIN, *_count 는 서브쿼리 집계.
+export interface ImportBatchRow extends BaseRow {
+  id: string;
+  broker_key: string;
+  filename: string | null;
+  content_type: string | null;
+  size_bytes: number | null;
+  account_hint: string | null;
+  account_id: string | null;
+  account_name: string | null;
+  committed_at: string | null; // null = 미리보기만(미등록)
+  created_at: string;
+  parsed_at: string | null;
+  email: string | null;
+  entry_count: number;
+  trade_row_count: number;
+}
+
+// import_ledger_entries 행(append-only). raw 는 파싱 원문 전체(jsonb→object).
+export interface ImportLedgerEntry extends BaseRow {
+  id: string;
+  source_row_no: number;
+  traded_at_raw: string | null;
+  traded_at: string | null;
+  trade_type: string | null;
+  asset_name: string | null;
+  ticker_hint: string | null;
+  isin: string | null;
+  country_code: string | null;
+  quantity: string | number | null;
+  price: string | number | null;
+  commission: string | number | null;
+  tax: string | number | null;
+  exchange_rate: string | number | null;
+  raw: Record<string, unknown>;
+  created_at: string;
+}
+
+// 상세 = 배치 메타(목록 + 원문 식별 컬럼) + 원장 행 전량. BE ImportBatchDetail 과 정합.
+export interface ImportBatchDetail {
+  batch: ImportBatchRow & {
+    user_id: string | null;
+    parser_version: string;
+    storage_key: string | null;
+    content_sha256: string;
+  };
+  entries: ImportLedgerEntry[];
+}
+
+// ============================================================
 // 쓰기 입력 (BE 화이트리스트와 정합 — extra='forbid')
 // ============================================================
 
@@ -357,6 +411,18 @@ export const adminApi = {
       apiFetch<void>(
         `/admin/nps-unmatched?${new URLSearchParams({ nps_name: key.nps_name, nps_as_of: key.nps_as_of })}`,
         { method: "DELETE" },
+      ),
+  },
+
+  // 거래내역서 원장 — 읽기 전용. 목록은 제네릭 /admin/import-batches, 상세는 전용 엔드포인트.
+  importBatches: {
+    list: (params?: AdminListParams) =>
+      apiFetch<AdminListResponse<ImportBatchRow>>(
+        `/admin/import-batches${listQuery(params)}`,
+      ),
+    get: (batchId: string) =>
+      apiFetch<ImportBatchDetail>(
+        `/admin/import-batches/${encodeURIComponent(batchId)}`,
       ),
   },
 
