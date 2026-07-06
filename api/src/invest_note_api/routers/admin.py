@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
+from uuid import UUID
 
 import asyncpg
 from fastapi import APIRouter, Depends, Query, Response
@@ -15,6 +16,7 @@ from invest_note_api.schemas.admin import (
     AccountDeletionStats,
     AdminListResponse,
     AdminStats,
+    ImportBatchDetail,
     NpsUnmatchedCreate,
     NpsUnmatchedUpdate,
     StockUpdate,
@@ -41,6 +43,7 @@ _TABLE_PATH = {
     "custom-tags": "custom_tags",
     "stocks": "stocks",
     "nps-unmatched": "nps_unmatched",
+    "import-batches": "import_batches",
 }
 
 
@@ -89,6 +92,21 @@ async def admin_deletion_stats(
     """
     async with pool.acquire() as conn:
         return AccountDeletionStats(**await admin_repo.get_deletion_stats(conn))
+
+
+@router.get("/import-batches/{batch_id}", response_model=ImportBatchDetail)
+async def admin_import_batch_detail(
+    batch_id: UUID,
+    _: AuthenticatedUser = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> ImportBatchDetail:
+    """원장 배치 상세 — 메타 + 원장 행 전량(raw 원문 포함). 목록(/import-batches)은 제네릭 경로."""
+    async with pool.acquire() as conn:
+        batch = await admin_repo.get_import_batch(conn, batch_id)
+        if batch is None:
+            raise APIError(ERR_NOT_FOUND, 404)
+        entries = await admin_repo.list_ledger_entries(conn, batch_id)
+    return ImportBatchDetail(batch=batch, entries=entries)
 
 
 @router.get("/{table}", response_model=AdminListResponse)

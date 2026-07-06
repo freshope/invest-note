@@ -257,6 +257,51 @@ def test_list_hyphen_path_maps_to_table():
     assert resp.json() == {"items": [], "total": 0}
 
 
+# ─────────────────────────── 거래내역서 원장(import ledger) ───────────────────────────
+
+
+def test_import_batches_list_envelope():
+    """import-batches 하이픈 경로가 제네릭 목록으로 매핑되어 엔벨로프 반환."""
+    app = _make_admin_app()
+    bid = str(uuid4())
+    row = {"id": bid, "broker_key": "toss_pdf", "email": "u@x.com", "entry_count": 3}
+    conn = FakeConnection(1, [row])
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
+    resp = client.get("/admin/import-batches?q=toss")
+    assert resp.status_code == 200
+    assert resp.json() == {"items": [row], "total": 1}
+
+
+def test_import_batch_detail_shape_and_raw_decode():
+    """상세 = {batch, entries}. entries[*].raw 는 jsonb str → dict 로 디코드된다."""
+    app = _make_admin_app()
+    bid = str(uuid4())
+    batch = {"id": bid, "broker_key": "toss_pdf", "email": "u@x.com", "entry_count": 1}
+    # asyncpg 는 jsonb 를 str 로 준다 — repo 가 json.loads 로 dict 로 만들어야 한다.
+    entries = [{"id": str(uuid4()), "source_row_no": 1, "raw": '{"종목": "삼성전자"}'}]
+    conn = FakeConnection(batch, entries)  # fetchrow(batch) → fetch(entries)
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
+    resp = client.get(f"/admin/import-batches/{bid}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["batch"]["id"] == bid
+    assert body["entries"][0]["raw"] == {"종목": "삼성전자"}
+
+
+def test_import_batch_detail_not_found_404():
+    app = _make_admin_app()
+    conn = FakeConnection(None)  # get_import_batch fetchrow → None
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
+    resp = client.get(f"/admin/import-batches/{uuid4()}")
+    assert resp.status_code == 404
+
+
+def test_import_batch_detail_forbidden_for_non_allowlist():
+    app = _make_admin_app()
+    client = _client(app, email="nobody@x.com", admin_pool=FakePool())
+    assert client.get(f"/admin/import-batches/{uuid4()}").status_code == 403
+
+
 # ─────────────────────────── stocks 수정 화이트리스트 ───────────────────────────
 
 

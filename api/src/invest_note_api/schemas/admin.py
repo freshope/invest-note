@@ -68,6 +68,17 @@ class AccountDeletionStats(BaseModel):
     reasons: list[DeletionReasonCount]
 
 
+class ImportBatchDetail(BaseModel):
+    """거래내역서 원장 배치 상세 — 배치 메타(dict) + 원장 행 전량(dict 리스트).
+
+    row 는 snake_case passthrough 관례(A2)를 따라 dict 로 둔다. entries[*].raw 는 파싱 원문
+    전체(jsonb→object). trades dedup/merge 는 물질화 단계 소유이므로 원장은 무손실 전 행.
+    """
+
+    batch: dict[str, Any]
+    entries: list[dict[str, Any]]
+
+
 class StockUpdate(BaseModel):
     """stocks 수정 입력 — seed 파이프라인이 덮어쓰지 않는 필드만 화이트리스트.
 

@@ -8,6 +8,7 @@ import {
   Tags,
   LineChart,
   ListChecks,
+  ScrollText,
   MessageSquare,
   type LucideIcon,
 } from "lucide-react";
@@ -50,6 +51,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/custom-tags", label: "커스텀 태그", icon: Tags },
   { href: "/stocks", label: "종목", icon: LineChart },
   { href: "/nps-unmatched", label: "NPS 매칭 큐", icon: ListChecks },
+  { href: "/import-ledger", label: "일괄등록 원장", icon: ScrollText },
 ];
 
 export const NAV_GROUPS: NavGroup[] = [BOARD_GROUP];
