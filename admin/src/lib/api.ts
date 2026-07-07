@@ -163,20 +163,27 @@ export interface UserRow extends BaseRow {
   trade_count: number;
 }
 
+// author_* 는 user_profiles LEFT JOIN 노출(프로필 행 없으면 null). board 관례와 동일.
 export interface AccountRow extends BaseRow {
   id: string;
   name: string;
+  author_display_name: string | null;
+  author_avatar_url: string | null;
 }
 
 export interface TradeRow extends BaseRow {
   id: string;
   ticker_symbol: string | null;
   asset_name: string | null;
+  author_display_name: string | null;
+  author_avatar_url: string | null;
 }
 
 export interface CustomTagRow extends BaseRow {
   id: string;
   label: string;
+  author_display_name: string | null;
+  author_avatar_url: string | null;
 }
 
 // ⚠️ stocks PK = 복합 (country_code, ticker). 수정 URL 조립에 둘 다 필요.
@@ -304,6 +311,8 @@ export interface ImportBatchDetail {
     parser_version: string;
     storage_key: string | null;
     content_sha256: string;
+    author_display_name: string | null;
+    author_avatar_url: string | null;
   };
   entries: ImportLedgerEntry[];
 }

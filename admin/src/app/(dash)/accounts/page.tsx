@@ -3,6 +3,7 @@
 import { adminApi, type AccountRow } from "@/lib/api";
 import { DataTablePage, type Column } from "@/components/DataTablePage";
 import { fmtText, fmtNum, fmtDateTime } from "@/lib/format";
+import { AuthorCell, authorFallback } from "@/components/AuthorCell";
 
 // accounts 는 읽기 전용. cross-user 가시성(admin pool).
 const columns: Column<AccountRow>[] = [
@@ -14,9 +15,13 @@ const columns: Column<AccountRow>[] = [
     className: "text-right",
   },
   {
-    header: "user_id",
+    header: "사용자",
     cell: (r) => (
-      <span className="font-mono text-[12px]">{fmtText(r.user_id)}</span>
+      <AuthorCell
+        avatarUrl={r.author_avatar_url}
+        displayName={r.author_display_name}
+        fallback={authorFallback()}
+      />
     ),
   },
   { header: "생성일", cell: (r) => fmtDateTime(r.created_at) },

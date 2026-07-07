@@ -16,6 +16,7 @@ import {
   TableCell,
 } from "@/components/base/Table";
 import { fmtText, fmtNum, fmtDateTime } from "@/lib/format";
+import { AuthorCell, authorFallback } from "@/components/AuthorCell";
 
 const BROKER_LABELS: Record<string, string> = {
   toss_pdf: "토스",
@@ -73,10 +74,15 @@ export default function ImportLedgerDetailPage() {
 
       {/* 배치 메타 */}
       <dl className="grid grid-cols-2 gap-4 rounded-lg border border-border bg-card p-5 md:grid-cols-3">
-        <MetaRow label="사용자" value={fmtText(b.email)} />
         <MetaRow
-          label="user_id"
-          value={<span className="font-mono text-[12px]">{fmtText(b.user_id)}</span>}
+          label="사용자"
+          value={
+            <AuthorCell
+              avatarUrl={b.author_avatar_url}
+              displayName={b.author_display_name}
+              fallback={b.email ?? authorFallback()}
+            />
+          }
         />
         <MetaRow label="파서 버전" value={fmtText(b.parser_version)} />
         <MetaRow label="업로드" value={fmtDateTime(b.created_at)} />
