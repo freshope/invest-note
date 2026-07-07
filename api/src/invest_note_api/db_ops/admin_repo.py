@@ -27,13 +27,39 @@ _LIST_TABLES: dict[str, dict[str, Any]] = {
         "search": ["u.id::text", "p.email", "p.display_name"],
         "order": "u.created_at desc",
     },
-    "accounts": {"table": "accounts", "search": ["name"], "order": "created_at desc"},
+    # 사용자 귀속 테이블은 user_profiles LEFT JOIN 으로 작성자 아바타·이름을 노출한다
+    # (board_repo 관례: `테이블.* + author_display_name/author_avatar_url`). 조인 후 겹치는
+    # 컬럼명(created_at 등)이 생기므로 select/order/search 는 테이블 프리픽스로 명시한다.
+    "accounts": {
+        "table": "accounts",
+        "from": "accounts left join user_profiles p on p.user_id = accounts.user_id",
+        "select": (
+            "accounts.*, p.display_name as author_display_name, "
+            "p.avatar_url as author_avatar_url"
+        ),
+        "search": ["accounts.name"],
+        "order": "accounts.created_at desc",
+    },
     "trades": {
         "table": "trades",
-        "search": ["ticker_symbol", "asset_name"],
-        "order": "traded_at desc",
+        "from": "trades left join user_profiles p on p.user_id = trades.user_id",
+        "select": (
+            "trades.*, p.display_name as author_display_name, "
+            "p.avatar_url as author_avatar_url"
+        ),
+        "search": ["trades.ticker_symbol", "trades.asset_name"],
+        "order": "trades.traded_at desc",
     },
-    "custom_tags": {"table": "custom_tags", "search": ["label"], "order": "created_at desc"},
+    "custom_tags": {
+        "table": "custom_tags",
+        "from": "custom_tags left join user_profiles p on p.user_id = custom_tags.user_id",
+        "select": (
+            "custom_tags.*, p.display_name as author_display_name, "
+            "p.avatar_url as author_avatar_url"
+        ),
+        "search": ["custom_tags.label"],
+        "order": "custom_tags.created_at desc",
+    },
     "stocks": {
         "table": "stocks",
         "search": ["asset_name", "ticker"],
@@ -122,6 +148,7 @@ SELECT b.id, b.user_id, b.broker_key, b.parser_version, b.filename,
        b.content_type, b.size_bytes, b.storage_key, b.content_sha256,
        b.account_hint, b.account_id, a.name AS account_name,
        b.committed_at, b.created_at, b.parsed_at, p.email,
+       p.display_name AS author_display_name, p.avatar_url AS author_avatar_url,
        (SELECT count(*) FROM import_ledger_entries e WHERE e.batch_id = b.id)
            AS entry_count,
        (SELECT count(*) FROM import_ledger_entries e

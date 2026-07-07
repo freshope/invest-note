@@ -3,14 +3,19 @@
 import { adminApi, type CustomTagRow } from "@/lib/api";
 import { DataTablePage, type Column } from "@/components/DataTablePage";
 import { fmtText, fmtDateTime } from "@/lib/format";
+import { AuthorCell, authorFallback } from "@/components/AuthorCell";
 
 // custom_tags 는 읽기 전용.
 const columns: Column<CustomTagRow>[] = [
   { header: "라벨", cell: (r) => fmtText(r.label) },
   {
-    header: "user_id",
+    header: "사용자",
     cell: (r) => (
-      <span className="font-mono text-[12px]">{fmtText(r.user_id)}</span>
+      <AuthorCell
+        avatarUrl={r.author_avatar_url}
+        displayName={r.author_display_name}
+        fallback={authorFallback()}
+      />
     ),
   },
   { header: "생성일", cell: (r) => fmtDateTime(r.created_at) },
