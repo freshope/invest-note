@@ -7,6 +7,7 @@ import { AuthorCell, authorFallback } from "@/components/AuthorCell";
 
 // trades 는 읽기 전용(PnL cascade 위험으로 쓰기는 후속 spec). cross-user 가시성(admin pool).
 const columns: Column<TradeRow>[] = [
+  { header: "종목", cell: (r) => fmtText(r.asset_name) },
   {
     header: "사용자",
     cell: (r) => (
@@ -17,7 +18,6 @@ const columns: Column<TradeRow>[] = [
       />
     ),
   },
-  { header: "종목", cell: (r) => fmtText(r.asset_name) },
   { header: "티커", cell: (r) => fmtText(r.ticker_symbol) },
   { header: "구분", cell: (r) => fmtText(r.trade_type) },
   { header: "시장", cell: (r) => fmtText(r.market_type) },
