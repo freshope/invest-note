@@ -14,6 +14,7 @@ from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import get_pool
+from invest_note_api.db_ops import admin_repo
 from invest_note_api.main import create_app
 
 from .fake_pool import FakeConnection, FakePool
@@ -55,20 +56,22 @@ def _client(app, *, email: str | None = ADMIN_EMAIL, admin_pool=...) -> TestClie
 def test_allowlist_member_passes_gate():
     """allowlist 이메일이면 게이트 통과(stats 200). admin_pool 은 FakeConn 으로 stats 1행."""
     app = _make_admin_app()
-    conn = FakeConnection(
-        {"users": 3, "accounts": 2, "trades": 5, "stocks": 9, "nps_unmatched": 1, "broker_statements": 4}
-    )
+    stats = {
+        "users": 3, "users_today": 1,
+        "accounts": 2, "accounts_today": 0,
+        "trades": 5, "trades_today": 2,
+        "stocks": 9, "nps_unmatched": 1,
+        "broker_statements": 4, "broker_statements_today": 1,
+        "feedback": 6, "feedback_today": 1,
+        "bug_reports": 2, "bug_reports_today": 0,
+        "deletions": 7, "deletions_today": 1,
+        "dau": 8, "wau": 12, "mau": 20,
+    }
+    conn = FakeConnection(dict(stats))
     client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
     resp = client.get("/admin/stats")
     assert resp.status_code == 200
-    assert resp.json() == {
-        "users": 3,
-        "accounts": 2,
-        "trades": 5,
-        "stocks": 9,
-        "nps_unmatched": 1,
-        "broker_statements": 4,
-    }
+    assert resp.json() == stats
 
 
 def test_non_allowlist_email_forbidden():
@@ -116,9 +119,7 @@ def test_substring_email_does_not_match():
 def test_email_case_insensitive_match():
     """대소문자 무시 정규화 — 'ADMIN@Example.com' 도 통과."""
     app = _make_admin_app(admin_emails="admin@example.com")
-    conn = FakeConnection(
-        {"users": 0, "accounts": 0, "trades": 0, "stocks": 0, "nps_unmatched": 0, "broker_statements": 0}
-    )
+    conn = FakeConnection({k: 0 for k in admin_repo._STATS_KEYS})
     client = _client(app, email="ADMIN@Example.com", admin_pool=FakePool(conn))
     assert client.get("/admin/stats").status_code == 200
 

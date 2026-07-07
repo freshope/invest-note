@@ -60,14 +60,28 @@ export interface AdminListResponse<T> {
   total: number;
 }
 
-/** 대시보드 카운트. 키는 snake_case 유지(BE AdminStats 와 동일). */
+/** 대시보드 카운트. 키는 snake_case 유지(BE AdminStats 와 동일).
+ *  *_today 는 KST 당일 등록분, dau/wau/mau 는 last_sign_in 기준 로그인 활성(rolling 1/7/30일). */
 export interface AdminStats {
   users: number;
+  users_today: number;
   accounts: number;
+  accounts_today: number;
   trades: number;
+  trades_today: number;
   stocks: number;
   nps_unmatched: number;
   broker_statements: number;
+  broker_statements_today: number;
+  feedback: number;
+  feedback_today: number;
+  bug_reports: number;
+  bug_reports_today: number;
+  deletions: number;
+  deletions_today: number;
+  dau: number;
+  wau: number;
+  mau: number;
 }
 
 /** 일별 가입자 한 점. date 는 KST 가입일(YYYY-MM-DD), BE UserGrowthPoint 와 정합. */
@@ -144,6 +158,9 @@ export interface UserRow extends BaseRow {
   email_verified: boolean | null;
   providers: string[] | null;
   last_sign_in: string | null;
+  // 서브쿼리 집계 — 보유 계좌수·총 거래수(항상 0 이상).
+  account_count: number;
+  trade_count: number;
 }
 
 export interface AccountRow extends BaseRow {

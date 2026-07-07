@@ -20,14 +20,31 @@ class AdminListResponse(BaseModel):
 
 
 class AdminStats(BaseModel):
-    """대시보드 카운트. 키는 snake_case 유지(FE 가 그대로 소비)."""
+    """대시보드 카운트. 키는 snake_case 유지(FE 가 그대로 소비).
+
+    *_today 는 KST 당일 등록분. dau/wau/mau 는 user_profiles.last_sign_in 기준 rolling
+    1/7/30일 '로그인' 활성(실제 앱 사용 아님, FE 라벨에 로그인 기준 명시).
+    """
 
     users: int
+    users_today: int
     accounts: int
+    accounts_today: int
     trades: int
+    trades_today: int
     stocks: int
     nps_unmatched: int
     broker_statements: int
+    broker_statements_today: int
+    feedback: int
+    feedback_today: int
+    bug_reports: int
+    bug_reports_today: int
+    deletions: int
+    deletions_today: int
+    dau: int
+    wau: int
+    mau: int
 
 
 class UserGrowthPoint(BaseModel):
