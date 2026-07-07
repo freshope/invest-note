@@ -50,12 +50,14 @@ const columns: Column<UserRow>[] = [
   },
   {
     header: "보유 계좌수",
+    className: "text-right",
     cell: (r) => (
       <span className="tabular-nums">{(r.account_count ?? 0).toLocaleString()}</span>
     ),
   },
   {
     header: "총 거래수",
+    className: "text-right",
     cell: (r) => (
       <span className="tabular-nums">{(r.trade_count ?? 0).toLocaleString()}</span>
     ),
