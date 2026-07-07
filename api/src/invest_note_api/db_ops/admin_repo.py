@@ -160,23 +160,68 @@ async def list_ledger_entries(conn: Any, batch_id: UUID) -> list[dict]:
     return result
 
 
+# 오늘(KST) 등록분 필터 — created_at 을 KST 로 변환한 날짜가 KST 오늘과 같은 행.
+# get_user_growth 의 KST 버킷 패턴(::date at time zone 'Asia/Seoul')과 동일 규약.
+_KST_TODAY = "(%s at time zone 'Asia/Seoul')::date = (now() at time zone 'Asia/Seoul')::date"
+
+# get_stats 반환 키 = SQL SELECT 별칭 = AdminStats 필드. 세 곳이 1:1 이어야 함.
+_STATS_KEYS = (
+    "users", "users_today",
+    "accounts", "accounts_today",
+    "trades", "trades_today",
+    "stocks", "nps_unmatched",
+    "broker_statements", "broker_statements_today",
+    "feedback", "feedback_today",
+    "bug_reports", "bug_reports_today",
+    "deletions", "deletions_today",
+    "dau", "wau", "mau",
+)
+
+
 async def get_stats(conn: Any) -> dict[str, int]:
-    """대시보드 카운트 — 단일 쿼리로 테이블 건수. admin pool 이라 cross-user 전수."""
+    """대시보드 카운트 — 단일 쿼리로 각종 집계. admin pool 이라 cross-user 전수.
+
+    누적 + 오늘 등록수(users/accounts/trades/broker_statements, KST 당일) + 게시판 유형별
+    건수(feedback/bug_report) + 누적 탈퇴 + 로그인 활성(dau/wau/mau) 을 함께 반환한다.
+    dau/wau/mau 는 user_profiles.last_sign_in(로그인 시각) 기준 rolling 1/7/30일 — 실제 앱
+    사용이 아니라 '로그인' 근사이며 last_sign_in 은 최신값 1컬럼이라 스냅샷만 가능(시계열 불가).
+    """
     row = await conn.fetchrow(
-        """
+        f"""
         select
             (select count(*) from users) as users,
+            (select count(*) from users where {_KST_TODAY % 'created_at'}) as users_today,
             (select count(*) from accounts) as accounts,
+            (select count(*) from accounts where {_KST_TODAY % 'created_at'}) as accounts_today,
             (select count(*) from trades) as trades,
+            (select count(*) from trades where {_KST_TODAY % 'created_at'}) as trades_today,
             (select count(*) from stocks) as stocks,
             (select count(*) from nps_unmatched) as nps_unmatched,
-            (select count(*) from board_posts where board_type = 'broker_statement') as broker_statements
+            (select count(*) from board_posts where board_type = 'broker_statement')
+                as broker_statements,
+            (select count(*) from board_posts
+                where board_type = 'broker_statement' and {_KST_TODAY % 'created_at'})
+                as broker_statements_today,
+            (select count(*) from board_posts where board_type = 'feedback') as feedback,
+            (select count(*) from board_posts
+                where board_type = 'feedback' and {_KST_TODAY % 'created_at'})
+                as feedback_today,
+            (select count(*) from board_posts where board_type = 'bug_report') as bug_reports,
+            (select count(*) from board_posts
+                where board_type = 'bug_report' and {_KST_TODAY % 'created_at'})
+                as bug_reports_today,
+            (select count(*) from account_deletions) as deletions,
+            (select count(*) from account_deletions where {_KST_TODAY % 'deleted_at'})
+                as deletions_today,
+            (select count(*) from user_profiles
+                where last_sign_in >= now() - interval '1 day') as dau,
+            (select count(*) from user_profiles
+                where last_sign_in >= now() - interval '7 days') as wau,
+            (select count(*) from user_profiles
+                where last_sign_in >= now() - interval '30 days') as mau
         """
     )
-    return {
-        k: int(row[k])
-        for k in ("users", "accounts", "trades", "stocks", "nps_unmatched", "broker_statements")
-    }
+    return {k: int(row[k]) for k in _STATS_KEYS}
 
 
 async def get_user_growth(conn: Any) -> list[dict[str, Any]]:
