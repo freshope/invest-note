@@ -52,9 +52,13 @@ SELECT id, source_row_no, traded_at_raw, trade_type, asset_name,
 """
 
 # 등록(commit) 생애주기 마커 — 미리보기만 한 배치(committed_at NULL)와 구분.
+# account_id 는 keep-first(COALESCE) — 같은 파일(batch)을 다른 계좌로 재커밋해도 첫 귀속을
+# 덮어쓰지 않는다. (batch→account 는 본래 1:1 표기라 다중 계좌 물질화는 설계상 완전 표기 불가;
+# 여기서는 조용한 덮어쓰기만 막는다.)
 _MARK_COMMITTED_SQL = """
 UPDATE import_batches
-   SET committed_at = now(), account_id = $3
+   SET committed_at = now(),
+       account_id = COALESCE(import_batches.account_id, $3)
  WHERE id = $1 AND user_id = $2
 """
 

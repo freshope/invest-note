@@ -312,3 +312,44 @@ async def test_concurrent_recommit_no_duplicate_trades():
             async with pool.acquire() as conn:
                 await conn.execute("DELETE FROM public.users WHERE id = $1", UUID(uid))
         await pool.close()
+
+
+async def test_commit_rejects_other_users_batch():
+    """user 격리 — A 의 batch_id 로 B 가 commit 시도해도 A 의 원장을 물질화하지 못한다.
+
+    commit 격리는 오직 get_ledger_trade_rows 의 `WHERE ... AND user_id = $2` 에 의존한다.
+    B 로 커밋하면 그 필터가 A 의 원장 행을 걸러내 빈 결과 → 400(등록할 거래 없음)이고 B 계좌엔
+    아무것도 남지 않는다. FakePool 단위 테스트는 이 SQL 을 실행하지 못하므로(mock) 실DB 로만
+    이 필터의 회귀를 잡을 수 있다.
+    """
+    pool = await asyncpg.create_pool(TEST_DB_URL, min_size=1, max_size=4, statement_cache_size=0)
+    uid_a = uid_b = None
+    try:
+        async with pool.acquire() as conn:
+            uid_a, _ = await _seed_account(conn, name="ledger-owner")
+            uid_b, acct_b = await _seed_account(conn, name="other-user")
+            sid = await _seed_ledger(conn, uid_a, [
+                _row("005930", "삼성전자", "BUY", 10, 70000, "2024-01-10"),
+            ])
+
+        app = _make_app()
+        app.state.pool = pool
+        async with _client_as(app, uid_b) as ac:
+            r = await ac.post(
+                "/v1/trades/import/commit",
+                json={"staging_id": sid, "account_id": acct_b},
+            )
+        assert r.status_code == 400, r.text  # 타 user 원장 → 거래 없음
+
+        # 핵심: B 계좌에 A 의 거래가 물질화되지 않았다.
+        async with pool.acquire() as conn:
+            n = await conn.fetchval(
+                "SELECT count(*)::int FROM trades WHERE user_id = $1", UUID(uid_b)
+            )
+        assert n == 0, f"타 user 원장이 물질화됨: trades={n} (기대 0)"
+    finally:
+        async with pool.acquire() as conn:
+            for u in (uid_a, uid_b):
+                if u is not None:
+                    await conn.execute("DELETE FROM public.users WHERE id = $1", UUID(u))
+        await pool.close()

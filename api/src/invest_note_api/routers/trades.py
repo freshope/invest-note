@@ -956,6 +956,10 @@ async def import_commit(
             group_rows.sort(key=lambda r: (r["traded_at_kst"], 0 if r["trade_type"] == TRADE_TYPE_BUY else 1))
             # except 핸들러가 항상 참조할 수 있게 미리 초기화(조회/결정 단계 예외 대비).
             err_asset = group_key.asset_name
+            # skip 은 그룹 트랜잭션이 커밋될 때만 전역 집계에 반영한다. 결정 단계에서 바로
+            # skipped_count 를 올리면, 이후 같은 그룹의 INSERT 가 raise 되어 롤백돼도 파이썬 쪽
+            # 증가분이 살아남아 '아무것도 안 남았는데 skip 있음'으로 과대 보고된다.
+            group_skipped = 0
             try:
                 async with conn.transaction():
                     # advisory lock 을 기존 거래 조회보다 *먼저* 획득한다. 같은 batch 를 동시
@@ -1007,12 +1011,12 @@ async def import_commit(
                                 to_merge.append((existing, patch))
                             else:
                                 # 완전히 동일 → noop
-                                skipped_count += 1
+                                group_skipped += 1
                             continue
 
                         if sig in seen_sigs:
                             # 같은 import batch 내에서 같은 시그니처가 또 등장 → skip
-                            skipped_count += 1
+                            group_skipped += 1
                             continue
 
                         # 방어 가드: import 경로는 create 의 _foreign_requires_exchange_rate validator 를
@@ -1051,6 +1055,8 @@ async def import_commit(
                         seen_sigs.add(sig)
 
                     if not to_insert and not to_merge:
+                        # 전부 dup/noop — 트랜잭션 정상 종료(빈 커밋)이므로 skip 확정.
+                        skipped_count += group_skipped
                         continue
 
                     # 정합성 검증은 DB 적용 *전* 가상 적용으로 수행한다.
@@ -1080,6 +1086,7 @@ async def import_commit(
                     oversell_msg = _find_import_oversell(virtual_fresh, group_key)
                     if oversell_msg is not None:
                         commit_errors.append(ImportError(row_no=0, reason=oversell_msg))
+                        skipped_count += group_skipped
                         continue
 
                     # 검증 통과 → 실제 DB 적용
@@ -1116,6 +1123,7 @@ async def import_commit(
 
                     inserted_count += len(inserted_trades)
                     merged_count += len(merged_trades)
+                    skipped_count += group_skipped
             except asyncpg.LockNotAvailableError:
                 commit_errors.append(ImportError(row_no=0, reason=f"{err_asset} 처리 중 충돌 — 잠시 후 다시 시도해주세요."))
             except asyncpg.UniqueViolationError:
@@ -1129,9 +1137,13 @@ async def import_commit(
         # 원장은 durable 하므로 삭제하지 않는다. transient 실패가 섞였으면 사용자가 같은
         # batch_id 로 commit 재시도(재업로드·재해소 없이) — trade-signature dedup 이 멱등 보장.
         # 등록 생애주기 마커 — 미리보기만 한 배치와 구분(committed_at·account_id 채움).
-        await mark_batch_committed(
-            conn, batch_id=batch_uuid, user_id=user.id, account_id=body.account_id
-        )
+        # 단, 전 그룹이 실패해 아무것도 물질화되지 않았고 오류만 남았으면 스탬프하지 않는다
+        # (어드민 원장에 '등록됨'으로 오표시되는 것 방지). 전부 dup/noop(오류 0)은 정상
+        # 재커밋이므로 마커를 남긴다.
+        if inserted_count or merged_count or not commit_errors:
+            await mark_batch_committed(
+                conn, batch_id=batch_uuid, user_id=user.id, account_id=body.account_id
+            )
 
     return ImportCommitResponse(
         inserted_count=inserted_count,
