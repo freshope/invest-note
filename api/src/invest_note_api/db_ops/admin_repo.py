@@ -20,7 +20,9 @@ _LIST_TABLES: dict[str, dict[str, Any]] = {
         "from": "users u left join user_profiles p on p.user_id = u.id",
         "select": (
             "u.id, u.created_at, p.email, p.display_name, p.avatar_url, "
-            "p.email_verified, p.providers, p.last_sign_in"
+            "p.email_verified, p.providers, p.last_sign_in, "
+            "(select count(*) from accounts a where a.user_id = u.id) as account_count, "
+            "(select count(*) from trades t where t.user_id = u.id) as trade_count"
         ),
         "search": ["u.id::text", "p.email", "p.display_name"],
         "order": "u.created_at desc",

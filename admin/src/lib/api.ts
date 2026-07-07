@@ -158,6 +158,9 @@ export interface UserRow extends BaseRow {
   email_verified: boolean | null;
   providers: string[] | null;
   last_sign_in: string | null;
+  // 서브쿼리 집계 — 보유 계좌수·총 거래수(항상 0 이상).
+  account_count: number;
+  trade_count: number;
 }
 
 export interface AccountRow extends BaseRow {
