@@ -112,8 +112,14 @@ def upgrade() -> None:
         ondelete="SET NULL",
     )
     # FK(SET NULL) 지원 인덱스 — 원장 행 삭제 시 참조 trades 를 인덱스로 찾게 해 seq scan 회피.
+    # partial(NOT NULL) — 링크가 없는(NULL) 대다수 기존 행은 인덱스 대상이 아니며, 신규 컬럼이라
+    # 생성 시점엔 전 행이 NULL → 인덱스가 비어 즉시 생성(기존 trades 쓰기를 막는 빌드 락 없음).
+    # FK 정리는 non-NULL 행만 찾으면 되므로 기능은 full 인덱스와 동일.
     op.create_index(
-        "trades_source_ledger_entry_id_idx", "trades", ["source_ledger_entry_id"]
+        "trades_source_ledger_entry_id_idx",
+        "trades",
+        ["source_ledger_entry_id"],
+        postgresql_where=sa.text("source_ledger_entry_id IS NOT NULL"),
     )
 
 

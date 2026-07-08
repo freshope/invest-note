@@ -353,3 +353,52 @@ async def test_commit_rejects_other_users_batch():
                 if u is not None:
                     await conn.execute("DELETE FROM public.users WHERE id = $1", UUID(u))
         await pool.close()
+
+
+async def test_recommit_after_ticker_reresolve_is_idempotent():
+    """재커밋 사이 원장 entry 의 ticker 재해소가 바뀌어도 dead-end 없이 멱등 skip 된다.
+
+    ticker 가 달라지면 group_key 가 바뀌어 signature dedup 이 기존 trade 를 못 찾는다. 예전엔
+    이때 INSERT 가 (account_id, source_ledger_entry_id) 부분 UNIQUE 를 위반→그룹 전체가 '중복
+    거래' 오류로 롤백되는 dead-end 였다. 이제 insert_trades_bulk 의 ON CONFLICT DO NOTHING 이
+    DB 레벨에서 조용히 건너뛴다 → 오류 없이, entry 는 계좌당 1회만 물질화(중복 trade 없음).
+    """
+    pool = await asyncpg.create_pool(TEST_DB_URL, min_size=1, max_size=4, statement_cache_size=0)
+    uid = None
+    try:
+        async with pool.acquire() as conn:
+            uid, acct = await _seed_account(conn, name="reresolve")
+            sid = await _seed_ledger(conn, uid, [
+                _row("005930", "삼성전자", "BUY", 10, 70000, "2024-01-10"),
+            ])
+
+        app = _make_app()
+        app.state.pool = pool
+        async with _client_as(app, uid) as ac:
+            r1 = await ac.post("/v1/trades/import/commit", json={"staging_id": sid, "account_id": acct})
+        assert r1.status_code == 200, r1.text
+        assert r1.json()["inserted_count"] == 1
+
+        # ticker 재해소 drift 시뮬레이션 — 같은 entry 의 hint 를 바꿔 다음 커밋이 다른 ticker 로 해소되게.
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE import_ledger_entries SET ticker_hint = '000660' WHERE batch_id = $1",
+                UUID(sid),
+            )
+
+        async with _client_as(app, uid) as ac:
+            r2 = await ac.post("/v1/trades/import/commit", json={"staging_id": sid, "account_id": acct})
+        assert r2.status_code == 200, r2.text
+        assert r2.json()["error_count"] == 0, r2.text  # dead-end('중복 거래') 없음
+
+        # entry 는 계좌당 1회만 물질화 — 재해소 재커밋으로 중복 trade 없음.
+        async with pool.acquire() as conn:
+            n = await conn.fetchval(
+                "SELECT count(*)::int FROM trades WHERE user_id = $1", UUID(uid)
+            )
+        assert n == 1, f"재해소 재커밋으로 중복 trade 발생: trades={n} (기대 1)"
+    finally:
+        if uid is not None:
+            async with pool.acquire() as conn:
+                await conn.execute("DELETE FROM public.users WHERE id = $1", UUID(uid))
+        await pool.close()
