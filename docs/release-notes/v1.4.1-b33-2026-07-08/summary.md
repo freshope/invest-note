@@ -70,7 +70,7 @@
    - `0014_import_ledger.py` (import_batches / import_ledger_entries 신규 테이블)
    - `0015_trades_ledger_uniq.py` (trades↔원장 유니크 제약)
    - `0016_board_comment_withdrawn.py`
-   - `0017_user_profiles_last_sign_in_idx.py` (대시보드 인덱스)
+   - `0017_user_last_sign_in_idx.py` (대시보드 인덱스)
    - 적용 명령: `cd api && poetry run alembic upgrade head` (운영 DATABASE_URL 대상 — 운영 PG 는 호스트 포트 미publish라 SSH 터널/컨테이너 IP 경유 필요)
 2. **BE 배포: 필요** — api/src 런타임 변경(routers/trades·admin·me, db_ops, broker_import, services/broker_capture, storage/r2). main push 시 Coolify 자동 배포.
    - 어드민 SPA(admin/) 는 별도 GHA→registry→Coolify 파이프라인으로 배포됨.
@@ -84,3 +84,4 @@
 - **다음 네이티브 제출 시**: `release-notes` 를 `since app-v1.3.8_32`(마지막 네이티브 빌드) 로 돌려 build 32 이후 누적 OTA 변경(1.3.x~1.4.x)을 한꺼번에 묶어 스토어 노트 작성.
 - 자산추이 5년/all 범위는 BE 2년 캡 때문에 확장 필요 (미착수) — [[project_asset_history_unit]].
 - 거래내역서 원장 후속 과제는 docs/backlog.md 참조.
+- **[후속] alembic `alembic_version.version_num varchar(32)` 한도**: 0017 리비전 ID 가 35자라 버전기록 UPDATE 에서 truncation → ID 를 `0017_user_last_sign_in_idx`(26자)로 단축해 해소. 기존 이웃 ID 도 28자로 한도에 근접 → 재발 위험. 별도 마이그레이션으로 컬럼을 varchar(255) 확장 + 네이밍 가드레일(≤32자) 권장 (이번 릴리즈 범위 밖).
