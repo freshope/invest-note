@@ -1,6 +1,6 @@
 """user_profiles.last_sign_in 인덱스 — 대시보드 DAU/WAU/MAU 롤링윈도 스캔용
 
-Revision ID: 0017_user_profiles_last_sign_in_idx
+Revision ID: 0017_user_last_sign_in_idx
 Revises: 0016_board_comment_withdrawn
 Create Date: 2026-07-07
 
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "0017_user_profiles_last_sign_in_idx"
+revision: str = "0017_user_last_sign_in_idx"
 down_revision: Union[str, None] = "0016_board_comment_withdrawn"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
