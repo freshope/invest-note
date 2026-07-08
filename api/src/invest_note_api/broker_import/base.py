@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import math
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -17,9 +18,12 @@ def parse_number(s: object) -> float:
     if not s:
         return 0.0
     try:
-        return float(str(strip_comma_number(s)))
+        value = float(str(strip_comma_number(s)))
     except ValueError:
         return 0.0
+    # inf/nan(자릿수 오버플로·'inf'/'nan' 문자열)은 `<= 0` 가드를 통과해 하류에서
+    # Decimal.quantize 500(InvalidOperation) 또는 nan 원장 유입을 일으킨다 → 0.0 으로 무력화.
+    return value if math.isfinite(value) else 0.0
 
 
 def extract_pdf_lines(

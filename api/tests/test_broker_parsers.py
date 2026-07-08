@@ -21,8 +21,30 @@ from invest_note_api.broker_import.toss_pdf import (
 from invest_note_api.broker_import.base import (
     ParsedTrade,
     ParseResult,
+    parse_number,
     row_from_trade,
 )
+
+
+class TestParseNumber:
+    """parse_number 는 신뢰경계(사용자 업로드 파일) — 비유한값을 0.0 으로 무력화한다.
+
+    inf/nan/자릿수 오버플로는 `<= 0` 가드를 통과해 하류 Decimal.quantize 500 또는
+    nan 원장 유입을 일으키므로 파서 단계에서 걸러야 한다.
+    """
+
+    def test_normal_and_comma(self):
+        assert parse_number("1,234") == 1234.0
+        assert parse_number("70000") == 70000.0
+        assert parse_number("") == 0.0
+        assert parse_number(None) == 0.0
+
+    def test_non_finite_values_become_zero(self):
+        assert parse_number("inf") == 0.0
+        assert parse_number("Infinity") == 0.0
+        assert parse_number("nan") == 0.0
+        # 자릿수 오버플로 → float 은 inf 로 파싱됨 → 0.0
+        assert parse_number("9" * 400) == 0.0
 
 
 def _make_samsung_xlsx(rows: list[dict], account_meta: str = "7157197877-14 [ ISA ] 홍길동") -> bytes:
