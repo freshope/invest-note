@@ -2,7 +2,7 @@
 
 MVP 이후 구현할 작업 후보 목록.
 
-> 정리 이력: 2026-07-03 완료항목 제거(다크 테마·iOS 상태바·eslint 잔여 warnings — 모두 완료) + 우선순위 스냅샷 추가 + 영역 재정렬.
+> 정리 이력: 2026-07-03 완료항목 제거(다크 테마·iOS 상태바·eslint 잔여 warnings — 모두 완료) + 우선순위 스냅샷 추가 + 영역 재정렬. · 2026-07-08 원장 운영 배포(api-v1.3.14) 반영 — 마이그레이션 `0014`~`0017` 운영 적용 완료, `import_staging` drop 리비전 `0018` 로 정정(0016·0017 선점), R2 lifecycle·개인정보처리방침 추후예정.
 
 ## 우선순위 스냅샷 (다음 착수 후보)
 
@@ -37,12 +37,12 @@ MVP 이후 구현할 작업 후보 목록.
 
 원장 기능(캡처/물질화 2-스테이지·append-only·등록 마커·날짜 파일거절) 구현 완료(`docs/decisions.md` 2026-07-02·07-03, `docs/spec-history/2026-07-03-import-ledger.md`, 마이그레이션 `0014`·`0015`(동시 재커밋 중복 방어), 유닛 959 + 격리 realdb 9 통과). 아래는 **배포 시/배포 후** 진행 항목 — feature 동작엔 영향 없음.
 
-> **어드민 원장 조회 추가 (2026-07-06, `docs/spec-history/2026-07-06-admin-import-ledger.md`)** — 어드민 패널에 배치 목록(`/admin/import-batches`, email·계좌명 조인 + 행수)+행 드릴다운(raw 원문)을 추가. ⚠️ **아래 `0014`·`0015` 마이그레이션이 운영 적용된 뒤에만 실동작**(미적용 시 원장 테이블 부재로 빈 목록/에러). 읽기 전용이라 app·기존 계약 무영향.
+> **어드민 원장 조회 추가 (2026-07-06, `docs/spec-history/2026-07-06-admin-import-ledger.md`)** — 어드민 패널에 배치 목록(`/admin/import-batches`, email·계좌명 조인 + 행수)+행 드릴다운(raw 원문)을 추가. ✅ **`0014`·`0015` 마이그레이션 2026-07-08 운영 적용 완료 → 실동작 중.** 읽기 전용이라 app·기존 계약 무영향.
 
-- [ ] **`0014`·`0015` 마이그레이션 운영 적용 (배포 시)** — `import_batches` / `import_ledger_entries` / `trades.source_ledger_entry_id` + `0015` `trades` 부분 UNIQUE(`account_id, source_ledger_entry_id`, 동시 재커밋 중복 방어). 현재 "작성만"·미적용. 적용은 일상 경로(invest_note_app, superuser 불요). 참조: [[project_alembic_migrations]].
-- [ ] **R2 lifecycle 규칙 설정 (배포 시, 수동 Ops)** — Cloudflare R2 콘솔에서 **prefix `import_source/` 90일 만료** 규칙 추가. ⚠️ 버킷 전체 아님 — 업로드 버킷(`R2_BUCKET`, 예 `invest-note-uploads`)은 `broker_statement/`(제보)·`temp/`·`bug_report/` 와 공유하므로 **prefix 스코프 필수**(다른 prefix 삭제 금지). OTA 매니페스트는 별도(공개) 버킷이라 무관. 현재 storage_key 를 읽는 코드는 없음(다운로드 엔드포인트 부재).
-- [ ] **`import_staging`(0010) drop (배포 후)** — 원장이 대체해 dead 상태(라우터 참조 이미 제거). 별도 리비전 `0016` 로 DROP + `db_ops/import_staging_repo.py`·`tests/test_import_staging_repo.py`·잔존 import 정리. 운영 적용 테이블이라 위험 분리해 배포 후 진행. (0015 는 동시 재커밋 방어 UNIQUE 로 선점됨.)
-- [ ] **개인정보처리방침에 내역서 원본/파싱본 수집·보유기간(90일) 명시** — 내역서 **원본 파일(R2, 90일)** + **파싱 원장 rows**(계좌번호·거래내역 포함) 수집을 개인정보처리방침(`freshope.github.io/invest-note-legal`)·Play Data Safety·App Store privacy 라벨에 반영. (기존 Auth PII 처리방침 갱신 항목은 2026-07-03 develop 에서 완료 처리됨 — 이 원장 수집은 별도 신규 항목.)
+- [x] **`0014`~`0017` 마이그레이션 운영 적용 — (2026-07-08 완료)** `import_batches` / `import_ledger_entries` / `trades.source_ledger_entry_id` + `0015` `trades` 부분 UNIQUE(`account_id, source_ledger_entry_id`, 동시 재커밋 중복 방어) + `0016` board_comment_withdrawn + `0017` user_last_sign_in_idx. api-v1.3.14 배포와 함께 운영 DB에 `alembic upgrade head` 수동 적용. ⚠️ **컨테이너 CMD 는 uvicorn 만 실행 → 마이그레이션 자동 적용 안 됨**(향후 배포에도 수동 upgrade 필요). 참조: [[project_alembic_migrations]].
+- [ ] **R2 lifecycle 규칙 설정 (수동 Ops, 추후예정)** — Cloudflare R2 콘솔에서 **prefix `import_source/` 90일 만료** 규칙 추가. ⚠️ 버킷 전체 아님 — 업로드 버킷(`R2_BUCKET`, 예 `invest-note-uploads`)은 `broker_statement/`(제보)·`temp/`·`bug_report/` 와 공유하므로 **prefix 스코프 필수**(다른 prefix 삭제 금지). OTA 매니페스트는 별도(공개) 버킷이라 무관. 현재 storage_key 를 읽는 코드는 없음(다운로드 엔드포인트 부재).
+- [ ] **`import_staging`(0010) drop — 착수 가능 (원장 운영 배포 완료 2026-07-08)** — 원장이 대체해 dead 상태(라우터 참조 이미 제거). 별도 리비전 `0018` 로 DROP(⚠️ `0016`·`0017` 이미 사용됨, 리비전 번호 상향) + `db_ops/import_staging_repo.py`·`tests/test_import_staging_repo.py`·잔존 import 정리. 운영 적용 테이블이라 위험 분리해 별도 진행.
+- [ ] **개인정보처리방침에 내역서 원본/파싱본 수집·보유기간(90일) 명시 (추후예정)** — 내역서 **원본 파일(R2, 90일)** + **파싱 원장 rows**(계좌번호·거래내역 포함) 수집을 개인정보처리방침(`freshope.github.io/invest-note-legal`)·Play Data Safety·App Store privacy 라벨에 반영. (기존 Auth PII 처리방침 갱신 항목은 2026-07-03 develop 에서 완료 처리됨 — 이 원장 수집은 별도 신규 항목.)
 
 ### 일괄등록 고도화 — 해외주식(US/USD)
 
