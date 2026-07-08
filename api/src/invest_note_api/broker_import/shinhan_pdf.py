@@ -58,7 +58,13 @@ class ShinhanPdfParser(BrokerStatementParser):
                 lines[i - 1], lines[i], lines[i + 1], m2, row_counter, result
             )
             if parsed:
-                result.trades.append(parsed)
+                result.add_trade(parsed)
+            else:
+                result.add_non_trade(
+                    row_counter,
+                    {"line1": lines[i - 1], "line2": lines[i], "line3": lines[i + 1]},
+                    kind="error",
+                )
 
         return result
 

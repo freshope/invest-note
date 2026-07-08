@@ -52,12 +52,20 @@ class SamsungXlsxParser(BrokerStatementParser):
                 return None
 
         for sheet_row_no, row in enumerate(rows_iter, start=_DATA_START):
+            # 행 원문 전체 덤프 (원장 무손실 책임) — 18컬럼 전 셀을 문자열로 보존.
+            full_raw = {
+                h: ("" if (i >= len(row) or row[i] is None) else str(row[i]))
+                for i, h in enumerate(headers)
+                if h
+            }
+
             trade_name = str(col(row, "거래명") or "").strip()
             if not trade_name:
-                continue
-            if trade_name not in _TRADE_NAMES:
-                if trade_name:  # 배당금입금 등 비거래 행
-                    result.add_error(sheet_row_no, f"미지원 거래명: {trade_name}", {"거래명": trade_name})
+                continue  # 빈 행(노이즈) — 데이터 행 아님, 원장 대상 아님
+
+            if trade_name not in _TRADE_NAMES:  # 배당금입금 등 비거래 행
+                result.add_error(sheet_row_no, f"미지원 거래명: {trade_name}", {"거래명": trade_name})
+                result.add_non_trade(sheet_row_no, full_raw)
                 continue
 
             trade_type = TRADE_TYPE_BUY if trade_name in _BUY_NAMES else TRADE_TYPE_SELL
@@ -65,11 +73,13 @@ class SamsungXlsxParser(BrokerStatementParser):
             asset_name = str(col(row, "종목명") or "").strip()
             if not asset_name:
                 result.add_error(sheet_row_no, "종목명 없음")
+                result.add_non_trade(sheet_row_no, full_raw, kind="error")
                 continue
 
             traded_at_raw = col(row, "거래일자")
             if traded_at_raw is None:
                 result.add_error(sheet_row_no, "거래일자 없음")
+                result.add_non_trade(sheet_row_no, full_raw, kind="error")
                 continue
             traded_at_kst = str(traded_at_raw).strip()[:10]  # "YYYY-MM-DD"
 
@@ -80,6 +90,7 @@ class SamsungXlsxParser(BrokerStatementParser):
 
             if quantity <= 0 or price <= 0:
                 result.add_error(sheet_row_no, f"수량({quantity}) 또는 단가({price})가 0 이하")
+                result.add_non_trade(sheet_row_no, full_raw, kind="error")
                 continue
 
             currency_raw = str(col(row, "통화코드") or "").strip()
@@ -87,9 +98,10 @@ class SamsungXlsxParser(BrokerStatementParser):
             if currency == "USD":
                 result.usd_skip_count += 1
                 result.add_error(sheet_row_no, "USD 거래 — MVP 미지원", {"거래명": trade_name, "종목명": asset_name})
+                result.add_non_trade(sheet_row_no, full_raw)
                 continue
 
-            result.trades.append(
+            result.add_trade(
                 ParsedTrade(
                     source_row_no=sheet_row_no,
                     traded_at_kst=traded_at_kst,
@@ -101,7 +113,7 @@ class SamsungXlsxParser(BrokerStatementParser):
                     tax=tax,
                     currency=currency,
                     account_hint=result.account_hint,
-                    raw={"거래명": trade_name, "종목명": asset_name},
+                    raw=full_raw,
                 )
             )
 

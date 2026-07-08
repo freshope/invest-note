@@ -78,7 +78,12 @@ class MiraePdfParser(BrokerStatementParser):
                 m1, data_tokens, row_counter, result, wrapped_name=wrapped_name
             )
             if parsed:
-                result.trades.append(parsed)
+                result.add_trade(parsed)
+            else:
+                err_raw = {"line1": m1.string, "data_tokens": " ".join(data_tokens)}
+                if wrapped_name:
+                    err_raw["wrapped_name"] = wrapped_name
+                result.add_non_trade(row_counter, err_raw, kind="error")
 
         return result
 
@@ -161,6 +166,15 @@ class MiraePdfParser(BrokerStatementParser):
         code = m1.group("code")
         ticker_hint = code if code.isdigit() else None
 
+        # 행 원문 전체 덤프 — line1 원문 + 데이터 토큰(수량/단가/종목명/제세금/잔고) + 코드.
+        raw = {
+            "line1": m1.string,
+            "data_tokens": " ".join(data_tokens),
+            "code": code,
+        }
+        if wrapped_name:
+            raw["wrapped_name"] = wrapped_name
+
         return ParsedTrade(
             source_row_no=row_no,
             traded_at_kst=m1.group("date").replace("/", "-"),
@@ -172,5 +186,5 @@ class MiraePdfParser(BrokerStatementParser):
             currency="KRW",
             ticker_hint=ticker_hint,
             account_hint=result.account_hint,
-            raw={"date": m1.group("date"), "code": code},
+            raw=raw,
         )

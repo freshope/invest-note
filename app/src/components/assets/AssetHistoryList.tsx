@@ -20,9 +20,16 @@ interface AssetHistoryListProps {
   isStockView: boolean;
   /** 종목뷰 종가 컬럼 통화(native). KR=KRW, US=USD. 자산/전일대비는 항상 KRW. */
   closeCurrency?: string;
+  /** 변화량 컬럼 라벨 — 표시 단위에 따라 전일대비/전주대비/전월대비. */
+  deltaLabel?: string;
 }
 
-export function AssetHistoryList({ items, isStockView, closeCurrency = "KRW" }: AssetHistoryListProps) {
+export function AssetHistoryList({
+  items,
+  isStockView,
+  closeCurrency = "KRW",
+  deltaLabel = "전일대비",
+}: AssetHistoryListProps) {
   if (items.length === 0) {
     return (
       <div className="py-8 text-center text-[13px] text-muted-foreground">
@@ -43,7 +50,7 @@ export function AssetHistoryList({ items, isStockView, closeCurrency = "KRW" }: 
         <tr className="text-[12px] text-muted-foreground">
           <th className={cn(thBase, "text-left")}>날짜</th>
           <th className={cn(thBase, "text-right")}>자산</th>
-          <th className={cn(thBase, "text-right")}>전일대비</th>
+          <th className={cn(thBase, "text-right")}>{deltaLabel}</th>
           {isStockView && <th className={cn(thBase, "text-right")}>종가</th>}
           {isStockView && <th className={cn(thBase, "text-right")}>수량</th>}
         </tr>

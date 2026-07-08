@@ -4,6 +4,65 @@
 
 ---
 
+## 2026-07-05 | 자산추이 표시 단위(일/주/월) — 기간범위 필터 아닌 "단위=줌" (FE 리샘플)
+
+- **맥락:** 백로그 "자산추이 일/주/월/6개월/1년/5년/all 선택"은 **표시 단위(일/주/월)** 와 **기간 범위(6개월/1년…)** 가 섞인 요청. 자산추이 차트는 `useChartPan` 고정 63포인트 창 + 가로 팬 구조.
+- **결정:** 기간범위 필터가 아니라 **표시 단위(일/주/월) 선택**으로 구현. 단위를 키우면 고정 창에 담기는 기간이 늘어나 **단위가 곧 줌**으로 작동(일≈3개월/주≈1.2년/월=전체). FE에서 일별 series를 단위로 리샘플(`assets/resample.ts` — 각 구간 **마지막 거래일**을 대표점, `change`는 구간 연속 차분). 자산 차트·단위별 손익·단위별 내역이 이 리샘플 결과 하나에서 파생돼 항상 동일 기준. BE 무변경.
+- **이유:** (a) 누적 평가액 라인은 일↔주 집계로 곡선 모양이 거의 안 변해 기간범위 필터보다 "단위=줌"의 정보가치가 큼, (b) 잘 작동하는 팬 인터랙션을 버리지 않고 재사용, (c) FE 전용이라 BE 부하·응답 계약 변경 없음.
+- **트레이드오프:** BE `domain/asset_history.py` `LOOKBACK_DAYS=2년` 캡은 유지 → 백로그가 약속한 **5년/all은 이 캡 확장(BE) 없이는 불가**(전체=최대 2년). 집계는 누적값이라 구간 평균이 아닌 **마지막 거래일 값**.
+- 참조: [[project_asset_history_unit]], `docs/spec-history`(없음 — spec-start 미경유 직접 구현).
+
+## 2026-07-03 | 일괄등록 commit 동시 재커밋 중복 방어 — 조회를 lock 안으로 재배치 + 부분 UNIQUE
+
+- **맥락:** 원장 재설계로 commit 이 durable batch_id 를 다시 읽어 물질화하게 되면서(재업로드·재시도·두 탭 등 동일 batch 재커밋을 명시적으로 허용), 리뷰에서 **동시 재커밋 TOCTOU 중복**을 발견. commit 그룹 루프가 기존 거래 dedup 셋(`list_trades_in_group`)을 **advisory lock 획득 *전*** 에 읽어, 두 요청이 같은 batch 를 동시에 커밋하면 둘 다 빈 그룹을 보고 각자 INSERT → 거래 중복. 순차 재커밋은 signature dedup 으로 멱등이지만 동시 경로는 뚫렸다(구 staging getter 도 `FOR UPDATE` 없어 동일 레이스가 잠재 — 신규 회귀는 아님).
+- **결정 ① 조회·dedup·검증·적용을 그룹 advisory lock *안*으로 재배치.** `acquire_trade_group_lock` 을 그룹 처리 트랜잭션 맨 앞으로 옮겨, lock 획득 후에 기존 거래를 읽는다. 뒤 요청은 lock 에서 직렬화되어 앞 요청의 커밋분을 읽고 dedup(merge/skip)한다.
+- **결정 ② DB 부분 UNIQUE 백스톱 — 마이그레이션 `0015`.** `trades` 에 부분 UNIQUE `(account_id, source_ledger_entry_id) WHERE source_ledger_entry_id IS NOT NULL`. 락 재배치가 실패해도(핸들러 우회·경합) 같은 계좌에 같은 원장 행이 두 번 물질화되면 `UniqueViolationError` → 기존 commit 핸들러가 "중복 거래 감지"로 우아하게 전환. `account_id` 스코프라 **같은 파일을 다른 계좌에 등록하는 정상 흐름은 허용**, MANUAL·기존 trades(source_ledger_entry_id NULL)는 인덱스 제외라 무충돌.
+- **이유:** 재무 데이터 중복은 PnL·보유수량을 조용히 오염시킨다. 락 재배치가 근본 직렬화, 부분 UNIQUE 가 DB 레벨 최후 방어(이중 안전). 동시 재커밋 realdb 회귀 테스트로 검증(중복 0·양쪽 200).
+- **트레이드오프:** 조회를 락 안으로 옮겨 락 보유 구간이 소폭 늘어난다(그룹당 조회 1회, 무해). 부분 UNIQUE 는 staging drop 이 쓰려던 리비전 번호 `0015` 를 선점 → staging drop 은 `0016` 으로 이동.
+
+## 2026-07-03 | 원장 dedup 재설계 — append-only + 물질화 단계 dedup (keep-last 뒤집음) + 등록 마커
+
+- **맥락:** 2026-07-02 원장은 "거래 dedup 을 원장에서 keep-last UPSERT(user-scope)"로 했다(결정②·④). 코드 리뷰에서 **cross-batch batch_id flip → 조용한 거래 손실** 발견: keep-last 가 `SET batch_id=excluded.batch_id` 로 공유 행을 최신 배치로 옮기는데 commit 은 `WHERE batch_id` 로 읽어, 먼저 preview 한 배치를 등록하면 옮겨간 행이 누락된다. 근본은 "등록=파일 단위 vs dedup=사용자 단위" 충돌.
+- **결정 ① 원장은 append-only — 거래 dedup 을 하지 않는다.** 모든 행을 그대로 적재(무손실). 파일 통째 재업로드만 `content_sha256` UNIQUE 로 skip. **같은 거래의 중복 제거는 물질화(Stage 2)의 trade-signature dedup/merge(계좌 단위)가 담당** — 이미 존재하던 로직이라 Stage 2 변경 거의 없음. → 결정②의 `dedup_key`·partial-unique, 결정④의 keep-last UPSERT **폐기**. 원장에서 거래 행 식별은 `trade_type IS NOT NULL`.
+- **이유:** (a) flip 문제 소멸, (b) 원래 "무손실" 목표에 더 충실(모든 렌더링 보존; keep-last 는 옛 렌더링을 덮어썼음), (c) 중복은 trade 레벨에서 막는 게 맞고 계좌 단위 dedup 이 사용자 단위보다 정확, (d) 원장이 순수 append 로그로 단순화(UPSERT·partial-unique·`make_dedup_key` 제거 → 코드리뷰 지적 "make_dedup_key↔make_signature 축 불일치"도 소멸).
+- **정정 흐름:** 정정본 파일 등록 시 그 파일 값으로 trade merge(`build_merge_patch`) → "내가 등록한 파일 값이 반영"으로 더 직관적(keep-last 의 "옛 파일 등록해도 최신 업로드 값" 보다 명확).
+- **트레이드오프:** 겹치는 파일 반복 업로드 시 원장 행 누적(단, 동일 파일은 sha256 skip·행 작음). provenance `source_ledger_entry_id` 는 그 거래를 만든 배치 행을 가리킴(첫 물질화 기준).
+- **결정 ② 등록 생애주기 마커 — `import_batches.committed_at`·`account_id`.** commit 시점에 채운다. 미리보기만 한 배치(committed_at NULL)와 실제 등록한 배치를 구분(재구성·정리·전환율 분석용). 캡처는 여전히 독립(마커는 NULL 로 시작).
+- **결정 ③ 날짜 오류(미래·해석불가) → 파일 전체 거절.** 정상 데이터가 아니라 신뢰불가 파일/파서 이상 신호로 보고, 일부 행만 거르지 않고 **캡처 시점에 파일 전체를 400 으로 거절**(원장에 남기지 않음). (코드리뷰 지적 "commit 미래일자 가드 소실"의 근본 처리.)
+- 참조: [[project_broker_import_parsers]], [[project_trade_origin]], [[feedback_broker_parser_fixture_tests]].
+
+---
+
+## 2026-07-02 | 거래내역서 원장(ledger) 도입 — 캡처(원장)와 물질화(일괄등록) 2-스테이지 분리 (조사 단계 결정)
+
+- **맥락:** 거래내역서에서 추출 가능한 정보를 **모두** 기록해, 추후 거래 데이터를 원장 기반으로 복구·재구성 가능하게 하고 싶다는 요구. 현재는 `내역서 → 파서(ParsedTrade) → import_staging(jsonb, TTL 600s) → dedup → trades INSERT` 흐름에서 **`trades`가 유일 영속 저장소**이고, 가변·dedup·merge 손실·원본 미보관 이라 비가역이다. 파서 4종 감사: 삼성 xlsx 18컬럼 중 8개만 추출, 신한 소득세/지방소득세/농특세 누락, 미래에셋 수수료 미추출, 토스 USD KRW원본 소실, `raw`·`source_row_no`·`isin` 저장 단계 폐기.
+- **결정 ① 2-스테이지 분리 — 캡처와 물질화를 떼어낸다.**
+  - **Stage 1 (캡처, 일괄등록과 무관):** 파일 업로드 → 파서가 **모든 행**을 raw 로 추출 → `import_ledger_entries` 적재(dedup). 일괄등록 UI 에 묶지 않고 **서비스로 분리**(admin/API/향후 auto-import 등 다중 진입점). 원본 파일은 `import_batches` + R2.
+  - **Stage 2 (물질화 = 일괄등록):** `import_ledger_entries` 를 읽어 ticker 해소 → 거래 판별 → 기존 **trade-signature dedup/merge 재사용** → `trades` 생성 + `trades.source_ledger_entry_id` provenance 링크. 재실행 idempotent(trade-signature dedup).
+- **결정 ② 원장은 얇게 = raw + 식별/물질화 필드 + provenance 만.** (사용자 지시 "raw 데이터만 넣어") `import_ledger_entries` = `raw` jsonb(행 원문 전체) + dedup/식별 컬럼(traded_at·identifier·trade_type·quantity·price·ticker_hint·isin·country_code) + **물질화 필요 금액값(commission·tax·exchange_rate)** + `batch_id`·`source_row_no`. **분류(trade/dividend/…)·실행결과(committed/error/trade_id)·해소결과(resolved_ticker)는 원장에 넣지 않는다** — 전부 Stage 2 산출. ticker 해소는 Stage 2([[project_broker_import_parsers]] isin_ticker_map 캐시). 원장은 **엄격 append-only 아님** — 거래 dedup 은 keep-last UPSERT(결정④)라 같은 signature 행은 갱신된다. "distinct 거래 1건당 최신 렌더링 1행" 이 정확한 성격.
+  - **★commission/tax/exchange_rate 컬럼 추가(초안 "컬럼 아님" 뒤집음, 2026-07-02 스코프4):** 이 셋은 파서 산출값(tax=토스 거래세+제세금 합산, USD=÷환율 변환)이라 Stage 2 가 파서별 raw 키를 재해석 없이 물질화하려면 정규화 컬럼이 필요. advisor 기준 "dedup/**materialize에 필요한** 최소 필드"에 부합. raw 는 원문 세목 그대로 보존(순수성 유지), 컬럼은 파생 총액. numeric(18,2)/(18,6)로 trades 정밀도와 일치.
+- **결정 ③ 파서는 "모든 행"을 raw 로 방출.** (사용자 지시) 거래/비거래/오류 분류 없이 각 행의 원문 전체를 dump. 거래로 인식되는 행은 dedup·Stage2 용 식별 필드도 함께 추출; 인식 안 되면 raw 만(식별필드 null). `ParseResult` 계약을 `trades[]`+`errors[]` → `rows[]`(raw + optional 식별) 로 변경. 세금은 합치지 말고 항목별 원문을 raw 에 보존. PDF 자유텍스트/서식 등 행 구분 불가 부분은 원장 대상 아님(90일 원본 파일이 담당).
+- **결정 ④ 중복 등록 방지 — "무손실 keep-both" 를 뒤집는다.** (사용자 지시 "같은 거래 중복 등록 방지") 두 종류 dedup:
+  - **같은 파일 재업로드** → `import_batches.content_sha256`(user-scope unique)로 파일 통째 스킵.
+  - **같은 거래가 다른 파일에** → user-scope **의미적 trade signature**(정규화 date+identifier+trade_type+qty+price) partial-unique 로 원장에서 스킵.
+  - **★뒤집힌 결정 + keep-last:** 초안의 "재업로드 시 양쪽 raw 를 다 남긴다(충실한 기록)"를 폐기. 원장은 **distinct 거래 1건당 최신 1행(keep-last, `ON CONFLICT (user_id, dedup_key) DO UPDATE`)**. 같은 signature 의 재업로드는 raw·commission·tax 를 **최신 값으로 갱신**한다.
+  - **keep-last 를 택한 이유(핵심):** IMPORT 출처 거래는 금액 5필드가 PATCH 로 잠겨([[project_trade_origin]]) 앱에서 직접 수정 불가 → **재업로드가 사실상 유일한 정정 채널**. keep-first 면 두 번째 업로드가 원장 insert 에서 버려져 정정 자체가 불가. keep-last + **Stage 2 물질화 `build_merge_patch` 정정 머지**로 수수료/세금/시각 정정이 흐른다.
+  - **정정 범위 한계:** signature(date+identifier+type+qty+price) 밖의 필드(commission/tax/time/포맷)만 갱신된다. **수량·단가 정정**은 signature 가 바뀌어 갱신이 아니라 *새 행+새 trade* → 기존 "삭제 후 재등록" 정책(2026-04-20)이 담당.
+  - **트레이드오프:** keep-last 는 엄격 불변(append-only)을 완화 — 이전 raw 렌더링을 덮어쓴다. 잃는 건 "이미 캡처된 거래의 옛 렌더링"뿐(canonical 사실 유지, 최근분은 원본 파일이 커버). 전체 이력 보존을 원하면 "append-all + supersede" 변형이 있으나 지시된 원장 dedup 과 상충해 미채택.
+  - **비거래 행은 의미적 dedup 안 함**(trade signature 없음) — 파일 sha256 수준만(over-build 회피).
+- **결정 ⑤ `import_staging`(0010) 대체·폐기.** 원장이 durable 이므로 preview→commit 전용 in-DB staging(TTL 600s)은 불필요 — preview 는 원장을 읽고, commit 은 원장→trades. 이로써 staging 만료로 commit 이 실패하던 버그도 구조적 해소([[project_import_staging_durable]]). **★드롭은 위험 분리:** ledger 추가·배선·검증 뒤 **별도 후속 리비전**으로 `import_staging` DROP(그때까지 unused 로 잔존; prod 적용 테이블이라 동일 변경에 묶지 않음).
+- **결정 ⑥ 원본 파일 90일 후 파기 — 삭제는 R2 lifecycle 이 소유(앱 정리 잡 없음).** (사용자 결정) R2 버킷 lifecycle 규칙으로 객체 자동 만료 → 앱-side cleanup 잡 불요(스코프 단순화). `import_batches` 는 `created_at` 만 유지하고 `file_expires_at`·정리 잡 제거; storage_key 읽기는 "이미 만료됐을 수 있음" 을 관용(90일 경과분 404 허용). 근거(PIPA 최소수집). 파일 파기 후에도 **캡처된 모든 행**은 원장에 남음.
+- **결정 ⑦ `import_batches` 는 파일 삭제용이 아니라 근거(provenance)용으로 유지.** (사용자 판단 동의) 테이블 = 신규 2개(+trades 컬럼 1개). `import_batches`(파일당 1행) 존재 이유 3가지: ① **근거/추적** — 원장 행 → batch_id → "언제 올린 어느 파일(증권사)". ② **파일 dedup** — `content_sha256`(user-scope). ③ **parser_version/storage_key** — 재파싱 판단 + 90일 내 원본 접근. 카디널리티(파일당 1 vs 행당 N)가 달라 원장에 못 접는다. + `trades.source_ledger_entry_id`(nullable FK). `import_staging` 후속 드롭 → net 신규 1개.
+- **복구 범위(변경 없음):** (a) 미래 기능 대비 무손실 기록 + (b) trades 손상 시 금액사실 재생성. 유저 생성 데이터(strategy/reasoning_tags/emotion/reason/result/custom_tags)·수동거래(origin=MANUAL)는 원장 밖. replay 실행 엔진·조회 API·FE 노출은 스코프 밖(capture-heavy, process-light).
+- **트레이드오프 / 보류:**
+  - **상대계좌 PII 마스킹은 이번 스코프에서 제외**(사용자 지시) — 필요 시 별도 스펙. 삼성 `상대계좌명/상대계좌번호` 등은 일단 raw 에 그대로.
+  - 탈퇴 하드삭제 정합: batch·원장·파일 모두 `user_id FK ON DELETE CASCADE`([[project_account_deletion_audit]] 감사행만 FK 없이 잔존).
+  - 기존 `broker_statement` 게시판([[project_broker_statement_submission]] 샘플 제보)과 동의 근거·목적 다르므로 섞지 않음.
+  - 개인정보처리방침(pixelwave-web)에 내역서 원본/파싱본 수집·보유기간(90일) 명시 — 출시 전 필수.
+  - 참조: [[project_broker_import_parsers]], [[feedback_broker_parser_fixture_tests]], [[project_alembic_migrations]], [[feedback_fe_trade_sort_for_calc]].
+
+---
+
 ## 2026-07-02 | 다크 테마 재도입 — 팔레트(CSS 변수) 중심 · semantic 토큰 승격
 
 - **맥락:** 2026-04-25 완전한 다크 모드가 있었으나 2026-04-28(`ca2610b`)에 "라이트 전용"으로 제거됐다. CSS 변수 인프라(`globals.css :root` shadcn 토큰)는 유지돼 컴포넌트 ~270곳이 이미 토큰 기반이라 `.dark {}` 팔레트만 채우면 대부분 자동 적용된다. 사용자 요구: **테마는 최대한 팔레트로 컨트롤하고 개별 `dark:` 프리픽스는 최소화**(단순 revert = 옛 `dark:` 재살포가 아니라 semantic 색을 팔레트 토큰으로 승격).

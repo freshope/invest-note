@@ -215,17 +215,17 @@ INSERT INTO trades (
     trade_type, price, quantity, traded_at, commission, tax,
     country_code, exchange, exchange_rate,
     strategy_type, reasoning_tags, buy_reason, sell_reason,
-    emotion, result, custom_tags, origin
+    emotion, result, custom_tags, origin, source_ledger_entry_id
 ) VALUES (
     $1, $2, $3, $4, $5,
     $6, $7, $8, $9, $10, $11,
     $12, $13, $14,
     $15, $16, $17, $18,
-    $19, $20, $21, $22
+    $19, $20, $21, $22, $23
 )
 """
 
-_TRADE_INSERT_PARAM_COUNT = 22
+_TRADE_INSERT_PARAM_COUNT = 23
 
 
 def _trade_insert_params(user_id: str, data: dict) -> tuple:
@@ -253,6 +253,8 @@ def _trade_insert_params(user_id: str, data: dict) -> tuple:
         data.get("custom_tags", []),
         # 출처. 개별등록 경로는 키 없음→"MANUAL", import 경로는 "IMPORT" 명시 전달.
         data.get("origin", "MANUAL"),
+        # 원장 provenance. import 물질화만 원장 행 id 전달, 개별등록은 None.
+        data.get("source_ledger_entry_id"),
     )
 
 
@@ -398,8 +400,16 @@ async def insert_trades_bulk(conn: Any, user_id: str, rows: list[dict]) -> list[
         for i in range(len(params))
     )
     insert_columns_sql = _TRADE_INSERT_SQL.split(" VALUES ", 1)[0]
+    # provenance 멱등 — 같은 원장 entry 가 이 계좌에 이미 물질화됐으면(재커밋 사이 ticker
+    # 재해소가 바뀌어 group_key 가 달라져 signature dedup 이 빗나간 경우 등) UniqueViolation 으로
+    # 그룹 전체를 롤백(dead-end)하는 대신 DB 레벨에서 조용히 건너뛴다(0015 부분 UNIQUE 추론).
+    # import 전용 함수라 모든 행이 source_ledger_entry_id 를 실으며, RETURNING 은 실제 삽입분만
+    # 돌려주므로 inserted_count 는 정확하게 유지된다.
     rows_inserted = await conn.fetch(
-        f"{insert_columns_sql} VALUES {values_sql} RETURNING *",
+        f"{insert_columns_sql} VALUES {values_sql} "
+        "ON CONFLICT (account_id, source_ledger_entry_id) "
+        "WHERE source_ledger_entry_id IS NOT NULL DO NOTHING "
+        "RETURNING *",
         *flattened,
     )
     return [_row_to_trade(row) for row in rows_inserted]

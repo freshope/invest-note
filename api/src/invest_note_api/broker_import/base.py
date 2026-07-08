@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import math
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -17,9 +18,12 @@ def parse_number(s: object) -> float:
     if not s:
         return 0.0
     try:
-        return float(str(strip_comma_number(s)))
+        value = float(str(strip_comma_number(s)))
     except ValueError:
         return 0.0
+    # inf/nan(자릿수 오버플로·'inf'/'nan' 문자열)은 `<= 0` 가드를 통과해 하류에서
+    # Decimal.quantize 500(InvalidOperation) 또는 nan 원장 유입을 일으킨다 → 0.0 으로 무력화.
+    return value if math.isfinite(value) else 0.0
 
 
 def extract_pdf_lines(
@@ -76,19 +80,88 @@ class ParsedTrade:
 
 
 @dataclass
+class ParsedRow:
+    """원장(import_ledger_entries) 캡처용 행 1건. 파일의 모든 데이터 행을 담는다.
+
+    거래 인식 행(kind='trade')은 식별 필드를 채우고, 비거래/미인식 행(kind='non_trade'|'error')은
+    raw 만 담는다. raw 는 행 원문 전체 덤프(무손실 책임). 원장은 append-only — dedup 하지 않으며,
+    같은 거래의 중복 제거는 물질화(Stage 2)의 trade-signature 가 담당한다.
+    """
+
+    source_row_no: int
+    kind: str                        # "trade" | "non_trade" | "error"
+    raw: dict
+    traded_at_kst: str | None = None
+    trade_type: str | None = None    # 거래 행만 채움 → 원장에서 거래 행 식별 키
+    asset_name: str | None = None
+    quantity: float | None = None
+    price: float | None = None
+    # 물질화(Stage 2)에 필요한 파서 산출 금액값 — tax 는 파서가 세목 합산(토스 거래세+제세금),
+    # USD 는 ÷환율 변환값이라 원장 컬럼에 정규화해 둔다(원문 세목은 raw 에 보존).
+    commission: float = 0.0
+    tax: float = 0.0
+    exchange_rate: float = 1.0
+    currency: str = "KRW"
+    country_code: str = "KR"
+    ticker_hint: str | None = None
+    isin: str | None = None
+
+
+def row_from_trade(trade: "ParsedTrade", raw: dict | None = None) -> ParsedRow:
+    """거래 인식 ParsedTrade → 원장 rows[] 용 ParsedRow(kind='trade')."""
+    return ParsedRow(
+        source_row_no=trade.source_row_no,
+        kind="trade",
+        raw=raw if raw is not None else trade.raw,
+        traded_at_kst=trade.traded_at_kst,
+        trade_type=trade.trade_type,
+        asset_name=trade.asset_name,
+        quantity=trade.quantity,
+        price=trade.price,
+        commission=trade.commission,
+        tax=trade.tax,
+        exchange_rate=trade.exchange_rate,
+        currency=trade.currency,
+        country_code=trade.country_code,
+        ticker_hint=trade.ticker_hint,
+        isin=trade.isin,
+    )
+
+
+@dataclass
 class ParseResult:
     trades: list[ParsedTrade] = field(default_factory=list)
     errors: list[dict] = field(default_factory=list)   # {row_no, reason}
     account_hint: str | None = None
     usd_skip_count: int = 0
+    # 원장 캡처용 — 파일의 모든 데이터 행(trade/non_trade/error). trades[]/errors[] 는
+    # 기존 preview/commit 흐름(backward-compat)용, rows[] 는 Stage 1 원장 적재용.
+    rows: list[ParsedRow] = field(default_factory=list)
 
     def add_error(self, row_no: int, reason: str, raw: dict | None = None) -> None:
         self.errors.append({"row_no": row_no, "reason": reason, "raw": raw or {}})
+
+    def add_trade(self, trade: ParsedTrade, raw: dict | None = None) -> None:
+        """거래 행을 backward-compat trades[] 와 원장 rows[] 양쪽에 등록.
+
+        raw 를 주면 rows[] 엔트리의 원장 raw 로 사용(행 원문 전체 덤프). 안 주면 trade.raw.
+        """
+        self.trades.append(trade)
+        self.rows.append(row_from_trade(trade, raw))
+
+    def add_non_trade(
+        self, source_row_no: int, raw: dict, kind: str = "non_trade"
+    ) -> None:
+        """비거래/미인식 행을 원장 rows[] 에만 등록(raw 전체 덤프, trade_type 없음)."""
+        self.rows.append(ParsedRow(source_row_no=source_row_no, kind=kind, raw=raw))
 
 
 class BrokerStatementParser(ABC):
     key: str          # 레지스트리 식별자 (예: "samsung_xlsx")
     display_name: str # 사용자 노출 이름 (예: "삼성증권")
+    # 파서 출력 shape 버전 — 원장 batch 에 기록해 drift 감지·재파싱 판단에 쓴다.
+    # 파서 로직/추출 필드가 바뀌면 bump 한다.
+    version: str = "1"
 
     @abstractmethod
     def parse(self, file_bytes: bytes, filename: str) -> ParseResult:

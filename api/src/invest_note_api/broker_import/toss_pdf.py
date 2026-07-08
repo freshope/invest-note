@@ -42,6 +42,11 @@ _USD_RATE_ANCHOR = re.compile(r"^(\d{1,3}(?:,\d{3})*\.\d{2})")
 _KRW_SECTION = "원화 거래내역"
 _USD_SECTION = "달러 거래내역"
 
+# 데이터 행 앵커: 날짜로 시작하는 줄. 거래(구매/판매) 외에 환전·배당·이자 등 비거래 행도
+# 같은 날짜 프리픽스를 가진다 → 거래 정규식에 안 걸리는 date-prefixed 줄을 non_trade 로 캡처.
+# 헤더("거래일자 …")는 날짜가 아니라 배제된다.
+_DATE_PREFIX_RE = re.compile(r"^\d{4}[.\-]\d{2}[.\-]\d{2}\s")
+
 # 헤더에서 데이터 행의 nums 토큰에 대응하지 않는 컬럼:
 # - 거래일자/거래구분/종목명(종목코드)은 _DATA_LINE_RE 의 named group으로 잡힘
 # - 환율은 KRW 거래 행에서 값이 비어 토큰으로 추출되지 않음
@@ -187,24 +192,33 @@ class TossPdfParser(BrokerStatementParser):
                         continue
 
                     if in_usd:
-                        # USD 거래(구매/판매·ISIN)만 매칭. 환전/배당/이자 등 비거래 행은 제외.
+                        # USD 거래(구매/판매·ISIN)는 trade, 그 외 date-prefixed(환전/배당/이자)는 non_trade.
                         if _USD_DATA_LINE_RE.match(line):
                             row_counter += 1
                             parsed = self._parse_usd_line(
                                 line, row_counter, result, usd_column_map
                             )
                             if parsed:
-                                result.trades.append(parsed)
+                                result.add_trade(parsed)
+                            else:
+                                result.add_non_trade(row_counter, {"line": line}, kind="error")
+                        elif _DATE_PREFIX_RE.match(line):
+                            row_counter += 1
+                            result.add_non_trade(row_counter, {"line": line})
                         continue
                     if not in_krw:
                         continue
-                    if not _DATA_LINE_RE.match(line):
-                        continue
 
-                    row_counter += 1
-                    parsed = self._parse_line(line, row_counter, result, column_map)
-                    if parsed:
-                        result.trades.append(parsed)
+                    if _DATA_LINE_RE.match(line):
+                        row_counter += 1
+                        parsed = self._parse_line(line, row_counter, result, column_map)
+                        if parsed:
+                            result.add_trade(parsed)
+                        else:
+                            result.add_non_trade(row_counter, {"line": line}, kind="error")
+                    elif _DATE_PREFIX_RE.match(line):
+                        row_counter += 1
+                        result.add_non_trade(row_counter, {"line": line})
 
         return result
 
@@ -282,6 +296,10 @@ class TossPdfParser(BrokerStatementParser):
 
         traded_at_kst = date_raw.replace(".", "-")[:10]
 
+        # 행 원문 전체 덤프 — 원본 라인 + 매핑된 전 컬럼(세금 항목 거래세/제세금 개별 보존).
+        raw = {"line": line, "date": date_raw, "name": name_raw}
+        raw.update({name: _col(name) for name in cmap})
+
         return ParsedTrade(
             source_row_no=row_no,
             traded_at_kst=traded_at_kst,
@@ -294,7 +312,7 @@ class TossPdfParser(BrokerStatementParser):
             currency="KRW",
             ticker_hint=ticker_hint,
             account_hint=result.account_hint,
-            raw={"date": date_raw, "name": name_raw, "qty": qty_raw, "amount": amount_raw},
+            raw=raw,
         )
 
     def _parse_usd_line(
@@ -382,6 +400,10 @@ class TossPdfParser(BrokerStatementParser):
 
         traded_at_kst = date_raw.replace(".", "-")[:10]
 
+        # 행 원문 전체 덤프 — 원본 라인 + 매핑된 전 컬럼(환율·거래대금 등 KRW 원본값 포함).
+        raw = {"line": line, "date": date_raw, "name": name_raw}
+        raw.update({name: _col(name) for name in cmap})
+
         return ParsedTrade(
             source_row_no=row_no,
             traded_at_kst=traded_at_kst,
@@ -397,5 +419,5 @@ class TossPdfParser(BrokerStatementParser):
             ticker_hint=None,  # ISIN 은 hint 로 쓰지 않는다 → isin 필드로 OpenFIGI 해소
             isin=isin,
             account_hint=result.account_hint,
-            raw={"date": date_raw, "name": name_raw, "qty": qty_raw, "rate": rate_raw},
+            raw=raw,
         )

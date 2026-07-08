@@ -137,14 +137,18 @@ def trades_client():
     from invest_note_api.auth.dependency import get_current_user
     from invest_note_api.auth.jwt import AuthenticatedUser
     from invest_note_api.db import get_pool
+    from tests.fake_pool import FakeConnection, make_fake_pool
 
     app = _make_app()
 
     async def mock_user() -> AuthenticatedUser:
         return AuthenticatedUser(id=UUID(TEST_USER_ID), email=TEST_EMAIL, raw={})
 
-    async def mock_pool() -> None:
-        return None
+    async def mock_pool():
+        # plain pool.acquire() 경로용 fake pool. user-scoped 쓰기는 _patch_trades 가
+        # acquire_for_user 를 별도 목킹한다. import commit 의 원장 읽기(pool.acquire())가
+        # None.acquire() 로 깨지지 않도록 fake conn 을 준다(내용은 목킹된 repo 가 대체).
+        return make_fake_pool(FakeConnection())
 
     app.dependency_overrides[get_current_user] = mock_user
     app.dependency_overrides[get_pool] = mock_pool

@@ -12,31 +12,74 @@ import pytest
 from invest_note_api.db_ops.trades_repo import _TRADE_INSERT_PARAM_COUNT
 from invest_note_api.schemas.trade import TRADE_FREE_TEXT_MAX_LEN, TradeCreate, TradeUpdate
 from tests.conftest import TEST_USER_ID
-from tests.fake_pool import FakeConnection, make_fake_acquire, make_fake_pool
+from tests.fake_pool import FakeConnection, make_fake_acquire
 
 
 @pytest.fixture(autouse=True)
 def staging_store(request, monkeypatch):
-    """import staging(DB repo)을 in-memory dict 로 대체 — 테스트는 pool=None 이라 실제 DB 불가.
+    """import 원장 경로를 in-memory 로 대체 — 테스트는 pool=None 이라 실제 DB 불가.
 
-    repo 가 반환하던 형식({user_id, rows, parse_errors, ...})을 그대로 흉내내, 라우터의
-    preview(put)·commit(get/delete) 경로를 검증한다. 클래스 테스트는 self._staging_store 로
-    staging 을 직접 주입/조회한다(preview 우회 commit 테스트용).
+    commit 은 원장(get_ledger_trade_rows)을 읽어 재해소(resolve_tickers)한다. 둘을
+    store(batch_id→staging-row dict 리스트) 기반으로 목킹한다. _stage/self._staging_store 로
+    거래 행을 직접 주입해 commit 을 검증한다(캡처 우회). preview 는 capture_statement 목킹.
     """
     store: dict[str, dict] = {}
 
-    async def fake_put(conn, staging_id, user_id, payload, expires_at):
-        store[staging_id] = {"user_id": user_id, **payload}
+    async def fake_capture(pool, settings, *, user_id, broker_key, filename, content_type, file_bytes):
+        from invest_note_api.broker_import import PARSERS
+        from invest_note_api.broker_import.base import ParseResult
+        from invest_note_api.services.broker_capture import CaptureResult
 
-    async def fake_get(conn, staging_id):
-        return store.get(staging_id)
+        parser = PARSERS.get(broker_key)
+        pr = parser.parse(file_bytes, filename) if parser else ParseResult()
+        return CaptureResult(
+            batch_id=str(uuid4()),
+            is_new_file=True,
+            row_count=len(pr.rows),
+            trade_row_count=sum(1 for r in pr.rows if r.kind == "trade"),
+            parse_result=pr,
+        )
 
-    async def fake_delete(conn, staging_id):
-        store.pop(staging_id, None)
+    async def fake_ledger_rows(conn, *, batch_id, user_id):
+        entry = store.get(str(batch_id))
+        if not entry:
+            return []
+        out = []
+        for i, r in enumerate(entry["rows"], start=1):
+            raw_kst = r.get("traded_at_kst_full") or r["traded_at_kst"]
+            out.append(
+                {
+                    "id": uuid4(),
+                    "source_row_no": i,
+                    "traded_at_raw": raw_kst,
+                    "trade_type": r["trade_type"],
+                    "asset_name": r["asset_name"],
+                    "ticker_hint": r["ticker_symbol"],
+                    "isin": None,
+                    "country_code": r["country_code"],
+                    "quantity": r["quantity"],
+                    "price": r["price"],
+                    "commission": r.get("commission", 0),
+                    "tax": r.get("tax", 0),
+                    "exchange_rate": r.get("exchange_rate", 1.0),
+                }
+            )
+        return out
 
-    monkeypatch.setattr("invest_note_api.routers.trades.put_import_staging", fake_put)
-    monkeypatch.setattr("invest_note_api.routers.trades.get_import_staging", fake_get)
-    monkeypatch.setattr("invest_note_api.routers.trades.delete_import_staging", fake_delete)
+    async def fake_resolve(items, ticker_hints, *, conn, isins, openfigi_api_key):
+        # store 의 원래 staging-row 로부터 (country, asset) → {code, exchange} 재구성.
+        m: dict = {}
+        for entry in store.values():
+            for r in entry["rows"]:
+                m[(r["country_code"], r["asset_name"])] = {
+                    "code": r["ticker_symbol"],
+                    "exchange": r.get("exchange", ""),
+                }
+        return {k: m.get(k) for k in items}
+
+    monkeypatch.setattr("invest_note_api.routers.trades.capture_statement", fake_capture)
+    monkeypatch.setattr("invest_note_api.routers.trades.get_ledger_trade_rows", fake_ledger_rows)
+    monkeypatch.setattr("invest_note_api.routers.trades.resolve_tickers", fake_resolve)
     if request.instance is not None:
         request.instance._staging_store = store
     return store
@@ -1067,75 +1110,67 @@ class TestImportPreviewValidation:
         assert excluded_count == 3
 
 
-class TestImportPreviewExchange:
-    """회귀: 일괄 import staging 시 exchange 가 Naver 매칭 결과로 채워져야 한다.
+class TestImportCommitExchange:
+    """회귀: commit 물질화 시 resolve 로 채운 exchange 가 trades INSERT 까지 실려야 한다.
 
-    과거엔 라우터가 exchange 를 ''로 하드코딩하고 resolve_tickers 도 code 만 반환해
-    import 된 모든 거래의 exchange 가 빈 값이 되던 버그가 있었다.
+    과거엔 라우터가 exchange 를 ''로 하드코딩해 import 거래의 exchange 가 빈 값이 되던 버그가
+    있었다. rewire 후엔 원장→commit 재해소 경로가 exchange 를 insert_row 로 나른다.
+    (resolve_tickers 자체의 stocks 매칭은 ticker_resolver 단위 테스트가 커버.)
     """
 
-    def _preview(self, trades_client, *, ticker_hint=None, match_exchange="KOSPI"):
-        from invest_note_api.broker_import.base import ParsedTrade, ParseResult
+    def _commit_capture_insert(self, trades_client, *, ticker, exchange) -> dict:
+        sid = str(uuid4())
+        self._staging_store[sid] = {
+            "user_id": TEST_USER_ID,
+            "rows": [{
+                "asset_name": "삼성전자",
+                "ticker_symbol": ticker,
+                "market_type": "STOCK",
+                "trade_type": "BUY",
+                "price": 70000,
+                "quantity": 10,
+                "traded_at_kst": "2024-01-10",
+                "traded_at_kst_full": None,
+                "commission": 0,
+                "tax": 0,
+                "country_code": "KR",
+                "exchange": exchange,  # fake_resolve 가 이 값을 code/exchange 로 되돌린다
+            }],
+        }
+        conn = FakeConnection(
+            "a1",  # assert_account_exists
+            [],    # list_trades_in_group
+            [_to_record(_make_trade_row(id_="new-1", ticker=ticker, exchange=exchange))],
+        )
+        from invest_note_api.routers import trades as trades_module
 
-        parse_result = ParseResult(trades=[
-            ParsedTrade(
-                source_row_no=1,
-                traded_at_kst="2024-01-10",
-                trade_type="BUY",
-                asset_name="삼성전자",
-                quantity=10,
-                price=70000,
-                ticker_hint=ticker_hint,
-            )
-        ])
+        captured: dict = {}
+        real_bulk = trades_module.insert_trades_bulk
 
-        class _FakeParser:
-            key = "toss"
-            display_name = "토스증권"
+        async def spy_bulk(conn_, user_id, to_insert):
+            captured["to_insert"] = to_insert
+            return await real_bulk(conn_, user_id, to_insert)
 
-            def parse(self, file_bytes, filename):
-                return parse_result
-
-        async def fake_lookup(_conn, names, **_kw):
-            return {
-                "삼성전자": {
-                    "code": "005930",
-                    "name": "삼성전자",
-                    "market": "KR",
-                    "exchange": match_exchange,
-                }
-            }
-
-        conn = FakeConnection()  # list_trades → []
-        from invest_note_api.db import get_pool
-        trades_client.app.dependency_overrides[get_pool] = lambda: make_fake_pool()
-        with patch.dict(
-            "invest_note_api.routers.trades.PARSERS",
-            {"toss": _FakeParser()}, clear=False,
-        ), patch(
-            "invest_note_api.db_ops.stocks_repo.lookup_by_names",
-            fake_lookup,
-        ), _patch_trades(conn):
+        with _patch_trades(conn), patch.object(
+            trades_module, "insert_trades_bulk", spy_bulk
+        ):
             resp = trades_client.post(
-                "/v1/trades/import/preview?broker_key=toss",
-                files={"file": ("toss.pdf", b"%PDF-1.4 dummy", "application/pdf")},
+                "/v1/trades/import/commit",
+                json={"staging_id": sid, "account_id": "a1"},
             )
-
         assert resp.status_code == 200, resp.text
-        staging_id = resp.json()["staging_id"]
-        return self._staging_store[staging_id]["rows"]
+        assert resp.json()["inserted_count"] == 1
+        return captured["to_insert"][0]
 
-    def test_naver_resolved_exchange_is_staged(self, trades_client):
-        rows = self._preview(trades_client)
-        assert len(rows) == 1
-        assert rows[0]["exchange"] == "KOSPI"
+    def test_resolved_exchange_flows_to_insert(self, trades_client):
+        insert = self._commit_capture_insert(trades_client, ticker="005930", exchange="KOSPI")
+        assert insert["exchange"] == "KOSPI"
 
-    def test_hinted_ticker_still_gets_exchange_from_naver(self, trades_client):
-        # 토스 PDF 처럼 파일에 코드(hint)가 박혀 있어도 exchange 는 Naver 에서 채워야 한다.
-        rows = self._preview(trades_client, ticker_hint="005930", match_exchange="KOSDAQ")
-        assert len(rows) == 1
-        assert rows[0]["ticker_symbol"] == "005930"
-        assert rows[0]["exchange"] == "KOSDAQ"
+    def test_hinted_ticker_still_carries_exchange(self, trades_client):
+        # 파일에 코드(hint=ticker)가 박혀 있어도 exchange 는 resolve 결과로 채워 INSERT.
+        insert = self._commit_capture_insert(trades_client, ticker="005930", exchange="KOSDAQ")
+        assert insert["ticker_symbol"] == "005930"
+        assert insert["exchange"] == "KOSDAQ"
 
 
 class TestGetTrade:
@@ -1432,8 +1467,9 @@ class TestTradeOrigin:
             resp = trades_client.post("/v1/trades", json=TestCreateTrade()._buy_payload())
         assert resp.status_code == 201
         assert len(params) == 1
-        # origin 은 _TRADE_INSERT_PARAM_COUNT 번째(마지막) 파라미터.
-        assert params[0][-1] == "MANUAL"
+        # origin 은 끝에서 2번째(마지막은 source_ledger_entry_id), 개별등록은 None.
+        assert params[0][-2] == "MANUAL"
+        assert params[0][-1] is None
 
     def test_import_commit_inserts_origin_import(self, trades_client, monkeypatch):
         """거래내역서 일괄등록 commit 은 origin=IMPORT 로 INSERT 한다."""
@@ -1464,8 +1500,9 @@ class TestTradeOrigin:
             )
         assert resp.status_code == 200
         assert len(params) == 2
-        # 모든 import INSERT 의 마지막 파라미터 = IMPORT.
-        assert all(p[-1] == "IMPORT" for p in params)
+        # origin(끝에서 2번째) = IMPORT, 마지막 = source_ledger_entry_id(원장 행 id, 非 None).
+        assert all(p[-2] == "IMPORT" for p in params)
+        assert all(p[-1] is not None for p in params)
 
     # ── GET 응답에 origin 노출 (FE 배지/잠금이 의존하는 shape) ─────────────────
 

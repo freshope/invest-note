@@ -6,6 +6,7 @@ import openpyxl
 import pytest
 
 from invest_note_api.broker_import import PARSERS
+from invest_note_api.errors import APIError
 from invest_note_api.broker_import.mirae_pdf import MiraePdfParser
 from invest_note_api.broker_import.samsung_xlsx import SamsungXlsxParser
 from invest_note_api.broker_import.shinhan_pdf import _LINE2_RE, ShinhanPdfParser
@@ -17,7 +18,33 @@ from invest_note_api.broker_import.toss_pdf import (
     _parse_usd_name,
     _split_usd_nums,
 )
-from invest_note_api.broker_import.base import ParseResult
+from invest_note_api.broker_import.base import (
+    ParsedTrade,
+    ParseResult,
+    parse_number,
+    row_from_trade,
+)
+
+
+class TestParseNumber:
+    """parse_number 는 신뢰경계(사용자 업로드 파일) — 비유한값을 0.0 으로 무력화한다.
+
+    inf/nan/자릿수 오버플로는 `<= 0` 가드를 통과해 하류 Decimal.quantize 500 또는
+    nan 원장 유입을 일으키므로 파서 단계에서 걸러야 한다.
+    """
+
+    def test_normal_and_comma(self):
+        assert parse_number("1,234") == 1234.0
+        assert parse_number("70000") == 70000.0
+        assert parse_number("") == 0.0
+        assert parse_number(None) == 0.0
+
+    def test_non_finite_values_become_zero(self):
+        assert parse_number("inf") == 0.0
+        assert parse_number("Infinity") == 0.0
+        assert parse_number("nan") == 0.0
+        # 자릿수 오버플로 → float 은 inf 로 파싱됨 → 0.0
+        assert parse_number("9" * 400) == 0.0
 
 
 def _make_samsung_xlsx(rows: list[dict], account_meta: str = "7157197877-14 [ ISA ] 홍길동") -> bytes:
@@ -630,3 +657,89 @@ class TestParsersRegistry:
         assert "mirae_pdf" in PARSERS
         assert PARSERS["shinhan_pdf"].display_name == "신한투자증권"
         assert PARSERS["mirae_pdf"].display_name == "미래에셋증권"
+
+
+class TestCaptureDateRejection:
+    """날짜 오류(미래·해석불가)는 신뢰불가 파일/파서 이상으로 보고 파일 전체를 거절한다.
+
+    캡처 게이트가 파싱 직후 raise 하므로 DB/pool 없이(raise 전) 단위 검증 가능.
+    """
+
+    def _capture(self, xlsx: bytes):
+        import asyncio
+        from types import SimpleNamespace
+        from uuid import uuid4
+
+        from invest_note_api.services.broker_capture import capture_statement
+
+        return asyncio.run(
+            capture_statement(
+                None,
+                SimpleNamespace(r2_enabled=False),
+                user_id=uuid4(),
+                broker_key="samsung_xlsx",
+                filename="삼성증권 거래내역서.xlsx",
+                content_type=None,
+                file_bytes=xlsx,
+            )
+        )
+
+    def test_future_date_rejects_whole_file(self):
+        xlsx = _make_samsung_xlsx([_buy_row(date_str="2999-01-01")])
+        with pytest.raises(APIError):
+            self._capture(xlsx)
+
+    def test_malformed_date_rejects_whole_file(self):
+        xlsx = _make_samsung_xlsx([_buy_row(date_str="not-a-date")])
+        with pytest.raises(APIError):
+            self._capture(xlsx)
+
+
+class TestLedgerRows:
+    """파서 rows[] 원장 캡처 — 모든 행 raw full-dump (원장은 append-only, dedup 없음)."""
+
+    parser = SamsungXlsxParser()
+
+    def test_trade_row_captured_with_full_raw(self):
+        xlsx = _make_samsung_xlsx([_buy_row()])
+        result = self.parser.parse(xlsx, "삼성증권 거래내역서.xlsx")
+        # 거래 행 1건 → rows[] 에 kind='trade' 1건, trades[] 와 동수(backward-compat).
+        trade_rows = [r for r in result.rows if r.kind == "trade"]
+        assert len(trade_rows) == len(result.trades) == 1
+        row = trade_rows[0]
+        assert row.trade_type == "BUY"  # 거래 행 식별 키
+        # 행 원문 전체 덤프 — 지금 안 쓰는 컬럼(상대계좌번호 등)까지 raw 에 보존.
+        assert "상대계좌번호" in row.raw
+        assert "거래단가" in row.raw
+
+    def test_non_trade_row_captured_in_rows(self):
+        xlsx = _make_samsung_xlsx([_buy_row(name="배당금입금")])
+        result = self.parser.parse(xlsx, "삼성증권 거래내역서.xlsx")
+        assert len(result.trades) == 0
+        non_trade = [r for r in result.rows if r.kind == "non_trade"]
+        assert len(non_trade) == 1
+        assert non_trade[0].trade_type is None  # 비거래 행은 trade_type 없음
+        assert "거래명" in non_trade[0].raw
+
+    def test_usd_row_captured_as_non_trade(self):
+        xlsx = _make_samsung_xlsx([_buy_row(currency="USD")])
+        result = self.parser.parse(xlsx, "삼성증권 거래내역서.xlsx")
+        assert result.usd_skip_count == 1
+        assert any(r.kind == "non_trade" for r in result.rows)
+
+    def test_row_from_trade_sets_kind_and_fields(self):
+        pt = ParsedTrade(
+            source_row_no=3,
+            traded_at_kst="2026-03-30",
+            trade_type="SELL",
+            asset_name="팔란티어",
+            quantity=2,
+            price=30.5,
+            country_code="US",
+            isin="US69608A1088",
+        )
+        row = row_from_trade(pt, raw={"line": "raw text"})
+        assert row.kind == "trade"
+        assert row.trade_type == "SELL"
+        assert row.isin == "US69608A1088"
+        assert row.raw == {"line": "raw text"}

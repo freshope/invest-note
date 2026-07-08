@@ -11,8 +11,10 @@ group·pnl mock 표면이 커 fragile → 실 PG + ASGI 로만 신뢰성 있게 
 """
 from __future__ import annotations
 
+import asyncio
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -22,7 +24,6 @@ from httpx import ASGITransport
 
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
-from invest_note_api.db_ops.import_staging_repo import put_import_staging
 from invest_note_api.routers.trades import _validate_import_groups
 
 from tests.conftest import _make_app
@@ -79,17 +80,40 @@ async def _insert_trade(conn, user_id, account_id, *, ticker, name, ttype, qty, 
     )
 
 
-async def _stage(conn, user_id: str, rows: list[dict]) -> str:
-    """staging 을 실DB 에 pre-seed. staging_id 는 UUID 필수, 만료는 미래로."""
-    sid = str(uuid4())
-    await put_import_staging(
-        conn,
-        sid,
-        user_id,
-        {"rows": rows, "parse_errors": [], "usd_skip_count": 0, "broker_key": "test", "account_hint": None},
-        datetime.now(timezone.utc) + timedelta(hours=1),
+async def _seed_ledger(conn, user_id: str, rows: list[dict]) -> str:
+    """원장(batch + 거래 행)을 실DB 에 pre-seed 하고 batch_id(str) 반환.
+
+    commit 이 batch_id(=staging_id 필드)로 원장을 읽어 재해소·물질화한다. ticker_hint=ticker 로
+    두면 resolve_tickers 가 hint 를 권위로 즉시 해소(stocks 시드 불필요). raw 는 최소 더미.
+    """
+    batch_id = await conn.fetchval(
+        "INSERT INTO import_batches (user_id, broker_key, parser_version, content_sha256)"
+        " VALUES ($1, 'test', '1', $2) RETURNING id",
+        UUID(user_id),
+        str(uuid4()),
     )
-    return sid
+    for i, r in enumerate(rows, start=1):
+        # 거래 행은 trade_type 이 채워져 있어 get_ledger_trade_rows(trade_type IS NOT NULL)에 잡힌다.
+        await conn.execute(
+            "INSERT INTO import_ledger_entries (batch_id, user_id, source_row_no,"
+            " traded_at_raw, trade_type, asset_name, ticker_hint, country_code,"
+            " quantity, price, commission, tax, exchange_rate, raw)"
+            " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'{}'::jsonb)",
+            batch_id,
+            UUID(user_id),
+            i,
+            r["traded_at_kst"],
+            r["trade_type"],
+            r["asset_name"],
+            r["ticker_symbol"],
+            r["country_code"],
+            Decimal(str(r["quantity"])),
+            Decimal(str(r["price"])),
+            Decimal(str(r["commission"])),
+            Decimal(str(r["tax"])),
+            Decimal(str(r["exchange_rate"])),
+        )
+    return str(batch_id)
 
 
 def _client_as(app, user_id: str) -> httpx.AsyncClient:
@@ -106,7 +130,7 @@ async def test_commit_inserts_new_and_recomputes_sell_pnl():
     try:
         async with pool.acquire() as conn:
             uid, acct = await _seed_account(conn, name="commit-insert")
-            sid = await _stage(conn, uid, [
+            sid = await _seed_ledger(conn, uid, [
                 _row("005930", "삼성전자", "BUY", 10, 70000, "2024-01-10"),
                 _row("005930", "삼성전자", "SELL", 5, 80000, "2024-01-20"),
             ])
@@ -155,7 +179,7 @@ async def test_commit_merges_and_skips():
                                 qty=3, price=1000, kst="2024-02-01", commission=5, tax=0)
             await _insert_trade(conn, uid, acct, ticker="BBB", name="비이", ttype="BUY",
                                 qty=2, price=2000, kst="2024-02-02", commission=5, tax=0)
-            sid = await _stage(conn, uid, [
+            sid = await _seed_ledger(conn, uid, [
                 _row("AAA", "에이", "BUY", 3, 1000, "2024-02-01", commission=5),   # 동일 → skip
                 _row("BBB", "비이", "BUY", 2, 2000, "2024-02-02", commission=9),   # commission 변경 → merge
             ])
@@ -188,6 +212,48 @@ async def test_commit_merges_and_skips():
         await pool.close()
 
 
+async def test_commit_sets_source_ledger_provenance():
+    """물질화된 trade 의 source_ledger_entry_id 가 원본 원장 행 id 를 정확히 가리킨다."""
+    pool = await asyncpg.create_pool(TEST_DB_URL, min_size=1, max_size=4, statement_cache_size=0)
+    uid = None
+    try:
+        async with pool.acquire() as conn:
+            uid, acct = await _seed_account(conn, name="provenance")
+            sid = await _seed_ledger(conn, uid, [
+                _row("005930", "삼성전자", "BUY", 10, 70000, "2024-05-01"),
+            ])
+            entry_id = await conn.fetchval(
+                "SELECT id FROM import_ledger_entries WHERE user_id = $1", UUID(uid)
+            )
+
+        app = _make_app()
+        app.state.pool = pool
+        async with _client_as(app, uid) as ac:
+            r = await ac.post("/v1/trades/import/commit", json={"staging_id": sid, "account_id": acct})
+        assert r.status_code == 200, r.text
+        assert r.json()["inserted_count"] == 1
+
+        async with pool.acquire() as conn:
+            sle = await conn.fetchval(
+                "SELECT source_ledger_entry_id FROM trades"
+                " WHERE user_id = $1 AND trade_type = 'BUY'",
+                UUID(uid),
+            )
+            batch = await conn.fetchrow(
+                "SELECT committed_at, account_id FROM import_batches WHERE id = $1::uuid",
+                sid,
+            )
+        assert sle == entry_id  # provenance 링크가 원장 행을 정확히 가리킴
+        # 등록 생애주기 마커 — commit 후 committed_at·account_id 채워짐(미리보기만 한 배치와 구분).
+        assert batch["committed_at"] is not None
+        assert str(batch["account_id"]) == acct
+    finally:
+        if uid is not None:
+            async with pool.acquire() as conn:
+                await conn.execute("DELETE FROM public.users WHERE id = $1", UUID(uid))
+        await pool.close()
+
+
 async def test_preview_validate_flags_oversell():
     """_validate_import_groups: 보유 없는 종목의 SELL 은 oversell → validation_errors + excluded_count."""
     pool = await asyncpg.create_pool(TEST_DB_URL, min_size=1, max_size=4, statement_cache_size=0)
@@ -200,6 +266,137 @@ async def test_preview_validate_flags_oversell():
         errors, excluded = await _validate_import_groups(pool, UUID(uid), acct, rows)
         assert errors, "보유 없는 SELL 은 oversell 로 검출되어야 한다"
         assert excluded == 1  # 실패 그룹의 row 합계
+    finally:
+        if uid is not None:
+            async with pool.acquire() as conn:
+                await conn.execute("DELETE FROM public.users WHERE id = $1", UUID(uid))
+        await pool.close()
+
+
+async def test_concurrent_recommit_no_duplicate_trades():
+    """같은 batch_id 동시 재커밋(더블클릭·재시도·두 탭) → 거래 중복 INSERT 없음 (H1 회귀).
+
+    조회-후-INSERT dedup 을 advisory lock 안으로 재배치 + 부분 UNIQUE(0015)로 TOCTOU 를 막는다.
+    단일 그룹(같은 ticker) 이라 두 커밋이 같은 advisory lock 을 직접 경합한다. lock 전 조회하던
+    구조에선 둘 다 빈 그룹을 읽어 각자 INSERT → trades 2건(중복)이 됐을 시나리오.
+    """
+    pool = await asyncpg.create_pool(TEST_DB_URL, min_size=2, max_size=6, statement_cache_size=0)
+    uid = None
+    try:
+        async with pool.acquire() as conn:
+            uid, acct = await _seed_account(conn, name="concurrent-recommit")
+            sid = await _seed_ledger(conn, uid, [
+                _row("005930", "삼성전자", "BUY", 10, 70000, "2024-01-10"),
+            ])
+
+        app = _make_app()
+        app.state.pool = pool
+        async with _client_as(app, uid) as ac:
+            r1, r2 = await asyncio.gather(
+                ac.post("/v1/trades/import/commit", json={"staging_id": sid, "account_id": acct}),
+                ac.post("/v1/trades/import/commit", json={"staging_id": sid, "account_id": acct}),
+            )
+        assert r1.status_code == 200, r1.text
+        assert r2.status_code == 200, r2.text
+
+        # 핵심: 동시 커밋에도 원장 거래 1행 → trades 정확히 1건(중복 INSERT 없음).
+        async with pool.acquire() as conn:
+            n = await conn.fetchval(
+                "SELECT count(*) FROM trades WHERE user_id = $1", UUID(uid)
+            )
+        assert n == 1, f"동시 재커밋으로 중복 INSERT 발생: trades={n} (기대 1)"
+        # 한쪽이 먼저 INSERT 하면 다른 쪽은 skip(재조회로 발견) 또는 중복 거절 → insert 합 ≤ 1.
+        assert r1.json()["inserted_count"] + r2.json()["inserted_count"] <= 1
+    finally:
+        if uid is not None:
+            async with pool.acquire() as conn:
+                await conn.execute("DELETE FROM public.users WHERE id = $1", UUID(uid))
+        await pool.close()
+
+
+async def test_commit_rejects_other_users_batch():
+    """user 격리 — A 의 batch_id 로 B 가 commit 시도해도 A 의 원장을 물질화하지 못한다.
+
+    commit 격리는 오직 get_ledger_trade_rows 의 `WHERE ... AND user_id = $2` 에 의존한다.
+    B 로 커밋하면 그 필터가 A 의 원장 행을 걸러내 빈 결과 → 400(등록할 거래 없음)이고 B 계좌엔
+    아무것도 남지 않는다. FakePool 단위 테스트는 이 SQL 을 실행하지 못하므로(mock) 실DB 로만
+    이 필터의 회귀를 잡을 수 있다.
+    """
+    pool = await asyncpg.create_pool(TEST_DB_URL, min_size=1, max_size=4, statement_cache_size=0)
+    uid_a = uid_b = None
+    try:
+        async with pool.acquire() as conn:
+            uid_a, _ = await _seed_account(conn, name="ledger-owner")
+            uid_b, acct_b = await _seed_account(conn, name="other-user")
+            sid = await _seed_ledger(conn, uid_a, [
+                _row("005930", "삼성전자", "BUY", 10, 70000, "2024-01-10"),
+            ])
+
+        app = _make_app()
+        app.state.pool = pool
+        async with _client_as(app, uid_b) as ac:
+            r = await ac.post(
+                "/v1/trades/import/commit",
+                json={"staging_id": sid, "account_id": acct_b},
+            )
+        assert r.status_code == 400, r.text  # 타 user 원장 → 거래 없음
+
+        # 핵심: B 계좌에 A 의 거래가 물질화되지 않았다.
+        async with pool.acquire() as conn:
+            n = await conn.fetchval(
+                "SELECT count(*)::int FROM trades WHERE user_id = $1", UUID(uid_b)
+            )
+        assert n == 0, f"타 user 원장이 물질화됨: trades={n} (기대 0)"
+    finally:
+        async with pool.acquire() as conn:
+            for u in (uid_a, uid_b):
+                if u is not None:
+                    await conn.execute("DELETE FROM public.users WHERE id = $1", UUID(u))
+        await pool.close()
+
+
+async def test_recommit_after_ticker_reresolve_is_idempotent():
+    """재커밋 사이 원장 entry 의 ticker 재해소가 바뀌어도 dead-end 없이 멱등 skip 된다.
+
+    ticker 가 달라지면 group_key 가 바뀌어 signature dedup 이 기존 trade 를 못 찾는다. 예전엔
+    이때 INSERT 가 (account_id, source_ledger_entry_id) 부분 UNIQUE 를 위반→그룹 전체가 '중복
+    거래' 오류로 롤백되는 dead-end 였다. 이제 insert_trades_bulk 의 ON CONFLICT DO NOTHING 이
+    DB 레벨에서 조용히 건너뛴다 → 오류 없이, entry 는 계좌당 1회만 물질화(중복 trade 없음).
+    """
+    pool = await asyncpg.create_pool(TEST_DB_URL, min_size=1, max_size=4, statement_cache_size=0)
+    uid = None
+    try:
+        async with pool.acquire() as conn:
+            uid, acct = await _seed_account(conn, name="reresolve")
+            sid = await _seed_ledger(conn, uid, [
+                _row("005930", "삼성전자", "BUY", 10, 70000, "2024-01-10"),
+            ])
+
+        app = _make_app()
+        app.state.pool = pool
+        async with _client_as(app, uid) as ac:
+            r1 = await ac.post("/v1/trades/import/commit", json={"staging_id": sid, "account_id": acct})
+        assert r1.status_code == 200, r1.text
+        assert r1.json()["inserted_count"] == 1
+
+        # ticker 재해소 drift 시뮬레이션 — 같은 entry 의 hint 를 바꿔 다음 커밋이 다른 ticker 로 해소되게.
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE import_ledger_entries SET ticker_hint = '000660' WHERE batch_id = $1",
+                UUID(sid),
+            )
+
+        async with _client_as(app, uid) as ac:
+            r2 = await ac.post("/v1/trades/import/commit", json={"staging_id": sid, "account_id": acct})
+        assert r2.status_code == 200, r2.text
+        assert r2.json()["error_count"] == 0, r2.text  # dead-end('중복 거래') 없음
+
+        # entry 는 계좌당 1회만 물질화 — 재해소 재커밋으로 중복 trade 없음.
+        async with pool.acquire() as conn:
+            n = await conn.fetchval(
+                "SELECT count(*)::int FROM trades WHERE user_id = $1", UUID(uid)
+            )
+        assert n == 1, f"재해소 재커밋으로 중복 trade 발생: trades={n} (기대 1)"
     finally:
         if uid is not None:
             async with pool.acquire() as conn:

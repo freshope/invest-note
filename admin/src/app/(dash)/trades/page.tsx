@@ -3,10 +3,21 @@
 import { adminApi, type TradeRow } from "@/lib/api";
 import { DataTablePage, type Column } from "@/components/DataTablePage";
 import { fmtText, fmtNum, fmtDateTime } from "@/lib/format";
+import { AuthorCell, authorFallback } from "@/components/AuthorCell";
 
 // trades 는 읽기 전용(PnL cascade 위험으로 쓰기는 후속 spec). cross-user 가시성(admin pool).
 const columns: Column<TradeRow>[] = [
   { header: "종목", cell: (r) => fmtText(r.asset_name) },
+  {
+    header: "사용자",
+    cell: (r) => (
+      <AuthorCell
+        avatarUrl={r.author_avatar_url}
+        displayName={r.author_display_name}
+        fallback={authorFallback()}
+      />
+    ),
+  },
   { header: "티커", cell: (r) => fmtText(r.ticker_symbol) },
   { header: "구분", cell: (r) => fmtText(r.trade_type) },
   { header: "시장", cell: (r) => fmtText(r.market_type) },

@@ -6,8 +6,10 @@ RLS 제거 후 owner connection 이 user_id 필터 없이 cross-user 전 행을 
 """
 from __future__ import annotations
 
+import json
 from datetime import date
 from typing import Any
+from uuid import UUID
 
 # 리스트 가능한 테이블 → (실제 테이블명, q 부분일치 검색 컬럼들, 기본 정렬절).
 # 선택 키: from(기본 table), select(기본 *) — JOIN 으로 다른 테이블 컬럼을 합쳐 노출할 때 사용.
@@ -18,18 +20,46 @@ _LIST_TABLES: dict[str, dict[str, Any]] = {
         "from": "users u left join user_profiles p on p.user_id = u.id",
         "select": (
             "u.id, u.created_at, p.email, p.display_name, p.avatar_url, "
-            "p.email_verified, p.providers, p.last_sign_in"
+            "p.email_verified, p.providers, p.last_sign_in, "
+            "(select count(*) from accounts a where a.user_id = u.id) as account_count, "
+            "(select count(*) from trades t where t.user_id = u.id) as trade_count"
         ),
         "search": ["u.id::text", "p.email", "p.display_name"],
         "order": "u.created_at desc",
     },
-    "accounts": {"table": "accounts", "search": ["name"], "order": "created_at desc"},
+    # 사용자 귀속 테이블은 user_profiles LEFT JOIN 으로 작성자 아바타·이름을 노출한다
+    # (board_repo 관례: `테이블.* + author_display_name/author_avatar_url`). 조인 후 겹치는
+    # 컬럼명(created_at 등)이 생기므로 select/order/search 는 테이블 프리픽스로 명시한다.
+    "accounts": {
+        "table": "accounts",
+        "from": "accounts left join user_profiles p on p.user_id = accounts.user_id",
+        "select": (
+            "accounts.*, p.display_name as author_display_name, "
+            "p.avatar_url as author_avatar_url"
+        ),
+        "search": ["accounts.name"],
+        "order": "accounts.created_at desc",
+    },
     "trades": {
         "table": "trades",
-        "search": ["ticker_symbol", "asset_name"],
-        "order": "traded_at desc",
+        "from": "trades left join user_profiles p on p.user_id = trades.user_id",
+        "select": (
+            "trades.*, p.display_name as author_display_name, "
+            "p.avatar_url as author_avatar_url"
+        ),
+        "search": ["trades.ticker_symbol", "trades.asset_name"],
+        "order": "trades.traded_at desc",
     },
-    "custom_tags": {"table": "custom_tags", "search": ["label"], "order": "created_at desc"},
+    "custom_tags": {
+        "table": "custom_tags",
+        "from": "custom_tags left join user_profiles p on p.user_id = custom_tags.user_id",
+        "select": (
+            "custom_tags.*, p.display_name as author_display_name, "
+            "p.avatar_url as author_avatar_url"
+        ),
+        "search": ["custom_tags.label"],
+        "order": "custom_tags.created_at desc",
+    },
     "stocks": {
         "table": "stocks",
         "search": ["asset_name", "ticker"],
@@ -39,6 +69,27 @@ _LIST_TABLES: dict[str, dict[str, Any]] = {
         "table": "nps_unmatched",
         "search": ["nps_name"],
         "order": "created_at desc",
+    },
+    # 거래내역서 원장 배치(파일 1건=1행). 업로더 email·등록 계좌명은 LEFT JOIN, 행수는 서브쿼리.
+    # entry_count=원장 전체 행, trade_row_count=거래 행(trade_type 有; 비거래/오류 행 제외).
+    "import_batches": {
+        "table": "import_batches",
+        "from": (
+            "import_batches b "
+            "left join user_profiles p on p.user_id = b.user_id "
+            "left join accounts a on a.id = b.account_id"
+        ),
+        "select": (
+            "b.id, b.broker_key, b.filename, b.content_type, b.size_bytes, "
+            "b.account_hint, b.account_id, a.name as account_name, "
+            "b.committed_at, b.created_at, b.parsed_at, p.email, "
+            "(select count(*) from import_ledger_entries e where e.batch_id = b.id) "
+            "as entry_count, "
+            "(select count(*) from import_ledger_entries e "
+            "  where e.batch_id = b.id and e.trade_type is not null) as trade_row_count"
+        ),
+        "search": ["b.filename", "b.broker_key", "p.email"],
+        "order": "b.created_at desc",
     },
 }
 
@@ -91,23 +142,115 @@ async def list_rows(
     return [dict(r) for r in rows], int(total or 0)
 
 
+# 원장 배치 상세 — 목록과 동일한 조인/서브쿼리 + 원문 식별 컬럼(storage_key·sha256·parser_version).
+_IMPORT_BATCH_DETAIL_SQL = """
+SELECT b.id, b.user_id, b.broker_key, b.parser_version, b.filename,
+       b.content_type, b.size_bytes, b.storage_key, b.content_sha256,
+       b.account_hint, b.account_id, a.name AS account_name,
+       b.committed_at, b.created_at, b.parsed_at, p.email,
+       p.display_name AS author_display_name, p.avatar_url AS author_avatar_url,
+       (SELECT count(*) FROM import_ledger_entries e WHERE e.batch_id = b.id)
+           AS entry_count,
+       (SELECT count(*) FROM import_ledger_entries e
+         WHERE e.batch_id = b.id AND e.trade_type IS NOT NULL) AS trade_row_count
+  FROM import_batches b
+  LEFT JOIN user_profiles p ON p.user_id = b.user_id
+  LEFT JOIN accounts a ON a.id = b.account_id
+ WHERE b.id = $1
+"""
+
+# 배치의 원장 행 전량(append-only, source_row_no 순). raw 는 파싱 원문 전체(jsonb).
+_LEDGER_ENTRIES_SQL = """
+SELECT id, source_row_no, traded_at_raw, traded_at, trade_type,
+       asset_name, ticker_hint, isin, country_code, quantity, price,
+       commission, tax, exchange_rate, raw, created_at
+  FROM import_ledger_entries
+ WHERE batch_id = $1
+ ORDER BY source_row_no
+"""
+
+
+async def get_import_batch(conn: Any, batch_id: UUID) -> dict | None:
+    """원장 배치 상세(메타 + email·account_name·행수 조인). 없으면 None."""
+    row = await conn.fetchrow(_IMPORT_BATCH_DETAIL_SQL, batch_id)
+    return dict(row) if row is not None else None
+
+
+async def list_ledger_entries(conn: Any, batch_id: UUID) -> list[dict]:
+    """배치의 원장 행 전량. raw jsonb 는 asyncpg 가 str 로 주므로 dict 로 디코드(board_repo 관례)."""
+    rows = await conn.fetch(_LEDGER_ENTRIES_SQL, batch_id)
+    result: list[dict] = []
+    for r in rows:
+        d = dict(r)
+        raw = d.get("raw")
+        if isinstance(raw, str):
+            d["raw"] = json.loads(raw)
+        result.append(d)
+    return result
+
+
+# 오늘(KST) 등록분 필터 — created_at 을 KST 로 변환한 날짜가 KST 오늘과 같은 행.
+# get_user_growth 의 KST 버킷 패턴(::date at time zone 'Asia/Seoul')과 동일 규약.
+_KST_TODAY = "(%s at time zone 'Asia/Seoul')::date = (now() at time zone 'Asia/Seoul')::date"
+
+# get_stats 반환 키 = SQL SELECT 별칭 = AdminStats 필드. 세 곳이 1:1 이어야 함.
+_STATS_KEYS = (
+    "users", "users_today",
+    "accounts", "accounts_today",
+    "trades", "trades_today",
+    "stocks", "nps_unmatched",
+    "broker_statements", "broker_statements_today",
+    "feedback", "feedback_today",
+    "bug_reports", "bug_reports_today",
+    "deletions", "deletions_today",
+    "dau", "wau", "mau",
+)
+
+
 async def get_stats(conn: Any) -> dict[str, int]:
-    """대시보드 카운트 — 단일 쿼리로 테이블 건수. admin pool 이라 cross-user 전수."""
+    """대시보드 카운트 — 단일 쿼리로 각종 집계. admin pool 이라 cross-user 전수.
+
+    누적 + 오늘 등록수(users/accounts/trades/broker_statements, KST 당일) + 게시판 유형별
+    건수(feedback/bug_report) + 누적 탈퇴 + 로그인 활성(dau/wau/mau) 을 함께 반환한다.
+    dau/wau/mau 는 user_profiles.last_sign_in(로그인 시각) 기준 rolling 1/7/30일 — 실제 앱
+    사용이 아니라 '로그인' 근사이며 last_sign_in 은 최신값 1컬럼이라 스냅샷만 가능(시계열 불가).
+    """
     row = await conn.fetchrow(
-        """
+        f"""
         select
             (select count(*) from users) as users,
+            (select count(*) from users where {_KST_TODAY % 'created_at'}) as users_today,
             (select count(*) from accounts) as accounts,
+            (select count(*) from accounts where {_KST_TODAY % 'created_at'}) as accounts_today,
             (select count(*) from trades) as trades,
+            (select count(*) from trades where {_KST_TODAY % 'created_at'}) as trades_today,
             (select count(*) from stocks) as stocks,
             (select count(*) from nps_unmatched) as nps_unmatched,
-            (select count(*) from board_posts where board_type = 'broker_statement') as broker_statements
+            (select count(*) from board_posts where board_type = 'broker_statement')
+                as broker_statements,
+            (select count(*) from board_posts
+                where board_type = 'broker_statement' and {_KST_TODAY % 'created_at'})
+                as broker_statements_today,
+            (select count(*) from board_posts where board_type = 'feedback') as feedback,
+            (select count(*) from board_posts
+                where board_type = 'feedback' and {_KST_TODAY % 'created_at'})
+                as feedback_today,
+            (select count(*) from board_posts where board_type = 'bug_report') as bug_reports,
+            (select count(*) from board_posts
+                where board_type = 'bug_report' and {_KST_TODAY % 'created_at'})
+                as bug_reports_today,
+            (select count(*) from account_deletions) as deletions,
+            (select count(*) from account_deletions where {_KST_TODAY % 'deleted_at'})
+                as deletions_today,
+            (select count(*) from user_profiles
+                where last_sign_in >= now() - interval '1 day') as dau,
+            (select count(*) from user_profiles
+                where last_sign_in >= now() - interval '7 days') as wau,
+            (select count(*) from user_profiles
+                where last_sign_in >= now() - interval '30 days') as mau
         """
     )
-    return {
-        k: int(row[k])
-        for k in ("users", "accounts", "trades", "stocks", "nps_unmatched", "broker_statements")
-    }
+    return {k: int(row[k]) for k in _STATS_KEYS}
 
 
 async def get_user_growth(conn: Any) -> list[dict[str, Any]]:

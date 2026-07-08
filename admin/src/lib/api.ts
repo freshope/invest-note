@@ -60,14 +60,28 @@ export interface AdminListResponse<T> {
   total: number;
 }
 
-/** 대시보드 카운트. 키는 snake_case 유지(BE AdminStats 와 동일). */
+/** 대시보드 카운트. 키는 snake_case 유지(BE AdminStats 와 동일).
+ *  *_today 는 KST 당일 등록분, dau/wau/mau 는 last_sign_in 기준 로그인 활성(rolling 1/7/30일). */
 export interface AdminStats {
   users: number;
+  users_today: number;
   accounts: number;
+  accounts_today: number;
   trades: number;
+  trades_today: number;
   stocks: number;
   nps_unmatched: number;
   broker_statements: number;
+  broker_statements_today: number;
+  feedback: number;
+  feedback_today: number;
+  bug_reports: number;
+  bug_reports_today: number;
+  deletions: number;
+  deletions_today: number;
+  dau: number;
+  wau: number;
+  mau: number;
 }
 
 /** 일별 가입자 한 점. date 는 KST 가입일(YYYY-MM-DD), BE UserGrowthPoint 와 정합. */
@@ -144,22 +158,32 @@ export interface UserRow extends BaseRow {
   email_verified: boolean | null;
   providers: string[] | null;
   last_sign_in: string | null;
+  // 서브쿼리 집계 — 보유 계좌수·총 거래수(항상 0 이상).
+  account_count: number;
+  trade_count: number;
 }
 
+// author_* 는 user_profiles LEFT JOIN 노출(프로필 행 없으면 null). board 관례와 동일.
 export interface AccountRow extends BaseRow {
   id: string;
   name: string;
+  author_display_name: string | null;
+  author_avatar_url: string | null;
 }
 
 export interface TradeRow extends BaseRow {
   id: string;
   ticker_symbol: string | null;
   asset_name: string | null;
+  author_display_name: string | null;
+  author_avatar_url: string | null;
 }
 
 export interface CustomTagRow extends BaseRow {
   id: string;
   label: string;
+  author_display_name: string | null;
+  author_avatar_url: string | null;
 }
 
 // ⚠️ stocks PK = 복합 (country_code, ticker). 수정 URL 조립에 둘 다 필요.
@@ -201,14 +225,16 @@ export interface BoardRow extends BaseRow {
   updated_at: string;
 }
 
-// board_comments row(7키). is_admin 으로 관리자 댓글 구분.
+// board_comments row. is_admin 으로 관리자 댓글 구분.
 // author_* 는 user_profiles LEFT JOIN 노출(프로필 행 없으면 null).
+// author_withdrawn 은 작성자 탈퇴 시 스탬프(user_id SET NULL 로 끊기기 전 표식).
 export interface BoardComment extends BaseRow {
   id: string;
   post_id: string;
   user_id: string | null;
   author_display_name: string | null;
   author_avatar_url: string | null;
+  author_withdrawn: boolean;
   is_admin: boolean;
   body: string;
   created_at: string;
@@ -234,6 +260,62 @@ export type BoardDetail = BoardRow & {
   comments: BoardComment[];
   attachments: BoardAttachment[];
 };
+
+// ============================================================
+// 거래내역서 원장(import ledger) — batches(파일 1건=1행) + entries(행 append-only).
+// snake_case passthrough. numeric 컬럼은 BE 가 문자열/숫자로 줄 수 있어 fmtNum 으로 표시.
+// ============================================================
+
+// import_batches 목록 행. email·account_name 은 LEFT JOIN, *_count 는 서브쿼리 집계.
+export interface ImportBatchRow extends BaseRow {
+  id: string;
+  broker_key: string;
+  filename: string | null;
+  content_type: string | null;
+  size_bytes: number | null;
+  account_hint: string | null;
+  account_id: string | null;
+  account_name: string | null;
+  committed_at: string | null; // null = 미리보기만(미등록)
+  created_at: string;
+  parsed_at: string | null;
+  email: string | null;
+  entry_count: number;
+  trade_row_count: number;
+}
+
+// import_ledger_entries 행(append-only). raw 는 파싱 원문 전체(jsonb→object).
+export interface ImportLedgerEntry extends BaseRow {
+  id: string;
+  source_row_no: number;
+  traded_at_raw: string | null;
+  traded_at: string | null;
+  trade_type: string | null;
+  asset_name: string | null;
+  ticker_hint: string | null;
+  isin: string | null;
+  country_code: string | null;
+  quantity: string | number | null;
+  price: string | number | null;
+  commission: string | number | null;
+  tax: string | number | null;
+  exchange_rate: string | number | null;
+  raw: Record<string, unknown>;
+  created_at: string;
+}
+
+// 상세 = 배치 메타(목록 + 원문 식별 컬럼) + 원장 행 전량. BE ImportBatchDetail 과 정합.
+export interface ImportBatchDetail {
+  batch: ImportBatchRow & {
+    user_id: string | null;
+    parser_version: string;
+    storage_key: string | null;
+    content_sha256: string;
+    author_display_name: string | null;
+    author_avatar_url: string | null;
+  };
+  entries: ImportLedgerEntry[];
+}
 
 // ============================================================
 // 쓰기 입력 (BE 화이트리스트와 정합 — extra='forbid')
@@ -355,6 +437,18 @@ export const adminApi = {
       apiFetch<void>(
         `/admin/nps-unmatched?${new URLSearchParams({ nps_name: key.nps_name, nps_as_of: key.nps_as_of })}`,
         { method: "DELETE" },
+      ),
+  },
+
+  // 거래내역서 원장 — 읽기 전용. 목록은 제네릭 /admin/import-batches, 상세는 전용 엔드포인트.
+  importBatches: {
+    list: (params?: AdminListParams) =>
+      apiFetch<AdminListResponse<ImportBatchRow>>(
+        `/admin/import-batches${listQuery(params)}`,
+      ),
+    get: (batchId: string) =>
+      apiFetch<ImportBatchDetail>(
+        `/admin/import-batches/${encodeURIComponent(batchId)}`,
       ),
   },
 

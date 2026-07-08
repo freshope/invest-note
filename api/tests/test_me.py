@@ -144,6 +144,33 @@ def test_delete_me_records_audit_with_reason() -> None:
     assert insert_idx < delete_idx
 
 
+def test_delete_me_stamps_board_posts_author_withdrawn() -> None:
+    # 탈퇴 전 board_posts 에 author_withdrawn 표식을 남겨야 어드민이 '탈퇴한 회원'으로 구분한다.
+    # users DELETE(→user_id SET NULL) 보다 먼저, 본인 user_id 스코프로 실행돼야 한다.
+    conn = _RecordingConn()
+    client = _make_delete_client(conn=conn)
+    r = client.request("DELETE", "/v1/me", json={"reason": "not_useful"})
+    assert r.status_code == 204
+
+    post_stamps = [q for q in conn.executed if "UPDATE public.board_posts" in q[0]]
+    assert len(post_stamps) == 1
+    assert "author_withdrawn" in post_stamps[0][0]
+    assert post_stamps[0][1] == (UUID(TEST_USER_ID),)
+
+    comment_stamps = [q for q in conn.executed if "UPDATE public.board_comments" in q[0]]
+    assert len(comment_stamps) == 1
+    assert "author_withdrawn" in comment_stamps[0][0]
+    assert comment_stamps[0][1] == (UUID(TEST_USER_ID),)
+
+    # 두 표식 모두 users DELETE 보다 먼저 실행돼야 한다(user_id SET NULL 전).
+    queries = [q[0] for q in conn.executed]
+    delete_idx = next(i for i, q in enumerate(queries) if "DELETE FROM public.users" in q)
+    post_idx = next(i for i, q in enumerate(queries) if "UPDATE public.board_posts" in q)
+    comment_idx = next(i for i, q in enumerate(queries) if "UPDATE public.board_comments" in q)
+    assert post_idx < delete_idx
+    assert comment_idx < delete_idx
+
+
 def test_delete_me_records_audit_without_reason() -> None:
     # 사유 미전송(바디 없음)도 204 + reason NULL 로 기록.
     conn = _RecordingConn()

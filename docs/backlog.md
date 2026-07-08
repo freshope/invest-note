@@ -6,7 +6,7 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 우선순위 스냅샷 (다음 착수 후보)
 
-- 🟡 **사용자 요청 기능** — 목표가/손절·익절 추적, 관심종목, 자산추이 기간선택, 벤치마크 비교, 푸시/생체인증/백버튼.
+- 🟡 **사용자 요청 기능** — 목표가/손절·익절 추적, 관심종목, 벤치마크 비교, 푸시/생체인증/백버튼.
 - 🟡 **임포트 후속** — 다계좌 이중 preview 최적화(BE `re-validate` 엔드포인트 도입 시 카운트 갭까지 동시 해소), provider db 복귀 모니터링.
 - 🟢 **운영/어드민** — KIS 앱키 만료 가시화(SPOF), PnL 저장값 검증 엔드포인트.
 - 🟢 **성능/스케일(측정 후 착수)** — trades 페이지네이션, 포트폴리오/분석 읽기 경로 최적화, 분석 대시보드 시세 분리.
@@ -17,7 +17,7 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [ ] 목표가(%), 손절 및 익절 계획을 입력하고 그것을 지켰는지 여부를 분석 — **(2026-07-02 감사) 부분:** 전략(strategy_type) 준수 분석은 이미 구현됨(`analysis/StrategyAdherencePanel.tsx` — 실보유기간 자동추론 vs 입력 전략 비교). **미구현이 이 항목의 핵심:** 거래/종목에 목표가·손절가·익절가 필드·입력 폼·달성/이탈 추적이 전무(스키마·폼에 target_price/stop_loss/take_profit 없음).
 - [ ] 관심 종목 추가 (보유하지 않은 종목도 볼 수 있게) — (2026-07-02 감사) 미구현 확인(watchlist 테이블·API·컴포넌트 전무).
-- [ ] 자산추이에 일, 주, 월, 6개월, 올해 1년, 5년, all 선택 표시 — **(2026-07-02 감사) 부분:** 분석 탭엔 기간 선택 존재(`lib/constants/analysis.ts` Period 1m/3m/6m/ytd/all — 재사용 가능 패턴). **자산추이 뷰(`assets/AssetHistoryView.tsx`)엔 기간 선택 없음**(전체 역사만) → 이 항목 대상.
+- [x] 자산추이에 일, 주, 월, 6개월, 올해 1년, 5년, all 선택 표시 — **(2026-07-05 완료)** 기간범위 필터가 아니라 **표시 단위(일/주/월)** 선택으로 구현(`assets/AssetHistoryView.tsx` + `resample.ts`). 단위=줌(일≈3개월/주≈1.2년/월=전체), 자산차트·단위별 손익·단위별 내역이 동일 리샘플 기준. FE 전용. `docs/decisions.md` 2026-07-05 참조. ⚠️ **5년/all은 범위 밖** — BE `LOOKBACK_DAYS=2년` 캡이라 그 이상은 BE 확장 필요(현 구현은 전체=최대 2년).
 - [ ] 자산추이에 차트 기준점 s&p500, 코스피 지수등과 비교 — (2026-07-02 감사) 미구현 확인(benchmark/지수 오버레이 코드 전무, 차트는 단일 asset 곡선만).
 - [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리 — **(2026-07-02 감사) 부분:** 푸시(`@capacitor/push-notifications`)·생체인증 플러그인 미설치. 키보드는 `@capacitor/keyboard` `resize:Native`만 설정(show/hide 이벤트 처리 없음), 백버튼은 `ForceUpdateGate.tsx`에서 강제업데이트 오버레이용 swallow만 존재 → **일반 네비게이션 백버튼 핸들러 없음**.
 
@@ -32,6 +32,17 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 머지 갱신 범위 확장 재검토 — 현재 머지는 `commission`/`tax`/`traded_at` 만 update, `market_type`/`country_code`/`exchange` 는 사용자 분류를 우선해 **보존**(`docs/decisions.md` 2026-05-18 참고). 다음 트리거 발생 시 재검토: ① 사용자가 거래내역서로 분류 자동 보정을 명시적으로 원함, ② 증권사 파서가 사용자 수동 분류보다 더 정확한 케이스가 다수 보고됨. 재검토 시 `update_trade_from_import` 화이트리스트와 `build_merge_patch` 비교 필드를 함께 확장
 - [ ] **KB증권 파서 — 매도 포함 샘플 확보 후 구현 (2026-06-25 보류)** — 신한·미래에셋과 함께 추가하려 했으나 제공된 KB 샘플(`거래내역서_KB증권_1.xlsx`)에 **매수 행만** 있어 매도(`주식장내매도`/`KOSDAQ매도`, 금액=`입금/입고/매도` 컬럼) 포맷을 회귀 검증할 수 없음. 추정 구현 금지 — 매도 거래 포함 KB 거래내역서가 들어오면 매수+매도 함께 구현(`broker_import/kb_xlsx.py` 신규 + PARSERS + FE `BROKER_OPTIONS` 에 `kb_xlsx`/"KB증권"). 시트 `Sheet0`, 헤더 `거래일|내용|종목명|수량|단가|입금/입고/매도|출금/출고/매수|예수금잔액(원)`, 종목코드 없음(종목명 매칭). `lib/brokers.ts` "KB증권"(계좌 마스터)은 이미 존재.
 - [ ] 다운로드 가이드 콘텐츠 검수 — `app/src/components/records/ImportTradesPanel/brokers.ts` 의 `downloadGuide`. **2026-07-02 검수:** ① description(문서명)·accept(형식)는 파서 docstring·`sample/` 실제 export 파일명과 대조 완료 — 삼성 "기간별 매매내역서"→**"거래내역서"**, 미래에셋 "거래내역서"→**"거래내역증명서"** 수정. ② 삼성 steps 는 **PC 웹(samsungpop.com) 엑셀 다운로드**로 정정(모바일 mPOP 엔 xlsx 내보내기 없음, 파서도 xlsx 전용). ③ 토스 steps 는 공식 FAQ(support.toss.im/faq/3331)의 **앱 경로**(홈→우측상단 삼단바→설정→계좌관리→증명서 발급하기→'거래 내역서')로 정정 — PC 웹으로도 받을 수 있으나 모바일 앱 흐름이 우리 앱에 적합. **남은 것:** **신한·미래에셋 steps(앱 메뉴 경로) 미검수** — 계정 없어 캡처 대기. 증권사 UI 개편 시 깨질 수 있어 분기별 점검 또는 사용자 신고 트리거 시 갱신. 캡처 이미지 단계 안내가 더 효과적이라 판단되면 별도 spec 으로 보강
+
+### 거래내역서 원장(ledger) — 배포 및 후속 (2026-07-03)
+
+원장 기능(캡처/물질화 2-스테이지·append-only·등록 마커·날짜 파일거절) 구현 완료(`docs/decisions.md` 2026-07-02·07-03, `docs/spec-history/2026-07-03-import-ledger.md`, 마이그레이션 `0014`·`0015`(동시 재커밋 중복 방어), 유닛 959 + 격리 realdb 9 통과). 아래는 **배포 시/배포 후** 진행 항목 — feature 동작엔 영향 없음.
+
+> **어드민 원장 조회 추가 (2026-07-06, `docs/spec-history/2026-07-06-admin-import-ledger.md`)** — 어드민 패널에 배치 목록(`/admin/import-batches`, email·계좌명 조인 + 행수)+행 드릴다운(raw 원문)을 추가. ⚠️ **아래 `0014`·`0015` 마이그레이션이 운영 적용된 뒤에만 실동작**(미적용 시 원장 테이블 부재로 빈 목록/에러). 읽기 전용이라 app·기존 계약 무영향.
+
+- [ ] **`0014`·`0015` 마이그레이션 운영 적용 (배포 시)** — `import_batches` / `import_ledger_entries` / `trades.source_ledger_entry_id` + `0015` `trades` 부분 UNIQUE(`account_id, source_ledger_entry_id`, 동시 재커밋 중복 방어). 현재 "작성만"·미적용. 적용은 일상 경로(invest_note_app, superuser 불요). 참조: [[project_alembic_migrations]].
+- [ ] **R2 lifecycle 규칙 설정 (배포 시, 수동 Ops)** — Cloudflare R2 콘솔에서 **prefix `import_source/` 90일 만료** 규칙 추가. ⚠️ 버킷 전체 아님 — 업로드 버킷(`R2_BUCKET`, 예 `invest-note-uploads`)은 `broker_statement/`(제보)·`temp/`·`bug_report/` 와 공유하므로 **prefix 스코프 필수**(다른 prefix 삭제 금지). OTA 매니페스트는 별도(공개) 버킷이라 무관. 현재 storage_key 를 읽는 코드는 없음(다운로드 엔드포인트 부재).
+- [ ] **`import_staging`(0010) drop (배포 후)** — 원장이 대체해 dead 상태(라우터 참조 이미 제거). 별도 리비전 `0016` 로 DROP + `db_ops/import_staging_repo.py`·`tests/test_import_staging_repo.py`·잔존 import 정리. 운영 적용 테이블이라 위험 분리해 배포 후 진행. (0015 는 동시 재커밋 방어 UNIQUE 로 선점됨.)
+- [ ] **개인정보처리방침에 내역서 원본/파싱본 수집·보유기간(90일) 명시** — 내역서 **원본 파일(R2, 90일)** + **파싱 원장 rows**(계좌번호·거래내역 포함) 수집을 개인정보처리방침(`freshope.github.io/invest-note-legal`)·Play Data Safety·App Store privacy 라벨에 반영. (기존 Auth PII 처리방침 갱신 항목은 2026-07-03 develop 에서 완료 처리됨 — 이 원장 수집은 별도 신규 항목.)
 
 ### 일괄등록 고도화 — 해외주식(US/USD)
 
