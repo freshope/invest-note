@@ -41,7 +41,7 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [x] **`0014`~`0017` 마이그레이션 운영 적용 — (2026-07-08 완료)** `import_batches` / `import_ledger_entries` / `trades.source_ledger_entry_id` + `0015` `trades` 부분 UNIQUE(`account_id, source_ledger_entry_id`, 동시 재커밋 중복 방어) + `0016` board_comment_withdrawn + `0017` user_last_sign_in_idx. api-v1.3.14 배포와 함께 운영 DB에 `alembic upgrade head` 수동 적용. ⚠️ **컨테이너 CMD 는 uvicorn 만 실행 → 마이그레이션 자동 적용 안 됨**(향후 배포에도 수동 upgrade 필요). 참조: [[project_alembic_migrations]].
 - [ ] **R2 lifecycle 규칙 설정 (수동 Ops, 추후예정)** — Cloudflare R2 콘솔에서 **prefix `import_source/` 90일 만료** 규칙 추가. ⚠️ 버킷 전체 아님 — 업로드 버킷(`R2_BUCKET`, 예 `invest-note-uploads`)은 `broker_statement/`(제보)·`temp/`·`bug_report/` 와 공유하므로 **prefix 스코프 필수**(다른 prefix 삭제 금지). OTA 매니페스트는 별도(공개) 버킷이라 무관. 현재 storage_key 를 읽는 코드는 없음(다운로드 엔드포인트 부재).
-- [ ] **`import_staging`(0010) drop — 착수 가능 (원장 운영 배포 완료 2026-07-08)** — 원장이 대체해 dead 상태(라우터 참조 이미 제거). 별도 리비전 `0018` 로 DROP(⚠️ `0016`·`0017` 이미 사용됨, 리비전 번호 상향) + `db_ops/import_staging_repo.py`·`tests/test_import_staging_repo.py`·잔존 import 정리. 운영 적용 테이블이라 위험 분리해 별도 진행.
+- [ ] **`import_staging`(0010) drop — 구현 완료 · 운영 DROP 배포 대기 (2026-07-08)** — 마이그레이션 `0018_drop_import_staging`(DROP/downgrade 재생성) 작성 + `db_ops/import_staging_repo.py`·`tests/test_import_staging_repo.py` 삭제 + 잔존 참조 0건 확인, 전체 968 passed(커밋 `1a400b6`). ⚠️ **남은 것: 운영 DB 에 `alembic upgrade head` 수동 적용만**(운영 적용 테이블 DROP, 배포 시 신중히). 로컬 up/down 실검증 미실행(적용 시 함께). 참조: [[project_alembic_migrations]].
 - [ ] **개인정보처리방침에 내역서 원본/파싱본 수집·보유기간(90일) 명시 (추후예정)** — 내역서 **원본 파일(R2, 90일)** + **파싱 원장 rows**(계좌번호·거래내역 포함) 수집을 개인정보처리방침(`freshope.github.io/invest-note-legal`)·Play Data Safety·App Store privacy 라벨에 반영. (기존 Auth PII 처리방침 갱신 항목은 2026-07-03 develop 에서 완료 처리됨 — 이 원장 수집은 별도 신규 항목.)
 
 ### 일괄등록 고도화 — 해외주식(US/USD)
