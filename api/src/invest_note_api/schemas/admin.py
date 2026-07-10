@@ -32,6 +32,8 @@ class AdminStats(BaseModel):
     accounts_today: int
     trades: int
     trades_today: int
+    import_batches: int
+    import_batches_today: int
     stocks: int
     nps_unmatched: int
     broker_statements: int

@@ -69,6 +69,8 @@ export interface AdminStats {
   accounts_today: number;
   trades: number;
   trades_today: number;
+  import_batches: number;
+  import_batches_today: number;
   stocks: number;
   nps_unmatched: number;
   broker_statements: number;

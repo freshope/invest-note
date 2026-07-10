@@ -60,6 +60,7 @@ def test_allowlist_member_passes_gate():
         "users": 3, "users_today": 1,
         "accounts": 2, "accounts_today": 0,
         "trades": 5, "trades_today": 2,
+        "import_batches": 3, "import_batches_today": 1,
         "stocks": 9, "nps_unmatched": 1,
         "broker_statements": 4, "broker_statements_today": 1,
         "feedback": 6, "feedback_today": 1,
