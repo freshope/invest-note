@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from .base import BrokerStatementParser, ParseResult
+from .koreainvest_xls import KoreaInvestXlsParser
 from .mirae_pdf import MiraePdfParser
 from .samsung_xlsx import SamsungXlsxParser
 from .shinhan_pdf import ShinhanPdfParser
@@ -18,6 +19,7 @@ PARSERS: dict[str, BrokerStatementParser] = {
     TossPdfParser.key: TossPdfParser(),
     ShinhanPdfParser.key: ShinhanPdfParser(),
     MiraePdfParser.key: MiraePdfParser(),
+    KoreaInvestXlsParser.key: KoreaInvestXlsParser(),
 }
 
 __all__ = ["PARSERS", "BrokerStatementParser", "ParseResult"]
