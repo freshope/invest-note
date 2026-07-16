@@ -32,6 +32,9 @@ class ImportPreviewResponse(BaseModel):
     validation_errors: list[ImportError] = []
     # validation_errors 로 제외 예정인 그룹들의 row 합계. FE 의 "신규 등록" 카운트 보정용.
     excluded_count: int = 0
+    # 계좌에 이미 동일하게 존재해 변경 없이 넘어가는 행 수(noop). FE "이미 등록됨" 표시용 —
+    # 재업로드 시 이미 있던 거래가 어느 카운트에도 안 잡혀 사라진 것처럼 보이는 혼란 방지.
+    unchanged_count: int = 0
 
 
 class ImportCommitRequest(BaseModel):

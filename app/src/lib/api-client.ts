@@ -293,6 +293,8 @@ export interface ImportPreviewResponse {
   validation_errors: ImportErrorItem[];
   /** validation_errors 로 제외 예정인 그룹들의 import row 합계. 카운트 카드 보정용. */
   excluded_count: number;
+  /** 계좌에 이미 동일하게 존재해 변경 없이 넘어가는 행 수. "이미 등록됨" 표시용(구버전 BE 는 미제공). */
+  unchanged_count?: number;
 }
 
 export interface ImportCommitResponse {
