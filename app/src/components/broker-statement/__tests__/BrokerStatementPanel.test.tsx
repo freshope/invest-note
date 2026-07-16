@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { BrokerStatementPanel } from "../BrokerStatementPanel";
@@ -105,6 +105,51 @@ describe("BrokerStatementPanel", () => {
     expect(submitArg.attachment.storage_key).toBe("broker_statement/u/abc.xlsx");
     expect(submitArg.attachment.content_type).toBe(file.type);
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("리렌더 커밋 전 버튼을 연타해도 첫 클릭만 통과한다 (동기 ref 락)", async () => {
+    // presign 을 in-flight 로 붙잡아 첫 체인이 끝나기 전 상태에서 연타를 관찰한다.
+    let resolvePresign: (v: unknown) => void = () => {};
+    presign.mockReturnValue(
+      new Promise((r) => {
+        resolvePresign = r;
+      }),
+    );
+    uploadToR2.mockResolvedValue(undefined);
+    submit.mockResolvedValue({ post_id: "p1", attachment: {} });
+
+    renderWithClient(
+      <BrokerStatementPanel
+        open
+        onOpenChange={vi.fn()}
+        defaultType="unsupported_broker"
+        brokerSource={{ mode: "fixed", label: "키움증권" }}
+      />,
+    );
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [makeFile()] } });
+    fireEvent.click(screen.getByLabelText("개인정보 수집·이용 동의"));
+
+    const btn = screen.getByRole("button", { name: "제보하기" }) as HTMLButtonElement;
+    // 한 배치 안에서 세 번 클릭 — React 가 중간에 disabled 를 커밋하지 못하므로
+    // 렌더 클로저(submitting=false)가 stale 하게 유지되는 실제 브라우저 연타를 재현한다.
+    await act(async () => {
+      btn.click();
+      btn.click();
+      btn.click();
+    });
+
+    // ref 락이 없으면 presign 이 클릭 수만큼 호출돼 중복 제보가 쌓인다. 첫 호출만 통과해야 한다.
+    expect(presign).toHaveBeenCalledTimes(1);
+
+    resolvePresign({
+      upload_url: "https://r2.example/key?sig",
+      storage_key: "broker_statement/u/abc.xlsx",
+      bucket: "statements",
+      expires_in: 900,
+    });
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
   });
 });
 

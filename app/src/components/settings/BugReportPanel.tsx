@@ -141,9 +141,19 @@ export function BugReportPanel({ open, onOpenChange }: Props) {
   const trimmed = body.trim();
   const canSubmit = trimmed.length > 0 && !mutation.isPending;
 
+  // 동기 재진입 락 — mutation.isPending 은 리렌더가 커밋되기 전까지 stale 값이라, 버튼을
+  // 빠르게 연타하면 옛 값(false)을 읽고 mutate 가 여러 번 발사돼 중복 신고가 쌓인다.
+  // ref 는 즉시 반영되므로 첫 클릭만 통과시키고, mutate 종료(onSettled) 시 해제한다.
+  const submittingRef = useRef(false);
+
   const handleSubmit = () => {
     if (!canSubmit) return;
-    mutation.mutate({ body: trimmed, files });
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    mutation.mutate(
+      { body: trimmed, files },
+      { onSettled: () => { submittingRef.current = false; } },
+    );
   };
 
   return (

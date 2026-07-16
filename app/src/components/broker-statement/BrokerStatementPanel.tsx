@@ -84,6 +84,10 @@ export function BrokerStatementPanel({
   const [consent, setConsent] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // 동기 재진입 락 — submitting state 는 리렌더가 커밋되기 전까지 stale 값이라, 업로드가
+  // 도는 동안 버튼을 빠르게 연타하면 옛 값(false)을 읽고 여러 체인이 병렬로 시작돼 중복
+  // 제보가 쌓인다. ref 는 즉시 반영되므로 첫 호출만 통과시켜 병렬 시작 자체를 막는다.
+  const submittingRef = useRef(false);
 
   // 진입(open) 시마다 폼을 초기 상태로 — 패널 컴포넌트는 항상 마운트되어 있어
   // 직전 입력값이 useState 에 남기 때문. broker 는 fixed 라벨(없으면 빈 값)로 복원.
@@ -110,6 +114,8 @@ export function BrokerStatementPanel({
 
   const handleSubmit = async () => {
     if (!file || !canSubmit) return;
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       // content_type 단일 소스 — presign·PUT·submit 세 곳에 동일하게 흘린다.
@@ -136,6 +142,7 @@ export function BrokerStatementPanel({
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
