@@ -215,6 +215,9 @@ export function BrokerStatementPanel({
                   </>
                 )}
               </button>
+              <p className="text-xs text-muted-foreground">
+                암호 걸린 파일은 열 수 없어요. 암호 없이 저장해 올려주세요.
+              </p>
             </div>
 
             {/* 수집·이용 동의 */}

@@ -49,6 +49,29 @@ class CaptureResult:
     parse_result: ParseResult  # Stage 2 preview 가 재사용(원장 재조회 없이 이어감)
 
 
+# 암호화 문서 magic — 암호가 걸린 파일은 형식이 맞아도 파서가 예외를 던진다. generic
+# "형식 아님" 안내로 흡수되면 사용자가 헷갈리므로(파일은 맞는데?) 비밀번호 안내로 분기한다.
+# shinhan/mirae PDF 파서는 자체적으로 같은 취지의 오류행을 반환하므로 여기 도달하지 않는다.
+_ENCRYPTED_FILE_MESSAGE = "암호가 걸린 파일은 열 수 없어요. 암호 없이 저장한 뒤 다시 업로드해 주세요."
+_OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+# 암호화 OOXML(xlsx)은 OLE2/CFB 컨테이너에 'EncryptedPackage' 스트림(UTF-16LE 이름)을 담는다.
+_ENCRYPTED_OOXML_STREAM = "EncryptedPackage".encode("utf-16-le")
+
+
+def _looks_encrypted(file_bytes: bytes) -> bool:
+    """업로드 파일이 비밀번호로 잠긴 문서인지 magic 으로 추정한다.
+
+    - 암호화 xlsx 는 OLE2/CFB 로 감싸진다(일반 xlsx 는 ZIP 'PK'). 단 OLE magic 만으로는
+      레거시 .xls(BIFF)와 구분이 안 되므로 'EncryptedPackage' 스트림명까지 확인한다.
+    - 암호화 PDF 는 trailer 에 /Encrypt 딕셔너리 참조를 갖는다.
+    """
+    if file_bytes[:8] == _OLE_MAGIC:
+        return _ENCRYPTED_OOXML_STREAM in file_bytes
+    if file_bytes[:5] == b"%PDF-" and b"/Encrypt" in file_bytes:
+        return True
+    return False
+
+
 def _upload_source_file(
     settings: Settings, key: str, file_bytes: bytes, content_type: str | None
 ) -> None:
@@ -81,6 +104,9 @@ async def capture_statement(
     try:
         parse_result = await run_in_threadpool(parser.parse, file_bytes, filename)
     except Exception:
+        # 암호화 파일이면 형식이 맞아도 파서가 예외를 던진다 → 비밀번호 안내로 분기.
+        if _looks_encrypted(file_bytes):
+            raise APIError(_ENCRYPTED_FILE_MESSAGE, 400)
         # 선택 증권사와 파일 형식 불일치(xlsx 파서 ← PDF = BadZipFile 등) → 원인 안내 400.
         raise APIError(
             f"이 파일은 {parser.display_name} 거래내역서 형식이 아닌 것 같아요. "
