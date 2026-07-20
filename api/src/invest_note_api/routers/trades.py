@@ -5,7 +5,7 @@ import logging
 import re
 from uuid import UUID
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 import asyncpg
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
