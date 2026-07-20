@@ -76,6 +76,7 @@ export function PreviewStep({
   const validationErrors = preview.validation_errors ?? [];
   const hasValidationError = validationErrors.length > 0;
   const excludedCount = preview.excluded_count ?? 0;
+  const unchangedCount = preview.unchanged_count ?? 0;
   const foreignCount = preview.foreign_count ?? 0;
   const overseasUnsupported = !OVERSEAS_SUPPORTED_BROKERS.has(preview.broker_key);
   // 제외 예정 그룹은 보통 신규 등록으로 분류돼 있으므로 차감해서 실제 등록 예정 수를 표시한다.
@@ -89,9 +90,12 @@ export function PreviewStep({
           <span className="font-medium text-foreground">{preview.broker_name}</span> 거래내역서 분석 결과
         </p>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <CountCard label="신규 등록" value={effectiveNewCount} variant="success" />
-          <CountCard label="기존 거래 갱신(근사)" value={preview.duplicate_count} variant="default" />
+          <CountCard label="기존 거래 갱신" value={preview.duplicate_count} variant="default" />
+          {/* 이미 계좌에 동일하게 있는 거래 — 변경 없이 유지. 재업로드 시 이미 있던 거래가
+              어느 카운트에도 안 잡혀 사라진 것처럼 보이는 혼란을 막는다. */}
+          <CountCard label="이미 등록됨" value={unchangedCount} variant="default" />
           <CountCard
             label="제외 예정"
             value={totalExcluded}

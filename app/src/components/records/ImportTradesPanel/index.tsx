@@ -125,7 +125,9 @@ export function ImportTradesPanel({ open, onOpenChange, accounts }: Props) {
     const sel = accountStepSelection;
     if (!sel) return;
     if (sel === NEW_ACCOUNT_ID) {
-      // 신규 계좌는 보유0 → oversell 불가. account 없는 preview 로 진행(재-preview 불필요).
+      // 신규 계좌는 commit 시 빈 계좌로 생성된다. account 없는 preview 가 BE 에서 이미 빈-보유
+      // 가정의 oversell(무보유 매도·시점초과)을 계산해 두므로, 그 preview 그대로 진행하면
+      // commit(빈 계좌 적용) 결과와 제외 집합이 일치한다(재-preview 불필요).
       setPickedNew(true);
       setPickedAccount(null);
       setStep("preview");

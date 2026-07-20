@@ -25,6 +25,13 @@ const CARDS: StatCard[] = [
   { kind: "active" },
   { kind: "count", key: "accounts", label: "계좌", todayKey: "accounts_today", href: "/accounts" },
   { kind: "count", key: "trades", label: "거래", todayKey: "trades_today", href: "/trades" },
+  {
+    kind: "count",
+    key: "import_batches",
+    label: "일괄등록 원장",
+    todayKey: "import_batches_today",
+    href: "/import-ledger",
+  },
   { kind: "count", key: "feedback", label: "사용자 의견", todayKey: "feedback_today", href: "/boards/feedback" },
   { kind: "count", key: "bug_reports", label: "오류 신고", todayKey: "bug_reports_today", href: "/boards/bug-report" },
   {

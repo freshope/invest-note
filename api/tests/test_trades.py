@@ -1088,6 +1088,71 @@ class TestImportPreviewValidation:
         assert excluded_count == 1
 
     @pytest.mark.asyncio
+    async def test_new_account_none_uses_empty_holdings(self):
+        """account_id=None(신규 계좌) 은 빈 보유 가정으로 file-internal oversell 을 계산한다.
+
+        신규 계좌는 commit 시 빈 계좌로 생성되므로, preview 도 동일하게 무보유 매도를
+        제외해야 preview 와 commit 결과가 일치한다("보유0=oversell 불가" 오판 회귀 가드).
+        DB 접근이 없어야 하므로 acquire_for_user 를 패치하지 않는다(호출되면 예외).
+        """
+        from invest_note_api.routers.trades import _validate_import_groups
+
+        rows = [self._row(trade_type="SELL")]
+        errors, excluded_count = await _validate_import_groups(
+            pool=None, user_id=TEST_USER_ID, account_id=None, rows=rows,
+        )
+        assert len(errors) == 1
+        assert "보유 수량이 없습니다" in errors[0].reason
+        assert excluded_count == 1
+
+    @pytest.mark.asyncio
+    async def test_new_account_none_buy_and_sell_pass(self):
+        """account_id=None 이어도 file 내 BUY 가 SELL 을 커버하면 통과(빈 보유 + 파일 매수)."""
+        from invest_note_api.routers.trades import _validate_import_groups
+
+        rows = [
+            self._row(trade_type="BUY", quantity=1),
+            self._row(trade_type="SELL", quantity=1, traded_at_kst="2024-01-11"),
+        ]
+        errors, excluded_count = await _validate_import_groups(
+            pool=None, user_id=TEST_USER_ID, account_id=None, rows=rows,
+        )
+        assert errors == []
+        assert excluded_count == 0
+
+    @pytest.mark.asyncio
+    async def test_excluded_count_omits_dup_rows_to_avoid_double_subtraction(self):
+        """제외 그룹 안의 dup 행은 excluded_count 에서 빠진다(신규 행만 카운트).
+
+        회귀 가드: new_count = staged - dup 라서, 제외 그룹의 dup 까지 excluded 로 세면
+        FE effectiveNewCount(=new_count - excluded)가 그 dup 을 이중 차감해 commit inserted
+        보다 적게 나온다(기존 계좌 재업로드 시 발현). 여기선 dup BUY 1 + 신규 SELL 1(oversell)
+        그룹이므로 excluded 는 2가 아니라 1(SELL 만)이어야 한다.
+        """
+        from invest_note_api.routers.trades import _validate_import_groups
+
+        rows = [
+            self._row(trade_type="BUY", quantity=10, price=70000, traded_at_kst="2024-01-10"),
+            self._row(trade_type="SELL", quantity=100, price=80000, traded_at_kst="2024-01-20"),
+        ]
+        # 계좌에 파일 첫 행(BUY 10@70000 2024-01-10)과 동일한 거래가 이미 있음 → dup.
+        existing = _to_record(_make_trade_row(
+            id_="existing-buy", trade_type="BUY", ticker="005930", asset_name="삼성전자",
+            quantity=10, price=70000, traded_at=_dt("2024-01-10T09:00:00+09:00"),
+        ))
+        conn = FakeConnection("a1", [existing])
+        with patch(
+            "invest_note_api.routers.trades.acquire_for_user",
+            make_fake_acquire(conn),
+        ):
+            errors, excluded_count = await _validate_import_groups(
+                pool=None, user_id=TEST_USER_ID, account_id="a1", rows=rows,
+            )
+        assert len(errors) == 1
+        assert "초과" in errors[0].reason
+        assert excluded_count == 1  # dup BUY 제외, 신규 SELL 만 카운트
+
+    @pytest.mark.asyncio
     async def test_excluded_count_sums_rows_in_invalid_groups(self):
         """문제 그룹(SELL 보유부족)의 import row 수가 excluded_count 에 합산된다."""
         from invest_note_api.routers.trades import _validate_import_groups

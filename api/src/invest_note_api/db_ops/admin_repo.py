@@ -198,6 +198,7 @@ _STATS_KEYS = (
     "users", "users_today",
     "accounts", "accounts_today",
     "trades", "trades_today",
+    "import_batches", "import_batches_today",
     "stocks", "nps_unmatched",
     "broker_statements", "broker_statements_today",
     "feedback", "feedback_today",
@@ -224,6 +225,9 @@ async def get_stats(conn: Any) -> dict[str, int]:
             (select count(*) from accounts where {_KST_TODAY % 'created_at'}) as accounts_today,
             (select count(*) from trades) as trades,
             (select count(*) from trades where {_KST_TODAY % 'created_at'}) as trades_today,
+            (select count(*) from import_batches) as import_batches,
+            (select count(*) from import_batches where {_KST_TODAY % 'created_at'})
+                as import_batches_today,
             (select count(*) from stocks) as stocks,
             (select count(*) from nps_unmatched) as nps_unmatched,
             (select count(*) from board_posts where board_type = 'broker_statement')

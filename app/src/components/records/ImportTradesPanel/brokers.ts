@@ -8,7 +8,7 @@ export interface BrokerDownloadGuide {
 }
 
 export interface BrokerOption {
-  key: "samsung_xlsx" | "toss_pdf" | "shinhan_pdf" | "mirae_pdf";
+  key: "samsung_xlsx" | "toss_pdf" | "shinhan_pdf" | "mirae_pdf" | "koreainvest_xls";
   label: string;
   accept: string;
   downloadGuide: BrokerDownloadGuide;
@@ -17,7 +17,7 @@ export interface BrokerOption {
 // description(문서명)·accept(형식)는 파서 docstring·sample/ 실제 export 파일명과 대조 완료.
 // 삼성 steps = PC 웹(samsungpop.com) 엑셀 다운로드로 정정(모바일 앱엔 xlsx 내보내기 없음, 실사용 확인 2026-07-02).
 // 토스 steps = 공식 FAQ(support.toss.im/faq/3331) 앱 경로로 정정(2026-07-02).
-// TODO 미검수: 신한·미래에셋 steps(앱 메뉴 경로) — 계정 없어 캡처 대기.
+// TODO 미검수: 신한·미래에셋·한국투자 steps(웹/앱 메뉴 경로) — 계정 없어 캡처 대기.
 // 앱·웹 화면 메뉴 라벨/단계가 바뀌면 여기를 갱신한다.
 export const BROKER_OPTIONS: readonly BrokerOption[] = [
   {
@@ -79,6 +79,21 @@ export const BROKER_OPTIONS: readonly BrokerOption[] = [
         "저장된 PDF 를 이 화면에 업로드",
       ],
       helpUrl: "https://securities.miraeasset.com",
+    },
+  },
+  {
+    key: "koreainvest_xls",
+    label: "한국투자증권",
+    accept: ".xls",
+    downloadGuide: {
+      description: "거래내역서 (xls)",
+      steps: [
+        "한국투자증권 홈페이지(securities.koreainvestment.com) 로그인 (PC 웹)",
+        "거래내역 조회 화면에서 계좌·조회기간·업무구분(매매) 선택 후 [조회]",
+        "[엑셀다운로드] 버튼으로 .xls 저장",
+        "저장한 xls 를 휴대폰으로 옮긴 뒤 이 화면에 업로드",
+      ],
+      helpUrl: "https://securities.koreainvestment.com",
     },
   },
 ] as const;

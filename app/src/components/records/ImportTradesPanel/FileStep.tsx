@@ -66,7 +66,7 @@ export function FileStep({ brokerName, accept, downloadGuide, onFileSelect, onBa
               {brokerName} 거래내역서를 드래그하거나 클릭해서 선택하세요
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              {acceptLabel} 형식 지원
+              {acceptLabel} 형식 지원 · 암호 걸린 파일은 열 수 없어요
             </p>
           </div>
           <input

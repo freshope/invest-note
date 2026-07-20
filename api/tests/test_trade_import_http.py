@@ -132,6 +132,50 @@ class TestImportPreview:
         # staging_id 필드에 batch_id 가 실린다(원장 durable, TTL staging 없음).
         assert data["staging_id"] == batch_id
 
+    def test_new_account_none_ignores_cross_account_dup(self, client, monkeypatch):
+        """account_id 미지정(신규 계좌 예정) preview 는 다른 계좌의 동일거래를 dup 으로 세지 않는다.
+
+        회귀 가드: dup 을 cross-account 로 근사하면 dup_count 가 new_count(=staged-dup)를 깎아
+        신규 등록 수가 commit(빈 계좌 → dup 0·insert 1)보다 적게 나온다. 검증은 계좌 스코프여야
+        하며 신규 계좌는 빈 상태이므로 dup 0 이어야 한다.
+        """
+        from tests.test_trades import _make_trade_row, _to_record
+
+        batch_id = str(uuid4())
+
+        async def fake_capture(pool, settings, *, user_id, broker_key, filename, content_type, file_bytes):
+            pr = ParseResult(trades=[
+                ParsedTrade(source_row_no=1, traded_at_kst="2024-01-10", trade_type="BUY",
+                            asset_name="삼성전자", quantity=10, price=70000, country_code="KR"),
+            ])
+            return CaptureResult(batch_id=batch_id, is_new_file=True, row_count=1,
+                                 trade_row_count=1, parse_result=pr)
+
+        async def fake_resolve(resolve_items, ticker_hints, *, conn, isins, openfigi_api_key):
+            return {("KR", "삼성전자"): {"code": "005930", "exchange": ""}}
+
+        # 다른 계좌("other-acct")에 preview 종목과 완전히 동일한 시그니처의 거래가 있어도,
+        # account_id 없는 preview 라면 fetch 되면 안 된다(계좌 스코프). fetch 되면 dup=1 로 회귀.
+        matching = _to_record(_make_trade_row(
+            id_="other", account_id="other-acct", ticker="005930", asset_name="삼성전자",
+            trade_type="BUY", quantity=10, price=70000,
+        ))
+        monkeypatch.setattr("invest_note_api.routers.trades.capture_statement", fake_capture)
+        monkeypatch.setattr("invest_note_api.routers.trades.resolve_tickers", fake_resolve)
+        monkeypatch.setattr("invest_note_api.routers.trades.acquire_for_user",
+                            make_fake_acquire(FakeConnection([matching])))
+
+        resp = client.post(
+            "/v1/trades/import/preview",
+            files={"file": ("kt.xls", b"<html></html>", "application/vnd.ms-excel")},
+            params={"broker_key": "koreainvest_xls"},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["new_count"] == 1
+        assert data["duplicate_count"] == 0  # cross-account 거래는 신규 계좌 dup 으로 세지 않음
+        assert data["excluded_count"] == 0
+
     def test_parser_raises_broker_mismatch_400(self, client, monkeypatch):
         """선택 증권사 파서가 다른 형식 파일에 raise(예: xlsx 파서 ← PDF) → 500 아닌 400 안내."""
 

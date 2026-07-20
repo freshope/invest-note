@@ -7,6 +7,7 @@ import pytest
 
 from invest_note_api.broker_import import PARSERS
 from invest_note_api.errors import APIError
+from invest_note_api.broker_import.koreainvest_xls import KoreaInvestXlsParser
 from invest_note_api.broker_import.mirae_pdf import MiraePdfParser
 from invest_note_api.broker_import.samsung_xlsx import SamsungXlsxParser
 from invest_note_api.broker_import.shinhan_pdf import _LINE2_RE, ShinhanPdfParser
@@ -647,6 +648,49 @@ class TestMiraePdfParserFixture:
         assert "암호 없는 버전" in result.errors[0]["reason"]
 
 
+class TestKoreaInvestXlsParserFixture:
+    """한국투자증권 거래내역서(.xls = HTML 위장) 실파일 회귀. 2행=1거래 페어링·
+    컬럼 매핑(단가는 line2, 수수료는 line1)을 실제 export 로 고정한다."""
+
+    parser = KoreaInvestXlsParser()
+
+    @pytest.fixture
+    def sample_bytes(self) -> bytes:
+        from pathlib import Path
+        path = Path(__file__).resolve().parents[2] / "sample" / "한국투자증권_20260715.xls"
+        if not path.exists():
+            pytest.skip(f"sample not present: {path}")
+        return path.read_bytes()
+
+    def test_parses_real_sample(self, sample_bytes: bytes):
+        result = self.parser.parse(sample_bytes, "한국투자증권_20260715.xls")
+        # 국내 매수/매도 19건 (전부 KRW).
+        assert len(result.trades) == 19
+        assert result.account_hint == "69604881-01"
+        for t in result.trades:
+            assert t.quantity > 0 and t.price > 0
+            assert t.currency == "KRW"
+            assert t.ticker_hint is None
+        # 첫 거래(가장 최근): 카카오 BUY 53 @ 47,800, 수수료 80, 세금 0.
+        first = result.trades[0]
+        assert first.asset_name == "카카오"
+        assert first.trade_type == "BUY"
+        assert first.quantity == 53
+        assert first.price == 47800
+        assert first.commission == 80
+        assert first.tax == 0
+        assert first.traded_at_kst == "2026-04-28"
+        # 매도(거래세 != 0): 인텔리안테크 SELL 308 @ 71,000, 수수료 696, 거래세 43,736.
+        kai = next(
+            t for t in result.trades
+            if t.asset_name == "인텔리안테크" and t.trade_type == "SELL"
+        )
+        assert kai.quantity == 308
+        assert kai.price == 71000
+        assert kai.commission == 696
+        assert kai.tax == 43736
+
+
 class TestParsersRegistry:
     def test_parsers_registry_has_both_brokers(self):
         assert "samsung_xlsx" in PARSERS
@@ -657,6 +701,10 @@ class TestParsersRegistry:
         assert "mirae_pdf" in PARSERS
         assert PARSERS["shinhan_pdf"].display_name == "신한투자증권"
         assert PARSERS["mirae_pdf"].display_name == "미래에셋증권"
+
+    def test_parsers_registry_has_koreainvest(self):
+        assert "koreainvest_xls" in PARSERS
+        assert PARSERS["koreainvest_xls"].display_name == "한국투자증권"
 
 
 class TestCaptureDateRejection:
