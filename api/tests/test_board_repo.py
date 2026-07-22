@@ -159,6 +159,57 @@ async def test_list_my_posts_rejects_non_whitelist_board_type():
     conn.fetchval.assert_not_called()
 
 
+# ─────────────────────────── get_my_post (알림 딥링크 by-id) ───────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_get_my_post_scopes_to_user_and_whitelist():
+    """by-id 상세도 user_id($1)+id($2)+board_type any($3) 화이트리스트로 격리 — notice/타인 글 차단.
+
+    fake_pool 라우터 테스트는 SQL 을 실행하지 않으므로, list_my_posts 와 동일하게 여기서 bind
+    인자를 직접 검사해 사용자 격리(RLS 제거됨 — 이 WHERE 가 유일한 경계)를 가드한다.
+    """
+    pid = uuid4()
+    post_row = {
+        "id": pid,
+        "board_type": "feedback",
+        "user_id": USER_ID,
+        "title": "[feedback]",
+        "body": "본문",
+        "status": "open",
+        "is_pinned": False,
+        "metadata": '{"source": "app"}',
+        "created_at": "2026-06-25T00:00:00Z",
+        "updated_at": "2026-06-25T00:00:00Z",
+    }
+    conn = AsyncMock()
+    conn.fetchrow.return_value = post_row
+    conn.fetch.side_effect = [[], []]  # comments, attachments
+
+    result = await board_repo.get_my_post(conn, USER_ID, pid)
+
+    query, *args = conn.fetchrow.call_args.args
+    assert "board_posts.id = $2" in query
+    assert "board_posts.user_id = $1" in query
+    assert "board_type = any($3)" in query
+    assert "notice" not in query
+    assert args == [USER_ID, pid, ["feedback", "bug_report", "broker_statement"]]
+    # 응답 파생 필드 정상 + reads 컬럼 비노출.
+    assert result is not None
+    assert result["id"] == str(pid)
+    assert result["popup_acked"] is False
+    assert "read_at" not in result
+
+
+@pytest.mark.asyncio
+async def test_get_my_post_returns_none_and_skips_joins_when_not_found():
+    """없는 글/타인 글/notice → fetchrow None → None, comments/attachments 조회 생략."""
+    conn = AsyncMock()
+    conn.fetchrow.return_value = None
+    assert await board_repo.get_my_post(conn, USER_ID, uuid4()) is None
+    conn.fetch.assert_not_called()
+
+
 # ─────────────────────────── unread_summary (전량 스캔 집계) ───────────────────────────
 
 

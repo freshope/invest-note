@@ -34,6 +34,7 @@ from invest_note_api.errors import APIError
 from invest_note_api.schemas.board import (
     BugReportCreate,
     FeedbackCreate,
+    MyPostItem,
     MyPostsResponse,
     UnreadSummaryResponse,
 )
@@ -335,6 +336,34 @@ async def list_my_posts(
         for p in posts
     ]
     return MyPostsResponse(items=items, total=total, page=max(page, 1))
+
+
+@router.get("/my-posts/{post_id}", response_model=MyPostItem)
+async def get_my_post(
+    post_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> MyPostItem:
+    """본인 글 1건 상세 — 알림 딥링크(알림 이력 → 특정 글)에서 목록을 거치지 않고 상세를 직접 연다.
+
+    응답 shape 은 list_my_posts 의 한 item 과 동일(_MY_POST_FIELDS 화이트리스트 + 어드민 답변 +
+    presigned 첨부 + unread/popup_acked). user_id 는 토큰에서만 취하며, 타인 글·notice·없는 id 는
+    모두 404(존재 비노출 = 권한 경계). 첨부 presign 은 이 글 첨부에만 발급한다.
+    """
+    async with pool.acquire() as conn:
+        post = await board_repo.get_my_post(conn, user.id, post_id)
+    if post is None:
+        raise APIError(ERR_POST_NOT_FOUND, 404)
+    return MyPostItem(
+        **{k: post[k] for k in _MY_POST_FIELDS},
+        unread=post["unread"],
+        popup_acked=post["popup_acked"],
+        comments=[
+            {k: c[k] for k in _MY_POST_COMMENT_FIELDS} for c in post["comments"]
+        ],
+        attachments=[_my_post_attachment(a, settings) for a in post["attachments"]],
+    )
 
 
 @router.get("/unread-summary", response_model=UnreadSummaryResponse)

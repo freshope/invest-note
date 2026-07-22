@@ -1,9 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
-import { ChartSplineIcon } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ChartSplineIcon, BellIcon } from "lucide-react";
 import { Button } from "@/components/base/Button";
+import { NotificationHistoryPanel } from "@/components/notifications/NotificationHistoryPanel";
 import { DashboardTitle, DashboardBody } from "./DashboardSummary";
 import { AllocationTabs } from "./AllocationTabs";
 import { HoldingsList } from "./HoldingsList";
@@ -20,8 +21,12 @@ import { useDetailPanel } from "@/components/panels/DetailPanelProvider";
 import { usePortfolioSummary } from "@/hooks/usePortfolioSummary";
 import { useQuotes } from "@/hooks/useQuotes";
 import { useFxRate } from "@/hooks/useFxRate";
-import { accountsApi } from "@/lib/api-client";
+import { accountsApi, notificationApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
+import {
+  consumeNotificationOpen,
+  subscribeNotificationOpen,
+} from "@/lib/notification-deeplink";
 import { DEFAULT_COUNTRY_CODE } from "@/lib/constants/market";
 import { formatFxRate, formatTimeKST } from "@/lib/format";
 import {
@@ -66,6 +71,20 @@ export function HomeDashboard() {
   });
   const { setSelectedAccountId } = useAccountFilter();
   const { openAssetHistory } = useDetailPanel();
+  const [notifOpen, setNotifOpen] = useState(false);
+
+  // 알림 미읽음 — 벨 점(boolean, count>0)만 사용. 숫자 배지 아님. 홈은 accounts 쿼리 관례 따라 무게이트.
+  const { data: unreadData } = useQuery({
+    queryKey: queryKeys.notificationsUnread,
+    queryFn: notificationApi.unreadCount,
+  });
+  const hasUnread = (unreadData?.count ?? 0) > 0;
+
+  // 푸시 알림 탭 딥링크(Phase 2) — 마운트 시 대기 신호 소비 + 이후 신호 구독해 알림 패널 오픈.
+  useEffect(() => {
+    if (consumeNotificationOpen()) setNotifOpen(true);
+    return subscribeNotificationOpen(() => setNotifOpen(true));
+  }, []);
   const effectiveAccountId = useEffectiveAccountId(accounts);
   const { data, loading, reloading, error, refetch } =
     usePortfolioSummary(effectiveAccountId);
@@ -166,10 +185,25 @@ export function HomeDashboard() {
           {/* 자산 변화 패널 진입 — 기록탭 헤더 액션과 동일 계열(outline sm pill). skeleton swap 과 무관하게 항상 노출.
               다른 패널과 동일한 슬라이드 애니메이션을 위해 라우팅 대신 AssetHistoryPanel 을 연다. */}
           <div className="relative">
+            {/* 벨(알림 이력)은 우상단 고정 — 아이콘 전용. 자산추이 버튼은 헤더 아래 라인(자산 표시 하단)에 맞춰 우하단 배치. */}
+            <button
+              type="button"
+              onClick={() => setNotifOpen(true)}
+              aria-label="알림"
+              className="absolute right-0 top-0 flex size-9 items-center justify-center rounded-full text-foreground transition-colors hover:bg-foreground/5"
+            >
+              <BellIcon className="size-5" />
+              {hasUnread ? (
+                <span
+                  className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary"
+                  aria-label="새 알림"
+                />
+              ) : null}
+            </button>
             <Button
               variant="outline"
               size="sm"
-              className="absolute right-0 top-0"
+              className="absolute bottom-0 right-0"
               onClick={() =>
                 openAssetHistory({ assetName: null, ticker: null, country: null })
               }
@@ -177,7 +211,7 @@ export function HomeDashboard() {
               <ChartSplineIcon />
               자산 추이
             </Button>
-            <div className="pr-24">{renderHeaderInner()}</div>
+            <div className="pr-32">{renderHeaderInner()}</div>
           </div>
         </PageHeader>
         {showFilter && (
@@ -189,6 +223,7 @@ export function HomeDashboard() {
         )}
       </div>
       {renderBody()}
+      <NotificationHistoryPanel open={notifOpen} onOpenChange={setNotifOpen} />
     </PullToRefresh>
   );
 }

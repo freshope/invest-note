@@ -2,7 +2,7 @@
 
 MVP 이후 구현할 작업 후보 목록.
 
-> 정리 이력: 2026-07-03 완료항목 제거(다크 테마·iOS 상태바·eslint 잔여 warnings — 모두 완료) + 우선순위 스냅샷 추가 + 영역 재정렬. · 2026-07-08 원장 운영 배포(api-v1.3.14) 반영 — 마이그레이션 `0014`~`0017` 운영 적용 완료, `import_staging` drop 리비전 `0018` 로 정정(0016·0017 선점), R2 lifecycle·개인정보처리방침 추후예정.
+> 정리 이력: 2026-07-03 완료항목 제거(다크 테마·iOS 상태바·eslint 잔여 warnings — 모두 완료) + 우선순위 스냅샷 추가 + 영역 재정렬. · 2026-07-08 원장 운영 배포(api-v1.3.14) 반영 — 마이그레이션 `0014`~`0017` 운영 적용 완료, `import_staging` drop 리비전 `0018` 로 정정(0016·0017 선점), R2 lifecycle·개인정보처리방침 추후예정. · 2026-07-22 완료항목 제거(자산추이 표시단위·`0014`~`0017` 운영적용·`import_staging`(0018) drop — 모두 완료).
 
 ## 우선순위 스냅샷 (다음 착수 후보)
 
@@ -17,7 +17,6 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [ ] 목표가(%), 손절 및 익절 계획을 입력하고 그것을 지켰는지 여부를 분석 — **(2026-07-02 감사) 부분:** 전략(strategy_type) 준수 분석은 이미 구현됨(`analysis/StrategyAdherencePanel.tsx` — 실보유기간 자동추론 vs 입력 전략 비교). **미구현이 이 항목의 핵심:** 거래/종목에 목표가·손절가·익절가 필드·입력 폼·달성/이탈 추적이 전무(스키마·폼에 target_price/stop_loss/take_profit 없음).
 - [ ] 관심 종목 추가 (보유하지 않은 종목도 볼 수 있게) — (2026-07-02 감사) 미구현 확인(watchlist 테이블·API·컴포넌트 전무).
-- [x] 자산추이에 일, 주, 월, 6개월, 올해 1년, 5년, all 선택 표시 — **(2026-07-05 완료)** 기간범위 필터가 아니라 **표시 단위(일/주/월)** 선택으로 구현(`assets/AssetHistoryView.tsx` + `resample.ts`). 단위=줌(일≈3개월/주≈1.2년/월=전체), 자산차트·단위별 손익·단위별 내역이 동일 리샘플 기준. FE 전용. `docs/decisions.md` 2026-07-05 참조. ⚠️ **5년/all은 범위 밖** — BE `LOOKBACK_DAYS=2년` 캡이라 그 이상은 BE 확장 필요(현 구현은 전체=최대 2년).
 - [ ] 자산추이에 차트 기준점 s&p500, 코스피 지수등과 비교 — (2026-07-02 감사) 미구현 확인(benchmark/지수 오버레이 코드 전무, 차트는 단일 asset 곡선만).
 - [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리 — **(2026-07-02 감사) 부분:** 푸시(`@capacitor/push-notifications`)·생체인증 플러그인 미설치. 키보드는 `@capacitor/keyboard` `resize:Native`만 설정(show/hide 이벤트 처리 없음), 백버튼은 `ForceUpdateGate.tsx`에서 강제업데이트 오버레이용 swallow만 존재 → **일반 네비게이션 백버튼 핸들러 없음**.
 
@@ -39,9 +38,7 @@ MVP 이후 구현할 작업 후보 목록.
 
 > **어드민 원장 조회 추가 (2026-07-06, `docs/spec-history/2026-07-06-admin-import-ledger.md`)** — 어드민 패널에 배치 목록(`/admin/import-batches`, email·계좌명 조인 + 행수)+행 드릴다운(raw 원문)을 추가. ✅ **`0014`·`0015` 마이그레이션 2026-07-08 운영 적용 완료 → 실동작 중.** 읽기 전용이라 app·기존 계약 무영향.
 
-- [x] **`0014`~`0017` 마이그레이션 운영 적용 — (2026-07-08 완료)** `import_batches` / `import_ledger_entries` / `trades.source_ledger_entry_id` + `0015` `trades` 부분 UNIQUE(`account_id, source_ledger_entry_id`, 동시 재커밋 중복 방어) + `0016` board_comment_withdrawn + `0017` user_last_sign_in_idx. api-v1.3.14 배포와 함께 운영 DB에 `alembic upgrade head` 수동 적용. ⚠️ **컨테이너 CMD 는 uvicorn 만 실행 → 마이그레이션 자동 적용 안 됨**(향후 배포에도 수동 upgrade 필요). 참조: [[project_alembic_migrations]].
 - [ ] **R2 lifecycle 규칙 설정 (수동 Ops, 추후예정)** — Cloudflare R2 콘솔에서 **prefix `import_source/` 90일 만료** 규칙 추가. ⚠️ 버킷 전체 아님 — 업로드 버킷(`R2_BUCKET`, 예 `invest-note-uploads`)은 `broker_statement/`(제보)·`temp/`·`bug_report/` 와 공유하므로 **prefix 스코프 필수**(다른 prefix 삭제 금지). OTA 매니페스트는 별도(공개) 버킷이라 무관. 현재 storage_key 를 읽는 코드는 없음(다운로드 엔드포인트 부재).
-- [ ] **`import_staging`(0010) drop — 구현 완료 · 운영 DROP 배포 대기 (2026-07-08)** — 마이그레이션 `0018_drop_import_staging`(DROP/downgrade 재생성) 작성 + `db_ops/import_staging_repo.py`·`tests/test_import_staging_repo.py` 삭제 + 잔존 참조 0건 확인, 전체 968 passed(커밋 `1a400b6`). ⚠️ **남은 것: 운영 DB 에 `alembic upgrade head` 수동 적용만**(운영 적용 테이블 DROP, 배포 시 신중히). 로컬 up/down 실검증 미실행(적용 시 함께). 참조: [[project_alembic_migrations]].
 - [ ] **개인정보처리방침에 내역서 원본/파싱본 수집·보유기간(90일) 명시 (추후예정)** — 내역서 **원본 파일(R2, 90일)** + **파싱 원장 rows**(계좌번호·거래내역 포함) 수집을 개인정보처리방침(`freshope.github.io/invest-note-legal`)·Play Data Safety·App Store privacy 라벨에 반영. (기존 Auth PII 처리방침 갱신 항목은 2026-07-03 develop 에서 완료 처리됨 — 이 원장 수집은 별도 신규 항목.)
 
 ### 일괄등록 고도화 — 해외주식(US/USD)
@@ -65,6 +62,10 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 분석 API 쿼리 `.limit(1000)` 가드 — 거래 수 급증 시 메모리/응답 보호
 - [ ] 수수료 현황 별도 패널 — BUY commission·세금 합계, 순실현손익 vs 총비용 비교
 - [ ] `_rule_high_winrate` 신뢰도 게이트 재검토 — 2026-05-20 `result_input_rate` 게이트 제거 후 현재 `sell_trades >= MIN_HIGH_WINRATE_SELL` + `win_rate >= WIN_THRESHOLD` 만으로 트리거. 실 데이터에서 인사이트가 과도하게 트리거되면 별도 신뢰도 메트릭(SELL 매칭률 등) 도입 검토. 트리거: 사용자 피드백 또는 인사이트 노출 빈도 모니터링에서 노이즈 체감.
+
+## 기술 부채 / 정리
+
+- [ ] **BE 진입 팝업(거래내역서 resolved 바텀시트) 잔재 제거 (2026-07-22)** — 게시판 처리 알림을 알림 피드/푸시로 일원화하며 FE 바텀시트(`MySubmissionsPopupGate`)와 FE 팝업 코드(`ackPopup`·`PopupTarget`·`UnreadSummary.popup`)는 **제거 완료**. FE 호출이 사라져 아래 BE 잔재가 dead(동작상 무해)로 남음: ① `POST /board/posts/{id}/ack-popup` 엔드포인트, ② `board_repo.unread_summary`의 `popup` 집계 로직, ③ `board_post_reads.popup_acked_at` 컬럼(+ `MyPostItem.popup_acked` 응답 필드). 작업: 엔드포인트·repo popup 로직·응답 필드 제거 + `popup_acked_at` DROP 마이그레이션(다음 리비전) + 관련 pytest 정리. ⚠️ 컬럼 DROP 마이그레이션은 운영 **수동 upgrade** 대상(컨테이너 자동 미적용) — 배포 시 확인 필요. 참조: `docs/decisions.md` 2026-07-22.
 
 ## v2 — UX
 

@@ -49,7 +49,16 @@ export const queryKeys = {
   myPosts: ["my-posts"] as const,
   myPostsList: (boardType: MyPostBoardType) =>
     ["my-posts", "list", boardType] as const,
+  // 단건 상세(알림 딥링크 by-id). ["my-posts"] prefix 라 상세 진입 read 처리 시 루트 invalidate 로 함께 갱신.
+  myPostDetail: (postId: string) => ["my-posts", "detail", postId] as const,
   unreadSummary: ["my-posts", "unread-summary"] as const,
+
+  // 알림 이력(notifications ∪ notice union 피드). notifications: invalidation 루트 prefix.
+  // notificationsList: 무한스크롤 리스트, notificationsUnread: 벨/설정 점(unread-count) 단건.
+  // 셋 다 ["notifications"] prefix 라 루트 한 번의 invalidate 로 함께 갱신된다.
+  notifications: ["notifications"] as const,
+  notificationsList: ["notifications", "list"] as const,
+  notificationsUnread: ["notifications", "unread"] as const,
 
   // 거래 변경 시 assets prefix invalidate 한 번으로 모든 파라미터 조합을 무효화.
   assets: ["assets"] as const,

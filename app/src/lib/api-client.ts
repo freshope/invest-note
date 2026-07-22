@@ -73,6 +73,13 @@ const ROUTES = {
   },
   me: {
     base: "/me",
+    pushToken: "/me/push-token",
+  },
+  notifications: {
+    base: "/notifications",
+    unreadCount: "/notifications/unread-count",
+    read: (id: string) => `/notifications/${id}/read`,
+    readAll: "/notifications/read-all",
   },
   board: {
     presign: "/board/broker-statement/presign",
@@ -81,9 +88,9 @@ const ROUTES = {
     noticesSeen: "/board/notices/seen",
     noticeById: (id: string) => `/board/notices/${id}`,
     myPosts: "/board/my-posts",
+    myPostById: (id: string) => `/board/my-posts/${id}`,
     unreadSummary: "/board/unread-summary",
     postRead: (id: string) => `/board/posts/${id}/read`,
-    ackPopup: (id: string) => `/board/posts/${id}/ack-popup`,
     feedback: "/board/feedback",
     bugReport: "/board/bug-report",
     bugReportPresign: "/board/bug-report/presign",
@@ -541,6 +548,13 @@ export const meApi = {
       method: "DELETE",
       body: JSON.stringify({ reason: reason ?? null }),
     }),
+
+  // 푸시 토큰 등록(Phase 2) — upsert(user_id, token) last_seen_at 갱신, 204. platform=ios|android.
+  registerPushToken: (token: string, platform: "ios" | "android") =>
+    apiFetch<void>(ROUTES.me.pushToken, {
+      method: "POST",
+      body: JSON.stringify({ token, platform }),
+    }),
 };
 
 // ============================================================
@@ -722,16 +736,9 @@ export interface MyPostsResponse {
   page?: number;
 }
 
-/** unread-summary popup 대상. broker 는 metadata.broker 부재 시 null(FE fallback). */
-export interface PopupTarget {
-  post_id: string;
-  broker: string | null;
-}
-
-/** GET /board/unread-summary — 3종 board_type unread 점 + resolved 거래내역서 진입 팝업 단일 출처. */
+/** GET /board/unread-summary — 3종 board_type unread 점 단일 출처. (BE 응답의 popup 필드는 미소비 — 진입 팝업 폐지) */
 export interface UnreadSummary {
   unread: Record<MyPostBoardType, boolean>;
-  popup: PopupTarget | null;
 }
 
 export const boardApi = {
@@ -750,6 +757,10 @@ export const boardApi = {
     );
   },
 
+  // 본인 글 1건 상세 — 알림 딥링크(알림 이력 → 특정 글)에서 목록을 거치지 않고 상세를 직접 연다.
+  // 응답 shape 은 myPosts 의 한 item 과 동일. 타인 글·notice·없는 id 는 404.
+  myPost: (id: string) => apiFetch<MyPost>(ROUTES.board.myPostById(id)),
+
   // 3종 unread 점 + 진입 팝업 단일 출처(page 비의존 전량 스캔). BE-lag 시 404 → 소비처 degrade.
   unreadSummary: () =>
     apiFetch<UnreadSummary>(ROUTES.board.unreadSummary),
@@ -761,10 +772,6 @@ export const boardApi = {
   // 내 글 상세 진입 시 읽음 처리 — read_at = now() upsert. 이후 my-posts 재조회로 unread 갱신.
   markPostRead: (id: string) =>
     apiFetch<void>(ROUTES.board.postRead(id), { method: "POST" }),
-
-  // resolved 진입 팝업 확인 — popup_acked_at = now() upsert. 기기 무관 1회 dedup.
-  ackPopup: (id: string) =>
-    apiFetch<void>(ROUTES.board.ackPopup(id), { method: "POST" }),
 
   submitFeedback: (body: FeedbackInput) =>
     apiFetch<{ post_id: string }>(ROUTES.board.feedback, {
@@ -787,4 +794,60 @@ export const boardApi = {
 
   // R2 직접 업로드 — broker-statement 와 동일(Content-Type 정확 일치 필수).
   uploadToR2: brokerStatementApi.uploadToR2,
+};
+
+// ============================================================
+// Notifications — 알림 이력 피드 (notifications row ∪ notice union)
+// 응답 shape source of truth: spec-current.md "BE API Shape 명세" / _workspace/02_be_changes.md.
+// source·board_type 은 FE 딥링크 라우팅에 load-bearing. read 는 서버 계산값(FE 재계산 금지).
+// ============================================================
+
+/** FE 라우팅 discriminator: notification=내 게시판 알림 / notice=공지(broadcast, row 미생성). */
+export type NotificationSource = "notification" | "notice";
+
+/** board_reply=관리자 답변 / board_status=상태변경 / notice=새 공지. */
+export type NotificationType = "board_reply" | "board_status" | "notice";
+
+/** 알림 피드 아이템 — 두 이종 소스를 UNION ALL 한 공통 shape(snake_case wire, 변환 없음). */
+export interface NotificationFeedItem {
+  id: string;
+  source: NotificationSource;
+  type: NotificationType;
+  title: string;
+  body: string | null;
+  /** 딥링크용: 'feedback'|'bug_report'|'broker_statement' 또는 'notice'. null 가능. */
+  board_type: string | null;
+  /** board_posts.id (딥링크 대상). null 가능. */
+  ref_id: string | null;
+  created_at: string;
+  /** 서버 계산값(notification: read_at IS NOT NULL / notice: high-water 비교). FE 재계산 금지. */
+  read: boolean;
+}
+
+export interface NotificationListResponse {
+  items: NotificationFeedItem[];
+  total: number;
+  page: number;
+}
+
+export interface UnreadCountResponse {
+  count: number;
+}
+
+export const notificationApi = {
+  // 피드 목록(page 페이지네이션, UNION ALL created_at desc). 무한스크롤용.
+  list: (page = 1) =>
+    apiFetch<NotificationListResponse>(`${ROUTES.notifications.base}?page=${page}`),
+
+  // 미읽음 수(notifications 미읽음 + notice 미읽음 합). 벨/설정 점은 boolean(count>0)으로만 사용.
+  unreadCount: () =>
+    apiFetch<UnreadCountResponse>(ROUTES.notifications.unreadCount),
+
+  // 개별 읽음(source=notification 만 유효). 타인/없음 → 404. 멱등.
+  markRead: (id: string) =>
+    apiFetch<void>(ROUTES.notifications.read(id), { method: "POST" }),
+
+  // 전체 읽음 — notifications read_at=now() + set_notices_seen_at(now()). 패널 진입 시 미읽음 해소.
+  markAllRead: () =>
+    apiFetch<void>(ROUTES.notifications.readAll, { method: "POST" }),
 };
