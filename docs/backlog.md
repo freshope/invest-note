@@ -18,7 +18,8 @@ MVP 이후 구현할 작업 후보 목록.
 - [ ] 목표가(%), 손절 및 익절 계획을 입력하고 그것을 지켰는지 여부를 분석 — **(2026-07-02 감사) 부분:** 전략(strategy_type) 준수 분석은 이미 구현됨(`analysis/StrategyAdherencePanel.tsx` — 실보유기간 자동추론 vs 입력 전략 비교). **미구현이 이 항목의 핵심:** 거래/종목에 목표가·손절가·익절가 필드·입력 폼·달성/이탈 추적이 전무(스키마·폼에 target_price/stop_loss/take_profit 없음).
 - [ ] 관심 종목 추가 (보유하지 않은 종목도 볼 수 있게) — (2026-07-02 감사) 미구현 확인(watchlist 테이블·API·컴포넌트 전무).
 - [ ] 자산추이에 차트 기준점 s&p500, 코스피 지수등과 비교 — (2026-07-02 감사) 미구현 확인(benchmark/지수 오버레이 코드 전무, 차트는 단일 asset 곡선만).
-- [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리 — **(2026-07-02 감사) 부분:** 푸시(`@capacitor/push-notifications`)·생체인증 플러그인 미설치. 키보드는 `@capacitor/keyboard` `resize:Native`만 설정(show/hide 이벤트 처리 없음), 백버튼은 `ForceUpdateGate.tsx`에서 강제업데이트 오버레이용 swallow만 존재 → **일반 네비게이션 백버튼 핸들러 없음**.
+- [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리 — **(2026-07-22 갱신) 푸시:** 플러그인 설치·알림 이력(Phase 1) 출시 가능·전송(Phase 2) 코드 완료·활성화 게이트(아래 별도 항목). 생체인증 플러그인은 선통과(project_native_prereview_batch, 휴면). 키보드는 `@capacitor/keyboard` `resize:Native`만 설정(show/hide 이벤트 처리 없음), 백버튼은 `ForceUpdateGate.tsx`에서 강제업데이트 오버레이용 swallow만 존재 → **일반 네비게이션 백버튼 핸들러 없음**.
+- [ ] **Phase 2 푸시 전송 활성화 (게이트, 2026-07-22)** — 게시판 처리 알림 푸시 전송 코드는 완료(`push_sender.py` FCM v1 + APNs, `device_tokens`(0020), `POST /me/push-token`, FE 토큰 등록)이나 **시크릿 없으면 no-op**. 활성화 전제(사용자/외부): ① `FCM_SERVICE_ACCOUNT_JSON` + `APNS_KEY_P8`/`APNS_KEY_ID`/`APNS_TEAM_ID`/`APNS_BUNDLE_ID` 주입, ② iOS `app/ios/App/App/App.entitlements` `aps-environment` `development`→`production`(**네이티브 재빌드·재심사, OTA 불가**), ③ 실기기 검증(권한 허용→토큰 등록→어드민 답변→실제 수신→탭 딥링크). ⚠️ 릴리즈 scope web-only **오판 금지**(feedback_release_scope_native_plugin_gap). APNs 는 HTTP/2 필요(`h2` 의존성 추가 검토). 활성화 경로는 자동 테스트 커버리지 없음. 참조: `docs/spec-history/2026-07-22-board-notifications.md` 단계 21, `docs/decisions.md` 2026-07-22.
 
 ## 거래내역서 임포트 — 후속 과제
 
