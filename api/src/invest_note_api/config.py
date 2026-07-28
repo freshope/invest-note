@@ -51,6 +51,17 @@ class Settings(BaseSettings):
     # presigned URL 만료(초). PUT/GET 공통 기본 15분.
     r2_presign_expiry: int = 900
 
+    # 푸시 전송(services/push_sender.py) 시크릿 — 모두 빈 값이면 sender no-op(게이트).
+    # FCM HTTP v1(Android): 서비스계정 JSON 원문(project_id·client_email·private_key 포함).
+    # APNs token-based(iOS): .p8 개인키 PEM + key id + team id + 앱 bundle id(=topic).
+    # apns_use_sandbox=True 는 development(sandbox) APNs 호스트, False 는 production.
+    fcm_service_account_json: str = ""
+    apns_key_p8: str = ""
+    apns_key_id: str = ""
+    apns_team_id: str = ""
+    apns_bundle_id: str = ""
+    apns_use_sandbox: bool = True
+
     # 종목 마스터 적재(scripts/seed_stocks.py)용 공공데이터포털 인증키. 런타임 미사용 — batch 전용.
     # 빈 값이면 data.go.kr coverage pass 를 건너뛴다(다른 소스만 적재).
     data_go_kr_api_key: str = ""
@@ -240,6 +251,24 @@ class Settings(BaseSettings):
             and self.r2_access_key_id
             and self.r2_secret_access_key
         )
+
+    # 푸시 활성 여부 — 시크릿 있는 플랫폼만 전송(둘 다 없으면 sender no-op). PostHog no-op 계약 사상.
+    @property
+    def fcm_enabled(self) -> bool:
+        return bool(self.fcm_service_account_json)
+
+    @property
+    def apns_enabled(self) -> bool:
+        return bool(
+            self.apns_key_p8
+            and self.apns_key_id
+            and self.apns_team_id
+            and self.apns_bundle_id
+        )
+
+    @property
+    def push_enabled(self) -> bool:
+        return self.fcm_enabled or self.apns_enabled
 
     # BE 자체 토큰 검증용 JWKS URI(BE 가 스스로 서빙하는 /auth/.well-known/jwks.json).
     # registry BE entry 의 jwks_uri nominal 메타로 실린다 — 자기검증은 in-process verify_key

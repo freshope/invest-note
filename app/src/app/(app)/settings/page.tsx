@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { accountsApi, boardApi } from "@/lib/api-client";
+import { accountsApi, boardApi, notificationApi } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { Button } from "@/components/base/Button";
@@ -19,6 +19,7 @@ import { AccountList } from "@/components/settings/AccountList";
 import { AppearanceSection } from "@/components/settings/AppearanceSection";
 import { SettingsMenuRow } from "@/components/settings/SettingsMenuRow";
 import { NoticePanel } from "@/components/settings/NoticePanel";
+import { NotificationHistoryPanel } from "@/components/notifications/NotificationHistoryPanel";
 import { MyPostsListPanel } from "@/components/settings/MyPostsListPanel";
 import { FeedbackPanel } from "@/components/settings/FeedbackPanel";
 import { BugReportPanel } from "@/components/settings/BugReportPanel";
@@ -42,6 +43,7 @@ export default function SettingsPage() {
 
   const [accountsOpen, setAccountsOpen] = useState(false);
   const [noticeOpen, setNoticeOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   // 메뉴 진입 = 목록 패널. 그 위에 "작성" 으로 write 폼 패널을 스택한다.
   const [feedbackListOpen, setFeedbackListOpen] = useState(false);
   const [bugReportListOpen, setBugReportListOpen] = useState(false);
@@ -62,6 +64,13 @@ export default function SettingsPage() {
     queryFn: () => boardApi.listNotices(),
     enabled: !!user,
   });
+  // 알림 미읽음 점 — 벨과 동일 단일 출처(unread-count). boolean(count>0)만 사용.
+  const notifUnreadQuery = useQuery({
+    queryKey: queryKeys.notificationsUnread,
+    queryFn: notificationApi.unreadCount,
+    enabled: !!user,
+  });
+  const notifUnread = (notifUnreadQuery.data?.count ?? 0) > 0;
 
   // board_type 별 unread 점 — unread-summary 단일 출처. invalidate(myPosts 루트 prefix)로 자연 갱신.
   // BE-lag(summary 부재) 시 모두 false → 점 미표시 안전 degrade.
@@ -146,6 +155,11 @@ export default function SettingsPage() {
                 setNoticeOpen(true);
               }}
             />
+            <SettingsMenuRow
+              label="알림"
+              dot={notifUnread}
+              onClick={() => setNotifOpen(true)}
+            />
           </div>
         </section>
 
@@ -214,6 +228,7 @@ export default function SettingsPage() {
       {/* 패널들 — 각 메뉴 진입점 */}
       <AccountListPanel open={accountsOpen} onOpenChange={setAccountsOpen} />
       <NoticePanel open={noticeOpen} onOpenChange={setNoticeOpen} />
+      <NotificationHistoryPanel open={notifOpen} onOpenChange={setNotifOpen} />
       {/* 목록(메인) 패널 — 위에 작성 폼 패널이 스택된다. unread 점은 서버 플래그 + invalidate 로 갱신. */}
       <MyPostsListPanel
         open={feedbackListOpen}

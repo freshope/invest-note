@@ -14,6 +14,7 @@ from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.config import Settings, get_settings
 from invest_note_api.db import get_pool
+from invest_note_api.db_ops import notifications_repo
 from invest_note_api.main import create_app
 
 from .fake_pool import FakeConnection, FakePool
@@ -345,6 +346,104 @@ def test_comment_delete_not_found_404():
     conn = FakeConnection("DELETE 0")
     client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
     assert client.delete(f"/admin/boards/comments/{uuid4()}").status_code == 404
+
+
+# ─────────────────────────── producer: 알림 발화(글 소유자 통지) ───────────────────────────
+
+
+def _install_notify_recorder(monkeypatch) -> list[dict]:
+    """notifications_repo.insert 를 recorder 로 교체 → 발화 인자 캡처. FakeConnection 미소비."""
+    calls: list[dict] = []
+
+    async def _recorder(conn, **kwargs) -> dict:
+        calls.append(kwargs)
+        return {"id": str(uuid4()), **kwargs}
+
+    monkeypatch.setattr(notifications_repo, "insert", _recorder)
+    return calls
+
+
+def _comment_row(post_id: str) -> dict:
+    return {
+        "id": str(uuid4()),
+        "post_id": post_id,
+        "user_id": None,
+        "is_admin": True,
+        "body": "확인했습니다",
+        "created_at": "2026-07-22T00:00:00Z",
+        "updated_at": "2026-07-22T00:00:00Z",
+    }
+
+
+def test_comment_notifies_post_owner(monkeypatch):
+    """관리자 댓글 → 글 소유자에게 board_reply 알림 1건(admin 본인 아님)."""
+    calls = _install_notify_recorder(monkeypatch)
+    app = _make_admin_app()
+    owner = str(uuid4())
+    pid = str(uuid4())
+    post = _post_row(id=pid, board_type="broker_statement", user_id=owner)
+    # create_comment: fetchval(1)→fetchrow(comment) / get_post: fetchrow(post)
+    conn = FakeConnection(1, _comment_row(pid), post)
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
+    resp = client.post(f"/admin/boards/{pid}/comments", json={"body": "확인했습니다"})
+    assert resp.status_code == 201
+    assert len(calls) == 1
+    assert calls[0]["user_id"] == owner
+    assert calls[0]["type"] == "board_reply"
+    assert calls[0]["board_type"] == "broker_statement"
+    assert calls[0]["ref_type"] == "board_post"
+
+
+def test_comment_on_notice_does_not_notify(monkeypatch):
+    """공지(notice) 댓글 → 알림 미발화(공지는 union 조회 전용, per-user row 금지)."""
+    calls = _install_notify_recorder(monkeypatch)
+    app = _make_admin_app()
+    pid = str(uuid4())
+    notice = _post_row(id=pid, board_type="notice", user_id=None)
+    conn = FakeConnection(1, _comment_row(pid), notice)
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
+    resp = client.post(f"/admin/boards/{pid}/comments", json={"body": "x"})
+    assert resp.status_code == 201
+    assert calls == []
+
+
+def test_status_change_notifies_owner(monkeypatch):
+    """status 변경 PATCH → 소유자에게 board_status 알림 1건."""
+    calls = _install_notify_recorder(monkeypatch)
+    app = _make_admin_app()
+    owner = str(uuid4())
+    updated = _post_row(board_type="broker_statement", user_id=owner, status="resolved")
+    conn = FakeConnection(updated)  # update_post fetchrow(updated)
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
+    resp = client.patch(f"/admin/boards/{updated['id']}", json={"status": "resolved"})
+    assert resp.status_code == 200
+    assert len(calls) == 1
+    assert calls[0]["user_id"] == owner
+    assert calls[0]["type"] == "board_status"
+
+
+def test_title_only_patch_does_not_notify(monkeypatch):
+    """title 편집만(status 무변경) → 알림 미발화."""
+    calls = _install_notify_recorder(monkeypatch)
+    app = _make_admin_app()
+    updated = _post_row(board_type="broker_statement", user_id=str(uuid4()), title="수정")
+    conn = FakeConnection(updated)
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
+    resp = client.patch(f"/admin/boards/{updated['id']}", json={"title": "수정"})
+    assert resp.status_code == 200
+    assert calls == []
+
+
+def test_status_change_on_notice_does_not_notify(monkeypatch):
+    """공지 status 변경 → 알림 미발화(notice skip)."""
+    calls = _install_notify_recorder(monkeypatch)
+    app = _make_admin_app()
+    updated = _post_row(board_type="notice", user_id=None, status="closed")
+    conn = FakeConnection(updated)
+    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
+    resp = client.patch(f"/admin/boards/{updated['id']}", json={"status": "closed"})
+    assert resp.status_code == 200
+    assert calls == []
 
 
 # ─────────────────────────── 첨부 다운로드(presigned GET) ───────────────────────────

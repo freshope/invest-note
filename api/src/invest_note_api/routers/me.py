@@ -2,11 +2,12 @@ from typing import Literal
 
 import asyncpg
 from fastapi import APIRouter, Depends, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from invest_note_api.auth.dependency import get_current_user
 from invest_note_api.auth.jwt import AuthenticatedUser
 from invest_note_api.db import get_pool
+from invest_note_api.db_ops import device_tokens_repo
 
 router = APIRouter(prefix="/me")
 
@@ -17,9 +18,36 @@ class DeleteAccountRequest(BaseModel):
     reason: Literal["not_useful", "not_using", "privacy", "other"] | None = None
 
 
+class PushTokenRequest(BaseModel):
+    # 푸시 토큰 등록 — platform 은 고정 코드값(ios|android)만. extra 키 거부.
+    model_config = ConfigDict(extra="forbid")
+
+    token: str
+    platform: Literal["ios", "android"]
+
+
 @router.get("")
 async def me(user: AuthenticatedUser = Depends(get_current_user)) -> dict:
     return {"user_id": str(user.id), "email": user.email}
+
+
+@router.post("/push-token", status_code=status.HTTP_204_NO_CONTENT)
+async def register_push_token(
+    body: PushTokenRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> Response:
+    """푸시 토큰 등록 — (user_id, token) upsert(last_seen_at 갱신). 본문 없음(204).
+
+    탈퇴 시 device_tokens 는 users FK CASCADE 로 자동 정리(별도 훅 불요). 로그아웃 기기별
+    정리는 device_tokens_repo.delete_token 로 후속(현재 FE 미배선 — 토큰은 재로그인 시
+    동일 값 upsert 로 재사용).
+    """
+    async with pool.acquire() as conn:
+        await device_tokens_repo.upsert(
+            conn, user_id=user.id, token=body.token, platform=body.platform
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)

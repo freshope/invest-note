@@ -9,7 +9,7 @@ import { fetchAppConfig } from "@/lib/api/app-config";
  * 네이티브 강제 업데이트 필요 여부. `undefined`=판정 중, `false`=비강제, `true`=강제.
  * - 웹은 즉시 `false`. 조회/판정 실패 시 `false`(fail-open).
  * - `fetchAppConfig` 는 메모이즈되어 추가 네트워크가 발생하지 않는다.
- * ForceUpdateGate(차단 오버레이)와 MySubmissionsPopupGate(팝업 억제)가 동일 판정을 공유한다.
+ * ForceUpdateGate(차단 오버레이)가 이 판정을 사용한다.
  */
 export function useUpdateRequired(): boolean | undefined {
   const [required, setRequired] = useState<boolean | undefined>(undefined);

@@ -292,6 +292,41 @@ async def list_my_posts(
     return result, total
 
 
+async def get_my_post(conn: Any, user_id: Any, post_id: Any) -> dict | None:
+    """본인 글 1건 상세 — list_my_posts 와 동일 shape(어드민 답변 + 첨부 + unread/popup_acked) 또는 None.
+
+    알림 딥링크(알림 이력 → 특정 글)에서 목록을 거치지 않고 상세를 직접 열기 위한 by-id 조회.
+    사용자 격리는 `user_id = $1` + notice 등 화이트리스트 외 board_type 제외가 전부(list_my_posts 동일).
+    타인 글·notice·없는 id 는 모두 None(권한 경계 = 존재 비노출).
+    """
+    row = await conn.fetchrow(
+        "select board_posts.*, r.read_at, r.popup_acked_at from board_posts "
+        "left join board_post_reads r "
+        "on r.post_id = board_posts.id and r.user_id = $1 "
+        "where board_posts.id = $2 and board_posts.user_id = $1 "
+        "and board_posts.board_type = any($3)",
+        user_id,
+        post_id,
+        list(_MY_POST_BOARD_TYPES),
+    )
+    if row is None:
+        return None
+
+    comments_by_post = await _admin_comments_by_post(conn, [row["id"]])
+    attachments = await conn.fetch(
+        "select * from board_attachments where post_id = $1 order by created_at asc",
+        row["id"],
+    )
+    d = _post_row_to_dict(row)
+    read_at = d.pop("read_at", None)
+    popup_acked_at = d.pop("popup_acked_at", None)
+    d["comments"] = comments_by_post.get(d["id"], [])
+    d["attachments"] = [_attachment_row_to_dict(a) for a in attachments]
+    d["unread"] = _compute_unread(d, read_at)
+    d["popup_acked"] = popup_acked_at is not None
+    return d
+
+
 async def unread_summary(conn: Any, user_id: Any) -> dict:
     """내 글 미확인 신호 집계 — board_type별 unread bool + 진입 팝업 1건. page 비의존(전량 스캔).
 

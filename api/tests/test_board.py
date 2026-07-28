@@ -636,6 +636,59 @@ def test_my_posts_requires_auth_401():
     assert resp.status_code == 401
 
 
+def test_my_post_by_id_returns_detail_same_shape():
+    """알림 딥링크 by-id 상세 → my-posts item 과 동일 12키 shape. fetchrow(post)→fetch(comments)→fetch(attachments)."""
+    pid = str(uuid4())
+    conn = FakeConnection(
+        _my_post_row(pid, board_type="broker_statement"),  # fetchrow(post)
+        [_comment_row(pid)],  # fetch(comments)
+        [],  # fetch(attachments)
+    )
+    client = _client(_r2_settings(), pool=FakePool(conn))
+    resp = client.get(f"/v1/board/my-posts/{pid}")
+    assert resp.status_code == 200
+    item = resp.json()
+    assert set(item.keys()) == {
+        "id",
+        "board_type",
+        "title",
+        "body",
+        "status",
+        "metadata",
+        "created_at",
+        "updated_at",
+        "unread",
+        "popup_acked",
+        "comments",
+        "attachments",
+    }
+    assert "user_id" not in item
+    assert item["id"] == pid
+    assert item["board_type"] == "broker_statement"
+    assert item["unread"] is True  # 어드민 댓글 있고 read row 없음
+    assert len(item["comments"]) == 1
+    assert item["comments"][0]["is_admin"] is True
+    assert "user_id" not in item["comments"][0]
+
+
+def test_my_post_by_id_not_found_404():
+    """없는 글/타인 글/notice → fetchrow None → 404(존재 비노출 = 권한 경계)."""
+    conn = FakeConnection(None)  # fetchrow → None
+    client = _client(_r2_settings(), pool=FakePool(conn))
+    resp = client.get(f"/v1/board/my-posts/{uuid4()}")
+    assert resp.status_code == 404
+
+
+def test_my_post_by_id_requires_auth_401():
+    """Authorization 헤더 없으면 401(get_current_user override 미설치 클라이언트)."""
+    settings = _r2_settings()
+    app = create_app(settings)
+    app.dependency_overrides[get_settings] = lambda: settings
+    client = TestClient(app)
+    resp = client.get(f"/v1/board/my-posts/{uuid4()}")
+    assert resp.status_code == 401
+
+
 # ─────────────────────────── 읽음/알림 상태 쓰기 ───────────────────────────
 
 
