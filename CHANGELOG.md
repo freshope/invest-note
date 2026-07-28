@@ -13,6 +13,14 @@
 
 - App Store Connect 수출 규정 자동 응답 설정 (`ITSAppUsesNonExemptEncryption=false`)
 
+## [1.3.17] - 2026-07-28
+
+`api-v1.3.17` 백엔드 단독. 사용자 가시 변경 없음.
+
+### Fixed
+
+- 푸시 시크릿 base64 디코드 지원 — FCM 서비스계정 JSON·APNs `.p8` PEM 은 멀티라인(`{`·`"`·줄바꿈)이라 docker-compose `.env` 파서를 깨뜨려 Coolify 배포가 실패했다. `config.py` field_validator 가 base64 값을 자동 디코드하고, raw(JSON `{` / PEM `-----BEGIN` 시작)는 그대로 통과 — 로컬 `.env.local`·기존 방식 무회귀
+
 ## [1.3.4] - 2026-06-19
 
 탈-Supabase Auth Phase 1 + 멀티 게시판 어드민 구조 (`app-v1.2.6_29` OTA web-only + `api-v1.3.4` + `admin-v0.1.6`). 사용자 가시 변경 없음.
