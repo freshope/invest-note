@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
+import { AndroidBackHandler } from "@/components/providers/AndroidBackHandler";
 import { AuthProvider } from "@/components/providers/AuthProvider";
 import { CapacitorDeepLinkHandler } from "@/components/providers/CapacitorDeepLinkHandler";
 import { QueryProvider } from "@/components/providers/QueryProvider";
@@ -53,6 +54,8 @@ export default function RootLayout({
         <ThemeProvider>
           <StatusBarThemeSync />
           <ForceUpdateGate />
+          {/* AuthProvider 밖 — 로그인 화면에서도 백버튼 종료가 동작해야 한다. */}
+          <AndroidBackHandler />
           <LiveUpdateReady />
           <AuthProvider>
             <CapacitorDeepLinkHandler />
