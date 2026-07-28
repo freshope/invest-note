@@ -11,7 +11,7 @@ import { LiveUpdateReady } from "@/components/providers/LiveUpdateReady";
 import { PageviewTracker } from "@/components/providers/PageviewTracker";
 import { PostHogIdentifyBridge } from "@/components/providers/PostHogIdentifyBridge";
 import { PostHogVersionBridge } from "@/components/providers/PostHogVersionBridge";
-import { MySubmissionsPopupGate } from "@/components/providers/MySubmissionsPopupGate";
+import { PushRegistration } from "@/components/providers/PushRegistration";
 import "./globals.css";
 
 const pretendard = localFont({
@@ -56,12 +56,11 @@ export default function RootLayout({
           <LiveUpdateReady />
           <AuthProvider>
             <CapacitorDeepLinkHandler />
+            <PushRegistration />
             <PostHogIdentifyBridge />
             <PostHogVersionBridge />
             <PageviewTracker />
             <QueryProvider>
-              {/* 토큰 준비(AuthProvider) + useQuery(QueryProvider) 모두 안에서 마운트. */}
-              <MySubmissionsPopupGate />
               {children}
             </QueryProvider>
           </AuthProvider>

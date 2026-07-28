@@ -4,6 +4,23 @@
 
 ---
 
+## 2026-07-22 | 게시판 알림 → 푸시 + 알림 이력 — 전용 테이블·공지 union·sender no-op 게이트
+
+- **맥락:** 게시판 처리 결과(관리자 답변·status 변경)가 인앱 dot 배지 + 폴링뿐이라 이력이 남지 않고, 앱을 열어야만 인지한다. (1) 알림 이력 페이지(Phase 1), (2) 푸시 전환(Phase 2, 게이트)을 얹는다.
+- **결정 ① 전용 `notifications` 테이블 vs board 상태 파생 → 전용 테이블 채택.** 관리자 댓글/상태변경 통지를 per-user 행(`type`/`title`/`body`/`board_type`/`ref_id`/`read_at`)으로 적재하고 `0019_notifications` 마이그레이션으로 생성. board 상태에서 매번 계산하던 기존 방식은 "무엇을 언제 통지받았는지" 이력·개별 읽음 상태를 표현할 수 없다.
+  - **이유:** 이력·per-item read 가 요구사항. 기존 unread-summary(board_post_reads high-water)는 유지하고 그 위에 상위 통합 피드로 공존(surgical).
+  - **트레이드오프:** 통지 소스가 두 갈래(전용 행 + 공지 union)로 갈려 조회가 UNION ALL 로 복잡해짐. 대신 공지 backfill 문제를 구조적으로 회피(결정②).
+- **결정 ② 공지(broadcast)는 per-user row 미생성 → SQL UNION ALL 조회 + high-water fallback.** 새 공지는 notifications 에 넣지 않고, 이력/카운트 조회 시 `board_posts[notice]` 를 UNION ALL 로 합친다. notice `read` 는 `created_at <= COALESCE(notices_seen_at, users.created_at)` — `board_repo.has_unread_notice` 의 boolean 역(동일 fallback 식 재사용).
+  - **이유:** 공지를 per-user 행으로 만들면 0012 가 회피한 신규가입자 backfill 버그(가입 전 옛 공지가 전부 unread 로 뜸)가 재발한다. high-water mark(user_notice_state) 를 단일 출처로 보존하면 state row 없는 신규가입자도 `users.created_at` fallback 으로 옛 공지가 안 뜬다(로컬 실DB 로 검증).
+  - **트레이드오프:** 두 이종 소스를 in-memory merge 하지 않고 단일 UNION ALL 서브쿼리로 project 해야 offset 페이징이 안 깨진다. `read-all` 은 notifications read + notices_seen upsert 를 한 트랜잭션으로 함께 해야 벨 점이 안 남는다.
+- **결정 ③ Phase 2 push sender 는 FCM/APNs 시크릿(env) 없으면 조용히 no-op(게이트).** `services/push_sender.py` 는 자격증명이 없으면 로그만 남기고 skip — PostHog no-op 계약 사상. producer 훅은 best-effort(sender 실패가 통지 insert/응답을 깨지 않음).
+  - **이유:** Phase 1(이력)을 시크릿·네이티브 재심사 없이 즉시 출시하고, Phase 2 활성화(서비스계정·.p8·iOS aps-environment production 승격)는 준비되면 env 주입만으로 켠다. 코드는 미리 배선하되 dormant.
+  - **트레이드오프:** 시크릿 미주입 상태에서는 푸시가 실제로 안 나가므로, 활성화 여부를 배포 체크리스트로 별도 관리해야 한다(web-only 오판 방지).
+- **결정 ④ 알림→게시판 상세 딥링크는 목록 우회 대신 `GET /board/my-posts/{id}` by-id 엔드포인트 채택.** (초기 spec 은 "새 fetcher 금지"로 `MyPostsListPanel(initialOpenPostId)` 를 거쳐 상세를 자동 오픈했다.) 알림 상세를 알림 패널의 형제 패널로 by-id 조회해 직접 연다. `board_repo.get_my_post`(user_id+board_type 화이트리스트 격리, list_my_posts 와 동일 shape).
+  - **이유:** 목록 경유 방식은 뒤로가기 시 게시판 목록이 남아(알림→목록→상세 스택) 알림 패널로 못 돌아온다. 사용자가 상세에서 back 시 알림 패널로 바로 복귀하길 요구. by-id 상세를 알림 패널의 sibling 으로 띄우면 back → 상세만 닫히고 알림 패널이 최상단(NoticeDetailHost 와 동일 구조). 향후 게시판 외 알림 추가 시에도 source 분기만 늘리면 됨.
+  - **트레이드오프:** 단건 조회 엔드포인트가 늘고 초기 "새 fetcher 금지" 결정을 뒤집는다. 대신 목록 페이지네이션 밖 글(2페이지+)도 항상 열리고(목록 우회 방식의 page-1 한계 제거), 목록에 얹었던 `initialOpenPostId` 자동오픈 로직을 걷어내 MyPostsListPanel 이 단순해진다.
+- 참조: `docs/spec-history/2026-07-22-board-notifications.md`(예정), [[project_be_buy_meta_cascades_to_sell]](무관 확인), [[project_alembic_migrations]].
+
 ## 2026-07-05 | 자산추이 표시 단위(일/주/월) — 기간범위 필터 아닌 "단위=줌" (FE 리샘플)
 
 - **맥락:** 백로그 "자산추이 일/주/월/6개월/1년/5년/all 선택"은 **표시 단위(일/주/월)** 와 **기간 범위(6개월/1년…)** 가 섞인 요청. 자산추이 차트는 `useChartPan` 고정 63포인트 창 + 가로 팬 구조.

@@ -47,13 +47,17 @@ export function MyPostDetailPanel({ post, onClose, onImport }: Props) {
   return (
     <FullScreenPanel open={open} onOpenChange={onClose}>
       <FullScreenPanelContent key={`mypost-${remountKey}`}>
-        <DetailContent post={payload} onImport={onImport} />
+        <MyPostDetailContent post={payload} onImport={onImport} />
       </FullScreenPanelContent>
     </FullScreenPanel>
   );
 }
 
-function DetailContent({ post, onImport }: { post: MyPost; onImport: () => void }) {
+/**
+ * 상세 본문(헤더 + 상태 + 첨부 + 어드민 답변). 목록→상세(MyPostDetailPanel)와 알림 딥링크
+ * by-id 호스트가 공유한다. post 객체를 그대로 받아 표시 — 자체 fetch 없음.
+ */
+export function MyPostDetailContent({ post, onImport }: { post: MyPost; onImport: () => void }) {
   const queryClient = useQueryClient();
   // 상세 진입 시 서버 읽음 처리 → my-posts invalidate 로 점 해제. POST 성공 후 invalidate(race 회피).
   // 이미 읽음(unread!==true)이면 skip — 안 그러면 핫패스(상세 열 때마다) my-posts 전체 재조회 +
