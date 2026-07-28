@@ -1,7 +1,7 @@
-"""디바이스 푸시 토큰 repo — device_tokens upsert/조회/정리 (Phase 2).
+"""디바이스 푸시 토큰 repo — device_tokens upsert/조회/정리.
 
-UNIQUE(user_id, token) 로 재등록은 last_seen_at 만 갱신(중복 행 방지). push_sender 가
-전송 대상 토큰을 조회하고, 로그아웃/탈퇴 경로가 정리한다.
+UNIQUE(user_id, token) 로 재등록은 last_seen_at 만 갱신(중복 행 방지). services/push 가
+전송 대상 토큰을 조회하고 폐기된 토큰을 지우며, 로그아웃/탈퇴 경로도 정리한다.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ async def upsert(conn: Any, *, user_id: Any, token: str, platform: str) -> None:
 
 
 async def list_tokens(conn: Any, user_id: Any) -> list[dict]:
-    """해당 user 의 토큰 목록 — push_sender 전송 대상. [{token, platform}, ...]."""
+    """해당 user 의 토큰 목록 — 푸시 전송 대상. [{token, platform}, ...]."""
     rows = await conn.fetch(
         "select token, platform from device_tokens where user_id = $1",
         user_id,
