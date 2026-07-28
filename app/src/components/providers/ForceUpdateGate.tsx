@@ -11,7 +11,8 @@ import { Button } from "@/components/base/Button";
  * 해제 불가능한 전체 화면 오버레이를 띄워 스토어 업데이트를 강제한다.
  * - web 플랫폼은 체크하지 않는다(useUpdateRequired 가 false).
  * - 네트워크/조회 실패 시 강제하지 않는다(fail-open).
- * - ESC·외부 클릭은 plain overlay 라 동작하지 않고, Android 백버튼은 swallow 한다.
+ * - ESC·외부 클릭은 plain overlay 라 동작하지 않고, Android 백버튼은 AndroidBackHandler 가
+ *   같은 판정(useUpdateRequired)으로 swallow 한다.
  */
 export function ForceUpdateGate() {
   const required = useUpdateRequired();
@@ -34,18 +35,6 @@ export function ForceUpdateGate() {
     return () => {
       cancelled = true;
     };
-  }, [required]);
-
-  // 강제 상태 동안 Android 하드웨어 백버튼을 무력화(swallow)한다.
-  useEffect(() => {
-    if (required !== true) return;
-    let remove: (() => void) | undefined;
-    (async () => {
-      const { App } = await import("@capacitor/app");
-      const handle = await App.addListener("backButton", () => {});
-      remove = () => handle.remove();
-    })();
-    return () => remove?.();
   }, [required]);
 
   if (required !== true) return null;
