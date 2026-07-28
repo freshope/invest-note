@@ -252,6 +252,24 @@ class Settings(BaseSettings):
             and self.r2_secret_access_key
         )
 
+    # 푸시 시크릿(FCM JSON·APNs .p8 PEM)은 멀티라인이라 docker-compose .env 파서를 깨뜨린다
+    # (`{`·`"`·줄바꿈). 운영(Coolify)에서는 base64 한 줄로 넣고 여기서 디코드한다. raw(JSON `{`로
+    # 시작 / PEM `-----BEGIN`으로 시작)는 그대로 통과 — 로컬 .env.local·기존 방식 무회귀.
+    @field_validator("fcm_service_account_json", "apns_key_p8")
+    @classmethod
+    def _decode_b64_secret(cls, v: str) -> str:
+        s = (v or "").strip()
+        if not s or s.startswith("{") or s.startswith("-----BEGIN"):
+            return v
+        import base64
+        import binascii
+
+        try:
+            return base64.b64decode(s, validate=True).decode("utf-8")
+        except (binascii.Error, ValueError):
+            # base64 가 아니면 원문 유지(잘못된 값은 사용 시점에서 자연 실패).
+            return v
+
     # 푸시 활성 여부 — 시크릿 있는 플랫폼만 전송(둘 다 없으면 sender no-op). PostHog no-op 계약 사상.
     @property
     def fcm_enabled(self) -> bool:
