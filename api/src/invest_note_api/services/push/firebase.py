@@ -43,9 +43,11 @@ class FirebasePushAdapter(PushAdapter):
         self, *, token: str, title: str, body: str, data: dict[str, str]
     ) -> PushResult:
         # firebase-admin 7.x 는 Message.token 을 deprecate 하고 fid(Firebase Installation ID)를
-        # 권한다. 하지만 FE 플러그인(@capacitor-firebase/messaging)은 getToken() = **등록 토큰**만
-        # 노출하고 installation ID 를 주지 않는다 — fid 로 바꾸면 타깃이 달라져 전송이 깨진다.
-        # (fid 로 가려면 @capacitor-firebase/installations 추가 = 네이티브 재심사.) token 유지.
+        # 권하지만 **바꿀 수 없다**: FE 플러그인(@capacitor-firebase/messaging)은 getToken()=등록
+        # 토큰만 노출하고, installation ID 를 꺼낼 Capacitor 플러그인은 존재하지 않는다
+        # (@capacitor-firebase scope 에 installations 패키지 없음 — 2026-07-29 확인).
+        # web SDK 의 getId() 는 WebView 안에 별도 web installation 을 만들어 네이티브 앱
+        # 인스턴스와 다른 ID 라 APNs 전달이 안 된다. token 유지가 유일한 정답.
         message = messaging.Message(
             token=token,
             notification=messaging.Notification(title=title, body=body),
