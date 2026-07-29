@@ -13,6 +13,19 @@
 
 - App Store Connect 수출 규정 자동 응답 설정 (`ITSAppUsesNonExemptEncryption=false`)
 
+## [1.3.18] - 2026-07-29
+
+푸시 전송 Firebase Admin 단일 채널 통합 (`app-v1.5.0_34` 네이티브 제출 + `api-v1.3.18`).
+
+### Changed
+
+- 푸시 전송을 `firebase-admin` SDK 단일 채널로 통합 — 기존에는 Android(FCM HTTP v1 직접 서명)와 iOS(APNs `.p8` 직접 서명) 2채널을 손으로 구현했다. `services/push_sender.py` → `services/push/` 어댑터 패키지로 재편하고, iOS APNs 라우팅은 Firebase 에 위임한다. 시크릿은 `GOOGLE_APPLICATION_CREDENTIALS_JSON` 하나로 축소(`FCM_*`·`APNS_*` 6개 제거) — ⚠️ **Coolify env 선행 주입 필요**(미주입 시 조용히 no-op). Firebase Console 에 APNs `.p8` 업로드도 선행 필요
+- `httpx` `^0.27` → `^0.28` — `firebase-admin` 이 `httpx[http2]==0.28.1` 을 하드핀. 코드베이스 사용 형태는 모두 0.28 호환(전체 테스트 통과)
+
+### Fixed
+
+- 폐기된 디바이스 토큰 자동 정리 — 전송 실패 3종(`UnregisteredError`/`SenderIdMismatchError`/`InvalidArgumentError`)을 `token_invalid` 로 매핑해 `device_tokens` 에서 즉시 삭제한다. cutover 이전에 저장된 iOS raw-APNs 토큰이 자연 정리된다(별도 backfill 불필요)
+
 ## [1.3.17] - 2026-07-28
 
 `api-v1.3.17` 백엔드 단독. 사용자 가시 변경 없음.
