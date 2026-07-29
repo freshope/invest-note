@@ -25,7 +25,11 @@ export function BrokerLogo({ broker, size = 28, className }: BrokerLogoProps) {
         width={size}
         height={size}
         loading="lazy"
-        className={cn("rounded-full object-contain shrink-0", className)}
+        className={cn(
+          "rounded-full object-contain shrink-0",
+          found.plate && "bg-white p-0.5",
+          className
+        )}
         style={{ width: size, height: size }}
         onError={() => setImgError(true)}
       />
