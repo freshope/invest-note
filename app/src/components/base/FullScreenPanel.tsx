@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
+import { pushBackHandler } from "@/lib/back-handler";
 import { cn } from "@/lib/utils";
 
 // 패널 슬라이드 애니메이션 duration (CSS duration-300과 동기화)
@@ -76,6 +77,16 @@ function FullScreenPanel({ open, onOpenChange, children }: FullScreenPanelProps)
       };
     }
   }, [mounted]);
+
+  // Android 백버튼이 이 패널을 닫도록 열려 있는 동안만 등록한다.
+  // mounted 가 아니라 open 기준 — 닫힘 애니메이션 구간(open=false, mounted=true)에 등록이 남으면
+  // 그 350ms 안의 백버튼이 이미 닫힌 패널을 다시 닫는 no-op 으로 소비된다.
+  // onOpenChange 는 안정적인 참조로 넘겨야 한다 — 인라인 함수면 열린 채로 재등록되어
+  // 중첩 패널의 닫힘 순서가 뒤집힌다.
+  React.useEffect(() => {
+    if (!open) return;
+    return pushBackHandler(handleClose);
+  }, [open, handleClose]);
 
   const handleTransitionEnd = React.useCallback(
     (e: React.TransitionEvent<HTMLDivElement>) => {

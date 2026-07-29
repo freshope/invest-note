@@ -2,6 +2,11 @@ export type Broker = {
   name: string;
   color: string;
   slug: string;
+  /**
+   * 공식 CI 가 어두운 단색이라 다크 모드에서 묻히는 로고. 흰 배경판 위에 올려 표시한다.
+   * (로고 자체를 재배색하는 것은 카카오 등 CI 규정 위반이라 배경으로만 해결)
+   */
+  plate?: boolean;
 };
 
 export const BROKERS: Broker[] = [
@@ -16,6 +21,9 @@ export const BROKERS: Broker[] = [
   { name: "메리츠증권", color: "bg-teal-600", slug: "meritz" },
   { name: "하나증권", color: "bg-emerald-500", slug: "hana" },
   { name: "토스증권", color: "bg-blue-500", slug: "toss" },
+  // 로고는 공식 CI 의 combination 국문 시그니처를 원본 그대로 사용(심볼 분리·비례 변형 금지).
+  // color 는 로고 로드 실패 시 폴백 배지 배경 — 배지 글자가 흰색 고정이라 브랜드 옐로 대신 어두운 톤.
+  { name: "카카오페이증권", color: "bg-slate-800", slug: "kakaopay", plate: true },
   { name: "부국증권", color: "bg-gray-600", slug: "buguk" },
   { name: "케이프투자증권", color: "bg-purple-600", slug: "cape" },
   { name: "다올투자증권", color: "bg-pink-600", slug: "daol" },

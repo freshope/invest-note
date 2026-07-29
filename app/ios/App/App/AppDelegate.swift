@@ -46,8 +46,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 
-    // 원격 푸시 디바이스 토큰 콜백을 Capacitor 로 포워딩한다. 네이티브라 OTA 로 주입할 수 없어
-    // 심사 바이너리에 미리 넣어두고, 실제 등록(PushNotifications.register)은 이후 OTA 로 활성화한다.
+    // 원격 푸시 디바이스 토큰 콜백을 Capacitor 로 포워딩한다.
+    // 이 콜백이 없으면 FirebaseMessaging.getToken() 이 FCM 토큰을 발급받지 못한다.
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)
     }
