@@ -9,7 +9,6 @@ The skill has specialized workflows that produce better results than ad-hoc answ
 Key routing rules:
 - Product ideas, "is this worth building", brainstorming → invoke gstack-office-hours
 - Bugs, errors, "why is this broken", 500 errors → invoke gstack-investigate
-- Ship, deploy, push, create PR → invoke gstack-ship
 - QA, test the site, find bugs → invoke gstack-qa
 - Code review, check my diff → invoke gstack-review
 - Update docs after shipping → invoke gstack-document-release
