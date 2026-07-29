@@ -20,7 +20,7 @@ from invest_note_api.db_ops import board_repo, notifications_repo
 from invest_note_api.errors import APIError
 from invest_note_api.schemas.admin import AdminListResponse
 from invest_note_api.schemas.board import BoardCommentCreate, BoardPostCreate, BoardPostUpdate
-from invest_note_api.services import push_sender
+from invest_note_api.services import push
 from invest_note_api.storage import r2
 
 router = APIRouter(prefix="/admin", tags=["admin-board"])
@@ -72,9 +72,9 @@ async def _notify_post_owner(conn, post: dict, *, notif_type: str, body: str | N
         ref_type="board_post",
         ref_id=post["id"],
     )
-    # Phase 2 훅 — 시크릿 없으면 no-op(Phase 1 무영향). best-effort: sender 실패는 내부에서
-    # 삼켜 통지 insert/응답을 깨지 않는다(호출부 try/except 가 이중 안전).
-    await push_sender.send_to_user(conn, user_id=owner_id, notification=notification)
+    # 시크릿 없으면 no-op. best-effort: sender 실패는 내부에서 삼켜 통지 insert/응답을
+    # 깨지 않는다(호출부 try/except 가 이중 안전).
+    await push.send_to_user(conn, user_id=owner_id, notification=notification)
 
 
 @router.get("/boards", response_model=AdminListResponse)

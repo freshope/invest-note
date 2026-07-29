@@ -51,16 +51,12 @@ class Settings(BaseSettings):
     # presigned URL 만료(초). PUT/GET 공통 기본 15분.
     r2_presign_expiry: int = 900
 
-    # 푸시 전송(services/push_sender.py) 시크릿 — 모두 빈 값이면 sender no-op(게이트).
-    # FCM HTTP v1(Android): 서비스계정 JSON 원문(project_id·client_email·private_key 포함).
-    # APNs token-based(iOS): .p8 개인키 PEM + key id + team id + 앱 bundle id(=topic).
-    # apns_use_sandbox=True 는 development(sandbox) APNs 호스트, False 는 production.
-    fcm_service_account_json: str = ""
-    apns_key_p8: str = ""
-    apns_key_id: str = ""
-    apns_team_id: str = ""
-    apns_bundle_id: str = ""
-    apns_use_sandbox: bool = True
+    # 푸시 전송(services/push/) 시크릿 — Firebase Admin SDK 서비스계정 JSON 원문
+    # (project_id·client_email·private_key 포함). 빈 값이면 sender no-op(게이트).
+    # .env 에는 줄바꿈 없는 한 줄 JSON 으로 넣는다(private_key 의 개행은 `\n` 이스케이프라
+    # 원래 한 줄로 표현 가능 — 별도 인코딩 없음).
+    # iOS APNs 는 Firebase 가 위임 발송하므로 별도 .p8/team id/sandbox 설정이 필요 없다.
+    google_application_credentials_json: str = ""
 
     # 종목 마스터 적재(scripts/seed_stocks.py)용 공공데이터포털 인증키. 런타임 미사용 — batch 전용.
     # 빈 값이면 data.go.kr coverage pass 를 건너뛴다(다른 소스만 적재).
@@ -252,41 +248,11 @@ class Settings(BaseSettings):
             and self.r2_secret_access_key
         )
 
-    # 푸시 시크릿(FCM JSON·APNs .p8 PEM)은 멀티라인이라 docker-compose .env 파서를 깨뜨린다
-    # (`{`·`"`·줄바꿈). 운영(Coolify)에서는 base64 한 줄로 넣고 여기서 디코드한다. raw(JSON `{`로
-    # 시작 / PEM `-----BEGIN`으로 시작)는 그대로 통과 — 로컬 .env.local·기존 방식 무회귀.
-    @field_validator("fcm_service_account_json", "apns_key_p8")
-    @classmethod
-    def _decode_b64_secret(cls, v: str) -> str:
-        s = (v or "").strip()
-        if not s or s.startswith("{") or s.startswith("-----BEGIN"):
-            return v
-        import base64
-        import binascii
-
-        try:
-            return base64.b64decode(s, validate=True).decode("utf-8")
-        except (binascii.Error, ValueError):
-            # base64 가 아니면 원문 유지(잘못된 값은 사용 시점에서 자연 실패).
-            return v
-
-    # 푸시 활성 여부 — 시크릿 있는 플랫폼만 전송(둘 다 없으면 sender no-op). PostHog no-op 계약 사상.
-    @property
-    def fcm_enabled(self) -> bool:
-        return bool(self.fcm_service_account_json)
-
-    @property
-    def apns_enabled(self) -> bool:
-        return bool(
-            self.apns_key_p8
-            and self.apns_key_id
-            and self.apns_team_id
-            and self.apns_bundle_id
-        )
-
+    # 푸시 활성 여부 — 자격증명 없으면 sender no-op(DB·네트워크 접근 전 반환).
+    # PostHog no-op 계약 사상. 게이트는 이 하나뿐(provider 선택 env 없음).
     @property
     def push_enabled(self) -> bool:
-        return self.fcm_enabled or self.apns_enabled
+        return bool(self.google_application_credentials_json)
 
     # BE 자체 토큰 검증용 JWKS URI(BE 가 스스로 서빙하는 /auth/.well-known/jwks.json).
     # registry BE entry 의 jwks_uri nominal 메타로 실린다 — 자기검증은 in-process verify_key
