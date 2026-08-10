@@ -407,41 +407,28 @@ def test_comment_on_notice_does_not_notify(monkeypatch):
     assert calls == []
 
 
-def test_status_change_notifies_owner(monkeypatch):
-    """status 변경 PATCH → 소유자에게 board_status 알림 1건."""
+def test_status_change_does_not_notify(monkeypatch):
+    """status 변경 PATCH → 알림 미발화(댓글 알림과 중복되어 제거)."""
     calls = _install_notify_recorder(monkeypatch)
     app = _make_admin_app()
-    owner = str(uuid4())
-    updated = _post_row(board_type="broker_statement", user_id=owner, status="resolved")
+    updated = _post_row(
+        board_type="broker_statement", user_id=str(uuid4()), status="resolved"
+    )
     conn = FakeConnection(updated)  # update_post fetchrow(updated)
     client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
     resp = client.patch(f"/admin/boards/{updated['id']}", json={"status": "resolved"})
     assert resp.status_code == 200
-    assert len(calls) == 1
-    assert calls[0]["user_id"] == owner
-    assert calls[0]["type"] == "board_status"
+    assert calls == []
 
 
 def test_title_only_patch_does_not_notify(monkeypatch):
-    """title 편집만(status 무변경) → 알림 미발화."""
+    """title 편집 → 알림 미발화."""
     calls = _install_notify_recorder(monkeypatch)
     app = _make_admin_app()
     updated = _post_row(board_type="broker_statement", user_id=str(uuid4()), title="수정")
     conn = FakeConnection(updated)
     client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
     resp = client.patch(f"/admin/boards/{updated['id']}", json={"title": "수정"})
-    assert resp.status_code == 200
-    assert calls == []
-
-
-def test_status_change_on_notice_does_not_notify(monkeypatch):
-    """공지 status 변경 → 알림 미발화(notice skip)."""
-    calls = _install_notify_recorder(monkeypatch)
-    app = _make_admin_app()
-    updated = _post_row(board_type="notice", user_id=None, status="closed")
-    conn = FakeConnection(updated)
-    client = _client(app, email=ADMIN_EMAIL, admin_pool=FakePool(conn))
-    resp = client.patch(f"/admin/boards/{updated['id']}", json={"status": "closed"})
     assert resp.status_code == 200
     assert calls == []
 
