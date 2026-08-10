@@ -21,6 +21,7 @@ import {
   TYPE_LABEL,
   STATUS_META,
   getPostDisplayTitle,
+  showsStatusChip,
 } from "@/lib/board-post";
 import { formatDateOnly } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -166,7 +167,7 @@ function PostRow({
   unread: boolean;
   onClick: () => void;
 }) {
-  const chip = STATUS_META[post.status];
+  const chip = showsStatusChip(post.board_type) ? STATUS_META[post.status] : null;
   const displayTitle = getPostDisplayTitle(post);
   // 제목이 없으면(의견/오류 등) 본문을 대표 줄로. prefix 누출 방지를 위해 raw title 직접 미사용.
   const primary = displayTitle || post.body || TYPE_LABEL[post.board_type];
@@ -180,14 +181,16 @@ function PostRow({
     >
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
-          <span
-            className={cn(
-              "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold",
-              chip.className,
-            )}
-          >
-            {chip.label}
-          </span>
+          {chip ? (
+            <span
+              className={cn(
+                "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold",
+                chip.className,
+              )}
+            >
+              {chip.label}
+            </span>
+          ) : null}
           <span className="truncate text-[15px] font-medium text-foreground">
             {primary}
           </span>

@@ -32,6 +32,14 @@ export function getPostDisplayTitle(post: MyPost): string {
   return stripTypePrefix(post.title);
 }
 
+/**
+ * 상태 칩 노출 여부. 의견·거래내역서 제보는 사용자가 처리 상태를 볼 필요가 없어 숨긴다
+ * (관리자 답변 댓글이 소통 창구). 오류 신고만 검토중/완료/반려를 노출한다.
+ */
+export function showsStatusChip(boardType: MyPostBoardType): boolean {
+  return boardType === "bug_report";
+}
+
 /** 상태 칩 메타(라벨 + 클래스). PnL 색 아님(검토중/완료/반려). */
 export const STATUS_META: Record<
   MyPostStatus,

@@ -17,8 +17,9 @@ const config: CapacitorConfig = {
       updateUrl: `${API_BASE}/live-update/manifest`,
       autoUpdate: true,
     },
-    // capacitor-plugin-safe-area 가 edge-to-edge 인셋을 직접 다루므로
-    // Capacitor 내장 SystemBars 의 인셋 처리는 비활성화한다 (충돌 방지).
+    // MainActivity 가 WindowInsets 를 읽어 `--safe-area-inset-*` 를 직접 주입한다
+    // (구형 WebView 가 edge-to-edge 에서 env() 를 0 으로 보고하는 버그 대응).
+    // Capacitor 내장 SystemBars 의 CSS 변수 주입은 꺼서 이중 주입을 막는다.
     SystemBars: {
       insetsHandling: "disable",
     },

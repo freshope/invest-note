@@ -23,6 +23,7 @@ import {
   STATUS_META,
   formatFileSize,
   isImageAttachment,
+  showsStatusChip,
 } from "@/lib/board-post";
 import { formatDateOnly } from "@/lib/format";
 import { openExternal } from "@/lib/external-link";
@@ -74,7 +75,7 @@ export function MyPostDetailContent({ post, onImport }: { post: MyPost; onImport
 
   const [lightbox, setLightbox] = useState<string | null>(null);
 
-  const chip = STATUS_META[post.status];
+  const chip = showsStatusChip(post.board_type) ? STATUS_META[post.status] : null;
   const adminComments = post.comments.filter((c) => c.is_admin);
   // BE 가 아직 attachments 를 안 줄 수 있어 가드(undefined → []).
   const attachments = post.attachments ?? [];
@@ -83,7 +84,7 @@ export function MyPostDetailContent({ post, onImport }: { post: MyPost; onImport
   const files = attachments.filter((a) => !isImageAttachment(a));
   const showImportCta =
     post.board_type === "broker_statement" && post.status === "resolved";
-  // 헤더는 목록처럼 게시판명. 증권사명은 첫 줄 상태 옆으로(거래내역서 제보 한정).
+  // 헤더는 목록처럼 게시판명. 증권사명은 첫 줄로(거래내역서 제보 한정).
   const headerTitle = TYPE_LABEL[post.board_type];
   const showBroker =
     post.board_type === "broker_statement" && !!post.metadata.broker;
@@ -94,14 +95,16 @@ export function MyPostDetailContent({ post, onImport }: { post: MyPost; onImport
       <FullScreenPanelBody>
         <div className="px-5 pt-2 pb-8 space-y-5">
           <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold",
-                chip.className,
-              )}
-            >
-              {chip.label}
-            </span>
+            {chip ? (
+              <span
+                className={cn(
+                  "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold",
+                  chip.className,
+                )}
+              >
+                {chip.label}
+              </span>
+            ) : null}
             {showBroker ? (
               <span className="truncate text-[14px] font-medium text-foreground">
                 {post.metadata.broker}

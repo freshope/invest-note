@@ -158,20 +158,11 @@ async def update_board(
 ) -> dict:
     fields = body.model_dump(exclude_unset=True)
     async with pool.acquire() as conn:
+        # 상태변경은 통지하지 않는다 — 상태변경+댓글이 함께 일어나는 게 일반적이라
+        # 알림이 중복 발화됐다. 소유자 통지는 관리자 댓글 경로(board_reply) 단일화.
         row = await board_repo.update_post(conn, post_id, fields)
         if row is None:
             raise APIError(ERR_POST_NOT_FOUND, 404)
-        # status 변경일 때만 소유자에게 통지(title/body/is_pinned 편집엔 발화 금지).
-        # ②(broker_statement resolved)가 여기로 자연 포함. best-effort — 실패해도 상태변경 유지.
-        if "status" in fields:
-            try:
-                await _notify_post_owner(
-                    conn, row, notif_type="board_status", body=row.get("body")
-                )
-            except Exception:
-                logger.warning(
-                    "board_status 알림 insert 실패 post_id=%s", post_id, exc_info=True
-                )
     return row
 
 
