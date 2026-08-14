@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { fmt, fmtCompact, signColor } from "@/lib/format";
+import { fmtCompact, signColor } from "@/lib/format";
 import { StatCard } from "@/components/shared/StatCard";
 import { CountUpNumber } from "@/components/shared/CountUpNumber";
 import { MissingQuoteBadge } from "@/components/shared/MissingQuoteBadge";
@@ -10,7 +10,9 @@ function PnLText({ value }: { value: number }) {
   const rounded = Math.round(value);
   const abs = Math.abs(rounded);
   const sign = rounded > 0 ? "+" : rounded < 0 ? "-" : "";
-  const amount = abs >= 10_000_000 ? fmtCompact(abs) : fmt(abs);
+  // 3열 카드 폭(≈70px)에 맞춰 항상 축약 표기 — 전체 표기는 10만 단위부터 카드를 넘친다.
+  // fmtCompact 는 1만 미만이면 그대로 반환하므로 소액은 정확한 값이 유지된다.
+  const amount = fmtCompact(abs);
   return (
     <span className={cn("whitespace-nowrap", signColor(rounded, "foreground"))}>
       {sign}{amount}원
@@ -54,10 +56,11 @@ export function DashboardBody({
 
   return (
     <div className="px-5 space-y-4">
+      {/* 3열이라 최소 지원폭(320px)에서 카드 내부 여유가 ~60px 뿐 — 손익 카드만 값 폰트를 낮춘다. */}
       <div className="grid grid-cols-3 gap-2">
-        <StatCard label="평가손익" value={<PnLText value={totalUnrealizedPnL} />} />
-        <StatCard label="확정손익" value={<PnLText value={totalRealizedPnL} />} />
-        <StatCard label="이달 확정" value={<PnLText value={monthRealizedPnL} />} />
+        <StatCard label="평가손익" value={<PnLText value={totalUnrealizedPnL} />} valueClass="text-[13px]" />
+        <StatCard label="확정손익" value={<PnLText value={totalRealizedPnL} />} valueClass="text-[13px]" />
+        <StatCard label="이달 확정" value={<PnLText value={monthRealizedPnL} />} valueClass="text-[13px]" />
       </div>
 
       {(monthTradeCount > 0 || fxNote || fxWarning) && (

@@ -6,7 +6,7 @@ MVP 이후 구현할 작업 후보 목록.
 
 ## 우선순위 스냅샷 (다음 착수 후보)
 
-- 🟡 **사용자 요청 기능** — 목표가/손절·익절 추적, 관심종목, 벤치마크 비교, 푸시/생체인증/백버튼.
+- 🟡 **사용자 요청 기능** — 목표가/손절·익절 추적, 관심종목, 벤치마크 비교, 일별 시장일지(항목 템플릿), 푸시/생체인증/백버튼.
 - 🟡 **임포트 후속** — 다계좌 이중 preview 최적화(BE `re-validate` 엔드포인트 도입 시 카운트 갭까지 동시 해소), provider db 복귀 모니터링.
 - 🟢 **운영/어드민** — KIS 앱키 만료 가시화(SPOF), PnL 저장값 검증 엔드포인트.
 - 🟢 **성능/스케일(측정 후 착수)** — trades 페이지네이션, 포트폴리오/분석 읽기 경로 최적화, 분석 대시보드 시세 분리.
@@ -17,9 +17,24 @@ MVP 이후 구현할 작업 후보 목록.
 
 - [ ] 목표가(%), 손절 및 익절 계획을 입력하고 그것을 지켰는지 여부를 분석 — **(2026-07-02 감사) 부분:** 전략(strategy_type) 준수 분석은 이미 구현됨(`analysis/StrategyAdherencePanel.tsx` — 실보유기간 자동추론 vs 입력 전략 비교). **미구현이 이 항목의 핵심:** 거래/종목에 목표가·손절가·익절가 필드·입력 폼·달성/이탈 추적이 전무(스키마·폼에 target_price/stop_loss/take_profit 없음).
 - [ ] 관심 종목 추가 (보유하지 않은 종목도 볼 수 있게) — (2026-07-02 감사) 미구현 확인(watchlist 테이블·API·컴포넌트 전무).
-- [ ] 자산추이에 차트 기준점 s&p500, 코스피 지수등과 비교 — (2026-07-02 감사) 미구현 확인(benchmark/지수 오버레이 코드 전무, 차트는 단일 asset 곡선만).
-- [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리 — **(2026-07-28 갱신) 푸시:** 알림 이력 출시 완료·전송은 Firebase Admin 단일 채널로 코드 완료·활성화 게이트(아래 별도 항목). 생체인증 플러그인은 선통과(project_native_prereview_batch, 휴면). 키보드는 `@capacitor/keyboard` `resize:Native`만 설정(show/hide 이벤트 처리 없음), 백버튼은 `ForceUpdateGate.tsx`에서 강제업데이트 오버레이용 swallow만 존재 → **일반 네비게이션 백버튼 핸들러 없음**.
-- [ ] **푸시 전송 활성화 (게이트, 2026-07-28 갱신)** — 전송 경로는 Firebase Admin 단일 채널로 재작성 완료(`services/push/`, `device_tokens`(0020), `POST /me/push-token`, FE `@capacitor-firebase/messaging`, iOS `GoogleService-Info.plist` 타깃 등록)이나 **자격증명 없으면 no-op**. 활성화 전제: ~~① Coolify 에 `GOOGLE_APPLICATION_CREDENTIALS_JSON`(한 줄 JSON) 주입 + 구 `FCM_SERVICE_ACCOUNT_JSON`/`APNS_*` 제거~~(2026-07-28 완료, 자격증명 인증은 로컬 dry_run 으로 검증됨), ~~② Firebase Console `invest-note-494103` → Cloud Messaging 에 APNs `.p8` 업로드~~(2026-07-28 완료), **③ BE 배포 + 실기기 검증 Android/iOS**(권한 허용→토큰 등록→어드민 답변→실제 수신→탭 딥링크) ← 남음. `aps-environment` production 승격은 **불필요**해짐(Firebase 가 자동 라우팅). ⚠️ 네이티브 플러그인 교체라 릴리즈 scope web-only **오판 금지**(feedback_release_scope_native_plugin_gap) — 네이티브 릴리즈 + 양 스토어 재심사. 활성화 경로는 자동 테스트 커버리지 없음. 참조: `docs/decisions.md` 2026-07-28.
+- [ ] 자산추이에 차트 기준점 s&p500, 코스피 지수등과 비교 — (2026-07-02 감사) 미구현 확인(benchmark/지수 오버레이 코드 전무, 차트는 단일 asset 곡선만). **지수 일별 시계열 수집이 선행 조건 — 아래 "일별 시장일지"의 자동 기입(2단계)과 데이터 소스를 공유하므로 함께 설계할 것.**
+
+### 일별 시장일지 (날짜 단위 기록) — 사용자 의견 2026-08-10
+
+> 요지: 매매가 없던 날에도 하루 5줄 수준으로 시장 동향·등락 이유·배운 점·원칙을 **날짜별로** 남기고 싶다. 지금은 네이버 캘린더 다이어리로 대체 중인데, 전체가 자유 텍스트라 **항목명(코스피/코스닥/개인·외인·기관/환율/변동성 지표/사건·시장반응·내 생각·내 행동)을 매일 다시 타이핑**하는 게 번거롭다. API 로 가져올 수 있는 지표는 자동으로 채워지고, 나머지 항목은 사용자가 직접 추가·변경한 뒤 그 설정이 저장되면 좋겠다.
+
+- [ ] **1단계 — 날짜 단위 일지 엔티티 + 항목 템플릿 저장 (외부 데이터 의존 없음)**
+  - **(2026-08-10 감사) 미구현·구조적 공백:** 앱의 모든 메모는 `trades` 컬럼에 종속(`buy_reason`/`sell_reason`/`reflection_note`/`improvement_note`). **날짜를 키로 하는 레코드가 아예 없어** "매매 없던 날"이 들어갈 자리가 구조적으로 없다. 캘린더 UI 도 shadcn 원본 래퍼(`components/base/Calendar.tsx`)만 있고 사용하는 화면 없음.
+  - 작업: `journal_entries`(user_id + entry_date 유니크) + 사용자별 항목 템플릿(라벨·순서·타입, 재사용) 저장. 마이그레이션 신규 리비전 + `/journal` CRUD + FE 작성 화면.
+  - **이 요청의 실제 핵심은 템플릿 저장**(반복 타이핑 제거)이다. 자유 텍스트 한 칸만 주면 사용자가 이미 겪는 문제를 그대로 재현하는 것 — 항목 구조화 없이 출시하지 말 것.
+- [ ] **2단계 — 지표 자동 기입 (신규 데이터 파이프라인 필요)**
+  - 요청 지표: 코스피·코스닥 종가/등락치/등락률, 투자자별 매매동향(개인·외인·기관), 환율, 변동성 지수(VKOSPI).
+  - **(2026-08-10 감사) 수집 경로 전무:** ① **지수** — `daily_close_prices` 는 개별 종목 전용, 지수 시계열 없음(코드베이스의 `KOSPI`/`KOSDAQ` 은 `market_type` enum 일 뿐). ② **투자자별 수급·VKOSPI** — 관련 코드 0. ③ **환율** — `external/fx.py` 는 TTLCache 기반 **현재값 조회**만이고 **일별 종가 시계열을 저장하지 않는다**. 즉 요청 지표 4종 모두 신규 수집·적재가 선행.
+  - ⚠️ **잠정→확정 재기입 함정:** KRX 투자자별 수급은 장 마감 후 잠정치가 나중에 확정치로 갱신된다. 자동 채운 값을 일지 본문에 **박제(freeze)** 하면 나중에 사용자가 보는 값과 어긋난다. 스냅샷을 확정 시점 이후에만 확정하거나, 값을 본문이 아닌 참조(조회 시점 렌더)로 둘지 설계 단계에서 결정할 것.
+  - 우선순위: 1단계가 자리 잡은 뒤 착수. 지수 시계열은 위 **벤치마크 비교** 항목과 동일 데이터를 쓰므로 한 번에 설계하면 두 요청을 함께 해소.
+- **미확정(사용자에게 확인 필요):** ① 진입 형태 — 캘린더에서 날짜 선택 vs 홈의 "오늘의 일지" 단일 진입, ② 자동 기입 범위 — 국내(코스피·코스닥·환율) 우선으로 충분한지, 미국 지수도 필요한지.
+- [ ] 푸시 알림, 생체인증(Face ID/지문), Android 백버튼/키보드 처리 — **(2026-08-10 갱신) 푸시:** 알림 이력 출시 완료·전송은 Firebase Admin 단일 채널로 라이브(iOS 실기기 검증 통과, Android 검증만 잔여 — 아래 별도 항목). **백버튼: 해소됨(2026-07-29 `f837b4d`)** — `providers/AndroidBackHandler.tsx` 가 백프레스 체인 전체(강제업데이트 swallow → radix 레이어 → `runTopBackHandler` → 히스토리 → 두 번 눌러 종료)를 직접 소유한다. `@capacitor/app` 기본 핸들러가 백프레스를 소비하면서 히스토리 없을 때 activity 를 finish 하지 않아 루트에서 앱이 안 꺼지던 문제 + 탭 전환이 `<Link>`(history push)라 홈에서도 `canGoBack` 이 true 인 문제를 함께 처리(강제업데이트 swallow 도 `ForceUpdateGate.tsx` 에서 이쪽으로 이관됨). 생체인증 플러그인은 선통과(project_native_prereview_batch, 휴면). **잔여는 키보드뿐** — `@capacitor/keyboard` `resize:Native` 설정만 있고 show/hide 이벤트 처리 없음(2026-08-10 재확인).
+- [ ] **푸시 전송 활성화 (게이트, 2026-08-10 갱신 — iOS 검증 완료, Android 남음)** — 전송 경로는 Firebase Admin 단일 채널로 재작성 완료(`services/push/`, `device_tokens`(0020), `POST /me/push-token`, FE `@capacitor-firebase/messaging`, iOS `GoogleService-Info.plist` 타깃 등록)이나 **자격증명 없으면 no-op**. 활성화 전제: ~~① Coolify 에 `GOOGLE_APPLICATION_CREDENTIALS_JSON`(한 줄 JSON) 주입 + 구 `FCM_SERVICE_ACCOUNT_JSON`/`APNS_*` 제거~~(2026-07-28 완료, 자격증명 인증은 로컬 dry_run 으로 검증됨), ~~② Firebase Console `invest-note-494103` → Cloud Messaging 에 APNs `.p8` 업로드~~(2026-07-28 완료), ~~③ BE 배포~~(v1.5.0_34 동반 배포로 완료) + **실기기 검증** — **iOS 2026-08-10 전 체인 통과**(권한 허용→토큰 등록→어드민 답변→실제 수신→탭 딥링크). 즉 Firebase Admin→APNs 위임 발송 경로가 실증됨. **Android 실기기 검증만 남음** — 코드 경로는 iOS 와 동일(같은 `send_to_user`·같은 FCM 토큰 타입)이라 위험도는 낮으나, Android 는 알림 채널·권한(API 33+ `POST_NOTIFICATIONS`)·백그라운드 수신 동작이 별개라 미확인. `aps-environment` production 승격은 **불필요**해짐(Firebase 가 자동 라우팅). ⚠️ 네이티브 플러그인 교체라 릴리즈 scope web-only **오판 금지**(feedback_release_scope_native_plugin_gap) — 네이티브 릴리즈 + 양 스토어 재심사. 활성화 경로는 자동 테스트 커버리지 없음. 참조: `docs/decisions.md` 2026-07-28.
 
 - [ ] **푸시 `Message.token` → `fid` 전환 대응 (잠재 부채, 2026-07-29 조사)** — firebase-admin 7.5(=현재 PyPI 최신) 이 `Message.token` 을 deprecate 하고 `fid`(Firebase Installation ID)를 권한다. **현재 전환 불가**: installation ID 를 꺼낼 Capacitor 플러그인이 **존재하지 않는다**(`@capacitor-firebase` scope 에 messaging/authentication/analytics/crashlytics/app/performance/app-check/remote-config/firestore/storage/functions 뿐, installations 없음). web SDK `getId()` 는 WebView 에 별도 web installation 을 만들어 네이티브 앱 인스턴스와 다른 ID → APNs 전달 불가. 따라서 `token` 유지가 유일한 정답(`services/push/firebase.py` 주석). **위험도 낮음:** `token` 은 FCM v1 REST 의 핵심 타깃 필드고 등록 토큰은 모든 클라이언트 SDK 의 공통 산출물이라 제거 가능성이 낮다. deprecation ≠ 제거. 2026-07-29 dry_run 에서 실 API 가 `token` 정상 수용 확인. 트리거: upstream 이 installations 플러그인을 내거나 firebase-admin 이 `token` 을 실제 제거하면 재검토(그때는 FE 등록 경로 + `device_tokens` 저장값 의미 변경 + **네이티브 재심사** 한 묶음).
 
