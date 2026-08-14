@@ -28,13 +28,14 @@ interface AllocationDonutProps {
   data: DonutEntry[];
   total: number;
   label: string;
+  emptyMessage: string;
 }
 
-function AllocationDonut({ data, total, label }: AllocationDonutProps) {
+function AllocationDonut({ data, total, label, emptyMessage }: AllocationDonutProps) {
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-40 text-[13px] text-muted-foreground">
-        데이터 없음
+        {emptyMessage}
       </div>
     );
   }
@@ -73,9 +74,10 @@ function AllocationDonut({ data, total, label }: AllocationDonutProps) {
 interface AllocationTabsProps {
   positions: Position[];
   snapshots: AccountSnapshot[];
+  quotesError?: boolean;
 }
 
-export function AllocationTabs({ positions, snapshots }: AllocationTabsProps) {
+export function AllocationTabs({ positions, snapshots, quotesError = false }: AllocationTabsProps) {
   // evaluation 은 이미 KRW(merge 단계 환산)이므로 그대로 비중 계산.
   const posData = useMemo<DonutEntry[]>(
     () => buildStockAllocation(positions, snapshots),
@@ -93,6 +95,19 @@ export function AllocationTabs({ positions, snapshots }: AllocationTabsProps) {
   );
   const snapTotal = useMemo(() => snapData.reduce((s, d) => s + d.value, 0), [snapData]);
 
+  // 도넛이 비는 원인은 넷 — 보유 없음(전량 매도) / 시세 실패 / 환율 미상 / 시세 대기. 전부
+  // "데이터 없음"으로 뭉치면 보유 종목이 있는데도 거래가 사라진 것처럼 보인다(오류 신고 사례).
+  // 시세는 도착했는데 evaluation 이 null 이면 환율 미상(해외 보유) — "조회 중"이 영영 안 끝난다.
+  const quotesArrived = positions.some((p) => p.currentPrice !== null);
+  const emptyMessage =
+    positions.length === 0
+      ? "보유 중인 종목이 없어요"
+      : quotesError
+        ? "시세를 불러오지 못했어요"
+        : quotesArrived
+          ? "평가금액을 계산할 수 없어요"
+          : "시세를 불러오는 중이에요";
+
   return (
     <div className="px-5">
       <div className="rounded-2xl bg-muted/60 p-4">
@@ -102,10 +117,20 @@ export function AllocationTabs({ positions, snapshots }: AllocationTabsProps) {
             <TabsTrigger value="account">계좌별</TabsTrigger>
           </TabsList>
           <TabsContent value="stock">
-            <AllocationDonut data={posData} total={posTotal} label="총자산" />
+            <AllocationDonut
+              data={posData}
+              total={posTotal}
+              label="총자산"
+              emptyMessage={emptyMessage}
+            />
           </TabsContent>
           <TabsContent value="account">
-            <AllocationDonut data={snapData} total={snapTotal} label="계좌 총액" />
+            <AllocationDonut
+              data={snapData}
+              total={snapTotal}
+              label="계좌 총액"
+              emptyMessage={emptyMessage}
+            />
           </TabsContent>
         </Tabs>
       </div>

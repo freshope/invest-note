@@ -100,7 +100,7 @@ export function HomeDashboard() {
     [quoteKeysSig],
   );
 
-  const { quotes, refetch: refetchQuotes } = useQuotes(quoteKeys);
+  const { quotes, error: quotesError, refetch: refetchQuotes } = useQuotes(quoteKeys);
 
   // 해외(비-KR) 보유가 있을 때만 환율 조회 — KRW 환산 합산용. 없으면 비활성(usdkrw=null).
   const hasForeign = (positions ?? []).some((p) => p.country !== DEFAULT_COUNTRY_CODE);
@@ -167,7 +167,11 @@ export function HomeDashboard() {
     return (
       <div className="pt-2 pb-6 space-y-5">
         <DashboardBody totals={totals} fxNote={fxNote} fxWarning={fxWarning} />
-        <AllocationTabs positions={positions} snapshots={snapshots} />
+        <AllocationTabs
+          positions={positions}
+          snapshots={snapshots}
+          quotesError={quotesError}
+        />
         {positions.length > 0 && (
           <div className="space-y-2">
             <p className="px-5 text-[13px] font-semibold text-muted-foreground">보유 종목</p>
